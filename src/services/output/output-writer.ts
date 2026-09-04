@@ -106,6 +106,8 @@ export interface OutputWriteResult {
     path: string
     file: OutputFileRef
     directory: ResolvedOutputDirectory
+    /** Exact current Queue publication claim; null for direct and legacy writes. */
+    outputCommitSetHash?: `sha256:${string}` | null
     sidecarPath?: string
     sidecarFile?: OutputFileRef
     diagnosticSidecarPath?: string
@@ -552,6 +554,7 @@ function resultFromJournal(journal: OutputRecoveryJournal): OutputWriteResult {
         path: image.final.displayPath,
         file: image.final,
         directory: journal.directory,
+        outputCommitSetHash: journal.outputReservation?.commitSetHash ?? null,
         ...(sidecar === undefined
             ? {}
             : { sidecarPath: sidecar.final.displayPath, sidecarFile: sidecar.final }),
@@ -757,7 +760,9 @@ export class OutputWriter {
 
     async write(request: OutputWriterRequest): Promise<OutputWriterOutcome> {
         if (!request.canCommit()) return { status: 'cancelled' }
-        if (request.outputReservation !== undefined) parseReservationIdentity(request.outputReservation)
+        const outputReservation = request.outputReservation === undefined
+            ? undefined
+            : parseReservationIdentity(request.outputReservation)
 
         let phase: OutputWriterPhase = 'resolve-destination'
         let journal: OutputRecoveryJournal | null = null
@@ -1086,6 +1091,7 @@ export class OutputWriter {
                 path: imageFinal.displayPath,
                 file: imageFinal,
                 directory,
+                outputCommitSetHash: outputReservation?.commitSetHash ?? null,
                 ...(sidecarArtifact === undefined
                     ? {}
                     : { sidecarPath: sidecarArtifact.final.displayPath, sidecarFile: sidecarArtifact.final }),

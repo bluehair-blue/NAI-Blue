@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createArtifactRecord, type ArtifactRecord } from '@/domain/organizer/types'
 import type { OutputReservation, QueueArtifactReference } from '@/domain/queue/types'
 import type { OutputWriteResult, OutputWriter } from '@/services/output/output-writer'
+import { createGenerationOutputCommitSet } from '@/services/output/generation-output-commit-set'
 import {
     IndexedDBQueueRepository,
     type EnqueueGenerationJobInput,
@@ -64,6 +65,35 @@ function reservedJob(): EnqueueGenerationJobInput {
         ...base,
         snapshot: bindOutputReservationSnapshot(base.snapshot, snapshotReservation),
     }
+}
+
+function currentReservation(): OutputReservation {
+    const legacy = reservation()
+    const { commitSet, commitSetHash } = createGenerationOutputCommitSet({
+        directoryAuthorityId: 'folder:1',
+        directoryAuthorityFingerprint: legacy.directoryIdentity,
+        filesystemSemantics: 'windows',
+        fileName: legacy.relativePath,
+        imageFormat: 'png',
+        metadataMode: undefined,
+        preserveProviderOriginal: false,
+    })
+    return {
+        ...legacy,
+        state: 'reserved',
+        reservationSchemaVersion: 1,
+        commitSet,
+        commitSetHash,
+        version: 1,
+        updatedAt: NOW,
+    }
+}
+
+function currentReservedJob(): EnqueueGenerationJobInput {
+    const value = currentReservation()
+    const base = job()
+    const { batchId: _batchId, jobId: _jobId, state: _state, version: _version, updatedAt: _updatedAt, ...snapshot } = value
+    return { ...base, snapshot: bindOutputReservationSnapshot(base.snapshot, snapshot) }
 }
 
 function recoveredOutput(): OutputWriteResult {
@@ -258,5 +288,61 @@ describe('queue-linked OutputWriter recovery', () => {
         expect(retryFilesCommittedWorkflow).not.toHaveBeenCalled()
         expect(await repository.getJob('job:1')).toMatchObject({ state: 'running' })
         expect(await repository.getOutputReservation('reservation:1')).toMatchObject({ state: 'writing' })
+    })
+
+    it('does not terminalize current reservation recovery when Artifact lineage is missing', async () => {
+        const repository = queue()
+        const current = currentReservation()
+        await repository.createBatchAndEnqueue({
+            batch: {
+                id: 'batch:1', workflow: 'main', createdAt: NOW,
+                failurePolicy: 'continue', origin: 'fresh', idempotencyKey: 'batch-key:1',
+            },
+            jobs: [currentReservedJob()],
+            reservations: [current],
+        })
+        const lease = await repository.acquireLease({ jobId: 'job:1', owner: 'worker:1', now: NOW, ttlMs: 1_000 })
+        await repository.transitionJob({
+            jobId: 'job:1', to: 'running', now: NOW,
+            leaseOwner: 'worker:1', leaseToken: lease?.leaseToken ?? '',
+        })
+        await repository.transitionOutputReservation({
+            reservationId: current.reservationId,
+            owner: current,
+            expectedState: 'reserved',
+            expectedVersion: current.version,
+            state: 'writing',
+        })
+        const artifactReference: QueueArtifactReference = {
+            kind: 'output-writer', artifactId: 'artifact:1', digest: 'sha256:artifact', mimeType: 'image/png',
+        }
+        await repository.bindOutputTransaction({
+            jobId: 'job:1', leaseOwner: 'worker:1', leaseToken: lease?.leaseToken ?? '', now: NOW,
+            outputTransactionId: 'txn-bound', artifactReference,
+        })
+        const writer = {
+            retryFilesCommittedWorkflow: vi.fn(async (
+                _transactionId: string,
+                _sourceJobId: string,
+                commitWorkflow: Parameters<OutputWriter['retryFilesCommittedWorkflow']>[2],
+            ) => {
+                try {
+                    await commitWorkflow(recoveredOutput())
+                    return { transactionId: 'txn-bound', action: 'retried' as const }
+                } catch (error) {
+                    return {
+                        transactionId: 'txn-bound',
+                        action: 'failed' as const,
+                        error: error instanceof Error ? error.message : 'failed',
+                    }
+                }
+            }),
+        } as unknown as OutputWriter
+
+        await expect(retryQueueLinkedOutput(repository, writer, {
+            jobId: 'job:1', now: LATER, artifactRepository: artifactRepository().value,
+        })).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('commit-set lineage differ') })
+        expect(await repository.getJob('job:1')).toMatchObject({ state: 'running' })
+        expect(await repository.getOutputReservation(current.reservationId)).toMatchObject({ state: 'writing' })
     })
 })

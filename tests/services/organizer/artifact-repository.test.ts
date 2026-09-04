@@ -1,10 +1,11 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { describe, expect, it } from 'vitest'
 
-import type { DistributionPolicy, DistributionVariant } from '@/domain/organizer/types'
+import { createArtifactRecord, type ArtifactRecord, type DistributionPolicy, type DistributionVariant } from '@/domain/organizer/types'
 import {
     ArtifactRepositoryError,
     IndexedDBArtifactRepository,
+    validateArtifactRecord,
 } from '@/services/organizer/artifact-repository'
 
 const NOW = '2026-07-14T12:00:00.000Z'
@@ -54,11 +55,17 @@ function variant(id = 'distribution-1'): DistributionVariant {
     }
 }
 
-async function putOriginal(repo: IndexedDBArtifactRepository, artifactId = 'artifact-1', checksum = HASH_A) {
+async function putOriginal(
+    repo: IndexedDBArtifactRepository,
+    artifactId = 'artifact-1',
+    checksum = HASH_A,
+    outputCommitSetHash: `sha256:${string}` | null = null,
+) {
     return repo.putOriginal({
         artifactId,
         sourceJobId: 'job-1',
         sourceSceneId: 'scene-1',
+        outputCommitSetHash,
         file: { directory: { kind: 'standard', root: 'app-data', segments: ['nai-blue', 'organizer', 'sources'] }, fileName: `${artifactId}.png` },
         format: 'png',
         contentChecksum: checksum,
@@ -153,5 +160,48 @@ describe('Organizer artifact repository', () => {
             updatedAt: NOW,
             failure: null,
         }, NOW)).rejects.toMatchObject({ code: 'E_ARTIFACT_RECORD_INVALID' })
+    })
+
+    it('normalizes legacy creation to null and keeps the original commit-set hash immutable', async () => {
+        const factory = new IDBFactory()
+        const databaseName = `organizer-commit-set-lineage-${++databaseCounter}`
+        const options = {
+            factory: factory as unknown as IDBFactory,
+            keyRange: IDBKeyRange as unknown as typeof globalThis.IDBKeyRange,
+            databaseName,
+        }
+        const repo = new IndexedDBArtifactRepository(options)
+        const original = await putOriginal(repo, 'artifact-hash', HASH_A, HASH_B)
+        expect(original.outputCommitSetHash).toBe(HASH_B)
+        await repo.addDistribution(original.artifactId, variant(), NOW)
+        expect((await repo.get(original.artifactId))?.outputCommitSetHash).toBe(HASH_B)
+        await expect(putOriginal(repo, 'artifact-hash', HASH_A, HASH_A))
+            .rejects.toMatchObject({ code: 'E_ARTIFACT_ORIGINAL_IMMUTABLE' })
+
+        const legacy = structuredClone(original) as ArtifactRecord & { outputCommitSetHash?: unknown }
+        delete legacy.outputCommitSetHash
+        expect(() => validateArtifactRecord(legacy as ArtifactRecord)).not.toThrow()
+        await repo.close()
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = factory.open(databaseName, 1)
+            request.onsuccess = () => resolve(request.result as unknown as IDBDatabase)
+            request.onerror = () => reject(request.error)
+        })
+        const transaction = database.transaction('artifacts', 'readwrite')
+        transaction.objectStore('artifacts').put(legacy)
+        await new Promise<void>((resolve, reject) => {
+            transaction.oncomplete = () => resolve()
+            transaction.onerror = () => reject(transaction.error)
+        })
+        database.close()
+        expect((await new IndexedDBArtifactRepository(options).get(original.artifactId))?.outputCommitSetHash).toBeNull()
+        expect(createArtifactRecord({
+            artifactId: 'artifact-direct',
+            file: original.original.file,
+            format: 'png',
+            contentChecksum: HASH_A,
+            size: 1,
+            createdAt: NOW,
+        }).outputCommitSetHash).toBeNull()
     })
 })

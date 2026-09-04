@@ -206,7 +206,11 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
 
         const facts = await Promise.all(jobs.map(async (job, index): Promise<GenerationFulfillmentJobFacts> => {
             const artifact = artifacts[index]
-            const storage = artifact?.sourceJobId === job.id
+            const reservation = job.snapshot.outputReservation
+            const artifactHasCurrentLineage = reservation?.reservationSchemaVersion !== 1
+                || artifact?.outputCommitSetHash === reservation.commitSetHash
+            const artifactMatchesJob = artifact?.sourceJobId === job.id && artifactHasCurrentLineage
+            const storage = artifactMatchesJob
                 ? directFact('succeeded', 'artifact-record', `${job.id}:artifact`, artifact.updatedAt)
                 : job.state === 'succeeded' && job.outputTransactionId !== null && job.artifactReference !== null
                     ? directFact('succeeded', 'queue-output-commit', `${job.id}:storage`, job.updatedAt)
@@ -222,7 +226,7 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
             const sceneDocument = presetId === null ? undefined : sceneDocuments.get(presetId)
             const scene = sceneDocument?.scenes.find(candidate => candidate.id === job.sceneId)
             const sceneLinkPending = this.authorities.scenes !== undefined
-                && artifact?.sourceJobId === job.id
+                && artifactMatchesJob
                 && presetId !== null
                 && (scene === undefined
                     || !scene.artifactRefs.some(reference => reference.artifactId === artifact.artifactId))

@@ -103,6 +103,8 @@ export interface ArtifactRecord {
     readonly artifactId: string
     readonly sourceJobId: string | null
     readonly sourceSceneId: string | null
+    /** Exact Queue publication claim; null for legacy and direct outputs. */
+    readonly outputCommitSetHash: `sha256:${string}` | null
     readonly original: ArtifactOriginalVariant
     readonly distributionVariants: readonly DistributionVariant[]
     readonly thumbnail: ArtifactThumbnailReference
@@ -121,6 +123,7 @@ export interface CreateArtifactRecordInput {
     readonly artifactId: string
     readonly sourceJobId?: string | null
     readonly sourceSceneId?: string | null
+    readonly outputCommitSetHash?: `sha256:${string}` | null
     readonly file: ArtifactPortableFileRef
     readonly format: OrganizerSourceImageFormat
     readonly contentChecksum: string
@@ -170,6 +173,9 @@ export function createArtifactRecord(input: CreateArtifactRecordInput): Artifact
     if (!IDENTIFIER_PATTERN.test(input.artifactId)
         || (input.sourceJobId !== undefined && input.sourceJobId !== null && !IDENTIFIER_PATTERN.test(input.sourceJobId))
         || (input.sourceSceneId !== undefined && input.sourceSceneId !== null && !IDENTIFIER_PATTERN.test(input.sourceSceneId))
+        || (input.outputCommitSetHash !== undefined
+            && input.outputCommitSetHash !== null
+            && !CHECKSUM_PATTERN.test(input.outputCommitSetHash))
         || !CHECKSUM_PATTERN.test(input.contentChecksum)
         || !Number.isSafeInteger(input.size)
         || input.size < 0
@@ -182,6 +188,7 @@ export function createArtifactRecord(input: CreateArtifactRecordInput): Artifact
         artifactId: input.artifactId,
         sourceJobId: input.sourceJobId ?? null,
         sourceSceneId: input.sourceSceneId ?? null,
+        outputCommitSetHash: input.outputCommitSetHash ?? null,
         original: {
             variantId: 'original',
             file,
@@ -206,11 +213,16 @@ export function createArtifactRecord(input: CreateArtifactRecordInput): Artifact
     }
 }
 
-export function assertArtifactOriginalUnchanged(record: ArtifactRecord, candidate: ArtifactOriginalVariant): void {
+export function assertArtifactOriginalUnchanged(
+    record: ArtifactRecord,
+    candidate: ArtifactOriginalVariant,
+    outputCommitSetHash: ArtifactRecord['outputCommitSetHash'] = record.outputCommitSetHash ?? null,
+): void {
     if (record.original.contentChecksum !== candidate.contentChecksum
         || record.original.size !== candidate.size
         || JSON.stringify(record.original.file) !== JSON.stringify(candidate.file)
-        || record.original.format !== candidate.format) {
+        || record.original.format !== candidate.format
+        || (record.outputCommitSetHash ?? null) !== outputCommitSetHash) {
         throw new ArtifactRecordError('E_ARTIFACT_ORIGINAL_IMMUTABLE', 'Original artifact variants are immutable.')
     }
 }

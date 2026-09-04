@@ -15,6 +15,7 @@ export interface QueueArtifactRepository {
         artifactId: string
         sourceJobId: string | null
         sourceSceneId: string | null
+        outputCommitSetHash?: `sha256:${string}` | null
         file: { directory: PortablePathRef; fileName: string }
         format: OrganizerSourceImageFormat
         contentChecksum: string
@@ -60,6 +61,16 @@ function matchesRegistration(
         && existing.original.format === outputFormat(reference, output)
         && existing.contentChecksum === facts.contentChecksum
         && existing.original.size === facts.byteSize
+        && (existing.outputCommitSetHash ?? null) === (output.outputCommitSetHash ?? null)
+}
+
+function assertQueueCommitSetLineage(job: GenerationJob, output: OutputWriteResult): `sha256:${string}` | null {
+    const reservation = job.snapshot.outputReservation
+    const expected = reservation?.reservationSchemaVersion === 1 ? reservation.commitSetHash : null
+    if ((output.outputCommitSetHash ?? null) !== expected) {
+        throw new QueueArtifactLineageError('Queue snapshot, output journal, and Artifact commit-set lineage differ.')
+    }
+    return expected
 }
 
 /**
@@ -76,10 +87,16 @@ export async function registerQueueArtifact(
     const facts = output.finalImage
     // Legacy absolute output has no portable directory. Keep its successful
     // output path, but do not put an unsafe raw path into Artifact authority.
-    if (facts === undefined || facts.portableDirectory === undefined) return null
+    if (facts === undefined || facts.portableDirectory === undefined) {
+        if (job.snapshot?.outputReservation?.reservationSchemaVersion === 1) {
+            throw new QueueArtifactLineageError('Current Queue output is missing portable Artifact lineage.')
+        }
+        return null
+    }
     if (!Number.isSafeInteger(facts.byteSize) || facts.byteSize < 0) {
         throw new QueueArtifactLineageError('Queue output byte size is invalid.')
     }
+    const outputCommitSetHash = assertQueueCommitSetLineage(job, output)
     const existing = await repository.get(reference.artifactId)
     if (existing !== null) {
         if (!matchesRegistration(existing, job, reference, output)) {
@@ -91,6 +108,7 @@ export async function registerQueueArtifact(
         artifactId: reference.artifactId,
         sourceJobId: job.id,
         sourceSceneId: job.sceneId,
+        outputCommitSetHash,
         file: { directory: facts.portableDirectory, fileName: output.fileName },
         format: outputFormat(reference, output),
         contentChecksum: facts.contentChecksum,

@@ -179,6 +179,7 @@ describe('sync payload sanitizer', () => {
             artifactId: 'artifact:1',
             sourceJobId: 'job:1',
             sourceSceneId: 'scene:1',
+            outputCommitSetHash: `sha256:${'b'.repeat(64)}`,
             file: { directory: { kind: 'standard', root: 'app-data', segments: ['private'] }, fileName: 'source.png' },
             format: 'png', size: 123,
             contentChecksum: `sha256:${'a'.repeat(64)}`,
@@ -193,7 +194,11 @@ describe('sync payload sanitizer', () => {
         })
 
         expect(serialized(artifact)).not.toMatch(/thumbnail|"(?:file|absolutePath|nativePath|failure)"|CANARY/i)
-        expect(artifact).toMatchObject({ artifactId: 'artifact:1', original: { format: 'png', size: 123 } })
+        expect(artifact).toMatchObject({
+            artifactId: 'artifact:1',
+            outputCommitSetHash: `sha256:${'b'.repeat(64)}`,
+            original: { format: 'png', size: 123 },
+        })
         expect(remote).toEqual({
             artifactId: 'artifact:1',
             profileId: 'profile:1',
@@ -205,6 +210,12 @@ describe('sync payload sanitizer', () => {
         expect(() => sanitizeSyncPayload('artifact.metadata', {
             ...artifactSource, contentChecksum: 'secret-canary',
         })).toThrow(SyncSanitizationError)
+        expect(() => sanitizeSyncPayload('artifact.metadata', {
+            ...artifactSource, outputCommitSetHash: 'sha256:malformed',
+        })).toThrow(SyncSanitizationError)
+        expect(sanitizeSyncPayload('artifact.metadata', {
+            ...artifactSource, outputCommitSetHash: null,
+        }).outputCommitSetHash).toBeNull()
         expect(() => sanitizeSyncPayload('artifact.r2-object', {
             profileId: 'profile:1', artifactId: 'artifact:1', variantId: 'original',
             remoteKey: '../private.png', state: 'succeeded', updatedAt: NOW,

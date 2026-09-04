@@ -379,13 +379,14 @@ function assertProjectedTimestamp(value: unknown, field: string): void {
 
 function validateProjectedArtifactRecord(record: Record<string, unknown>): void {
     assertExactProjectedKeys(record, [
-        'schemaVersion', 'artifactId', 'sourceJobId', 'sourceSceneId', 'original', 'distributionVariants',
+        'schemaVersion', 'artifactId', 'sourceJobId', 'sourceSceneId', 'outputCommitSetHash', 'original', 'distributionVariants',
         'contentChecksum', 'sanitizationPolicyVersion', 'createdAt', 'updatedAt', 'version',
     ], 'artifact-record')
     if (record.schemaVersion !== 1) invalid('schemaVersion')
     requiredString(record, 'artifactId')
     optionalNullableString(record, 'sourceJobId')
     optionalNullableString(record, 'sourceSceneId')
+    assertProjectedChecksum(record.outputCommitSetHash ?? null, 'outputCommitSetHash', true)
     assertProjectedChecksum(record.contentChecksum, 'contentChecksum')
     requiredNumber(record, 'sanitizationPolicyVersion')
     assertProjectedTimestamp(record.createdAt, 'createdAt')
@@ -449,6 +450,7 @@ function projectArtifact(value: unknown): JsonObject {
         artifactId: requiredString(record, 'artifactId'),
         sourceJobId: optionalNullableString(record, 'sourceJobId'),
         sourceSceneId: optionalNullableString(record, 'sourceSceneId'),
+        outputCommitSetHash: optionalNullableString(record, 'outputCommitSetHash'),
         original: {
             variantId: requiredString(original, 'variantId'),
             format: requiredString(original, 'format'),

@@ -146,6 +146,9 @@ export function validateArtifactRecord(record: ArtifactRecord): void {
     assertSafeValue(record)
     if (record.schemaVersion !== 1
         || !record.artifactId.trim()
+        || (record.outputCommitSetHash !== undefined
+            && record.outputCommitSetHash !== null
+            && !isOrganizerChecksum(record.outputCommitSetHash))
         || !isOrganizerChecksum(record.contentChecksum)
         || record.original.contentChecksum !== record.contentChecksum
         || record.original.variantId !== 'original'
@@ -195,6 +198,7 @@ export function validateArtifactRecord(record: ArtifactRecord): void {
 function projectRecord(record: ArtifactRecord): ArtifactRecord {
     return {
         ...clone(record),
+        outputCommitSetHash: record.outputCommitSetHash ?? null,
         original: {
             ...record.original,
             file: projectArtifactPortableFile(record.original.file),
@@ -280,7 +284,7 @@ export class IndexedDBArtifactRepository {
         if (existing !== undefined) {
             validateArtifactRecord(existing)
             try {
-                assertArtifactOriginalUnchanged(existing, candidate.original)
+                assertArtifactOriginalUnchanged(existing, candidate.original, candidate.outputCommitSetHash)
             } catch (error) {
                 transaction.abort()
                 throw error
@@ -454,7 +458,7 @@ export class IndexedDBArtifactRepository {
         }
         const next = projectRecord(update(projectRecord(existing)))
         try {
-            assertArtifactOriginalUnchanged(existing, next.original)
+            assertArtifactOriginalUnchanged(existing, next.original, next.outputCommitSetHash)
             validateArtifactRecord(next)
         } catch (error) {
             transaction.abort()

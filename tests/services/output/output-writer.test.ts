@@ -319,7 +319,7 @@ describe('OutputWriter fault containment', () => {
             preserveProviderOriginal: true,
         })
 
-        await outputWriter.write(request({
+        const outcome = await outputWriter.write(request({
             destination: { ...request().destination, collisionPolicy: 'error' },
             outputReservation: {
                 reservationId: 'reservation:full',
@@ -332,6 +332,10 @@ describe('OutputWriter fault containment', () => {
             preserveProviderOriginal: true,
         }))
 
+        expect(outcome).toMatchObject({
+            status: 'committed',
+            result: { outputCommitSetHash: commitSetHash },
+        })
         expect(adapter.paths()).toEqual([
             'output/._nai-blue-private/result.png',
             'output/result.nai-blue.json',
@@ -582,6 +586,20 @@ describe('OutputWriter fault containment', () => {
         const adapter = new InMemoryOutputAdapter()
         const outputWriter = writer(adapter, 'txn-final-image-recovery')
         let recoveredFinalImage: unknown
+        let recoveredCommitSetHash: unknown
+        const preflight = await outputWriter.preflightExactDestination({
+            destination: request().destination,
+            fileName: 'result.png',
+        })
+        const { commitSet, commitSetHash } = createGenerationOutputCommitSet({
+            directoryAuthorityId: 'folder:recovery',
+            directoryAuthorityFingerprint: preflight.directoryIdentity,
+            filesystemSemantics: 'windows',
+            fileName: 'result.png',
+            imageFormat: 'png',
+            metadataMode: undefined,
+            preserveProviderOriginal: false,
+        })
 
         await expect(outputWriter.write(request({
             includeFinalImageFacts: true,
@@ -598,7 +616,14 @@ describe('OutputWriter fault containment', () => {
                 workflowDefaultDirectory: 'NAI_Blue_Output',
                 extension: 'png',
                 fileName: 'result.png',
-                collisionPolicy: 'unique',
+                collisionPolicy: 'error',
+            },
+            outputReservation: {
+                reservationId: 'reservation:recovery',
+                directoryIdentity: preflight.directoryIdentity,
+                relativePath: 'result.png',
+                commitSet,
+                commitSetHash,
             },
             commitWorkflow: () => {
                 adapter.fault = { operation: 'write-journal' }
@@ -609,6 +634,7 @@ describe('OutputWriter fault containment', () => {
             mode: 'retry-workflow',
             commitWorkflow: result => {
                 recoveredFinalImage = result.finalImage
+                recoveredCommitSetHash = result.outputCommitSetHash
             },
         })).resolves.toEqual({ transactionId: 'txn-final-image-recovery', action: 'retried' })
 
@@ -621,6 +647,7 @@ describe('OutputWriter fault containment', () => {
                 segments: ['queue'],
             },
         })
+        expect(recoveredCommitSetHash).toBe(commitSetHash)
         expectNoTransactionArtifacts(adapter)
     })
 
@@ -785,7 +812,6 @@ describe('OutputWriter fault containment', () => {
             name: 'OutputWriterError',
             phase: 'atomic-commit',
         })
-
         expect(bytesEqual(adapter.file('output/result.png'), external)).toBe(true)
         expect(adapter.paths()).toEqual(['output/result.png'])
         expectNoTransactionArtifacts(adapter)

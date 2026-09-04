@@ -10,6 +10,7 @@ import {
 } from '@/services/queue/queue-artifact-lineage'
 
 const CHECKSUM = `sha256:${'a'.repeat(64)}`
+const COMMIT_SET_HASH = `sha256:${'c'.repeat(64)}` as const
 
 function job(overrides: Partial<GenerationJob> = {}): GenerationJob {
     return {
@@ -17,6 +18,7 @@ function job(overrides: Partial<GenerationJob> = {}): GenerationJob {
         batchId: 'batch:1',
         workflow: 'scene',
         sceneId: 'scene:1',
+        snapshot: {},
         ...overrides,
     } as GenerationJob
 }
@@ -32,7 +34,7 @@ function reference(): QueueArtifactReference {
     }
 }
 
-function output(portable = true): OutputWriteResult {
+function output(portable = true, outputCommitSetHash?: `sha256:${string}` | null): OutputWriteResult {
     return {
         transactionId: 'transaction-1',
         fileName: 'queue-result.png',
@@ -44,6 +46,7 @@ function output(portable = true): OutputWriteResult {
             capabilityFallbackUsed: false,
         },
         capabilityFallbackUsed: false,
+        ...(outputCommitSetHash === undefined ? {} : { outputCommitSetHash }),
         finalImage: {
             contentChecksum: CHECKSUM,
             byteSize: 321,
@@ -52,6 +55,17 @@ function output(portable = true): OutputWriteResult {
             } : {}),
         },
     }
+}
+
+function currentJob(commitSetHash = COMMIT_SET_HASH): GenerationJob {
+    return job({
+        snapshot: {
+            outputReservation: {
+                reservationSchemaVersion: 1,
+                commitSetHash,
+            },
+        },
+    } as Partial<GenerationJob>)
 }
 
 function repository() {
@@ -107,5 +121,31 @@ describe('queue artifact lineage', () => {
             contentChecksum: CHECKSUM,
             size: 321,
         }))
+    })
+
+    it('requires current Queue, OutputWriter, and Artifact commit-set lineage to match', async () => {
+        const repo = repository()
+        const first = await registerQueueArtifact(
+            currentJob(), reference(), output(true, COMMIT_SET_HASH), repo.value,
+        )
+        const replay = await registerQueueArtifact(
+            currentJob(), reference(), output(true, COMMIT_SET_HASH), repo.value,
+        )
+
+        expect(first?.record.outputCommitSetHash).toBe(COMMIT_SET_HASH)
+        expect(replay).toEqual({ record: first?.record, created: false })
+        await expect(registerQueueArtifact(
+            currentJob(`sha256:${'d'.repeat(64)}`),
+            reference(),
+            output(true, `sha256:${'d'.repeat(64)}`),
+            repo.value,
+        )).rejects.toThrow('already bound to different output facts')
+        expect(repo.records.get(reference().artifactId)?.outputCommitSetHash).toBe(COMMIT_SET_HASH)
+        await expect(registerQueueArtifact(
+            currentJob(), reference(), output(true, null), repo.value,
+        )).rejects.toThrow('commit-set lineage differ')
+        await expect(registerQueueArtifact(
+            currentJob(), reference(), output(false, COMMIT_SET_HASH), repo.value,
+        )).rejects.toThrow('missing portable Artifact lineage')
     })
 })

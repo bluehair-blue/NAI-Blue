@@ -120,6 +120,7 @@ export async function registerDirectSceneArtifact(
     if (existing !== null) {
         if (existing.sourceJobId !== sourceJobId
             || existing.sourceSceneId !== sourceSceneId
+            || (existing.outputCommitSetHash ?? null) !== null
             || existing.original.file.fileName !== output.fileName
             || JSON.stringify(existing.original.file.directory) !== JSON.stringify(facts.portableDirectory)
             || existing.contentChecksum !== facts.contentChecksum

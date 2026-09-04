@@ -9,6 +9,7 @@ import type { GenerationBatch, GenerationJob } from '@/domain/queue/types'
 import type { R2ProfileV2, UploadJob } from '@/domain/r2/types'
 
 const observedAt = '2026-09-03T00:00:00.000Z'
+const commitSetHash = `sha256:${'c'.repeat(64)}` as const
 
 function batch(): GenerationBatch {
     return {
@@ -94,6 +95,7 @@ function authorities(
         readonly manifestMatches?: boolean
         readonly publicMode?: R2ProfileV2['publicMode']
         readonly sceneLinked?: boolean
+        readonly artifactCommitSetHash?: `sha256:${string}` | null
     } = {},
 ): GenerationRunAuthorityReaders {
     return {
@@ -106,6 +108,9 @@ function authorities(
             get: vi.fn(async () => ({
                 artifactId: 'artifact:job-1',
                 sourceJobId: 'job-1',
+                ...(options.artifactCommitSetHash === undefined
+                    ? {}
+                    : { outputCommitSetHash: options.artifactCommitSetHash }),
                 updatedAt: observedAt,
             }) as never),
         },
@@ -187,6 +192,31 @@ describe('IndexedDbGenerationRunReader', () => {
         expect(JSON.stringify(result)).not.toContain('private-path')
         expect(JSON.stringify(result)).not.toContain('private/key.webp')
         expect(JSON.stringify(result)).not.toContain('sha256:private')
+    })
+
+    it('uses Artifact evidence for current reservations only when the commit-set hash matches', async () => {
+        const queueJob = job({
+            snapshot: {
+                ...job().snapshot,
+                outputReservation: {
+                    reservationSchemaVersion: 1,
+                    commitSetHash,
+                },
+            },
+        } as Partial<GenerationJob>)
+        const matched = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(
+            queueJob, { artifactCommitSetHash: commitSetHash },
+        )), 'batch-1')
+        const missing = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(
+            queueJob, { artifactCommitSetHash: null },
+        )), 'batch-1')
+        const mismatched = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(
+            queueJob, { artifactCommitSetHash: `sha256:${'d'.repeat(64)}` },
+        )), 'batch-1')
+
+        expect(matched?.storage.evidence[0]?.source).toBe('artifact-record')
+        expect(missing?.storage.evidence[0]?.source).toBe('queue-output-commit')
+        expect(mismatched?.storage.evidence[0]?.source).toBe('queue-output-commit')
     })
 
     it('keeps a failed best-effort R2 job visible as partial fulfillment', async () => {
