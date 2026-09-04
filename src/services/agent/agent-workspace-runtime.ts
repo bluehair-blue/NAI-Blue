@@ -3,6 +3,7 @@ import { BaseDirectory, exists, mkdir, readTextFile, stat, writeTextFile } from 
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { isDesktopRuntime } from '@/platform/runtime'
 import { planGenerationFolderChanges } from '@/application/folder/plan-folder-changes'
+import { applyRuntimeGenerationFolderChanges } from '@/services/folder/apply-runtime-folder-changes'
 import { patchScenes } from '@/application/scene/patch-scenes'
 import { applySceneDocumentProjection } from '@/lib/scene-authority-runtime'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
@@ -215,7 +216,7 @@ export async function refreshAgentWorkspaceSnapshot(force = false): Promise<Agen
 
 async function applyPathPatch(patch: Extract<AgentEditAction, { type: 'paths.patch' }>['patch']): Promise<void> {
     const settings = useSettingsStore.getState()
-    if (patch.output) settings.setSavePath(patch.output.path, patch.output.useAbsolutePath)
+    if (patch.output) await settings.setSavePath(patch.output.path, patch.output.useAbsolutePath)
     if (patch.scene) settings.setSceneSavePath(patch.scene.path, patch.scene.useAbsolutePath)
     if (patch.styleLab) settings.setStyleLabSavePath(patch.styleLab.path, patch.styleLab.useAbsolutePath)
     if (patch.tools) settings.setToolsSavePath(patch.tools.path, patch.tools.useAbsolutePath)
@@ -291,9 +292,18 @@ async function applyRequest(request: AgentEditRequest): Promise<void> {
                 useAbsolutePath: settings.useAbsolutePath,
             })
             if (planned.status !== 'PLANNED') throw new TypeError(planned.reason)
-            const result = await repository.commit(planned.document, action.expectedRevision)
+            const result = await applyRuntimeGenerationFolderChanges({
+                workspaceId: action.workspaceId,
+                expectedRevision: action.expectedRevision,
+                expectedPlanHash: planned.planHash,
+                changes: action.patches,
+                defaults: {
+                    directory: settings.savePath,
+                    useAbsolutePath: settings.useAbsolutePath,
+                },
+            })
             if (result.status === 'COMMITTED') {
-                applyGenerationFolderDocumentProjection(result.document)
+                applyGenerationFolderDocumentProjection(result.plan.document)
                 return
             }
             if (result.status === 'REVISION_CONFLICT') {
@@ -301,7 +311,13 @@ async function applyRequest(request: AgentEditRequest): Promise<void> {
                     `Generation Folder ${action.workspaceId} changed from revision ${action.expectedRevision}. Read snapshot.json and retry.`,
                 )
             }
-            throw new Error(`Generation Folder repository storage conflict for ${action.workspaceId}.`)
+            if (result.status === 'AUTHORIZATION_FAILED') {
+                throw new Error(`Generation Folder directory authorization failed for: ${result.folderIds.join(', ')}`)
+            }
+            if (result.status === 'UNSUPPORTED') {
+                throw new Error(`Generation Folder mutation is occupied or unavailable: ${result.occupancy.folderIds.join(', ')}`)
+            }
+            throw new Error(`Generation Folder mutation failed (${result.status}) for ${action.workspaceId}.`)
         }
     }
 }

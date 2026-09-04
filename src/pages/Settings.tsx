@@ -214,9 +214,13 @@ export default function Settings({ guidedSection }: SettingsProps = {}) {
     const isAbsoluteFolderPath = (value: string) =>
         /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('/')
 
-    const handleSavePath = () => {
-        setSavePath(localSavePath, isAbsolutePath)
-        toast({ title: t('settingsPage.saved'), variant: 'success' })
+    const handleSavePath = async () => {
+        try {
+            await setSavePath(localSavePath, isAbsolutePath)
+            toast({ title: t('settingsPage.saved'), variant: 'success' })
+        } catch {
+            toast({ title: t('common.error', '저장하지 못했습니다.'), variant: 'destructive' })
+        }
     }
 
     // Browse for folder using native dialog
@@ -240,8 +244,12 @@ export default function Settings({ guidedSection }: SettingsProps = {}) {
     const handleResetToDefault = async () => {
         setLocalSavePath('NAI_Blue_Output')
         setIsAbsolutePath(false)
-        setSavePath('NAI_Blue_Output', false)
-        toast({ title: t('settingsPage.saved'), variant: 'success' })
+        try {
+            await setSavePath('NAI_Blue_Output', false)
+            toast({ title: t('settingsPage.saved'), variant: 'success' })
+        } catch {
+            toast({ title: t('common.error', '저장하지 못했습니다.'), variant: 'destructive' })
+        }
     }
 
     const handleSaveScenePath = () => {

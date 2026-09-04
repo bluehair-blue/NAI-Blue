@@ -107,38 +107,6 @@ describe('generation folder authority runtime', () => {
         )?.r2.profileId).toBe('profile-special')
     })
 
-    it('refreshes the current authority and drops queued mutations after a stale CAS conflict', async () => {
-        const base = migrateGenerationFolderV1Projection('local', projection)
-        const first = { ...base, revision: 2 }
-        const second = { ...base, revision: 3 }
-        const current: GenerationFolderDocument = {
-            ...base,
-            revision: 2,
-            folders: base.folders.map(folder => folder.id === 'child' ? { ...folder, displayName: 'Remote' } : folder),
-        }
-        const commits: GenerationFolderDocument[] = []
-        const applied: GenerationFolderDocument[] = []
-        const repository: GenerationFolderRepositoryPort = {
-            readLegacyProjection: async () => null,
-            getDocument: async () => current,
-            listDocuments: async () => [],
-            materializeLegacy: async () => base,
-            commit: async document => {
-                commits.push(document)
-                return { status: 'REVISION_CONFLICT', current }
-            },
-        }
-        const runtime = new GenerationFolderAuthorityRuntime(repository, document => applied.push(document))
-
-        const firstResult = runtime.commit(first)
-        const secondResult = runtime.commit(second)
-        await expect(firstResult).rejects.toThrow('revision conflict')
-        await expect(secondResult).resolves.toBeUndefined()
-
-        expect(commits).toEqual([first])
-        expect(applied).toEqual([current])
-    })
-
     it('restores the preserved V1 projection when the authority marker is rolled back', async () => {
         const base = migrateGenerationFolderV1Projection('local', projection)
         const appliedDocuments: GenerationFolderDocument[] = []

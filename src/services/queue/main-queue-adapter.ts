@@ -57,6 +57,8 @@ import {
     getRuntimeQueueResourceMaterializer,
     type MaterializedQueueResource,
 } from './queue-resource-materializer'
+import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
+import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 
 let mainEnqueueInFlight: Promise<CreateBatchAndEnqueueResult | null> | null = null
 
@@ -532,36 +534,39 @@ async function enqueueMainBatch(
                 idempotencyKey: `main-enqueue-${idempotencyScope}-${ordinal}`,
             })
         }
-        // Materialization and filesystem probes may take long enough for the
-        // Folder document to change. Recheck at the atomic repository boundary
-        // so no reservation can be committed against a stale destination.
-        {
-            const current = dependencies.outputReservations.getCurrentFolderBinding()
-            if (current === null
-                || canonicalSerialize(current) !== canonicalSerialize(folderBinding)) {
-                throw new QueueExecutionError('fatal', 'Generation folder changed before Queue reservation')
-            }
-        }
-        assertGenerationAtomicBatchAvailable(
-            jobs.length,
-            reservations.reduce((total, reservation) => (
-                total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
-            ), 0),
-            generationLimits,
-        )
-        return await getRuntimeQueueRepository().createBatchAndEnqueue({
-            batch: {
-                id: batchId,
-                workflow: 'main',
-                createdAt,
-                failurePolicy: options.queuePolicy?.failurePolicy ?? 'continue',
-                origin: 'fresh',
-                idempotencyKey: `main-enqueue-${idempotencyScope}`,
+        return await runtimeWorkspaceMutationGate.runExclusive(
+            generationFolderDocumentMutationKey(folderBinding.resourceId),
+            async () => {
+                // The final read bypasses Zustand so Queue reservations bind the
+                // durable Folder authority that the shared mutation gate protects.
+                const current = await dependencies.outputReservations
+                    .getAuthoritativeFolderBinding(folderBinding.resourceId)
+                if (current === null
+                    || canonicalSerialize(current) !== canonicalSerialize(folderBinding)) {
+                    throw new QueueExecutionError('fatal', 'Generation folder changed before Queue reservation')
+                }
+                assertGenerationAtomicBatchAvailable(
+                    jobs.length,
+                    reservations.reduce((total, reservation) => (
+                        total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
+                    ), 0),
+                    generationLimits,
+                )
+                return getRuntimeQueueRepository().createBatchAndEnqueue({
+                    batch: {
+                        id: batchId,
+                        workflow: 'main',
+                        createdAt,
+                        failurePolicy: options.queuePolicy?.failurePolicy ?? 'continue',
+                        origin: 'fresh',
+                        idempotencyKey: `main-enqueue-${idempotencyScope}`,
+                    },
+                    jobs,
+                    resources: [...resources.values()],
+                    reservations,
+                })
             },
-            jobs,
-            resources: [...resources.values()],
-            reservations,
-        })
+        )
     } finally {
         dependencies.presentation.completeEnqueueOperation(operationId)
     }

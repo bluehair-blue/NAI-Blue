@@ -166,9 +166,9 @@ export function GenerationFolderManagerDialog({
         resolved = null
     }
 
-    const createFolder = (asRoot: boolean) => {
+    const createFolder = async (asRoot: boolean) => {
         try {
-            const id = addFolder({
+            const id = await addFolder({
                 name: newName,
                 parentId: asRoot ? null : selected.id,
                 rootDirectory: asRoot ? newName : null,
@@ -181,9 +181,9 @@ export function GenerationFolderManagerDialog({
         }
     }
 
-    const save = () => {
+    const save = async () => {
         try {
-            saveFolder(selected.id, parentId, {
+            await saveFolder(selected.id, parentId, {
                 name,
                 rootDirectory,
                 useAbsolutePath: absolute,
@@ -199,6 +199,15 @@ export function GenerationFolderManagerDialog({
             onSaved?.(selected.id)
             onOpenChange(false)
             toast({ title: t('generationFolders.manager.saved', '폴더 설정을 저장했어요.'), variant: 'success' })
+        } catch {
+            setError(t('generationFolders.manager.saveError', '입력값을 확인해 주세요. 폴더 설정은 아직 저장되지 않았습니다.'))
+        }
+    }
+
+    const transferPrompt = async () => {
+        try {
+            await copyPrompt(selected.id, transferTargets, commonPrompt)
+            setError(null)
         } catch {
             setError(t('generationFolders.manager.saveError', '입력값을 확인해 주세요. 폴더 설정은 아직 저장되지 않았습니다.'))
         }
@@ -251,10 +260,10 @@ export function GenerationFolderManagerDialog({
                             <div className="mt-4 rounded-panel border border-border/60 p-3">
                                 <p className="text-xs font-semibold">{t('generationFolders.manager.addTitle', '새 폴더 만들기')}</p>
                                 <Input className="mt-2" value={newName} onChange={event => setNewName(event.target.value)} placeholder={t('generationFolders.manager.newName', '예: 01 오프닝')} maxLength={96} />
-                                <Button type="button" size="sm" className="mt-2 w-full" disabled={!newName.trim()} onClick={() => createFolder(false)}>
+                                <Button type="button" size="sm" className="mt-2 w-full" disabled={!newName.trim()} onClick={() => void createFolder(false)}>
                                     <FolderPlus className="mr-1.5 h-4 w-4" />{t('generationFolders.manager.createInside', '선택한 폴더 안에 만들기')}
                                 </Button>
-                                <Button type="button" variant="ghost" size="sm" className="mt-1 w-full" disabled={!newName.trim()} onClick={() => createFolder(true)}>
+                                <Button type="button" variant="ghost" size="sm" className="mt-1 w-full" disabled={!newName.trim()} onClick={() => void createFolder(true)}>
                                     {t('generationFolders.manager.createSeparate', '별도 최상위 폴더로 만들기')}
                                 </Button>
                             </div>
@@ -348,9 +357,7 @@ export function GenerationFolderManagerDialog({
                                                     ))}
                                                 </div>
                                                 <p className="mt-2 text-xs text-muted-foreground">{t('generationFolders.manager.transferWarning', '선택한 폴더의 기존 공통 프롬프트를 덮어씁니다.')}</p>
-                                                <Button type="button" size="sm" variant="outline" className="mt-3" disabled={transferTargets.length === 0} onClick={() => {
-                                                    copyPrompt(selected.id, transferTargets, commonPrompt)
-                                                }}>{t('generationFolders.manager.transferAction', '선택한 폴더로 복사')}</Button>
+                                                <Button type="button" size="sm" variant="outline" className="mt-3" disabled={transferTargets.length === 0} onClick={() => void transferPrompt()}>{t('generationFolders.manager.transferAction', '선택한 폴더로 복사')}</Button>
                                             </details>
                                         )}
                                     </section>
@@ -400,7 +407,7 @@ export function GenerationFolderManagerDialog({
                                     {step < 2 ? (
                                         <Button type="button" onClick={() => setStep(current => current + 1)}>{t('common.next', '다음')}<ArrowRight className="ml-2 h-4 w-4" /></Button>
                                     ) : (
-                                        <Button type="button" onClick={save}><Save className="mr-2 h-4 w-4" />{t('generationFolders.manager.save', '설정 저장')}</Button>
+                                        <Button type="button" onClick={() => void save()}><Save className="mr-2 h-4 w-4" />{t('generationFolders.manager.save', '설정 저장')}</Button>
                                     )}
                                 </div>
                             </div>
@@ -416,9 +423,15 @@ export function GenerationFolderManagerDialog({
                 description={t('generationFolders.manager.deleteDescription', '하위 폴더 정의도 함께 삭제됩니다. 디스크의 이미지와 R2 파일은 삭제하지 않습니다.')}
                 confirmText={t('generationFolders.manager.delete', '폴더 정의 삭제')}
                 variant="destructive"
-                onConfirm={() => {
-                    deleteFolders([selected.id])
-                    setSelectedId(DEFAULT_GENERATION_FOLDER_ID)
+                onConfirm={async () => {
+                    try {
+                        await deleteFolders([selected.id])
+                        setSelectedId(DEFAULT_GENERATION_FOLDER_ID)
+                        setError(null)
+                    } catch {
+                        setError(t('generationFolders.manager.saveError', '입력값을 확인해 주세요. 폴더 설정은 아직 저장되지 않았습니다.'))
+                        throw new Error('Generation folder deletion rejected')
+                    }
                 }}
             />
         </>

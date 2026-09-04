@@ -24,6 +24,7 @@ const runtime = vi.hoisted(() => ({
         compositionPlanHash: null,
     })),
     currentFolderBinding: vi.fn(),
+    authoritativeFolderBinding: vi.fn(),
     planBatch: vi.fn(),
     assertAtomic: vi.fn(),
 }))
@@ -52,6 +53,7 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
         },
         outputReservations: {
             getCurrentFolderBinding: runtime.currentFolderBinding,
+            getAuthoritativeFolderBinding: runtime.authoritativeFolderBinding,
             planBatch: runtime.planBatch,
         },
     }),
@@ -117,6 +119,7 @@ describe('planned Main queue adapter', () => {
         vi.clearAllMocks()
         runtime.createBatchAndEnqueue.mockResolvedValue({ batch: {}, jobs: [] })
         runtime.currentFolderBinding.mockReturnValue(folderBinding)
+        runtime.authoritativeFolderBinding.mockImplementation(async () => runtime.currentFolderBinding())
         runtime.planBatch.mockImplementation(async (requests: readonly OutputCommitSetPlanningRequest[]) => (
             requests.map(request => ({
                 fileName: request.claimPlan.fileName,
@@ -217,6 +220,7 @@ describe('planned Main queue adapter', () => {
         })).rejects.toThrow('Generation folder changed before Queue reservation')
 
         expect(runtime.planBatch).toHaveBeenCalledOnce()
+        expect(runtime.authoritativeFolderBinding).toHaveBeenCalledWith(folderBinding.resourceId)
         expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
     })
 

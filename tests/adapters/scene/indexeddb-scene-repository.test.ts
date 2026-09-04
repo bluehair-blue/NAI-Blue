@@ -36,6 +36,8 @@ import {
     type ScenePreset,
 } from '@/stores/scene-store'
 import { applyLegacySceneProjection } from '@/lib/scene-authority-runtime'
+import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
+import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 
 const legacyScene = {
     id: 'scene:legacy',
@@ -169,6 +171,63 @@ function memoryPersistence(initial: Readonly<Record<string, string>> = {}) {
 }
 
 describe('IndexedDbSceneRepository', () => {
+    it('makes a later Queue final check observe a Scene commit that won the shared gate', async () => {
+        const current = document('preset:race', 1)
+        let serialized = collection(current)
+        let releaseCommit!: () => void
+        let commitStarted!: () => void
+        const started = new Promise<void>(resolve => { commitStarted = resolve })
+        const hold = new Promise<void>(resolve => { releaseCommit = resolve })
+        const repository = new IndexedDbSceneRepository({
+            getItem: async () => serialized,
+            compareAndSet: async (_key, expected, next) => {
+                if (serialized !== expected) return false
+                serialized = next
+                commitStarted()
+                await hold
+                return true
+            },
+        })
+        const committing = repository.commit(document('preset:race', 2), 1)
+        await started
+        let queueWrites = 0
+        const enqueue = runtimeWorkspaceMutationGate.runExclusive(
+            generationFolderDocumentMutationKey('local'),
+            async () => {
+                if ((await repository.getDocument('preset:race'))?.revision === 1) queueWrites += 1
+            },
+        )
+        releaseCommit()
+
+        await expect(committing).resolves.toMatchObject({ status: 'COMMITTED' })
+        await enqueue
+        expect(queueWrites).toBe(0)
+    })
+
+    it('waits to start Scene CAS until a winning Queue reservation releases the shared gate', async () => {
+        const current = document('preset:wait', 1)
+        const memory = memoryPersistence({ [V2_KEY]: collection(current) })
+        const compareAndSet = vi.spyOn(memory.port, 'compareAndSet')
+        const repository = new IndexedDbSceneRepository(memory.port)
+        let releaseQueue!: () => void
+        let queueStarted!: () => void
+        const started = new Promise<void>(resolve => { queueStarted = resolve })
+        const hold = new Promise<void>(resolve => { releaseQueue = resolve })
+        const enqueue = runtimeWorkspaceMutationGate.runExclusive(
+            generationFolderDocumentMutationKey('local'),
+            async () => { queueStarted(); await hold },
+        )
+        await started
+        const committing = repository.commit(document('preset:wait', 2), 1)
+        await new Promise(resolve => setTimeout(resolve, 0))
+        expect(compareAndSet).not.toHaveBeenCalled()
+        releaseQueue()
+
+        await enqueue
+        await expect(committing).resolves.toMatchObject({ status: 'COMMITTED' })
+        expect(compareAndSet).toHaveBeenCalledOnce()
+    })
+
     it('reads version 0 without changing the preimage and projects authoring fields only', async () => {
         const preimage = JSON.stringify({ state: persistedState, version: 0 })
         const reads: string[] = []

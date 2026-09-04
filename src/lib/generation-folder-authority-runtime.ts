@@ -77,11 +77,8 @@ export function resolveGenerationFolderAuthority(
     }
 }
 
-/** Serializes whole-document CAS writes and invalidates queued local writes after a stale conflict. */
+/** Startup-only bridge that projects the migration-selected Folder authority. */
 export class GenerationFolderAuthorityRuntime {
-    private queue: Promise<void> = Promise.resolve()
-    private epoch = 0
-
     constructor(
         private readonly repository: GenerationFolderRepositoryPort,
         private readonly applyDocument: (document: GenerationFolderDocument) => void,
@@ -102,28 +99,6 @@ export class GenerationFolderAuthorityRuntime {
         }
         this.applyDocument(result.document)
         return result.document
-    }
-
-    commit(document: GenerationFolderDocument): Promise<void> {
-        const scheduledEpoch = this.epoch
-        const execute = async () => {
-            if (scheduledEpoch !== this.epoch) return
-            const result = await this.repository.commit(document, document.revision - 1)
-            if (result.status === 'COMMITTED') return
-            this.epoch += 1
-            const current = result.status === 'REVISION_CONFLICT'
-                ? result.current
-                : await this.repository.getDocument(document.workspaceId)
-            if (current !== null) this.applyDocument(current)
-            throw new Error(result.status === 'REVISION_CONFLICT'
-                ? 'Generation folder revision conflict'
-                : 'Generation folder storage conflict')
-        }
-        const result = this.queue.then(execute)
-        this.queue = result.catch(error => {
-            console.error('[GenerationFolderAuthority] Commit failed:', error)
-        })
-        return result
     }
 }
 

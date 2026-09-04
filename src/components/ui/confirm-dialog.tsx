@@ -28,8 +28,12 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
     const handleConfirm = async () => {
         if (busy) return
-        await onConfirm()
-        onOpenChange(false)
+        try {
+            await onConfirm()
+            onOpenChange(false)
+        } catch {
+            // The caller owns the user-facing error; a failed command keeps this dialog open.
+        }
     }
 
     return (

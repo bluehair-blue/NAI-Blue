@@ -32,6 +32,7 @@ export interface PlannedOutputCommitSet extends ExactOutputCommitSetAllocation {
 
 export interface OutputReservationPlanningPort {
     getCurrentFolderBinding(): OutputReservationFolderBinding | null
+    getAuthoritativeFolderBinding(workspaceId: string): Promise<OutputReservationFolderBinding | null>
     planBatch(requests: readonly OutputCommitSetPlanningRequest[]): Promise<readonly PlannedOutputCommitSet[]>
 }
 

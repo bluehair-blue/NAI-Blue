@@ -242,6 +242,13 @@ export function initializeCoreRuntime(): void {
                     const document = useSettingsStore.getState().generationFolderDocument
                     return document === null ? null : createGenerationFolderDocumentBinding(document)
                 },
+                getAuthoritativeFolderBinding: async workspaceId => {
+                    const { IndexedDbGenerationFolderRepository } = await import(
+                        '@/adapters/folder/indexeddb-generation-folder-repository'
+                    )
+                    const document = await new IndexedDbGenerationFolderRepository().getDocument(workspaceId)
+                    return document === null ? null : createGenerationFolderDocumentBinding(document)
+                },
                 planBatch: planOutputCommitSetBatch,
             },
         },

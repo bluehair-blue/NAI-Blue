@@ -37,6 +37,8 @@ import {
     type ScenePreset,
 } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
+import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
+import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 import { QueueExecutionError } from './durable-queue-coordinator'
 import {
     assertGenerationAtomicBatchAvailable,
@@ -632,42 +634,47 @@ async function enqueueSceneQueueTargetsOnce(
             })
             reservations.push(reservation)
         }
-        await assertCurrentFolderBinding()
-        const finalAuthorityByPreset = new Map<string, SceneDocument>()
-        for (const presetId of authorityByPreset.keys()) {
-            const document = await sceneRepository.getDocument(presetId)
-            if (document === null) {
-                throw new QueueExecutionError('fatal', `Scene authority disappeared for preset ${presetId}`)
-            }
-            finalAuthorityByPreset.set(presetId, document)
-        }
-        if (prepared.some(item => {
-            const current = finalAuthorityByPreset.get(item.presetId)
-            return current === undefined
-                || !sceneGenerationBindingMatches(item.sceneBinding, current, item.sceneId)
-        })) {
-            throw new QueueExecutionError('fatal', 'Scene document changed before atomic Queue enqueue')
-        }
-        assertGenerationAtomicBatchAvailable(
-            jobs.length,
-            reservations.reduce((total, reservation) => (
-                total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
-            ), 0),
-            generationLimits,
-        )
-        const result = await getRuntimeQueueRepository().createBatchAndEnqueue({
-            batch: {
-                id: batchId,
-                workflow: 'scene',
-                createdAt,
-                failurePolicy: 'continue',
-                origin,
-                idempotencyKey: `scene-enqueue-${requestIdentity}`,
+        const result = await runtimeWorkspaceMutationGate.runExclusive(
+            generationFolderDocumentMutationKey(folderBinding.resourceId),
+            async () => {
+                await assertCurrentFolderBinding()
+                const finalAuthorityByPreset = new Map<string, SceneDocument>()
+                for (const presetId of authorityByPreset.keys()) {
+                    const document = await sceneRepository.getDocument(presetId)
+                    if (document === null) {
+                        throw new QueueExecutionError('fatal', `Scene authority disappeared for preset ${presetId}`)
+                    }
+                    finalAuthorityByPreset.set(presetId, document)
+                }
+                if (prepared.some(item => {
+                    const current = finalAuthorityByPreset.get(item.presetId)
+                    return current === undefined
+                        || !sceneGenerationBindingMatches(item.sceneBinding, current, item.sceneId)
+                })) {
+                    throw new QueueExecutionError('fatal', 'Scene document changed before atomic Queue enqueue')
+                }
+                assertGenerationAtomicBatchAvailable(
+                    jobs.length,
+                    reservations.reduce((total, reservation) => (
+                        total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
+                    ), 0),
+                    generationLimits,
+                )
+                return getRuntimeQueueRepository().createBatchAndEnqueue({
+                    batch: {
+                        id: batchId,
+                        workflow: 'scene',
+                        createdAt,
+                        failurePolicy: 'continue',
+                        origin,
+                        idempotencyKey: `scene-enqueue-${requestIdentity}`,
+                    },
+                    jobs,
+                    resources: [...resources.values()],
+                    reservations,
+                })
             },
-            jobs,
-            resources: [...resources.values()],
-            reservations,
-        })
+        )
         // Queue pending entries and seed advancement are presentation side effects;
         // both happen only after the atomic repository transaction succeeds.
         if (consumePendingEntries) {

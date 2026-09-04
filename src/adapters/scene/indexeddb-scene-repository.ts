@@ -12,6 +12,8 @@ import type {
     SceneV1PresetProjection,
 } from '@/application/scene/scene-repository'
 import { isSceneCompositionRef } from '@/application/scene/patch-scenes'
+import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
+import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 import {
     SCENE_DOCUMENT_STORE_KEY,
     compareAndSetIndexedDBItem,
@@ -308,32 +310,37 @@ export class IndexedDbSceneRepository implements SceneRepositoryPort {
             || next.revision !== expectedRevision + 1) {
             throw new TypeError('Scene document CAS input is invalid')
         }
-        const compareAndSet = this.persistence.compareAndSet
-        if (compareAndSet === undefined) throw new TypeError('Scene document persistence is read-only')
-        const candidate = cloneDocument(next)
+        return runtimeWorkspaceMutationGate.runExclusive(
+            generationFolderDocumentMutationKey('local'),
+            async () => {
+                const compareAndSet = this.persistence.compareAndSet
+                if (compareAndSet === undefined) throw new TypeError('Scene document persistence is read-only')
+                const candidate = cloneDocument(next)
 
-        for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-            const serialized = await this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY)
-            const collection = parseCollection(serialized)
-            const index = collection.documents.findIndex(document => document.presetId === candidate.presetId)
-            const current = index === -1 ? null : collection.documents[index]
-            if ((current === null && expectedRevision !== 0)
-                || (current !== null && current.revision !== expectedRevision)) {
-                return {
-                    status: 'REVISION_CONFLICT',
-                    current: current === null ? null : cloneDocument(current),
+                for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
+                    const serialized = await this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY)
+                    const collection = parseCollection(serialized)
+                    const index = collection.documents.findIndex(document => document.presetId === candidate.presetId)
+                    const current = index === -1 ? null : collection.documents[index]
+                    if ((current === null && expectedRevision !== 0)
+                        || (current !== null && current.revision !== expectedRevision)) {
+                        return {
+                            status: 'REVISION_CONFLICT',
+                            current: current === null ? null : cloneDocument(current),
+                        }
+                    }
+
+                    const documents = [...collection.documents]
+                    if (index === -1) documents.push(candidate)
+                    else documents[index] = candidate
+                    if (await compareAndSet(
+                        SCENE_DOCUMENT_STORE_KEY,
+                        serialized,
+                        serializeCollection(documents),
+                    )) return { status: 'COMMITTED', document: cloneDocument(candidate) }
                 }
-            }
-
-            const documents = [...collection.documents]
-            if (index === -1) documents.push(candidate)
-            else documents[index] = candidate
-            if (await compareAndSet(
-                SCENE_DOCUMENT_STORE_KEY,
-                serialized,
-                serializeCollection(documents),
-            )) return { status: 'COMMITTED', document: cloneDocument(candidate) }
-        }
-        return { status: 'STORAGE_CONFLICT' }
+                return { status: 'STORAGE_CONFLICT' }
+            },
+        )
     }
 }

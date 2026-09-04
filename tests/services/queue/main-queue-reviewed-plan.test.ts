@@ -50,6 +50,7 @@ const runtime = vi.hoisted(() => ({
     })),
     compatibility: vi.fn(() => ({ status: 'supported' })),
     currentFolderBinding: vi.fn(),
+    authoritativeFolderBinding: vi.fn(),
     planBatch: vi.fn(),
 }))
 
@@ -77,6 +78,7 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
         },
         outputReservations: {
             getCurrentFolderBinding: runtime.currentFolderBinding,
+            getAuthoritativeFolderBinding: runtime.authoritativeFolderBinding,
             planBatch: runtime.planBatch,
         },
     }),
@@ -266,6 +268,7 @@ describe('reviewed Main plan Queue bridge', () => {
         runtime.repository.mockReturnValue({ createBatchAndEnqueue: runtime.createBatchAndEnqueue })
         runtime.createBatchAndEnqueue.mockResolvedValue({ batch: {}, jobs: [] })
         runtime.currentFolderBinding.mockReturnValue(folderBinding)
+        runtime.authoritativeFolderBinding.mockImplementation(async () => runtime.currentFolderBinding())
         runtime.planBatch.mockImplementation(async (requests: readonly OutputCommitSetPlanningRequest[]) => (
             requests.map(request => ({
                 fileName: request.claimPlan.fileName,
