@@ -4,14 +4,17 @@ import {
     type R2ProfileV2,
     type R2ManifestV2,
     type R2ManifestV2Item,
+    type Phase7ArtifactBinding,
+    type Phase7RemoteObjectRef,
     type UploadCompletedPart,
     type UploadJob,
     type UploadJobState,
 } from '@/domain/r2/types'
+import type { ArtifactRecord, ArtifactRemoteObjectRef } from '@/domain/organizer/types'
 
 // Physical database names stay stable so pending uploads survive the rename.
 export const R2_UPLOAD_DATABASE_NAME = 'nai-blue-r2-upload-queue'
-export const R2_UPLOAD_DATABASE_VERSION = 1
+export const R2_UPLOAD_DATABASE_VERSION = 2
 
 const SECRET_KEY_PATTERN = /(?:access.?key|secret|authorization|signed.?url|session.?token|private.?key)/i
 const SIGNED_URL_PATTERN = /[?&](?:x-amz-(?:credential|signature|security-token)|signature)=/i
@@ -40,6 +43,11 @@ export interface R2UploadRepositoryOptions {
     keyRange?: typeof IDBKeyRange
     databaseName?: string
     openTimeoutMs?: number
+    artifactReader?: R2ArtifactAuthorityReader
+}
+
+export interface R2ArtifactAuthorityReader {
+    get(artifactId: string): Promise<Pick<ArtifactRecord, 'remoteObjectRefs'> | null>
 }
 
 function requestValue<T>(request: IDBRequest<T>): Promise<T> {
@@ -114,11 +122,47 @@ function validateUploadJob(job: UploadJob): void {
     if (!job.id || !job.profileId || !job.artifactId || !job.localVariant || !job.remoteKey
         || !/^sha256:[a-f0-9]{64}$/i.test(job.contentSha256)
         || !Number.isSafeInteger(job.size) || job.size < 0
-        || !['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(job.state)
+        || !['queued', 'running', 'uploaded', 'verifying', 'verified', 'linking', 'succeeded', 'failed', 'cancelled'].includes(job.state)
         || !Number.isSafeInteger(job.attempt) || job.attempt < 0
         || !Number.isSafeInteger(job.maxAttempts) || job.maxAttempts < 1
         || job.version < 1) {
         throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'R2 upload job is invalid')
+    }
+    if (job.contractVersion === 'legacy-v1') {
+        if (job.profileSnapshot !== null || job.artifactBinding !== null || job.linkExpectedArtifactVersion !== null || job.remoteRef !== null
+            || ['uploaded', 'verifying', 'verified', 'linking'].includes(job.state)) {
+            throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Legacy R2 job contains Phase 7 authority')
+        }
+    } else if (job.contractVersion === 'phase7-v1') {
+        const requiresRemoteRef = ['verified', 'linking', 'succeeded'].includes(job.state)
+        const forbidsRemoteRef = ['queued', 'running', 'uploaded', 'verifying'].includes(job.state)
+        if (!job.profileSnapshot || !job.artifactBinding
+            || job.profileSnapshot.id !== job.profileId
+            || !['fail', 'suffix'].includes(job.profileSnapshot.conflictPolicy)
+            || (job.remoteRef !== null && hashR2ProfileV2(job.profileSnapshot) !== job.remoteRef.profileHash)
+            || job.artifactBinding.artifactId !== job.artifactId
+            || !Number.isSafeInteger(job.artifactBinding.artifactVersion)
+            || job.artifactBinding.artifactVersion < 1
+            || !Number.isSafeInteger(job.linkExpectedArtifactVersion)
+            || (job.linkExpectedArtifactVersion ?? 0) < 1
+            || !['original', 'sidecar'].includes(job.artifactBinding.localVariant)
+            || (requiresRemoteRef && job.remoteRef === null)
+            || (forbidsRemoteRef && job.remoteRef !== null)
+            || (job.remoteRef !== null && (job.remoteRef.contractVersion !== 'phase7-v1'
+                || job.remoteRef.profileId !== job.profileId
+                || job.remoteRef.uploadJobId !== job.id
+                || job.remoteRef.artifactId !== job.artifactId
+                || job.remoteRef.variantId !== job.artifactBinding.localVariant
+                || job.remoteRef.remoteKey !== job.remoteKey
+                || job.remoteRef.contentSha256 !== job.contentSha256
+                || job.remoteRef.size !== job.size
+                || job.remoteRef.bucket !== job.profileSnapshot.bucket
+                || !Number.isFinite(Date.parse(job.remoteRef.verifiedAt))))) {
+            throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Phase 7 R2 job binding is invalid')
+        }
+        validateR2ProfileV2(job.profileSnapshot)
+    } else {
+        throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'R2 upload job contract is invalid')
     }
     assertTimestamp(job.createdAt, 'job.createdAt')
     assertTimestamp(job.updatedAt, 'job.updatedAt')
@@ -126,11 +170,65 @@ function validateUploadJob(job: UploadJob): void {
 }
 
 function dedupeKey(job: UploadJob): string {
-    return [job.profileId, job.artifactId, job.remoteKey, job.contentSha256].join('\u001f')
+    return [
+        job.contractVersion,
+        job.profileId,
+        job.contractVersion === 'phase7-v1' && job.profileSnapshot ? hashR2ProfileV2(job.profileSnapshot) : '',
+        job.artifactId,
+        job.localVariant,
+        job.remoteKey,
+        job.contentSha256,
+    ].join('\u001f')
 }
 
 function isTerminal(state: UploadJobState): boolean {
     return state === 'succeeded' || state === 'failed' || state === 'cancelled'
+}
+
+function validateInitialUploadJob(job: UploadJob): void {
+    const expectedLinkVersion = job.contractVersion === 'phase7-v1' ? job.artifactBinding?.artifactVersion ?? null : null
+    if (job.state !== 'queued'
+        || job.attempt !== 0
+        || job.version !== 1
+        || job.remoteRef !== null
+        || job.diagnosticEventId !== null
+        || job.multipart.uploadId !== null
+        || job.multipart.completedParts.length !== 0
+        || job.linkExpectedArtifactVersion !== expectedLinkVersion
+        || job.updatedAt !== job.createdAt
+        || job.nextAttemptAt !== job.createdAt) {
+        throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'New R2 upload jobs must use the initial queued contract')
+    }
+}
+
+const PHASE7_TRANSITIONS: Readonly<Record<UploadJobState, readonly UploadJobState[]>> = {
+    queued: ['queued', 'running', 'cancelled'],
+    running: ['running', 'queued', 'uploaded', 'failed', 'cancelled'],
+    uploaded: ['uploaded', 'verifying', 'failed', 'cancelled'],
+    verifying: ['verifying', 'verified', 'failed', 'cancelled'],
+    verified: ['verified', 'linking', 'failed', 'cancelled'],
+    linking: ['linking', 'failed'],
+    succeeded: [],
+    failed: [],
+    cancelled: [],
+}
+
+function isExactPhase7ArtifactRef(
+    reference: ArtifactRemoteObjectRef,
+    remote: NonNullable<UploadJob['remoteRef']>,
+): boolean {
+    return reference.contractVersion === 'phase7-v1'
+        && reference.profileId === remote.profileId
+        && reference.profileHash === remote.profileHash
+        && reference.bucket === remote.bucket
+        && reference.uploadJobId === remote.uploadJobId
+        && reference.artifactId === remote.artifactId
+        && reference.variantId === remote.variantId
+        && reference.remoteKey === remote.remoteKey
+        && reference.contentSha256 === remote.contentSha256
+        && reference.size === remote.size
+        && reference.verifiedAt === remote.verifiedAt
+        && reference.state === 'succeeded'
 }
 
 export class IndexedDBR2UploadRepository {
@@ -138,6 +236,7 @@ export class IndexedDBR2UploadRepository {
     private readonly keyRange: typeof IDBKeyRange
     private readonly databaseName: string
     private readonly openTimeoutMs: number
+    private readonly artifactReader: R2ArtifactAuthorityReader | undefined
     private dbPromise: Promise<IDBDatabase> | null = null
 
     constructor(options: R2UploadRepositoryOptions = {}) {
@@ -145,6 +244,7 @@ export class IndexedDBR2UploadRepository {
         this.keyRange = options.keyRange ?? IDBKeyRange
         this.databaseName = options.databaseName ?? R2_UPLOAD_DATABASE_NAME
         this.openTimeoutMs = options.openTimeoutMs ?? 5_000
+        this.artifactReader = options.artifactReader
     }
 
     private open(): Promise<IDBDatabase> {
@@ -159,7 +259,7 @@ export class IndexedDBR2UploadRepository {
                 clearTimeout(timeout)
                 reject(new R2UploadRepositoryError('E_R2_DB_BLOCKED', 'R2 upload database upgrade is blocked'))
             }
-            request.onupgradeneeded = () => {
+            request.onupgradeneeded = event => {
                 const db = request.result
                 if (!db.objectStoreNames.contains('profiles')) db.createObjectStore('profiles', { keyPath: 'id' })
                 if (!db.objectStoreNames.contains('jobs')) {
@@ -171,6 +271,25 @@ export class IndexedDBR2UploadRepository {
                 if (!db.objectStoreNames.contains('manifest')) {
                     const manifest = db.createObjectStore('manifest', { keyPath: 'id' })
                     manifest.createIndex('by-profile', ['profileId', 'remoteKey'])
+                }
+                if ((event.oldVersion ?? 0) < 2 && db.objectStoreNames.contains('jobs')) {
+                    const jobs = request.transaction?.objectStore('jobs')
+                    const cursorRequest = jobs?.openCursor()
+                    if (cursorRequest) cursorRequest.onsuccess = cursorEvent => {
+                        const cursor = (cursorEvent.target as IDBRequest<IDBCursorWithValue | null>).result
+                        if (!cursor) return
+                        const legacy = cursor.value as Record<string, unknown>
+                        const migrated = {
+                            ...legacy,
+                            contractVersion: 'legacy-v1',
+                            profileSnapshot: null,
+                            artifactBinding: null,
+                            linkExpectedArtifactVersion: null,
+                            remoteRef: null,
+                        } as unknown as UploadJob
+                        cursor.update({ ...migrated, dedupeKey: dedupeKey(migrated) })
+                        cursor.continue()
+                    }
                 }
             }
             request.onerror = () => {
@@ -242,7 +361,10 @@ export class IndexedDBR2UploadRepository {
     }
 
     async enqueue(jobs: readonly UploadJob[]): Promise<UploadJob[]> {
-        jobs.forEach(validateUploadJob)
+        jobs.forEach(job => {
+            validateUploadJob(job)
+            validateInitialUploadJob(job)
+        })
         const db = await this.open()
         const transaction = db.transaction('jobs', 'readwrite')
         const store = transaction.objectStore('jobs')
@@ -287,7 +409,7 @@ export class IndexedDBR2UploadRepository {
     async updateJob(
         id: string,
         expectedVersion: number,
-        update: Partial<Pick<UploadJob, 'state' | 'attempt' | 'nextAttemptAt' | 'multipart' | 'diagnosticEventId' | 'remoteKey'>>,
+        update: Partial<Pick<UploadJob, 'state' | 'attempt' | 'nextAttemptAt' | 'multipart' | 'diagnosticEventId' | 'remoteKey' | 'linkExpectedArtifactVersion' | 'remoteRef'>>,
         now = new Date().toISOString(),
     ): Promise<UploadJob> {
         const db = await this.open()
@@ -302,9 +424,36 @@ export class IndexedDBR2UploadRepository {
             transaction.abort()
             throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'R2 upload job version changed')
         }
-        if (isTerminal(current.state) && update.state !== current.state) {
+        if (isTerminal(current.state)) {
             transaction.abort()
             throw new R2UploadRepositoryError('E_R2_TERMINAL_IMMUTABLE', 'Terminal R2 upload jobs are immutable')
+        }
+        const nextState = update.state ?? current.state
+        if (current.contractVersion === 'phase7-v1') {
+            if (!PHASE7_TRANSITIONS[current.state].includes(nextState)) {
+                transaction.abort()
+                throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'Phase 7 R2 job state transition is invalid')
+            }
+            if (update.remoteKey !== undefined && update.remoteKey !== current.remoteKey) {
+                transaction.abort()
+                throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Phase 7 R2 remote key is immutable after enqueue')
+            }
+            const settingVerifiedRef = current.state === 'verifying'
+                && nextState === 'verified'
+                && current.remoteRef === null
+                && update.remoteRef !== undefined
+                && update.remoteRef !== null
+            if (update.remoteRef !== undefined && !settingVerifiedRef
+                && JSON.stringify(update.remoteRef) !== JSON.stringify(current.remoteRef)) {
+                transaction.abort()
+                throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Phase 7 verified remote reference is immutable')
+            }
+            if (update.linkExpectedArtifactVersion !== undefined
+                && update.linkExpectedArtifactVersion !== current.linkExpectedArtifactVersion
+                && (current.state !== 'linking' || nextState !== 'linking')) {
+                transaction.abort()
+                throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Phase 7 Artifact CAS cursor may change only during linkage recovery')
+            }
         }
         const next: StoredUploadJob = {
             ...current,
@@ -331,6 +480,25 @@ export class IndexedDBR2UploadRepository {
         if (item.profileId !== profile.id) {
             throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'R2 manifest item profile does not match its authority')
         }
+        const observed = await this.getJob(id)
+        if (!observed) throw new R2UploadRepositoryError('E_R2_NOT_FOUND', 'R2 upload job was not found')
+        if (observed.contractVersion === 'phase7-v1') {
+            if (observed.version !== expectedVersion || observed.state !== 'linking' || observed.remoteRef === null) {
+                throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'Phase 7 R2 job is not ready for terminal commit')
+            }
+            if (!observed.profileSnapshot
+                || profile.id !== observed.profileId
+                || profile.bucket !== observed.profileSnapshot.bucket
+                || hashR2ProfileV2(profile) !== hashR2ProfileV2(observed.profileSnapshot)
+                || observed.remoteRef.profileHash !== hashR2ProfileV2(profile)
+                || observed.remoteRef.bucket !== profile.bucket) {
+                throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Supplied R2 profile does not match the durable Phase 7 authority')
+            }
+            const artifact = await this.artifactReader?.get(observed.artifactId)
+            if (!artifact || !artifact.remoteObjectRefs.some(reference => isExactPhase7ArtifactRef(reference, observed.remoteRef!))) {
+                throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Phase 7 Artifact authority does not confirm the verified remote reference')
+            }
+        }
         const db = await this.open()
         const manifestId = `${item.profileId}\u001f${item.remoteKey}`
         const transaction = db.transaction(['jobs', 'manifest'], 'readwrite')
@@ -348,9 +516,22 @@ export class IndexedDBR2UploadRepository {
             transaction.abort()
             throw new R2UploadRepositoryError('E_R2_TERMINAL_IMMUTABLE', 'Terminal R2 upload jobs are immutable')
         }
-        if (current.state !== 'running') {
+        if (current.contractVersion === 'legacy-v1' && current.state !== 'running') {
             transaction.abort()
             throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'R2 upload job is not running')
+        }
+        if (current.contractVersion === 'phase7-v1' && (current.state !== 'linking'
+            || current.remoteRef === null
+            || observed.contractVersion !== 'phase7-v1'
+            || JSON.stringify(current.remoteRef) !== JSON.stringify(observed.remoteRef)
+            || current.profileSnapshot === null
+            || current.profileId !== profile.id
+            || current.profileSnapshot.bucket !== profile.bucket
+            || hashR2ProfileV2(current.profileSnapshot) !== hashR2ProfileV2(profile)
+            || current.remoteRef.profileHash !== hashR2ProfileV2(profile)
+            || current.remoteRef.bucket !== profile.bucket)) {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'Phase 7 R2 job is not linked')
         }
         if (item.artifactId !== current.artifactId
             || item.localVariant !== current.localVariant
@@ -443,12 +624,28 @@ export class IndexedDBR2UploadRepository {
 export function createUploadJob(
     profileId: string,
     artifact: Pick<UploadJob, 'artifactId' | 'localVariant' | 'remoteKey' | 'contentSha256' | 'contentType' | 'size'>,
-    options: { id?: string; now?: string; maxAttempts?: number; partSize?: number } = {},
+    options: {
+        id?: string
+        now?: string
+        maxAttempts?: number
+        partSize?: number
+        profileSnapshot?: R2ProfileV2
+        artifactBinding?: Phase7ArtifactBinding
+    } = {},
 ): UploadJob {
     const now = options.now ?? new Date().toISOString()
+    const phase7 = options.profileSnapshot !== undefined || options.artifactBinding !== undefined
+    if (phase7 && (!options.profileSnapshot || !options.artifactBinding)) {
+        throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Phase 7 upload jobs require both durable bindings')
+    }
     return {
         id: options.id ?? crypto.randomUUID(),
+        contractVersion: phase7 ? 'phase7-v1' : 'legacy-v1',
         profileId,
+        profileSnapshot: options.profileSnapshot ? structuredClone(options.profileSnapshot) : null,
+        artifactBinding: options.artifactBinding ? structuredClone(options.artifactBinding) : null,
+        linkExpectedArtifactVersion: options.artifactBinding?.artifactVersion ?? null,
+        remoteRef: null as Phase7RemoteObjectRef | null,
         ...artifact,
         state: 'queued',
         attempt: 0,

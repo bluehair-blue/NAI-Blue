@@ -35,6 +35,8 @@ export interface ArtifactThumbnailReference {
 export interface ArtifactSidecarReference {
     readonly file: ArtifactPortableFileRef
     readonly digest: string
+    /** Absent on legacy rows; required before Phase 7 can link a sidecar remotely. */
+    readonly size?: number
 }
 
 export interface OrganizerR2FollowUpPolicy {
@@ -82,7 +84,8 @@ export interface DistributionVariant {
     readonly failure: ArtifactDistributionFailure | null
 }
 
-export interface ArtifactRemoteObjectRef {
+export interface LegacyArtifactRemoteObjectRef {
+    readonly contractVersion?: 'legacy-v1'
     readonly profileId: string
     readonly uploadJobId: string | null
     readonly artifactId: string
@@ -92,6 +95,26 @@ export interface ArtifactRemoteObjectRef {
     readonly updatedAt: string
     readonly failure: ArtifactDistributionFailure | null
 }
+
+/** Exact verified R2 fact. Unlike legacy refs, this is safe linkage authority. */
+export interface Phase7ArtifactRemoteObjectRef {
+    readonly contractVersion: 'phase7-v1'
+    readonly profileId: string
+    readonly profileHash: `sha256:${string}`
+    readonly bucket: string
+    readonly uploadJobId: string
+    readonly artifactId: string
+    readonly variantId: 'original' | 'sidecar'
+    readonly remoteKey: string
+    readonly contentSha256: `sha256:${string}`
+    readonly size: number
+    readonly verifiedAt: string
+    readonly state: 'succeeded'
+    readonly updatedAt: string
+    readonly failure: null
+}
+
+export type ArtifactRemoteObjectRef = LegacyArtifactRemoteObjectRef | Phase7ArtifactRemoteObjectRef
 
 /**
  * Organizer authority.  It never stores raw absolute paths, opaque platform

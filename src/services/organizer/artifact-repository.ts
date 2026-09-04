@@ -21,6 +21,7 @@ export type ArtifactRepositoryErrorCode =
     | 'E_ARTIFACT_DB_BLOCKED'
     | 'E_ARTIFACT_NOT_FOUND'
     | 'E_ARTIFACT_VERSION_CONFLICT'
+    | 'E_ARTIFACT_REMOTE_LINK_CONFLICT'
     | 'E_ARTIFACT_RECORD_INVALID'
     | 'E_ARTIFACT_VARIANT_NOT_FOUND'
 
@@ -136,7 +137,9 @@ function assertDistribution(variant: DistributionVariant): void {
     }
     if (variant.sidecar !== null) {
         projectArtifactPortableFile(variant.sidecar.file)
-        if (!isOrganizerChecksum(variant.sidecar.digest)) {
+        if (!isOrganizerChecksum(variant.sidecar.digest)
+            || (variant.sidecar.size !== undefined
+                && (!Number.isSafeInteger(variant.sidecar.size) || variant.sidecar.size < 0))) {
             throw new ArtifactRepositoryError('E_ARTIFACT_RECORD_INVALID', 'Distribution sidecar checksum is invalid.')
         }
     }
@@ -177,11 +180,43 @@ export function validateArtifactRecord(record: ArtifactRecord): void {
     }
     if (record.sidecar !== null) {
         projectArtifactPortableFile(record.sidecar.file)
-        if (!isOrganizerChecksum(record.sidecar.digest)) {
+        if (!isOrganizerChecksum(record.sidecar.digest)
+            || (record.sidecar.size !== undefined
+                && (!Number.isSafeInteger(record.sidecar.size) || record.sidecar.size < 0))) {
             throw new ArtifactRepositoryError('E_ARTIFACT_RECORD_INVALID', 'Artifact sidecar checksum is invalid.')
         }
     }
     for (const remote of record.remoteObjectRefs) {
+        if (!remote.profileId.trim()
+            || !remote.artifactId.trim()
+            || remote.artifactId !== record.artifactId
+            || !Number.isFinite(Date.parse(remote.updatedAt))) {
+            throw new ArtifactRepositoryError('E_ARTIFACT_RECORD_INVALID', 'Artifact remote object reference identity is invalid.')
+        }
+        if (remote.contractVersion === 'phase7-v1') {
+            const validVariant = remote.variantId === 'original'
+                ? remote.contentSha256 === record.original.contentChecksum && remote.size === record.original.size
+                : remote.variantId === 'sidecar'
+                    && record.sidecar?.digest === remote.contentSha256
+                    && record.sidecar.size !== undefined
+                    && record.sidecar.size === remote.size
+            if (!validVariant
+                || !isOrganizerChecksum(remote.profileHash)
+                || !isOrganizerChecksum(remote.contentSha256)
+                || !remote.bucket.trim()
+                || !remote.uploadJobId.trim()
+                || !remote.remoteKey.trim()
+                || /[\\\0]/u.test(remote.remoteKey)
+                || remote.remoteKey.split('/').some(segment => !segment || segment === '.' || segment === '..')
+                || !Number.isSafeInteger(remote.size)
+                || remote.size < 0
+                || remote.state !== 'succeeded'
+                || remote.failure !== null
+                || !Number.isFinite(Date.parse(remote.verifiedAt))) {
+                throw new ArtifactRepositoryError('E_ARTIFACT_RECORD_INVALID', 'Phase 7 Artifact remote object reference is invalid.')
+            }
+            continue
+        }
         if (!remote.profileId.trim()
             || !remote.artifactId.trim()
             || !remote.variantId.trim()
@@ -215,6 +250,23 @@ function projectRecord(record: ArtifactRecord): ArtifactRecord {
             : { sidecar: { ...record.sidecar, file: projectArtifactPortableFile(record.sidecar.file) } }),
         remoteObjectRefs: record.remoteObjectRefs.map(reference => ({ ...reference })),
     }
+}
+
+function isSameRemoteLink(left: ArtifactRemoteObjectRef, right: ArtifactRemoteObjectRef): boolean {
+    if (left.contractVersion !== 'phase7-v1' || right.contractVersion !== 'phase7-v1') {
+        return JSON.stringify(left) === JSON.stringify(right)
+    }
+    return left.profileId === right.profileId
+        && left.profileHash === right.profileHash
+        && left.bucket === right.bucket
+        && left.uploadJobId === right.uploadJobId
+        && left.artifactId === right.artifactId
+        && left.variantId === right.variantId
+        && left.remoteKey === right.remoteKey
+        && left.contentSha256 === right.contentSha256
+        && left.size === right.size
+        && left.verifiedAt === right.verifiedAt
+        && left.state === right.state
 }
 
 export class IndexedDBArtifactRepository {
@@ -420,15 +472,34 @@ export class IndexedDBArtifactRepository {
 
     async replaceRemoteObjectRef(
         artifactId: string,
-        remote: ArtifactRemoteObjectRef,
-        now = new Date().toISOString(),
+        expectedVersionOrRemote: number | ArtifactRemoteObjectRef,
+        remoteOrNow: ArtifactRemoteObjectRef | string,
+        explicitNow = new Date().toISOString(),
     ): Promise<ArtifactRecord> {
+        const expectedVersion = typeof expectedVersionOrRemote === 'number' ? expectedVersionOrRemote : undefined
+        const remote = typeof expectedVersionOrRemote === 'number'
+            ? remoteOrNow as ArtifactRemoteObjectRef
+            : expectedVersionOrRemote
+        const now = typeof expectedVersionOrRemote === 'number' ? explicitNow : remoteOrNow as string
         return this.mutate(artifactId, undefined, record => {
-            const remaining = record.remoteObjectRefs.filter(reference => !(
-                reference.profileId === remote.profileId
+            const exact = record.remoteObjectRefs.find(reference => isSameRemoteLink(reference, remote))
+            if (exact) return record
+            if (expectedVersion !== undefined && record.version !== expectedVersion) {
+                throw new ArtifactRepositoryError('E_ARTIFACT_VERSION_CONFLICT', 'Artifact record version changed.')
+            }
+            const sameTarget = (reference: ArtifactRemoteObjectRef) => reference.profileId === remote.profileId
                 && reference.variantId === remote.variantId
-                && reference.remoteKey === remote.remoteKey
+            if (remote.contractVersion !== 'phase7-v1'
+                && record.remoteObjectRefs.some(reference => reference.contractVersion === 'phase7-v1' && sameTarget(reference))) {
+                throw new ArtifactRepositoryError('E_ARTIFACT_REMOTE_LINK_CONFLICT', 'Legacy linkage cannot replace Phase 7 Artifact authority.')
+            }
+            const remaining = record.remoteObjectRefs.filter(reference => !(
+                sameTarget(reference)
+                && (remote.contractVersion === 'phase7-v1' || reference.remoteKey === remote.remoteKey)
             ))
+            if (remote.contractVersion === 'phase7-v1' && remaining.length !== record.remoteObjectRefs.length) {
+                throw new ArtifactRepositoryError('E_ARTIFACT_REMOTE_LINK_CONFLICT', 'Artifact remote object reference conflicts with an existing linkage.')
+            }
             return {
                 ...record,
                 remoteObjectRefs: [...remaining, clone(remote)],

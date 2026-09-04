@@ -75,6 +75,89 @@ async function putOriginal(
 }
 
 describe('Organizer artifact repository', () => {
+    it('CAS-links exact Phase 7 remote facts and makes stale retries idempotent', async () => {
+        const repo = repository('phase7-cas')
+        const original = await putOriginal(repo)
+        const remote = {
+            contractVersion: 'phase7-v1' as const,
+            profileId: 'r2-profile',
+            profileHash: HASH_B,
+            bucket: 'fixture-bucket',
+            uploadJobId: 'upload-1',
+            artifactId: original.artifactId,
+            variantId: 'original' as const,
+            remoteKey: 'exports/artifact-1.png',
+            contentSha256: HASH_A,
+            size: 123,
+            verifiedAt: NOW,
+            state: 'succeeded' as const,
+            updatedAt: NOW,
+            failure: null,
+        }
+        const linked = await repo.replaceRemoteObjectRef(original.artifactId, original.version, remote, NOW)
+        const retried = await repo.replaceRemoteObjectRef(original.artifactId, original.version, {
+            ...remote,
+            updatedAt: '2026-07-14T12:01:00.000Z',
+        }, '2026-07-14T12:01:00.000Z')
+        expect(retried).toEqual(linked)
+        await expect(repo.replaceRemoteObjectRef(original.artifactId, {
+            profileId: remote.profileId,
+            uploadJobId: 'legacy-upload',
+            artifactId: original.artifactId,
+            variantId: remote.variantId,
+            remoteKey: remote.remoteKey,
+            state: 'succeeded',
+            updatedAt: NOW,
+            failure: null,
+        }, NOW)).rejects.toMatchObject({ code: 'E_ARTIFACT_REMOTE_LINK_CONFLICT' })
+        await expect(repo.replaceRemoteObjectRef(original.artifactId, linked.version, {
+            ...remote,
+            remoteKey: 'exports/different.png',
+        }, NOW)).rejects.toMatchObject({ code: 'E_ARTIFACT_REMOTE_LINK_CONFLICT' })
+    })
+
+    it('rejects a Phase 7 sidecar ref without matching Artifact sidecar authority', async () => {
+        const repo = repository('phase7-sidecar-authority')
+        const original = await putOriginal(repo)
+        await expect(repo.replaceRemoteObjectRef(original.artifactId, original.version, {
+            contractVersion: 'phase7-v1',
+            profileId: 'r2-profile', profileHash: HASH_B, bucket: 'fixture-bucket', uploadJobId: 'upload-sidecar',
+            artifactId: original.artifactId, variantId: 'sidecar', remoteKey: 'exports/artifact-1.json',
+            contentSha256: HASH_B, size: 42, verifiedAt: NOW, state: 'succeeded', updatedAt: NOW, failure: null,
+        }, NOW)).rejects.toMatchObject({ code: 'E_ARTIFACT_RECORD_INVALID' })
+    })
+
+    it('keeps legacy sidecars readable but requires exact digest and size for Phase 7 linkage', async () => {
+        const repo = repository('phase7-sidecar-size')
+        await putOriginal(repo)
+        await repo.addDistribution('artifact-1', variant(), NOW)
+        const legacy = await repo.updateDistribution('artifact-1', 'distribution-1', undefined, current => ({
+            ...current,
+            status: 'succeeded',
+            file: { directory: policy().destination, fileName: 'portrait-distribution.png' },
+            contentChecksum: HASH_B,
+            size: 98,
+            sidecar: { file: { directory: policy().destination, fileName: 'portrait.json' }, digest: HASH_B },
+        }), NOW)
+        expect(() => validateArtifactRecord(legacy)).not.toThrow()
+        const authoritative = await repo.updateDistribution('artifact-1', 'distribution-1', legacy.version, current => ({
+            ...current,
+            sidecar: { ...current.sidecar!, size: 42 },
+        }), NOW)
+        const remote = {
+            contractVersion: 'phase7-v1' as const,
+            profileId: 'r2-profile', profileHash: HASH_A, bucket: 'fixture-bucket', uploadJobId: 'sidecar-upload',
+            artifactId: authoritative.artifactId, variantId: 'sidecar' as const, remoteKey: 'exports/portrait.json',
+            contentSha256: HASH_B, size: 42, verifiedAt: NOW, state: 'succeeded' as const, updatedAt: NOW, failure: null,
+        }
+        expect(() => validateArtifactRecord({ ...authoritative, remoteObjectRefs: [{ ...remote, size: 41 }] }))
+            .toThrow(ArtifactRepositoryError)
+        expect(() => validateArtifactRecord({ ...authoritative, remoteObjectRefs: [{ ...remote, contentSha256: HASH_A }] }))
+            .toThrow(ArtifactRepositoryError)
+        await expect(repo.replaceRemoteObjectRef(authoritative.artifactId, authoritative.version, remote, NOW))
+            .resolves.toMatchObject({ remoteObjectRefs: [expect.objectContaining({ size: 42, contentSha256: HASH_B })] })
+    })
+
     it('keeps original identity immutable and links distribution sidecar and R2 refs by artifactId', async () => {
         const repo = repository('linkage')
         await putOriginal(repo)

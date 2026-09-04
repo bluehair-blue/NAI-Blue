@@ -225,7 +225,36 @@ export function hashR2ProfileV2(profile: R2ProfileV2): R2ProfileHash {
     })}`
 }
 
-export type UploadJobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type UploadJobState =
+    | 'queued'
+    | 'running'
+    | 'uploaded'
+    | 'verifying'
+    | 'verified'
+    | 'linking'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+
+export interface Phase7ArtifactBinding {
+    readonly artifactId: string
+    readonly artifactVersion: number
+    readonly localVariant: 'original' | 'sidecar'
+}
+
+export interface Phase7RemoteObjectRef {
+    readonly contractVersion: 'phase7-v1'
+    readonly profileId: string
+    readonly profileHash: R2ProfileHash
+    readonly bucket: string
+    readonly uploadJobId: string
+    readonly artifactId: string
+    readonly variantId: 'original' | 'sidecar'
+    readonly remoteKey: string
+    readonly contentSha256: string
+    readonly size: number
+    readonly verifiedAt: string
+}
 
 export interface UploadCompletedPart {
     readonly partNumber: number
@@ -241,7 +270,14 @@ export interface UploadMultipartState {
 
 export interface UploadJob {
     readonly id: string
+    /** v1 rows are migrated as historical jobs and never imply Artifact linkage. */
+    readonly contractVersion: 'legacy-v1' | 'phase7-v1'
     readonly profileId: string
+    readonly profileSnapshot: R2ProfileV2 | null
+    readonly artifactBinding: Phase7ArtifactBinding | null
+    /** Mutable CAS cursor; the immutable binding above keeps enqueue identity. */
+    readonly linkExpectedArtifactVersion: number | null
+    readonly remoteRef: Phase7RemoteObjectRef | null
     readonly artifactId: string
     readonly localVariant: string
     readonly remoteKey: string
@@ -266,6 +302,8 @@ export interface NativeR2ScannedArtifact {
     readonly contentSha256: string
     readonly contentType: string
     readonly size: number
+    /** Present only for current Phase 7 Organizer-backed delivery. */
+    readonly artifactBinding?: Phase7ArtifactBinding
 }
 
 export interface R2ManifestV2Item {
