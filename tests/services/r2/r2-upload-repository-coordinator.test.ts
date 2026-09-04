@@ -1,7 +1,7 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createR2ProfileV2, type NativeR2ScannedArtifact, type R2ProfileV2 } from '@/domain/r2/types'
+import { createR2ProfileV2, hashR2ProfileV2, type NativeR2ScannedArtifact, type R2ProfileV2 } from '@/domain/r2/types'
 import {
     createUploadJob,
     IndexedDBR2UploadRepository,
@@ -93,21 +93,44 @@ function adapter(overrides: Partial<NativeR2UploadAdapter> = {}): NativeR2Upload
 describe('R2 upload repository and coordinator', () => {
     it('persists only non-secret profiles and rejects credentials or signed URLs', async () => {
         const repo = repository('secret-safe')
-        await expect(repo.putProfile(profile())).resolves.toMatchObject({ credentialRef: 'r2-system-fixture' })
+        await expect(repo.putProfile(profile(), null)).resolves.toMatchObject({ credentialRef: 'r2-system-fixture' })
         await expect(repo.putProfile({
             ...profile({ id: 'unsafe' }),
             endpoint: `https://fixture.invalid?X-Amz-Signature=${'secret-canary'}`,
-        })).rejects.toMatchObject({ code: 'E_R2_RECORD_INVALID' })
+        }, null)).rejects.toMatchObject({ code: 'E_R2_RECORD_INVALID' })
         await expect(repo.putProfile({
             ...profile({ id: 'unsafe-field' }),
             accessKeyId: 'secret-canary',
-        } as R2ProfileV2)).rejects.toBeInstanceOf(R2UploadRepositoryError)
+        } as R2ProfileV2, null)).rejects.toBeInstanceOf(R2UploadRepositoryError)
+    })
+
+    it('creates idempotently and updates only against the exact observed profile hash', async () => {
+        const repo = repository('profile-cas')
+        const created = await repo.putProfile(profile(), null)
+        const retried = await repo.putProfile(profile({
+            createdAt: '2026-07-15T12:00:00.000Z',
+            updatedAt: '2026-07-15T12:00:00.000Z',
+        }), null)
+        expect(retried).toEqual(created)
+
+        const observedHash = hashR2ProfileV2(created)
+        const updated = await repo.putProfile({ ...created, bucket: 'updated-bucket', updatedAt: '2026-07-15T12:00:00.000Z' }, observedHash)
+        expect(updated.bucket).toBe('updated-bucket')
+
+        await expect(repo.putProfile({ ...created, bucket: 'stale-bucket' }, observedHash))
+            .rejects.toMatchObject({ code: 'E_R2_VERSION_CONFLICT' })
+        await expect(repo.putProfile({ ...created, bucket: 'create-collision' }, null))
+            .rejects.toMatchObject({ code: 'E_R2_VERSION_CONFLICT' })
+        await expect(repo.getProfile(created.id)).resolves.toEqual(updated)
+        await expect(repo.putProfile(profile({ id: 'missing' }), observedHash))
+            .rejects.toMatchObject({ code: 'E_R2_VERSION_CONFLICT' })
+        await expect(repo.getProfile('missing')).resolves.toBeNull()
     })
 
     it('deduplicates completed objects through manifest v2 and idempotent enqueue', async () => {
         const repo = repository('manifest')
         const currentProfile = profile()
-        await repo.putProfile(currentProfile)
+        await repo.putProfile(currentProfile, null)
         const coordinator = new R2UploadCoordinator(repo, adapter(), () => new Date(NOW))
         const first = await coordinator.plan(currentProfile, [artifact(1)], 'delta')
         const [job] = await coordinator.enqueuePlan(first)
@@ -232,7 +255,7 @@ describe('R2 upload repository and coordinator', () => {
     it('resumes interrupted multipart from completed parts without starting over', async () => {
         const repo = repository('multipart-resume')
         const currentProfile = profile()
-        await repo.putProfile(currentProfile)
+        await repo.putProfile(currentProfile, null)
         let failedOnce = false
         const fake = adapter({
             uploadPart: vi.fn(async (_profile, input) => {

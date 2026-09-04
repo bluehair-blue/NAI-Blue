@@ -1,10 +1,12 @@
-import type {
-    R2ManifestV2,
-    R2ManifestV2Item,
-    R2ProfileV2,
-    UploadCompletedPart,
-    UploadJob,
-    UploadJobState,
+import {
+    hashR2ProfileV2,
+    type R2ProfileHash,
+    type R2ProfileV2,
+    type R2ManifestV2,
+    type R2ManifestV2Item,
+    type UploadCompletedPart,
+    type UploadJob,
+    type UploadJobState,
 } from '@/domain/r2/types'
 
 // Physical database names stay stable so pending uploads survive the rename.
@@ -193,15 +195,31 @@ export class IndexedDBR2UploadRepository {
         this.dbPromise = null
     }
 
-    async putProfile(profile: R2ProfileV2): Promise<R2ProfileV2> {
+    async putProfile(profile: R2ProfileV2, expectedProfileHash: R2ProfileHash | null): Promise<R2ProfileV2> {
         validateR2ProfileV2(profile)
+        if (expectedProfileHash !== null && !/^sha256:[a-f0-9]{64}$/u.test(expectedProfileHash)) {
+            throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'Expected R2 profile hash is invalid')
+        }
         const db = await this.open()
         const transaction = db.transaction('profiles', 'readwrite')
-        transaction.objectStore('profiles').put(cloneProfile(profile))
+        const store = transaction.objectStore('profiles')
+        const current = await requestValue(store.get(profile.id)) as R2ProfileV2 | undefined
+        if (current) validateR2ProfileV2(current)
+        const currentHash = current ? hashR2ProfileV2(current) : null
+        if (current && expectedProfileHash === null && currentHash === hashR2ProfileV2(profile)) {
+            await transactionDone(transaction)
+            return cloneProfile(current)
+        }
+        if (currentHash !== expectedProfileHash) {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'R2 profile changed')
+        }
+        store.put(cloneProfile(profile))
+        const readback = await requestValue(store.get(profile.id)) as R2ProfileV2 | undefined
         await transactionDone(transaction)
-        const readback = await this.getProfile(profile.id)
         if (!readback) throw new R2UploadRepositoryError('E_R2_NOT_FOUND', 'R2 profile write was not readable')
-        return readback
+        validateR2ProfileV2(readback)
+        return cloneProfile(readback)
     }
 
     async getProfile(id: string): Promise<R2ProfileV2 | null> {

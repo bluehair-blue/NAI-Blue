@@ -25,7 +25,7 @@ import { ExternalUrlLink } from '@/components/ui/external-url-link'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createR2ProfileV2, DEFAULT_R2_PROFILE_ID, type R2ConflictPolicy, type R2ProfileV2, type R2PublicMode, type R2Transport } from '@/domain/r2/types'
+import { createR2ProfileV2, DEFAULT_R2_PROFILE_ID, hashR2ProfileV2, type R2ConflictPolicy, type R2ProfileHash, type R2ProfileV2, type R2PublicMode, type R2Transport } from '@/domain/r2/types'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import {
     scanNativeR2Artifacts,
@@ -138,6 +138,15 @@ function initialProfile(profile: AssetProfile): R2ProfileV2 {
     })
 }
 
+/** Keeps edits made during an async save while accepting the stored readback for an unchanged draft. */
+export function reconcileR2ProfileSaveDraft(
+    currentDraft: R2ProfileV2,
+    submittedProfileHash: R2ProfileHash,
+    storedProfile: R2ProfileV2,
+): R2ProfileV2 {
+    return hashR2ProfileV2(currentDraft) === submittedProfileHash ? storedProfile : currentDraft
+}
+
 export function NativeR2SetupPanel({
     assetProfile,
     localRoot,
@@ -150,6 +159,7 @@ export function NativeR2SetupPanel({
     onPersistAssetProfile: (profile: AssetProfile) => void
 }) {
     const [profile, setProfile] = useState(() => initialProfile(assetProfile))
+    const [observedProfileHash, setObservedProfileHash] = useState<R2ProfileHash | null>(null)
     const [accessKeyId, setAccessKeyId] = useState('')
     const [secretAccessKey, setSecretAccessKey] = useState('')
     const [mode, setMode] = useState<R2UploadMode>('delta')
@@ -168,7 +178,10 @@ export function NativeR2SetupPanel({
 
     useEffect(() => {
         void getRuntimeR2UploadRepository().getProfile(DEFAULT_R2_PROFILE_ID).then(saved => {
-            if (saved) setProfile(saved)
+            if (saved) {
+                setProfile(saved)
+                setObservedProfileHash(hashR2ProfileV2(saved))
+            }
         })
     }, [])
 
@@ -207,17 +220,21 @@ export function NativeR2SetupPanel({
 
     const save = async () => {
         setBusy('save')
+        const submittedProfile = profile
+        const submittedProfileHash = hashR2ProfileV2(submittedProfile)
         try {
-            await getRuntimeR2UploadRepository().putProfile(profile)
+            const stored = await getRuntimeR2UploadRepository().putProfile(submittedProfile, observedProfileHash)
+            setProfile(current => reconcileR2ProfileSaveDraft(current, submittedProfileHash, stored))
+            setObservedProfileHash(hashR2ProfileV2(stored))
             onPersistAssetProfile({
                 ...assetProfile,
                 r2: {
                     ...assetProfile.r2,
                     enabled: true,
-                    accountId: profile.accountId || undefined,
-                    bucket: profile.bucket || undefined,
-                    keyPrefix: profile.prefix || undefined,
-                    publicBaseUrl: profile.publicBaseUrl || undefined,
+                    accountId: submittedProfile.accountId || undefined,
+                    bucket: submittedProfile.bucket || undefined,
+                    keyPrefix: submittedProfile.prefix || undefined,
+                    publicBaseUrl: submittedProfile.publicBaseUrl || undefined,
                 },
             })
             setFeedback('설정을 저장했습니다. 다음 실행에서도 같은 R2 설정을 사용할 수 있습니다.', 'success')

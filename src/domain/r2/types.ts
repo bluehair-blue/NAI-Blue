@@ -1,3 +1,5 @@
+import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+
 export const R2_TRANSPORTS = ['native-s3', 'wrangler', 'relay'] as const
 export type R2Transport = typeof R2_TRANSPORTS[number]
 
@@ -56,6 +58,27 @@ export interface R2ProfileV2 {
     readonly publicBaseUrl: string | null
     readonly createdAt: string
     readonly updatedAt: string
+}
+
+export type R2ProfileHash = `sha256:${string}`
+
+/** Hashes only the durable profile binding; edit timestamps are intentionally excluded. */
+export function hashR2ProfileV2(profile: R2ProfileV2): R2ProfileHash {
+    return `sha256:${hashCanonicalValue({
+        schemaVersion: profile.schemaVersion,
+        id: profile.id,
+        name: profile.name,
+        accountId: profile.accountId,
+        jurisdiction: profile.jurisdiction,
+        endpoint: profile.endpoint,
+        bucket: profile.bucket,
+        prefix: profile.prefix,
+        credentialRef: profile.credentialRef,
+        transport: profile.transport,
+        conflictPolicy: profile.conflictPolicy,
+        publicMode: profile.publicMode,
+        publicBaseUrl: profile.publicBaseUrl,
+    })}`
 }
 
 export type UploadJobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'

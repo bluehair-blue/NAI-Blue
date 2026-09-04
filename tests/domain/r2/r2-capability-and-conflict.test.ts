@@ -1,9 +1,48 @@
 import { describe, expect, it } from 'vitest'
 
-import { deterministicR2Suffix } from '@/domain/r2/types'
+import { createR2ProfileV2, deterministicR2Suffix, hashR2ProfileV2, type R2ProfileV2 } from '@/domain/r2/types'
 import { createRuntimeCapabilities } from '@/platform/capabilities'
 
 describe('R2 platform and conflict contracts', () => {
+    it('hashes every semantic profile field but ignores timestamps and object key order', () => {
+        const profile = createR2ProfileV2({
+            id: 'profile',
+            name: 'Profile',
+            accountId: 'account',
+            jurisdiction: null,
+            endpoint: null,
+            bucket: 'profile-bucket',
+            prefix: 'exports',
+            credentialRef: 'credential-a',
+            transport: 'native-s3',
+            conflictPolicy: 'fail',
+            publicMode: 'private',
+            publicBaseUrl: null,
+        }, '2026-09-04T00:00:00.000Z')
+        const expected = hashR2ProfileV2(profile)
+        const reversed = Object.fromEntries(Object.entries(profile).reverse()) as unknown as R2ProfileV2
+        expect(expected).toMatch(/^sha256:[a-f0-9]{64}$/)
+        expect(hashR2ProfileV2({ ...profile, createdAt: '2026-09-05T00:00:00.000Z', updatedAt: '2026-09-06T00:00:00.000Z' })).toBe(expected)
+        expect(hashR2ProfileV2(reversed)).toBe(expected)
+
+        const semanticChanges: R2ProfileV2[] = [
+            { ...profile, schemaVersion: 3 } as unknown as R2ProfileV2,
+            { ...profile, id: 'profile-b' },
+            { ...profile, name: 'Other' },
+            { ...profile, accountId: 'account-b' },
+            { ...profile, jurisdiction: 'eu' },
+            { ...profile, endpoint: 'https://example.invalid' },
+            { ...profile, bucket: 'other-bucket' },
+            { ...profile, prefix: 'other' },
+            { ...profile, credentialRef: 'credential-b' },
+            { ...profile, transport: 'wrangler' },
+            { ...profile, conflictPolicy: 'skip-same' },
+            { ...profile, publicMode: 'r2-dev' },
+            { ...profile, publicBaseUrl: 'https://cdn.example.invalid' },
+        ]
+        expect(semanticChanges.every(changed => hashR2ProfileV2(changed) !== expected)).toBe(true)
+    })
+
     it('keeps profiles readable on mobile while foreground and background upload stay explicit', () => {
         const android = createRuntimeCapabilities('android')
         expect(android.r2ProfileRead.supported).toBe(true)

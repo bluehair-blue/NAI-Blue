@@ -9,6 +9,7 @@ import { sha256Bytes } from '@/lib/binary-digest'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import type { OutputWriteResult } from '@/services/output/output-writer'
 import { createRuntimeOutputPlatformAdapter } from '@/services/output/tauri-output-adapter'
+import { R2UploadRepositoryError } from './indexeddb-r2-upload-repository'
 import { nativeR2CredentialStatus } from './native-r2-adapter'
 import { getRuntimeR2UploadCoordinator, getRuntimeR2UploadRepository } from './runtime'
 
@@ -32,6 +33,26 @@ function remoteKey(prefix: string, fileName: string): string {
     return [cleanPrefix, safeName].filter(Boolean).join('/')
 }
 
+/** This exact legacy tuple owns generated profile identity and compatible collision reuse. */
+function generatedReleaseIdentity(profile: R2ProfileV2): readonly unknown[] {
+    return [
+        profile.accountId,
+        profile.jurisdiction,
+        profile.endpoint,
+        profile.bucket,
+        profile.prefix,
+        profile.credentialRef,
+        profile.transport,
+        profile.conflictPolicy,
+        profile.publicMode,
+        profile.publicBaseUrl,
+    ]
+}
+
+function hasSameGeneratedReleaseBinding(left: R2ProfileV2, right: R2ProfileV2): boolean {
+    return JSON.stringify(generatedReleaseIdentity(left)) === JSON.stringify(generatedReleaseIdentity(right))
+}
+
 /**
  * Upload jobs store only a profile ID, so every generated release uses an
  * immutable, content-addressed profile. A later edit to the default profile
@@ -47,26 +68,18 @@ export function deriveGeneratedReleaseProfile(
     if (!isR2BucketName(bucket) || !isResolvedR2Prefix(prefix)) {
         throw new TypeError('Generated R2 release target is invalid')
     }
-    const identity = JSON.stringify([
-        base.accountId,
-        base.jurisdiction,
-        base.endpoint,
-        bucket,
-        prefix,
-        base.credentialRef,
-        base.transport,
-        base.conflictPolicy,
-        base.publicMode,
-        base.publicBaseUrl,
-    ])
-    return {
+    const profile: R2ProfileV2 = {
         ...base,
-        id: `generated-release-${sha256Utf8(identity).slice(0, 40)}`,
+        id: '',
         name: `${base.name} · ${bucket}${prefix ? `/${prefix}` : ''}`,
         bucket,
         prefix,
         createdAt: now,
         updatedAt: now,
+    }
+    return {
+        ...profile,
+        id: `generated-release-${sha256Utf8(JSON.stringify(generatedReleaseIdentity(profile))).slice(0, 40)}`,
     }
 }
 
@@ -91,14 +104,26 @@ export async function releaseLocalImageToR2(input: {
         return { status: 'unavailable', reason: 'profile' }
     }
     let profile: R2ProfileV2
+    let derivedProfile: R2ProfileV2
     try {
-        profile = deriveGeneratedReleaseProfile(baseProfile, {
+        derivedProfile = deriveGeneratedReleaseProfile(baseProfile, {
             bucket: input.bucket,
             prefix: input.prefix,
         })
-        await repository.putProfile(profile)
     } catch {
         return { status: 'unavailable', reason: 'profile' }
+    }
+    try {
+        profile = await repository.putProfile(derivedProfile, null)
+    } catch (error) {
+        if (!(error instanceof R2UploadRepositoryError) || error.code !== 'E_R2_VERSION_CONFLICT') {
+            return { status: 'unavailable', reason: 'profile' }
+        }
+        const existing = await repository.getProfile(derivedProfile.id).catch(() => null)
+        if (!existing || !hasSameGeneratedReleaseBinding(existing, derivedProfile)) {
+            return { status: 'unavailable', reason: 'profile' }
+        }
+        profile = existing
     }
     const credential = await nativeR2CredentialStatus(profile.credentialRef).catch(() => null)
     if (!credential?.available) return { status: 'unavailable', reason: 'credential' }
