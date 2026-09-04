@@ -1,18 +1,28 @@
 import { Film, ImagePlus } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import Counter from '@/components/ui/counter'
 import { toast } from '@/components/ui/use-toast'
 import { NovelAiV5UsageLimit } from '@/components/credentials/NovelAiV5UsageLimit'
+import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import { calculateAnlasCost } from '@/lib/anlas-calculator'
 import { cn } from '@/lib/utils'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
+import {
+    enqueueReviewedSceneQueue,
+    prepareCurrentSceneQueueReview,
+    type PreparedSceneQueueReview,
+    type SceneQueueSubmission,
+} from '@/services/queue/scene-queue-adapter'
 import { useRotationStore } from '@/stores/character-rotation-store'
 import { useCharacterStore } from '@/stores/character-store'
 import { useGenerationDraftStore } from '@/stores/generation-draft-store'
 import { useGenerationSessionStore } from '@/stores/generation-session-store'
 import { useSceneStore } from '@/stores/scene-store'
+import { useQueueStore } from '@/stores/queue-store'
+import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
 
 interface PromptGenerationControlsProps {
     isSceneMode: boolean
@@ -25,6 +35,8 @@ interface PromptGenerationControlsProps {
  */
 export function PromptGenerationControls({ isSceneMode }: PromptGenerationControlsProps) {
     const { t } = useTranslation()
+    const [sceneReview, setSceneReview] = useState<PreparedSceneQueueReview | null>(null)
+    const selectDurableBatch = useQueueStore(state => state.setSelectedBatchId)
     const activePresetId = useSceneStore(state => state.activePresetId)
     const getTotalQueueCount = useSceneStore(state => state.getTotalQueueCount)
     const sceneIsGenerating = useSceneStore(state => state.isGenerating)
@@ -63,7 +75,7 @@ export function PromptGenerationControls({ isSceneMode }: PromptGenerationContro
     const execute = () => {
         if (isConflict) return
         void executePromptGenerationCommand(isSceneMode ? 'scene' : 'main')
-            .then(outcome => {
+            .then(async outcome => {
                 if (outcome === 'credential-required') {
                     toast({
                         title: t('credentialVault.unlockRequired', 'API 토큰 잠금 해제 필요'),
@@ -79,6 +91,10 @@ export function PromptGenerationControls({ isSceneMode }: PromptGenerationContro
                     })
                     return
                 }
+                if (outcome === 'review-required') {
+                    setSceneReview(await prepareCurrentSceneQueueReview())
+                    return
+                }
                 if (outcome !== 'rotation-stopped') return
                 toast({
                     title: t('rotation.stopped', '로테이션 중단'),
@@ -92,7 +108,43 @@ export function PromptGenerationControls({ isSceneMode }: PromptGenerationContro
             }))
     }
 
+    const approveSceneReview = async (submission: SceneQueueSubmission): Promise<boolean> => {
+        try {
+            const result = await enqueueReviewedSceneQueue(submission)
+            selectDurableBatch(result.batch.id)
+            toast({
+                title: t('queue.enqueued', 'Added to durable queue'),
+                description: t('queue.enqueuedCount', '{{count}} jobs are ready in Queue Center.', { count: result.jobs.length }),
+            })
+            return true
+        } catch (error) {
+            if (isSceneQueueReviewConflict(error)) throw error
+            toast({
+                title: t('common.error', 'Error'),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
+                variant: 'destructive',
+            })
+            return false
+        }
+    }
+
+    const replanSceneReview = async (): Promise<boolean> => {
+        try {
+            const next = await prepareCurrentSceneQueueReview()
+            setSceneReview(next)
+            return next !== null
+        } catch (error) {
+            toast({
+                title: t('common.error', 'Error'),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
+                variant: 'destructive',
+            })
+            return false
+        }
+    }
+
     return (
+        <>
         <div className="p-0">
             {!isSceneMode && (
                 <NovelAiV5UsageLimit
@@ -157,6 +209,16 @@ export function PromptGenerationControls({ isSceneMode }: PromptGenerationContro
                 />
             </div>
         </div>
+        {sceneReview !== null && (
+            <SceneQueueReviewDialog
+                open
+                onOpenChange={open => { if (!open) setSceneReview(null) }}
+                prepared={sceneReview}
+                onApprove={approveSceneReview}
+                onReplan={replanSceneReview}
+            />
+        )}
+        </>
     )
 }
 

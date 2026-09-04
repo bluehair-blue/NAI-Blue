@@ -3,21 +3,30 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('generation-folder workspace mutation integration', () => {
-    it.each(['main-queue-adapter.ts', 'scene-queue-adapter.ts'])(
-        'keeps planning outside and only final authority checks plus Queue commit inside %s',
-        async fileName => {
-            const source = await readFile(resolve(process.cwd(), 'src/services/queue', fileName), 'utf8')
-            const allocation = source.indexOf('outputReservations.planBatch(allocationRequests)')
-            const gate = source.lastIndexOf('runtimeWorkspaceMutationGate.runExclusive(')
-            const enqueue = source.indexOf('getRuntimeQueueRepository().createBatchAndEnqueue', gate)
-            const guarded = source.slice(gate, enqueue)
+    it('keeps Main planning outside and only final authority checks plus Queue commit inside its gate', async () => {
+        const source = await readFile(resolve(process.cwd(), 'src/services/queue/main-queue-adapter.ts'), 'utf8')
+        const allocation = source.indexOf('outputReservations.planBatch(allocationRequests)')
+        const gate = source.lastIndexOf('runtimeWorkspaceMutationGate.runExclusive(')
+        const enqueue = source.indexOf('getRuntimeQueueRepository().createBatchAndEnqueue', gate)
+        const guarded = source.slice(gate, enqueue)
 
-            expect(allocation).toBeGreaterThan(-1)
-            expect(gate).toBeGreaterThan(allocation)
-            expect(enqueue).toBeGreaterThan(gate)
-            expect(guarded).not.toMatch(/executeNovelAIImageTransport|drainQueue|prepareBatch|planBatch\(/)
-        },
-    )
+        expect(allocation).toBeGreaterThan(-1)
+        expect(gate).toBeGreaterThan(allocation)
+        expect(enqueue).toBeGreaterThan(gate)
+        expect(guarded).not.toMatch(/executeNovelAIImageTransport|drainQueue|prepareBatch|planBatch\(/)
+    })
+
+    it('revalidates the reviewed Scene commit set inside its gate before Queue commit', async () => {
+        const source = await readFile(resolve(process.cwd(), 'src/services/queue/scene-queue-adapter.ts'), 'utf8')
+        const gate = source.lastIndexOf('runtimeWorkspaceMutationGate.runExclusive(')
+        const revalidation = source.indexOf('outputReservations.planBatch(data.allocationRequests)', gate)
+        const enqueue = source.indexOf('getRuntimeQueueRepository().createBatchAndEnqueue', gate)
+        const guarded = source.slice(gate, enqueue)
+
+        expect(revalidation).toBeGreaterThan(gate)
+        expect(enqueue).toBeGreaterThan(revalidation)
+        expect(guarded).not.toMatch(/executeNovelAIImageTransport|drainQueue|prepareBatch\(/)
+    })
 
     it('uses the same whole-document key for Folder, Main, Scene enqueue, and Scene CAS', async () => {
         const sources = await Promise.all([

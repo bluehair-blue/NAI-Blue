@@ -68,8 +68,14 @@ import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-stor
 import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useQueueStore } from '@/stores/queue-store'
-import { enqueueCurrentSceneQueue } from '@/services/queue/scene-queue-adapter'
-import { getRuntimeDurableQueueCoordinator } from '@/services/queue/runtime'
+import {
+    enqueueReviewedSceneQueue,
+    prepareCurrentSceneQueueReview,
+    type PreparedSceneQueueReview,
+    type SceneQueueSubmission,
+} from '@/services/queue/scene-queue-adapter'
+import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
+import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
 import type { CharacterPosition, CharacterSlotPatch } from '@/domain/composition'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { assessPortableCompositionPlan } from '@/platform/portable-resources'
@@ -197,10 +203,7 @@ export default function SceneDetail() {
     const [compositionPreview, setCompositionPreview] = useState<SceneCompositionResolution | null>(null)
     const [compositionPreviewError, setCompositionPreviewError] = useState<string | null>(null)
     const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
-    const [durableGenerationPending, setDurableGenerationPending] = useState(false)
-    const [durableGenerationCancelling, setDurableGenerationCancelling] = useState(false)
-    const durableBatchIdRef = useRef<string | null>(null)
-    const durableCancelRequestedRef = useRef(false)
+    const [sceneQueueReview, setSceneQueueReview] = useState<PreparedSceneQueueReview | null>(null)
 
     // Auto-save prompt logic - hooks must be before conditional return
     const updateScenePrompt = useSceneStore(state => state.updateScenePrompt)
@@ -424,17 +427,35 @@ export default function SceneDetail() {
             })
             return
         }
-        const coordinator = getRuntimeDurableQueueCoordinator()
-        durableBatchIdRef.current = null
-        durableCancelRequestedRef.current = false
-        setDurableGenerationPending(true)
-        setDurableGenerationCancelling(false)
-
         try {
-            const result = await enqueueCurrentSceneQueue()
-            if (result === null) return
+            setSceneQueueReview(await prepareCurrentSceneQueueReview())
+        } catch (error) {
+            toast({
+                title: t('common.error', 'Error'),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
+                variant: 'destructive',
+            })
+        }
+    }
 
-            durableBatchIdRef.current = result.batch.id
+    const replanSceneQueueReview = async (): Promise<boolean> => {
+        try {
+            const next = await prepareCurrentSceneQueueReview()
+            setSceneQueueReview(next)
+            return next !== null
+        } catch (error) {
+            toast({
+                title: t('common.error', 'Error'),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
+                variant: 'destructive',
+            })
+            return false
+        }
+    }
+
+    const approveSceneQueueReview = async (submission: SceneQueueSubmission): Promise<boolean> => {
+        try {
+            const result = await enqueueReviewedSceneQueue(submission)
             selectDurableBatch(result.batch.id)
             toast({
                 title: t('queue.enqueued', 'Added to durable queue'),
@@ -442,45 +463,16 @@ export default function SceneDetail() {
                     count: result.jobs.length,
                 }),
             })
-
-            // The durable repository owns cancellation after enqueue. The ref also
-            // bridges a click that races snapshot creation, so that job can never
-            // start after the detail view has already acknowledged cancellation.
-            if (durableCancelRequestedRef.current) {
-                await coordinator.cancelBatch(result.batch.id)
-                return
-            }
+            return true
         } catch (error) {
-            if (!durableCancelRequestedRef.current) {
-                toast({
-                    title: t('common.error', 'Error'),
-                    description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
-                    variant: 'destructive',
-                })
-            }
-        } finally {
-            durableBatchIdRef.current = null
-            setDurableGenerationPending(false)
-            setDurableGenerationCancelling(false)
-        }
-    }
-
-    const cancelDurableSceneGeneration = () => {
-        durableCancelRequestedRef.current = true
-        setDurableGenerationCancelling(true)
-        const coordinator = getRuntimeDurableQueueCoordinator()
-        const batchId = durableBatchIdRef.current
-
-        void (batchId === null
-            ? coordinator.cancelWorkflow('scene')
-            : coordinator.cancelBatch(batchId)
-        ).catch(error => {
+            if (isSceneQueueReviewConflict(error)) throw error
             toast({
                 title: t('common.error', 'Error'),
-                description: error instanceof Error ? error.message : String(error),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
                 variant: 'destructive',
             })
-        })
+            return false
+        }
     }
 
     const handleGenerate = () => {
@@ -488,10 +480,6 @@ export default function SceneDetail() {
 
         if (queueExecutionAuthority === 'legacy' && (sceneIsGenerating || sceneIsCancelling)) {
             cancelSceneGeneration()
-            return
-        }
-        if (queueExecutionAuthority !== 'legacy' && durableGenerationPending) {
-            cancelDurableSceneGeneration()
             return
         }
 
@@ -632,10 +620,10 @@ export default function SceneDetail() {
                     : { severity: 'valid' }
     const effectiveSceneGenerating = queueExecutionAuthority === 'legacy'
         ? sceneIsGenerating
-        : durableGenerationPending
+        : false
     const effectiveSceneCancelling = queueExecutionAuthority === 'legacy'
         ? sceneIsCancelling
-        : durableGenerationCancelling
+        : false
     const generationConflict = Boolean(generatingMode && generatingMode !== 'scene')
     const conflict: CompositionConflictSummary | null = assetHasConflict
         ? {
@@ -1222,6 +1210,16 @@ export default function SceneDetail() {
                 }}
                 sourceImage={selectedImageForInpaint}
             />
+
+            {sceneQueueReview !== null && (
+                <SceneQueueReviewDialog
+                    open
+                    onOpenChange={open => { if (!open) setSceneQueueReview(null) }}
+                    prepared={sceneQueueReview}
+                    onApprove={approveSceneQueueReview}
+                    onReplan={replanSceneQueueReview}
+                />
+            )}
 
             <ConfirmDialog
                 open={pendingImagesToTrash.length > 0}

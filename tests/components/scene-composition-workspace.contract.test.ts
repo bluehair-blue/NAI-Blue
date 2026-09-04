@@ -98,7 +98,8 @@ describe('Scene composition workspace information architecture', () => {
         }
         expect(sceneMode).toContain('startNewGenerationSession()')
         expect(sceneMode).toContain('cancelSceneGeneration()')
-        expect(sceneMode).toContain('enqueueCurrentSceneQueue()')
+        expect(sceneMode).toContain('prepareCurrentSceneQueueReview()')
+        expect(sceneMode).toContain('<SceneQueueReviewDialog')
         expect(sceneMode).toContain('selectDurableBatch(result.batch.id)')
         expect(sceneMode).not.toContain('.drain()')
         expect(sceneMode).toContain("queueExecutionAuthority === 'legacy'")
@@ -125,15 +126,14 @@ describe('Scene composition workspace information architecture', () => {
         expect(detail).toContain('SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG')
     })
 
-    it('routes Scene detail generation and cancellation through the selected queue authority', async () => {
+    it('routes Scene detail durable generation through explicit review and keeps legacy cancellation', async () => {
         const detail = await source('src/pages/SceneDetail.tsx')
 
         expect(detail).toContain("queueExecutionAuthority === 'legacy'")
-        expect(detail).toContain('enqueueCurrentSceneQueue()')
+        expect(detail).toContain('prepareCurrentSceneQueueReview()')
+        expect(detail).toContain('<SceneQueueReviewDialog')
         expect(detail).toContain('selectDurableBatch(result.batch.id)')
-        expect(detail).not.toContain('coordinator.drain()')
-        expect(detail).toContain("coordinator.cancelWorkflow('scene')")
-        expect(detail).toContain('coordinator.cancelBatch(result.batch.id)')
-        expect(detail).toContain('durableCancelRequestedRef.current')
+        expect(detail).not.toContain('.drain()')
+        expect(detail).not.toContain('enqueueCurrentSceneQueue()')
     })
 })

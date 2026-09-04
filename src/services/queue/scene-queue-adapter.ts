@@ -5,7 +5,19 @@ import type {
 } from '@/domain/queue/types'
 import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
-import { createAnlasCostConsentSnapshot } from '@/domain/queue/anlas-cost-consent'
+import {
+    approveSceneQueueCostEstimates,
+    assertSceneQueueReviewCondition,
+    createSceneQueueResourcePlan,
+    materializeApprovedSceneQueueResources,
+    SceneQueueApprovalRegistry,
+    SceneQueueReviewConflict,
+    type SceneQueueCostEstimate,
+    type SceneQueueReplanIssue,
+    type SceneQueueResourcePlan,
+} from '@/application/scene/scene-queue-review'
+export { SceneQueueReviewConflict }
+export type { SceneQueueReplanIssue }
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
 import { createGenerationFolderDocumentBinding } from '@/application/folder/generation-folder-binding'
 import type { SceneAuthoringRecord, SceneDocument } from '@/application/scene/scene-repository'
@@ -54,12 +66,15 @@ import {
 import {
     dehydrateGenerationParams,
     getRuntimeQueueResourceMaterializer,
-    type DehydratedGenerationResult,
     type MaterializedQueueResource,
 } from './queue-resource-materializer'
 import { gateGenerationFolderAutoUpload, getDefaultR2Readiness } from '@/services/r2/readiness'
 import { ensureImageFileExtension, renderFilenameTemplate } from '@/services/output/filename-policy'
-import { getRuntimeMainQueueDependencies } from './main-queue-runtime-dependencies'
+import {
+    getRuntimeMainQueueDependencies,
+    type OutputCommitSetPlanningRequest,
+    type PlannedOutputCommitSet,
+} from './main-queue-runtime-dependencies'
 import { bindOutputReservationSnapshot } from './job-snapshot'
 import type { OutputWriterDestination } from '@/services/output/output-writer'
 import {
@@ -78,6 +93,42 @@ export interface SceneQueueTarget {
     /** Optional caller-observed repository revision; stale callers fail the whole request. */
     readonly expectedRevision?: number
     readonly fileNames?: readonly string[]
+}
+
+export interface SceneQueueFilenameSummary {
+    readonly kind: 'filenames' | 'range'
+    readonly filenames?: readonly string[]
+    readonly first?: string
+    readonly last?: string
+    readonly count: number
+}
+
+export interface SceneQueueDestinationReview {
+    readonly logicalFolderLabel: string
+    readonly imageCount: number
+    readonly claimCount: number
+    readonly filenameSummary: SceneQueueFilenameSummary
+}
+
+export interface SceneQueueReview {
+    readonly reviewId: string
+    readonly sceneCount: number
+    readonly imageCount: number
+    readonly estimatedAnlas: number
+    readonly maxAnlas: number
+    readonly claimCount: number
+    readonly destinations: readonly SceneQueueDestinationReview[]
+}
+
+declare const sceneQueueSubmissionBrand: unique symbol
+export interface SceneQueueSubmission {
+    readonly reviewId: string
+    readonly [sceneQueueSubmissionBrand]: true
+}
+
+export interface PreparedSceneQueueReview {
+    readonly review: SceneQueueReview
+    readonly submission: SceneQueueSubmission
 }
 
 interface ResolvedSceneQueueTarget {
@@ -109,11 +160,51 @@ interface PreparedSceneQueueJob {
     readonly sequenceCommitProposal: Parameters<typeof encodeSceneJobSnapshot>[0]['sequenceCommitProposal']
     readonly planHash: Parameters<typeof encodeSceneJobSnapshot>[0]['planHash']
     readonly sceneBinding: import('@/application/scene/plan-scene-batch').SceneGenerationBinding
-    readonly costConsent: import('@/domain/queue/anlas-cost-consent').AnlasCostConsentSnapshot
-    readonly dehydrated: Pick<DehydratedGenerationResult, 'parameters' | 'resources'>
+    readonly costEstimate: SceneQueueCostEstimate
     readonly imageFormat: 'png' | 'webp'
     readonly destination: OutputWriterDestination
     readonly compositionResult: SceneCompositionRuntimeRecord
+    readonly reviewDestinationKey: string
+    readonly reviewDestinationLabel: string
+}
+
+interface SceneQueueSubmissionData {
+    readonly submission: SceneQueueSubmission
+    readonly review: SceneQueueReview
+    readonly selected: readonly ResolvedSceneQueueTarget[]
+    readonly targets: readonly SceneQueueTarget[]
+    readonly origin: QueueBatchOrigin
+    readonly consumePendingEntries: boolean
+    readonly folderRepository: IndexedDbGenerationFolderRepository
+    readonly folderBinding: ReturnType<typeof createGenerationFolderDocumentBinding>
+    readonly sceneRepository: ReturnType<typeof getRuntimeSceneRepository>
+    readonly authorityByPreset: ReadonlyMap<string, SceneDocument>
+    readonly prepared: readonly Omit<PlannedSceneBatchJob<PreparedSceneQueueJob>, 'ordinal'>[]
+    readonly plans: ReadonlyMap<string, ReturnType<typeof planSceneBatch<PreparedSceneQueueJob>>>
+    readonly allocationRequests: readonly OutputCommitSetPlanningRequest[]
+    readonly allocations: readonly PlannedOutputCommitSet[]
+    readonly batchId: string
+    readonly requestIdentity: string
+    readonly createdAt: string
+    readonly useStreaming: boolean
+    readonly resourcePlan: SceneQueueResourcePlan<import('@/services/novelai-types').GenerationParams>
+}
+
+const sceneQueueSubmissions = new WeakMap<SceneQueueSubmission, SceneQueueSubmissionData>()
+const sceneQueueApprovals = new SceneQueueApprovalRegistry<SceneQueueSubmission, CreateBatchAndEnqueueResult>()
+
+function replan(reason: SceneQueueReplanIssue['reason'], message: string): never {
+    assertSceneQueueReviewCondition(false, reason, message)
+}
+
+function summarizeSceneFilenames(fileNames: readonly string[]): SceneQueueFilenameSummary {
+    if (fileNames.length <= 5) return Object.freeze({ kind: 'filenames', filenames: Object.freeze([...fileNames]), count: fileNames.length })
+    return Object.freeze({
+        kind: 'range',
+        first: fileNames[0],
+        last: fileNames[fileNames.length - 1],
+        count: fileNames.length,
+    })
 }
 
 function exactSceneFileName(value: string, extension: 'png' | 'webp'): string {
@@ -193,7 +284,7 @@ function normalizeSceneQueueTargets(targets: readonly SceneQueueTarget[]): Scene
     return [...normalized.values()]
 }
 
-export function enqueueCurrentSceneQueue(): Promise<CreateBatchAndEnqueueResult | null> {
+export function prepareCurrentSceneQueueReview(): Promise<PreparedSceneQueueReview | null> {
     const sceneState = useSceneStore.getState()
     const presetId = sceneState.activePresetId
     const preset = sceneState.presets.find(candidate => candidate.id === presetId)
@@ -206,32 +297,48 @@ export function enqueueCurrentSceneQueue(): Promise<CreateBatchAndEnqueueResult 
             ? {}
             : { fileNames: scene.queuedFileNames.slice(0, scene.queueCount) }),
     }))
-    return enqueueSceneQueueTargets(targets, {
+    return prepareSceneQueueReview(targets, {
         origin: 'legacy-conversion',
         consumePendingEntries: true,
     })
 }
 
+/** Non-interactive compatibility boundary; user-facing callers must present the returned review before approval. */
+export function enqueueCurrentSceneQueue(): Promise<CreateBatchAndEnqueueResult | null> {
+    return prepareCurrentSceneQueueReview().then(prepared => (
+        prepared === null ? null : enqueueReviewedSceneQueue(prepared.submission)
+    ))
+}
+
+/** Non-interactive compatibility boundary for already-authorized internal callers. */
 export function enqueueSceneQueueTargets(
     targets: readonly SceneQueueTarget[],
     options: { origin?: QueueBatchOrigin; consumePendingEntries?: boolean } = {},
 ): Promise<CreateBatchAndEnqueueResult | null> {
+    return prepareSceneQueueReview(targets, options).then(prepared => (
+        prepared === null ? null : enqueueReviewedSceneQueue(prepared.submission)
+    ))
+}
+
+/** Reads Scene/Folder authority and the exact allocator, returning UI-safe review data without Queue or presentation writes. */
+export function prepareSceneQueueReview(
+    targets: readonly SceneQueueTarget[],
+    options: { origin?: QueueBatchOrigin; consumePendingEntries?: boolean } = {},
+): Promise<PreparedSceneQueueReview | null> {
     const normalizedTargets = normalizeSceneQueueTargets(targets)
     if (normalizedTargets.length === 0) return Promise.resolve(null)
-    return enqueueSceneQueueTargetsOnce(
+    return prepareSceneQueueReviewOnce(
         normalizedTargets,
         options.origin ?? 'fresh',
         options.consumePendingEntries === true,
     )
 }
 
-async function enqueueSceneQueueTargetsOnce(
+async function prepareSceneQueueReviewOnce(
     targets: readonly SceneQueueTarget[],
     origin: QueueBatchOrigin,
     consumePendingEntries: boolean,
-): Promise<CreateBatchAndEnqueueResult | null> {
-    const operationId = useQueueStore.getState().beginEnqueueOperation('scene')
-    try {
+): Promise<PreparedSceneQueueReview> {
         const sceneState = useSceneStore.getState()
         const settings = useSettingsStore.getState()
         const folderRepository = new IndexedDbGenerationFolderRepository()
@@ -257,13 +364,12 @@ async function enqueueSceneQueueTargetsOnce(
             }
             return { target, preset, scene: projectRepositoryScene(source), document }
         })
-        const requestedDay = new Date().toISOString().slice(0, 10)
+        const reviewedAt = new Date().toISOString()
+        const requestedDay = reviewedAt.slice(0, 10)
+        const reviewId = `scene-review-${globalThis.crypto.randomUUID()}`
         const canonicalRequestHash = `sha256:${hashCanonicalValue({
             schemaVersion: 1,
-            // The persisted operation id is the idempotency nonce: concurrent
-            // or crash-replayed submissions share it, while a later user action
-            // must be allowed to enqueue the same Scene again.
-            enqueueOperationId: operationId,
+            reviewId,
             requestedDay,
             folderBinding,
             targets: selected.map(({ target, document }) => ({
@@ -289,9 +395,6 @@ async function enqueueSceneQueueTargetsOnce(
         const rotationCharacterId = rotation.active && rotation.snapshot
             ? rotation.characterIds[rotation.currentIndex]
             : undefined
-        const materializer = getRuntimeQueueResourceMaterializer()
-        const resourceCache = new Map<string, Promise<MaterializedQueueResource>>()
-        const resources = new Map<string, QueueResourceRecord>()
         // One enqueue operation must use one credential-tier pricing authority;
         // reading auth per image could otherwise mix consent bases mid-batch.
         const activeCredentialsAreOpus = selectActiveCredentialsAreOpus(useAuthStore.getState())
@@ -335,6 +438,10 @@ async function enqueueSceneQueueTargetsOnce(
                 resolvedFolder,
                 r2Readiness?.status === 'ready',
             )
+            const reviewDestinationKey = generationFolder?.id ?? 'default-scene-output'
+            const reviewDestinationLabel = generationFolder === null
+                ? 'Default Scene output'
+                : generationFolder.path
             const saveContext: SaveSceneResultContext = {
                 activePresetId: preset.id,
                 sceneSavePath: settings.sceneSavePath,
@@ -403,8 +510,6 @@ async function enqueueSceneQueueTargetsOnce(
                     now,
                 })
                 const outputContext = { ...outputContextBase, fileName }
-                const dehydrated = await dehydrateGenerationParams(built.params, materializer, resourceCache)
-                for (const record of dehydrated.records) resources.set(record.id, record)
                 const pricingBasis = resolveAnlasPricingBasis({
                     model: built.params.model,
                     activeCredentialsAreOpus,
@@ -417,12 +522,11 @@ async function enqueueSceneQueueTargetsOnce(
                     imageCount: 1,
                     pricingBasis,
                 })
-                const costConsent = createAnlasCostConsentSnapshot({
+                const costEstimate = Object.freeze({
                     pricingBasis,
                     estimatedAnlas,
                     maxAnlas: estimatedAnlas,
-                    estimatedAt: now.toISOString(),
-                    approvedAt: now.toISOString(),
+                    estimatedAt: reviewedAt,
                 })
                 prepared.push({
                     presetId: preset.id,
@@ -441,11 +545,7 @@ async function enqueueSceneQueueTargetsOnce(
                         sequenceCommitProposal: built.sequenceCommitProposal,
                         planHash: built.planHash,
                         sceneBinding,
-                        costConsent,
-                        dehydrated: {
-                            parameters: dehydrated.parameters,
-                            resources: dehydrated.resources,
-                        },
+                        costEstimate,
                         imageFormat: built.mimeType === 'image/webp' ? 'webp' : 'png',
                         destination: {
                             directory,
@@ -462,6 +562,8 @@ async function enqueueSceneQueueTargetsOnce(
                             warnings: built.warnings,
                             errors: built.errors,
                         },
+                        reviewDestinationKey,
+                        reviewDestinationLabel,
                     },
                 })
             }
@@ -506,16 +608,7 @@ async function enqueueSceneQueueTargetsOnce(
         const requestIdentity = canonicalRequestHash.slice('sha256:'.length)
         const batchId = `scene-batch-${requestIdentity}`
         const createdAt = planningNow.toISOString()
-        const jobs: EnqueueGenerationJobInput[] = []
-        const reservations: OutputCommitSetReservation[] = []
         const dependencies = getRuntimeMainQueueDependencies()
-        const assertCurrentFolderBinding = async (): Promise<void> => {
-            const currentDocument = await folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID)
-            const current = currentDocument === null ? null : createGenerationFolderDocumentBinding(currentDocument)
-            if (current === null || canonicalSerialize(current) !== canonicalSerialize(folderBinding)) {
-                throw new QueueExecutionError('fatal', 'Generation folder changed before Queue reservation')
-            }
-        }
         const generationLimits = runtimeCapabilities.generationPublication.generationLimits
         const plannedClaimCount = prepared.reduce((total, item) => total + generationOutputClaimKinds({
             fileName: item.fileName,
@@ -547,19 +640,8 @@ async function enqueueSceneQueueTargetsOnce(
         if (allocations.length !== prepared.length) {
             throw new QueueExecutionError('fatal', 'Scene output allocation did not preserve the requested count')
         }
-        await assertCurrentFolderBinding()
-        let queueOrdinal = 0
-        // Keep the caller's target order while attaching each job to its
-        // preset-local durable sub-plan.
-        for (const item of prepared) {
-            const plan = plans.get(item.presetId)
-            if (plan === undefined) {
-                throw new QueueExecutionError('fatal', `Scene sub-plan is missing for preset ${item.presetId}`)
-            }
-            // Sub-plan ordinals are local to each preset; Queue IDs and ordering
-            // must remain unique across the one atomic batch.
-            const ordinal = queueOrdinal++
-            const jobId = `scene-job-${requestIdentity}-${ordinal}`
+        const destinations = new Map<string, { label: string; filenames: string[]; imageCount: number; claimCount: number }>()
+        prepared.forEach((item, ordinal) => {
             const allocation = allocations[ordinal]
             if (allocation.fileName !== item.fileName) {
                 throw new QueueExecutionError('fatal', 'Scene output preflight changed the exact filename')
@@ -569,105 +651,234 @@ async function enqueueSceneQueueTargetsOnce(
                 collisionPolicy: 'fail',
                 directoryAuthorityId: folderBinding.resourceId,
             }, allocation, outputFilesystemSemantics())
-            const { commitSet, commitSetHash } = allocation
-            const reservationId = `output-reservation:${jobId}`
-            const reservation: OutputCommitSetReservation = {
-                reservationSchemaVersion: 1,
-                reservationId,
-                batchId,
-                jobId,
-                folderBinding: plan.folderBinding,
-                directoryIdentity: allocation.directoryIdentity,
-                relativePath: item.fileName,
-                collisionPolicy: 'fail',
-                expectedExistingDigest: null,
-                commitSet,
-                commitSetHash,
-                state: 'reserved',
-                version: 1,
-                updatedAt: createdAt,
+            const destination = destinations.get(item.prepared.reviewDestinationKey) ?? {
+                label: item.prepared.reviewDestinationLabel,
+                filenames: [],
+                imageCount: 0,
+                claimCount: 0,
             }
-            const {
-                batchId: _batchId,
-                jobId: _jobId,
-                state: _state,
-                version: _version,
-                updatedAt: _updatedAt,
-                ...reservationSnapshot
-            } = reservation
-            const destinationBoundPlanHash: `sha256:${string}` = `sha256:${hashCanonicalValue({
-                scenePlanHash: plan.planHash,
-                outputCommitSetHash: commitSetHash,
-            })}`
-            const encoded = encodeSceneJobSnapshot({
-                scene: item.prepared.scene,
-                params: item.prepared.params,
-                finalPrompt: item.prepared.finalPrompt,
-                mimeType: item.prepared.mimeType,
-                saveContext: item.prepared.saveContext,
-                outputContext: item.prepared.outputContext,
-                streaming: settings.useStreaming,
-                sequenceCommitProposal: item.prepared.sequenceCommitProposal,
-                planHash: item.prepared.planHash,
-                sceneBinding: item.sceneBinding,
-                batch: {
-                    request: plan.request,
-                    count: plan.count,
-                    estimatedAnlas: plan.estimatedAnlas,
-                    planHash: destinationBoundPlanHash,
-                },
-                costConsent: item.prepared.costConsent,
-            }, item.prepared.dehydrated)
-            const snapshot = bindOutputReservationSnapshot(encoded.snapshot, reservationSnapshot)
-            jobs.push({
-                id: jobId,
-                batchId,
-                workflow: 'scene',
-                sceneId: item.sceneId,
-                createdAt,
-                priority: 0,
-                ordinal,
-                snapshot,
-                compositionPlanHash: destinationBoundPlanHash,
-                maxAttempts: 3,
-                idempotencyKey: `scene-enqueue-${requestIdentity}-${ordinal}`,
-            })
-            reservations.push(reservation)
-        }
+            destination.filenames.push(allocation.fileName)
+            destination.imageCount += 1
+            destination.claimCount += allocation.commitSet.claims.length
+            destinations.set(item.prepared.reviewDestinationKey, destination)
+        })
+        const review: SceneQueueReview = Object.freeze({
+            reviewId,
+            sceneCount: selected.length,
+            imageCount: prepared.length,
+            estimatedAnlas: prepared.reduce((total, item) => total + item.estimatedAnlas, 0),
+            maxAnlas: prepared.reduce((total, item) => total + item.prepared.costEstimate.maxAnlas, 0),
+            claimCount: allocations.reduce((total, allocation) => total + allocation.commitSet.claims.length, 0),
+            destinations: Object.freeze([...destinations.values()].map(destination => Object.freeze({
+                logicalFolderLabel: destination.label,
+                imageCount: destination.imageCount,
+                claimCount: destination.claimCount,
+                filenameSummary: summarizeSceneFilenames(destination.filenames),
+            }))),
+        })
+        const submission = Object.freeze({ reviewId }) as SceneQueueSubmission
+        sceneQueueSubmissions.set(submission, {
+            submission,
+            review,
+            selected,
+            targets,
+            origin,
+            consumePendingEntries,
+            folderRepository,
+            folderBinding,
+            sceneRepository,
+            authorityByPreset,
+            prepared,
+            plans,
+            allocationRequests,
+            allocations,
+            batchId,
+            requestIdentity,
+            createdAt,
+            useStreaming: settings.useStreaming,
+            resourcePlan: createSceneQueueResourcePlan(prepared.map(item => item.prepared.params)),
+        })
+        return Object.freeze({ review, submission })
+}
+
+/** Revalidates the opaque review under the shared workspace gate, then commits Queue state before projecting UI state. */
+export function enqueueReviewedSceneQueue(
+    submission: SceneQueueSubmission,
+): Promise<CreateBatchAndEnqueueResult> {
+    const data = sceneQueueSubmissions.get(submission)
+    if (data === undefined || data.submission.reviewId !== submission.reviewId) {
+        return Promise.reject(new TypeError('Scene Queue submission is invalid or belongs to another process'))
+    }
+    return sceneQueueApprovals.run(submission, () => enqueueReviewedSceneQueueOnce(data))
+}
+
+async function enqueueReviewedSceneQueueOnce(
+    data: SceneQueueSubmissionData,
+): Promise<CreateBatchAndEnqueueResult> {
+    const operationId = useQueueStore.getState().beginEnqueueOperation('scene')
+    try {
+        const materializer = getRuntimeQueueResourceMaterializer()
+        const resourceCache = new Map<string, Promise<MaterializedQueueResource>>()
+        const resources = new Map<string, QueueResourceRecord>()
+        const dehydratedByOrdinal = await materializeApprovedSceneQueueResources(
+            data.resourcePlan,
+            async params => {
+                const dehydrated = await dehydrateGenerationParams(params, materializer, resourceCache)
+                for (const record of dehydrated.records) resources.set(record.id, record)
+                return { parameters: dehydrated.parameters, resources: dehydrated.resources }
+            },
+        )
         const result = await runtimeWorkspaceMutationGate.runExclusive(
-            generationFolderDocumentMutationKey(folderBinding.resourceId),
+            generationFolderDocumentMutationKey(data.folderBinding.resourceId),
             async () => {
-                await assertCurrentFolderBinding()
-                const finalAuthorityByPreset = new Map<string, SceneDocument>()
-                for (const presetId of authorityByPreset.keys()) {
-                    const document = await sceneRepository.getDocument(presetId)
-                    if (document === null) {
-                        throw new QueueExecutionError('fatal', `Scene authority disappeared for preset ${presetId}`)
+                const currentFolder = await data.folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID)
+                const currentFolderBinding = currentFolder === null
+                    ? null
+                    : createGenerationFolderDocumentBinding(currentFolder)
+                if (currentFolderBinding === null
+                    || canonicalSerialize(currentFolderBinding) !== canonicalSerialize(data.folderBinding)) {
+                    replan('folder-changed', 'Generation folder changed after Scene Queue review')
+                }
+
+                for (const presetId of data.authorityByPreset.keys()) {
+                    const document = await data.sceneRepository.getDocument(presetId)
+                    if (document === null || data.prepared.some(item => item.presetId === presetId
+                        && !sceneGenerationBindingMatches(item.sceneBinding, document, item.sceneId))) {
+                        replan('scene-changed', 'Scene document changed after Scene Queue review')
                     }
-                    finalAuthorityByPreset.set(presetId, document)
                 }
-                if (prepared.some(item => {
-                    const current = finalAuthorityByPreset.get(item.presetId)
-                    return current === undefined
-                        || !sceneGenerationBindingMatches(item.sceneBinding, current, item.sceneId)
+
+                const activeCredentialsAreOpus = selectActiveCredentialsAreOpus(useAuthStore.getState())
+                if (data.prepared.some(item => {
+                    const pricingBasis = resolveAnlasPricingBasis({
+                        model: item.prepared.params.model,
+                        activeCredentialsAreOpus,
+                    })
+                    const estimatedAnlas = calculateAnlasCost({
+                        model: item.prepared.params.model,
+                        width: item.prepared.params.width,
+                        height: item.prepared.params.height,
+                        steps: item.prepared.params.steps,
+                        imageCount: 1,
+                        pricingBasis,
+                    })
+                    return pricingBasis !== item.prepared.costEstimate.pricingBasis
+                        || estimatedAnlas !== item.prepared.costEstimate.estimatedAnlas
                 })) {
-                    throw new QueueExecutionError('fatal', 'Scene document changed before atomic Queue enqueue')
+                    replan('pricing-changed', 'Scene Queue pricing changed after review')
                 }
-                assertGenerationAtomicBatchAvailable(
-                    jobs.length,
-                    reservations.reduce((total, reservation) => (
-                        total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
-                    ), 0),
-                    generationLimits,
+
+                const generationLimits = runtimeCapabilities.generationPublication.generationLimits
+                try {
+                    assertGenerationAtomicBatchAvailable(data.review.imageCount, data.review.claimCount, generationLimits)
+                } catch {
+                    replan('runtime-limit-changed', 'Runtime atomic Queue limits changed after review')
+                }
+
+                let currentAllocations: readonly PlannedOutputCommitSet[]
+                try {
+                    currentAllocations = await getRuntimeMainQueueDependencies().outputReservations.planBatch(data.allocationRequests)
+                } catch {
+                    replan('commit-set-changed', 'Exact Scene output commit set conflicts after review')
+                }
+                if (currentAllocations.length !== data.allocations.length
+                    || currentAllocations.some((allocation, ordinal) => {
+                        const reviewed = data.allocations[ordinal]
+                        return allocation.fileName !== reviewed.fileName
+                            || allocation.directoryIdentity !== reviewed.directoryIdentity
+                            || allocation.commitSetHash !== reviewed.commitSetHash
+                            || canonicalSerialize(allocation.commitSet) !== canonicalSerialize(reviewed.commitSet)
+                    })) {
+                    replan('commit-set-changed', 'Exact Scene output commit set changed after review')
+                }
+
+                const jobs: EnqueueGenerationJobInput[] = []
+                const reservations: OutputCommitSetReservation[] = []
+                const approvedAt = new Date().toISOString()
+                const costConsents = approveSceneQueueCostEstimates(
+                    data.prepared.map(item => item.prepared.costEstimate),
+                    approvedAt,
                 )
+                data.prepared.forEach((item, ordinal) => {
+                    const plan = data.plans.get(item.presetId)
+                    if (plan === undefined) replan('scene-changed', `Scene sub-plan is missing for preset ${item.presetId}`)
+                    const jobId = `scene-job-${data.requestIdentity}-${ordinal}`
+                    const allocation = currentAllocations[ordinal]
+                    assertExactOutputCommitSetAllocation({
+                        ...data.allocationRequests[ordinal].claimPlan,
+                        collisionPolicy: 'fail',
+                        directoryAuthorityId: data.folderBinding.resourceId,
+                    }, allocation, outputFilesystemSemantics())
+                    const reservation: OutputCommitSetReservation = {
+                        reservationSchemaVersion: 1,
+                        reservationId: `output-reservation:${jobId}`,
+                        batchId: data.batchId,
+                        jobId,
+                        folderBinding: plan.folderBinding,
+                        directoryIdentity: allocation.directoryIdentity,
+                        relativePath: item.fileName,
+                        collisionPolicy: 'fail',
+                        expectedExistingDigest: null,
+                        commitSet: allocation.commitSet,
+                        commitSetHash: allocation.commitSetHash,
+                        state: 'reserved',
+                        version: 1,
+                        updatedAt: data.createdAt,
+                    }
+                    const {
+                        batchId: _batchId,
+                        jobId: _jobId,
+                        state: _state,
+                        version: _version,
+                        updatedAt: _updatedAt,
+                        ...reservationSnapshot
+                    } = reservation
+                    const destinationBoundPlanHash: `sha256:${string}` = `sha256:${hashCanonicalValue({
+                        scenePlanHash: plan.planHash,
+                        outputCommitSetHash: allocation.commitSetHash,
+                    })}`
+                    const encoded = encodeSceneJobSnapshot({
+                        scene: item.prepared.scene,
+                        params: item.prepared.params,
+                        finalPrompt: item.prepared.finalPrompt,
+                        mimeType: item.prepared.mimeType,
+                        saveContext: item.prepared.saveContext,
+                        outputContext: item.prepared.outputContext,
+                        streaming: data.useStreaming,
+                        sequenceCommitProposal: item.prepared.sequenceCommitProposal,
+                        planHash: item.prepared.planHash,
+                        sceneBinding: item.sceneBinding,
+                        batch: {
+                            request: plan.request,
+                            count: plan.count,
+                            estimatedAnlas: plan.estimatedAnlas,
+                            planHash: destinationBoundPlanHash,
+                        },
+                        costConsent: costConsents[ordinal],
+                    }, dehydratedByOrdinal[ordinal])
+                    jobs.push({
+                        id: jobId,
+                        batchId: data.batchId,
+                        workflow: 'scene',
+                        sceneId: item.sceneId,
+                        createdAt: data.createdAt,
+                        priority: 0,
+                        ordinal,
+                        snapshot: bindOutputReservationSnapshot(encoded.snapshot, reservationSnapshot),
+                        compositionPlanHash: destinationBoundPlanHash,
+                        maxAttempts: 3,
+                        idempotencyKey: `scene-enqueue-${data.requestIdentity}-${ordinal}`,
+                    })
+                    reservations.push(reservation)
+                })
                 return getRuntimeQueueRepository().createBatchAndEnqueue({
                     batch: {
-                        id: batchId,
+                        id: data.batchId,
                         workflow: 'scene',
-                        createdAt,
+                        createdAt: data.createdAt,
                         failurePolicy: 'continue',
-                        origin,
-                        idempotencyKey: `scene-enqueue-${requestIdentity}`,
+                        origin: data.origin,
+                        idempotencyKey: `scene-enqueue-${data.requestIdentity}`,
                     },
                     jobs,
                     resources: [...resources.values()],
@@ -675,18 +886,18 @@ async function enqueueSceneQueueTargetsOnce(
                 })
             },
         )
-        // Queue pending entries and seed advancement are presentation side effects;
-        // both happen only after the atomic repository transaction succeeds.
-        if (consumePendingEntries) {
-            for (const { target } of selected) {
+        // Presentation changes occur only after the atomic Queue transaction commits.
+        if (data.consumePendingEntries) {
+            for (const { target } of data.selected) {
                 useSceneStore.getState().consumeSceneQueueEntries(target.presetId, target.sceneId, target.count)
             }
         }
-        for (const item of prepared) {
+        for (const item of data.prepared) {
             useSceneStore.getState().recordSceneCompositionResult(item.sceneId, item.prepared.compositionResult)
         }
-        for (const { preset, scene } of selected) {
-            for (let count = 0; count < (targets.find(target => target.presetId === preset.id && target.sceneId === scene.id)?.count ?? 0); count += 1) {
+        for (const { preset, scene } of data.selected) {
+            const count = data.targets.find(target => target.presetId === preset.id && target.sceneId === scene.id)?.count ?? 0
+            for (let index = 0; index < count; index += 1) {
                 useSceneStore.getState().consumeSceneGenerationSeed(preset.id, scene.id)
             }
         }

@@ -12,15 +12,21 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import type { ScenePreset } from '@/stores/scene-store'
-import type { SceneQueueTarget } from '@/services/queue/scene-queue-adapter'
+import type {
+    PreparedSceneQueueReview,
+    SceneQueueSubmission,
+    SceneQueueTarget,
+} from '@/services/queue/scene-queue-adapter'
 
 interface SceneQueueSelectionDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     presets: readonly ScenePreset[]
     busy?: boolean
-    onEnqueue: (targets: readonly SceneQueueTarget[]) => Promise<boolean>
+    onPrepare: (targets: readonly SceneQueueTarget[]) => Promise<PreparedSceneQueueReview | null>
+    onApprove: (submission: SceneQueueSubmission) => Promise<boolean>
 }
 
 interface SelectedScene extends SceneQueueTarget {
@@ -31,21 +37,25 @@ function selectionKey(presetId: string, sceneId: string): string {
     return `${presetId}::${sceneId}`
 }
 
-// This dialog owns only temporary selection state; Queue Center submits the
-// resulting tuples to the durable adapter, which captures immutable snapshots.
+// Selection stays local until review; approval is the only path that may commit Queue state.
 export function SceneQueueSelectionDialog({
     open,
     onOpenChange,
     presets,
     busy = false,
-    onEnqueue,
+    onPrepare,
+    onApprove,
 }: SceneQueueSelectionDialogProps) {
     const { t } = useTranslation()
     const [selected, setSelected] = useState<Record<string, SelectedScene>>({})
     const [submitting, setSubmitting] = useState(false)
+    const [prepared, setPrepared] = useState<PreparedSceneQueueReview | null>(null)
 
     useEffect(() => {
-        if (open) setSelected({})
+        if (open) {
+            setSelected({})
+            setPrepared(null)
+        }
     }, [open])
 
     const selectedTargets = useMemo(
@@ -58,6 +68,7 @@ export function SceneQueueSelectionDialog({
     )
 
     const toggleScene = (presetId: string, sceneId: string, checked: boolean) => {
+        setPrepared(null)
         const key = selectionKey(presetId, sceneId)
         setSelected(current => {
             if (!checked) {
@@ -73,6 +84,7 @@ export function SceneQueueSelectionDialog({
     }
 
     const setPresetSelection = (preset: ScenePreset, checked: boolean) => {
+        setPrepared(null)
         setSelected(current => {
             const next = { ...current }
             for (const scene of preset.scenes) {
@@ -85,6 +97,7 @@ export function SceneQueueSelectionDialog({
     }
 
     const setSceneCount = (key: string, value: string) => {
+        setPrepared(null)
         const count = Math.max(1, Math.min(999, Math.floor(Number(value) || 1)))
         setSelected(current => {
             const target = current[key]
@@ -92,15 +105,29 @@ export function SceneQueueSelectionDialog({
         })
     }
 
-    const submit = async () => {
-        if (selectedTargets.length === 0 || submitting || busy) return
+    const prepare = async () => {
+        if (selectedTargets.length === 0 || submitting || busy) return false
         setSubmitting(true)
         try {
-            if (await onEnqueue(selectedTargets)) onOpenChange(false)
+            const next = await onPrepare(selectedTargets)
+            setPrepared(next)
+            return next !== null
         } finally {
             setSubmitting(false)
         }
     }
+
+    if (prepared !== null) return (
+        <SceneQueueReviewDialog
+            open={open}
+            onOpenChange={onOpenChange}
+            prepared={prepared}
+            busy={busy}
+            onApprove={onApprove}
+            onReplan={prepare}
+            onBack={() => setPrepared(null)}
+        />
+    )
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -216,8 +243,8 @@ export function SceneQueueSelectionDialog({
                     <Button type="button" variant="outline" disabled={submitting} onClick={() => onOpenChange(false)}>
                         {t('common.cancel', 'Cancel')}
                     </Button>
-                    <Button type="button" disabled={selectedTargets.length === 0 || busy || submitting} onClick={() => void submit()}>
-                        {t('queue.enqueueSelectedImages', 'Add {{count}} images to queue', { count: totalImages })}
+                    <Button type="button" disabled={selectedTargets.length === 0 || busy || submitting} onClick={() => void prepare()}>
+                        {t('queue.reviewSelectedImages', 'Review {{count}} images', { count: totalImages })}
                     </Button>
                 </DialogFooter>
             </DialogContent>

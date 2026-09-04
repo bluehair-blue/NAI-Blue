@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { SceneQueueSelectionDialog } from '@/components/queue/SceneQueueSelectionDialog'
+import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import type {
     FulfillmentIssue,
     GenerationFulfillmentProjection,
@@ -43,14 +44,18 @@ import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { getRuntimeQueueRepository } from '@/services/queue/indexeddb-queue-repository'
 import { getRuntimeDurableQueueCoordinator } from '@/services/queue/runtime'
 import {
-    enqueueCurrentSceneQueue,
-    enqueueSceneQueueTargets,
+    enqueueReviewedSceneQueue,
+    prepareCurrentSceneQueueReview,
+    prepareSceneQueueReview,
+    type PreparedSceneQueueReview,
+    type SceneQueueSubmission,
     type SceneQueueTarget,
 } from '@/services/queue/scene-queue-adapter'
 import { useDiagnosticsStore } from '@/stores/diagnostics-store'
 import { useQueueStore } from '@/stores/queue-store'
 import { useSceneStore } from '@/stores/scene-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
 
 const QUEUE_ROW_HEIGHT = 96
 const QUEUE_OVERSCAN = 5
@@ -129,6 +134,7 @@ export default function QueueCenter() {
     const [busy, setBusy] = useState(false)
     const [conversionOpen, setConversionOpen] = useState(false)
     const [sceneSelectionOpen, setSceneSelectionOpen] = useState(false)
+    const [legacySceneReview, setLegacySceneReview] = useState<PreparedSceneQueueReview | null>(null)
     const [fulfillment, setFulfillment] = useState<GenerationFulfillmentProjection | null>(null)
     const [fulfillmentLoading, setFulfillmentLoading] = useState(false)
     const [fulfillmentError, setFulfillmentError] = useState(false)
@@ -335,13 +341,17 @@ export default function QueueCenter() {
 
     const rate = calculateQueueRate(summary ?? emptySummary(selectedBatchId ?? ''), Date.now())
 
-    const runAction = async (action: () => Promise<unknown>) => {
+    const runAction = async (
+        action: () => Promise<unknown>,
+        rethrow: (error: unknown) => boolean = () => false,
+    ) => {
         setBusy(true)
         try {
             await action()
             await refresh()
         } catch (error) {
             reportDiagnostic(error, { operation: 'queue-center.action', stage: 'mutate', category: 'persistence' })
+            if (rethrow(error)) throw error
         } finally {
             setBusy(false)
         }
@@ -365,20 +375,35 @@ export default function QueueCenter() {
 
     const convertLegacyQueue = async () => {
         await runAction(async () => {
-            const result = await enqueueCurrentSceneQueue()
-            if (result !== null) setSelectedBatchId(result.batch.id)
+            setLegacySceneReview(await prepareCurrentSceneQueueReview())
         })
     }
 
-    const enqueueSelectedScenes = async (targets: readonly SceneQueueTarget[]): Promise<boolean> => {
+    const prepareSelectedScenes = async (targets: readonly SceneQueueTarget[]): Promise<PreparedSceneQueueReview | null> => {
+        let prepared: PreparedSceneQueueReview | null = null
+        await runAction(async () => {
+            prepared = await prepareSceneQueueReview(targets)
+        })
+        return prepared
+    }
+
+    const approveSelectedScenes = async (submission: SceneQueueSubmission): Promise<boolean> => {
         let enqueued = false
         await runAction(async () => {
-            const result = await enqueueSceneQueueTargets(targets)
-            if (result === null) return
+            const result = await enqueueReviewedSceneQueue(submission)
             setSelectedBatchId(result.batch.id)
             enqueued = true
-        })
+        }, isSceneQueueReviewConflict)
         return enqueued
+    }
+
+    const replanLegacySceneReview = async (): Promise<boolean> => {
+        let next: PreparedSceneQueueReview | null = null
+        await runAction(async () => {
+            next = await prepareCurrentSceneQueueReview()
+            setLegacySceneReview(next)
+        })
+        return next !== null
     }
 
     const focusRow = (index: number) => {
@@ -874,8 +899,19 @@ export default function QueueCenter() {
                 onOpenChange={setSceneSelectionOpen}
                 presets={scenePresets}
                 busy={busy}
-                onEnqueue={enqueueSelectedScenes}
+                onPrepare={prepareSelectedScenes}
+                onApprove={approveSelectedScenes}
             />
+            {legacySceneReview !== null && (
+                <SceneQueueReviewDialog
+                    open
+                    onOpenChange={open => { if (!open) setLegacySceneReview(null) }}
+                    prepared={legacySceneReview}
+                    busy={busy}
+                    onApprove={approveSelectedScenes}
+                    onReplan={replanLegacySceneReview}
+                />
+            )}
         </main>
     )
 }

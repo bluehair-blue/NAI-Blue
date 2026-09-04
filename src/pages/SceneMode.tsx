@@ -124,7 +124,14 @@ import { getRuntimeCompositionDocument } from '@/lib/composition-authority'
 import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
 import { useQueueStore } from '@/stores/queue-store'
-import { enqueueCurrentSceneQueue } from '@/services/queue/scene-queue-adapter'
+import {
+    enqueueReviewedSceneQueue,
+    prepareCurrentSceneQueueReview,
+    type PreparedSceneQueueReview,
+    type SceneQueueSubmission,
+} from '@/services/queue/scene-queue-adapter'
+import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
+import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
 import type {
     CompositionConflictSummary,
     CompositionOverrideDiffItem,
@@ -286,6 +293,7 @@ export default function SceneMode() {
     const startNewGenerationSession = useSceneStore(s => s.startNewGenerationSession)
     const queueExecutionAuthority = useQueueStore(s => s.executionAuthority)
     const selectDurableBatch = useQueueStore(s => s.setSelectedBatchId)
+    const [sceneQueueReview, setSceneQueueReview] = useState<PreparedSceneQueueReview | null>(null)
     const cancelSceneGeneration = useSceneStore(s => s.cancelSceneGeneration)
     const importPreset = useSceneStore(s => s.importPreset)
     const rotationActive = useRotationStore(s => s.active)
@@ -588,8 +596,18 @@ export default function SceneMode() {
             startNewGenerationSession()
             return
         }
-        void enqueueCurrentSceneQueue().then(result => {
-            if (result === null) return
+        void prepareCurrentSceneQueueReview().then(setSceneQueueReview).catch(error => {
+            toast({
+                title: t('common.error', 'Error'),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
+                variant: 'destructive',
+            })
+        })
+    }
+
+    const approveSceneQueueReview = async (submission: SceneQueueSubmission): Promise<boolean> => {
+        try {
+            const result = await enqueueReviewedSceneQueue(submission)
             selectDurableBatch(result.batch.id)
             toast({
                 title: t('queue.enqueued', 'Added to durable queue'),
@@ -597,13 +615,31 @@ export default function SceneMode() {
                     count: result.jobs.length,
                 }),
             })
-        }).catch(error => {
+            return true
+        } catch (error) {
+            if (isSceneQueueReviewConflict(error)) throw error
             toast({
                 title: t('common.error', 'Error'),
                 description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
                 variant: 'destructive',
             })
-        })
+            return false
+        }
+    }
+
+    const replanSceneQueueReview = async (): Promise<boolean> => {
+        try {
+            const next = await prepareCurrentSceneQueueReview()
+            setSceneQueueReview(next)
+            return next !== null
+        } catch (error) {
+            toast({
+                title: t('common.error', 'Error'),
+                description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
+                variant: 'destructive',
+            })
+            return false
+        }
     }
 
     const [newPresetName, setNewPresetName] = useState('')
@@ -1486,6 +1522,16 @@ export default function SceneMode() {
                 open={showFolderManager}
                 onOpenChange={setShowFolderManager}
             />
+
+            {sceneQueueReview !== null && (
+                <SceneQueueReviewDialog
+                    open
+                    onOpenChange={open => { if (!open) setSceneQueueReview(null) }}
+                    prepared={sceneQueueReview}
+                    onApprove={approveSceneQueueReview}
+                    onReplan={replanSceneQueueReview}
+                />
+            )}
 
             <ConfirmDialog
                 open={showDeletePresetDialog}
