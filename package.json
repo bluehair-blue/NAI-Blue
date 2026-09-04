@@ -24,6 +24,7 @@
     "test:nai-transport": "vitest run tests/transport",
     "test:persistence": "vitest run tests/persistence && node scripts/verify-rescue-mode.mjs",
     "test:queue": "vitest run tests/domain/queue tests/services/queue",
+    "benchmark:queue:edge": "node scripts/benchmark-queue-edge.mjs",
     "test:sync": "vitest run tests/domain/sync tests/services/sync",
     "test:r2": "vitest run tests/domain/r2 tests/services/r2",
     "test:secret-redaction": "node scripts/verify-secret-redaction.mjs",

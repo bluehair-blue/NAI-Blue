@@ -1,0 +1,179 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NAI Blue Queue Edge benchmark</title>
+<script type="module">
+import { createOutputCommitSet } from '/src/domain/output-commit-set.ts'
+import { IndexedDBQueueRepository } from '/src/services/queue/indexeddb-queue-repository.ts'
+import {
+    bindOutputReservationSnapshot,
+    createGenerationJobSnapshot,
+    hashGenerationJobSnapshot,
+} from '/src/services/queue/job-snapshot.ts'
+import { recoverQueueAfterRestart } from '/src/services/queue/recovery.ts'
+
+const sizes = [
+    { jobs: 1, claimsPerJob: 1 },
+    { jobs: 10, claimsPerJob: 2 },
+    { jobs: 50, claimsPerJob: 4 },
+    { jobs: 100, claimsPerJob: 4 },
+]
+const now = '2026-09-04T00:00:00.000Z'
+
+function baseSnapshot() {
+    return createGenerationJobSnapshot({
+        prompt: { positive: 'queue benchmark', negative: 'none' },
+        parameters: { seed: 7, steps: 12 },
+        outputPolicy: { format: 'webp', destination: { kind: 'app-data' } },
+        resources: [],
+        resumability: 'resumable',
+    })
+}
+
+function benchmarkInput(label, size) {
+    const batchId = `batch:${label}`
+    const directoryIdentity = `sha256:${'d'.repeat(64)}`
+    const jobs = []
+    const reservations = []
+    for (let jobIndex = 0; jobIndex < size.jobs; jobIndex += 1) {
+        const jobId = `job:${label}:${jobIndex}`
+        const reservationId = `reservation:${label}:${jobIndex}`
+        const claims = Array.from({ length: size.claimsPerJob }, (_, claimIndex) => ({
+            claimId: `claim:${claimIndex}`,
+            kind: claimIndex === 0 ? 'image' : 'metadata-sidecar',
+            relativePath: `benchmark/${label}/${jobIndex}/output-${claimIndex}.${claimIndex === 0 ? 'webp' : 'json'}`,
+        }))
+        const { commitSet, commitSetHash } = createOutputCommitSet({
+            directoryAuthorityId: 'folder:benchmark',
+            directoryAuthorityFingerprint: directoryIdentity,
+            filesystemSemantics: 'windows',
+            filenamePolicyRevision: 'filename-v1',
+            pathNormalizationRevision: 'path-v1',
+            claims,
+        })
+        const reservation = {
+            reservationId,
+            batchId,
+            jobId,
+            folderBinding: {
+                resourceType: 'generation-folder-document',
+                resourceId: 'folder:benchmark',
+                revision: 1,
+                contentHash: `sha256:${'a'.repeat(64)}`,
+            },
+            directoryIdentity,
+            relativePath: claims[0].relativePath,
+            collisionPolicy: 'fail',
+            expectedExistingDigest: null,
+            reservationSchemaVersion: 1,
+            commitSet,
+            commitSetHash,
+            state: 'reserved',
+            version: 1,
+            updatedAt: now,
+        }
+        const { batchId: _batchId, jobId: _jobId, state: _state, version: _version, updatedAt: _updatedAt, ...snapshotReservation } = reservation
+        const snapshot = bindOutputReservationSnapshot(baseSnapshot(), snapshotReservation)
+        jobs.push({
+            id: jobId,
+            batchId,
+            workflow: 'main',
+            sceneId: null,
+            createdAt: now,
+            priority: 0,
+            ordinal: jobIndex,
+            snapshot,
+            compositionPlanHash: null,
+            maxAttempts: 3,
+            idempotencyKey: `idempotency:${label}:${jobIndex}`,
+        })
+        reservations.push(reservation)
+    }
+    return {
+        batch: {
+            id: batchId,
+            workflow: 'main',
+            createdAt: now,
+            failurePolicy: 'continue',
+            origin: 'fresh',
+            idempotencyKey: batchId,
+        },
+        jobs,
+        reservations,
+    }
+}
+
+async function deleteDatabase(name) {
+    await new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(name)
+        request.onsuccess = () => resolve()
+        request.onerror = () => reject(request.error)
+        request.onblocked = () => reject(new Error(`Database deletion blocked: ${name}`))
+    })
+}
+
+async function runSample(size, index) {
+    const label = `${size.jobs}x${size.claimsPerJob}`
+    const databaseName = `nai-blue-queue-edge-benchmark-${index}-${crypto.randomUUID()}`
+    const input = benchmarkInput(label, size)
+    const expectedClaims = size.jobs * size.claimsPerJob
+    const repository = new IndexedDBQueueRepository({ databaseName })
+    const transactionStart = performance.now()
+    const created = await repository.createBatchAndEnqueue(input)
+    const transactionDurationMs = performance.now() - transactionStart
+    repository.close()
+
+    const reopened = new IndexedDBQueueRepository({ databaseName })
+    const reopenStart = performance.now()
+    const recovery = await recoverQueueAfterRestart(reopened, { now })
+    const [batch, page, persistedReservations] = await Promise.all([
+        reopened.getBatch(input.batch.id),
+        reopened.listJobs({ batchId: input.batch.id, limit: 1_000 }),
+        Promise.all(input.reservations.map(item => reopened.getOutputReservation(item.reservationId))),
+    ])
+    const persistedClaims = (await Promise.all(input.reservations.map(item => (
+        reopened.listOutputReservationClaims(item.reservationId)
+    )))).flat()
+    const reopenReadDurationMs = performance.now() - reopenStart
+
+    const hashConsistency = page.items.every((job, jobIndex) => (
+        job.snapshotHash === hashGenerationJobSnapshot(input.jobs[jobIndex].snapshot)
+        && job.snapshot.outputReservation?.commitSetHash === input.reservations[jobIndex].commitSetHash
+        && persistedReservations[jobIndex]?.commitSetHash === input.reservations[jobIndex].commitSetHash
+    ))
+    const counts = {
+        batches: batch === null ? 0 : 1,
+        jobs: page.items.length,
+        reservations: persistedReservations.filter(Boolean).length,
+        claims: persistedClaims.length,
+    }
+    const pass = created.jobs.length === size.jobs
+        && created.reservations.length === size.jobs
+        && batch?.projectionSummary.total === size.jobs
+        && page.nextCursor === null
+        && counts.jobs === size.jobs
+        && counts.reservations === size.jobs
+        && counts.claims === expectedClaims
+        && hashConsistency
+        && recovery.recovering === 0
+
+    reopened.close()
+    await deleteDatabase(databaseName)
+    return {
+        jobs: size.jobs,
+        claimsPerJob: size.claimsPerJob,
+        totalClaims: expectedClaims,
+        transactionDurationMs,
+        reopenReadDurationMs,
+        counts,
+        hashConsistency,
+        recovery,
+        pass,
+    }
+}
+
+window.queueBenchmark = (async () => {
+    const samples = []
+    for (const [index, size] of sizes.entries()) samples.push(await runSample(size, index))
+    return { samples, pass: samples.every(sample => sample.pass) }
+})()
+</script>
