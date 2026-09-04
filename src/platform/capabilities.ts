@@ -32,8 +32,8 @@ export interface RuntimeCapabilities {
 const WINDOWS_GENERATION_LIMITS = Object.freeze({
     maxJobsPerAtomicBatch: 100,
     maxOutputClaimsPerAtomicBatch: 400,
-    measuredAt: '2026-09-04T06:37:16.424Z',
-    evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+    measuredAt: '2026-09-04T07:06:52.993Z',
+    evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@d1118542+b44519c5#docs/releases/evidence/queue-edge-benchmark.json',
 })
 
 const NO_MEASURED_GENERATION_PUBLICATION = Object.freeze({

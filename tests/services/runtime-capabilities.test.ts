@@ -28,8 +28,8 @@ describe('RuntimeCapabilities', () => {
             generationLimits: {
                 maxJobsPerAtomicBatch: 100,
                 maxOutputClaimsPerAtomicBatch: 400,
-                measuredAt: '2026-09-04T06:37:16.424Z',
-                evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+                measuredAt: '2026-09-04T07:06:52.993Z',
+                evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@d1118542+b44519c5#docs/releases/evidence/queue-edge-benchmark.json',
             },
         })
         expect(capabilities.supportedImageFormats).toEqual(['png', 'webp'])
@@ -44,6 +44,33 @@ describe('RuntimeCapabilities', () => {
             expect(publication.supported).toBe(false)
             expect(publication.generationLimits).toBeNull()
         }
+    })
+
+    it('binds Windows publication limits to tracked clean WebView2 evidence', async () => {
+        const evidencePath = 'docs/releases/evidence/queue-edge-benchmark.json'
+        const evidence = JSON.parse(await readFile(resolve(process.cwd(), evidencePath), 'utf8')) as {
+            timestamp: string
+            source: { commit: string; tree: string; clean: boolean }
+            browser: { channel: string; version: string }
+            supportedMeasuredMaximum: { jobs: number; totalClaims: number }
+            pass: boolean
+        }
+        const limits = createRuntimeCapabilities('windows').generationPublication.generationLimits
+
+        expect(evidence).toMatchObject({
+            timestamp: limits?.measuredAt,
+            source: { clean: true },
+            browser: { channel: 'embedded-webview2-cdp', version: '152.0.4191.62' },
+            supportedMeasuredMaximum: {
+                jobs: limits?.maxJobsPerAtomicBatch,
+                totalClaims: limits?.maxOutputClaimsPerAtomicBatch,
+            },
+            pass: true,
+        })
+        expect(limits?.evidenceId).toBe(
+            `benchmark:queue:edge:webview2-${evidence.browser.version}`
+            + `@${evidence.source.commit.slice(0, 8)}+${evidence.source.tree.slice(0, 8)}#${evidencePath}`,
+        )
     })
 
     it('accepts the native WebView marker without trusting a browser preview build target', () => {

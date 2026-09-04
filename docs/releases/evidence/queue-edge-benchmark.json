@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "phase-6-atomic-queue-enqueue-reopen",
+  "evidenceScope": "Windows embedded WebView2 IndexedDB; not Android",
+  "durationSemantics": {
+    "transactionDurationMs": "createBatchAndEnqueue, including repository readback verification",
+    "reopenReadDurationMs": "new repository startup recovery plus batch, job, reservation, and claim reads"
+  },
+  "timestamp": "2026-09-04T07:06:52.993Z",
+  "source": {
+    "commit": "d1118542c4fe0caac11c0395d3128af8ecc77a49",
+    "tree": "b44519c58d4f7de118e6918928470c7f2c699188",
+    "clean": true
+  },
+  "runtime": {
+    "platform": "win32",
+    "node": "v24.19.0"
+  },
+  "browser": {
+    "channel": "embedded-webview2-cdp",
+    "version": "152.0.4191.62",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.0.0"
+  },
+  "sampleSizes": [
+    {
+      "jobs": 1,
+      "claimsPerJob": 1,
+      "totalClaims": 1
+    },
+    {
+      "jobs": 10,
+      "claimsPerJob": 2,
+      "totalClaims": 20
+    },
+    {
+      "jobs": 50,
+      "claimsPerJob": 4,
+      "totalClaims": 200
+    },
+    {
+      "jobs": 100,
+      "claimsPerJob": 4,
+      "totalClaims": 400
+    }
+  ],
+  "supportedMeasuredMaximum": {
+    "jobs": 100,
+    "claimsPerJob": 4,
+    "totalClaims": 400
+  },
+  "samples": [
+    {
+      "jobs": 1,
+      "claimsPerJob": 1,
+      "totalClaims": 1,
+      "transactionDurationMs": 35.400000005960464,
+      "reopenReadDurationMs": 2.5,
+      "counts": {
+        "batches": 1,
+        "jobs": 1,
+        "reservations": 1,
+        "claims": 1
+      },
+      "hashConsistency": true,
+      "recovery": {
+        "recovering": 0,
+        "queued": 0,
+        "blocked": 0,
+        "failed": 0
+      },
+      "pass": true
+    },
+    {
+      "jobs": 10,
+      "claimsPerJob": 2,
+      "totalClaims": 20,
+      "transactionDurationMs": 17.700000002980232,
+      "reopenReadDurationMs": 7.299999997019768,
+      "counts": {
+        "batches": 1,
+        "jobs": 10,
+        "reservations": 10,
+        "claims": 20
+      },
+      "hashConsistency": true,
+      "recovery": {
+        "recovering": 0,
+        "queued": 0,
+        "blocked": 0,
+        "failed": 0
+      },
+      "pass": true
+    },
+    {
+      "jobs": 50,
+      "claimsPerJob": 4,
+      "totalClaims": 200,
+      "transactionDurationMs": 64.20000000298023,
+      "reopenReadDurationMs": 30.299999997019768,
+      "counts": {
+        "batches": 1,
+        "jobs": 50,
+        "reservations": 50,
+        "claims": 200
+      },
+      "hashConsistency": true,
+      "recovery": {
+        "recovering": 0,
+        "queued": 0,
+        "blocked": 0,
+        "failed": 0
+      },
+      "pass": true
+    },
+    {
+      "jobs": 100,
+      "claimsPerJob": 4,
+      "totalClaims": 400,
+      "transactionDurationMs": 123.20000000298023,
+      "reopenReadDurationMs": 55.8999999910593,
+      "counts": {
+        "batches": 1,
+        "jobs": 100,
+        "reservations": 100,
+        "claims": 400
+      },
+      "hashConsistency": true,
+      "recovery": {
+        "recovering": 0,
+        "queued": 0,
+        "blocked": 0,
+        "failed": 0
+      },
+      "pass": true
+    }
+  ],
+  "pass": true
+}
