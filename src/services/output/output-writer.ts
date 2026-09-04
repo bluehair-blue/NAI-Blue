@@ -15,9 +15,10 @@ import {
 } from './filename-policy'
 import type { OutputCommitSet, OutputPathClaimKind } from '@/domain/queue/types'
 import { hashOutputCommitSet, parseOutputCommitSet } from '@/domain/output-commit-set'
-import { generationOutputRelativePath } from './generation-output-commit-set'
+import { generationOutputRelativePath, outputFilesystemSemantics } from './generation-output-commit-set'
 import {
     childOutputRef,
+    directoryIdentityForResolvedOutputDirectory as directoryIdentityForResolvedOutputDirectoryWithSemantics,
     serializeOutputFileRef,
     type OutputDestinationRequest,
     type OutputFileRef,
@@ -423,15 +424,12 @@ function sameReservationIdentity(
         && left.commitSetHash === right.commitSetHash
 }
 
-/** Hashes adapter-owned path authority so Queue can compare destinations without persisting local paths. */
+/** Compatibility export defaults to the current runtime filesystem semantics. */
 export function directoryIdentityForResolvedOutputDirectory(
     directory: ResolvedOutputDirectory,
+    filesystemSemantics = outputFilesystemSemantics(),
 ): `sha256:${string}` {
-    const normalizedPath = directory.path.normalize('NFC').replace(/\\/g, '/').toLowerCase()
-    return `sha256:${hashCanonicalValue({
-        baseDir: directory.baseDir ?? null,
-        path: normalizedPath,
-    })}`
+    return directoryIdentityForResolvedOutputDirectoryWithSemantics(directory, filesystemSemantics)
 }
 
 function parseFinalImageFacts(value: unknown): OutputFinalImageFacts {
@@ -646,6 +644,16 @@ export class OutputWriter {
             throw new OutputWriterError('rollback-cleanup', 'Cancelled output cleanup failed', { cause: error })
         }
         return { status: 'cancelled' }
+    }
+
+    /** Snapshots journal-owned final paths once so planning sees interrupted publications. */
+    async listPendingFinalOutputRefs(): Promise<readonly OutputFileRef[]> {
+        const journalIds = await this.platform.listJournalIds()
+        const journals = await Promise.all(journalIds.map(async journalId => {
+            const bytes = await this.platform.readJournal(journalId)
+            return bytes === null ? null : parseJournal(bytes)
+        }))
+        return journals.flatMap(journal => journal?.artifacts.map(artifact => artifact.final) ?? [])
     }
 
     /**

@@ -31,13 +31,7 @@ const runtime = vi.hoisted(() => ({
             capabilityFallbackDirectory: 'output', collisionPolicy: 'unique' as const,
         },
     },
-    preflight: vi.fn(async (input: { fileName: string }) => ({
-        fileName: input.fileName,
-        directoryIdentity: `sha256:${'e'.repeat(64)}` as const,
-        availableSpaceCheck: 'unavailable' as const,
-        foregroundSingleWriterOnly: true as const,
-        crossProcessReservation: false as const,
-    })),
+    planBatch: vi.fn(),
     enqueue: vi.fn(async () => ({ status: 'ready' as const, batchId: 'batch:main', runId: 'batch:main', jobIds: ['job:1'] })),
     cancelBatch: vi.fn(async (input: { batchId: string }) => ({
         status: 'ready' as const, targetId: input.batchId,
@@ -66,7 +60,7 @@ vi.mock('@/application/folder/generation-folder-binding', () => ({
 vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
     getRuntimeMainQueueDependencies: () => ({
         planner: runtime.planner,
-        outputReservations: { preflight: runtime.preflight },
+        outputReservations: { planBatch: runtime.planBatch },
     }),
 }))
 vi.mock('@/services/generation/main-application-generation-command', () => ({
@@ -110,14 +104,9 @@ describe('Main generation command quality boundary', () => {
         await expect(startMainGenerationCommand()).resolves.toBe('started')
         expect(runtime.enqueue).toHaveBeenCalledOnce()
         expect(runtime.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-            prepared: [expect.objectContaining({
-                output: expect.objectContaining({
-                    fileName: 'NAI_Blue_7.png',
-                    collisionPolicy: 'error',
-                    reservationCollisionPolicy: 'suffix',
-                }),
-            })],
+            prepared: [runtime.prepared],
         }))
+        expect(runtime.planBatch).not.toHaveBeenCalled()
         expect(runtime.queue.setSelectedBatchId).toHaveBeenCalledWith('batch:main')
 
         vi.clearAllMocks()

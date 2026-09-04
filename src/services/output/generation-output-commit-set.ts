@@ -1,4 +1,5 @@
 import { createOutputCommitSet } from '@/domain/output-commit-set'
+import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import type { OutputCommitSet, OutputPathClaimKind } from '@/domain/queue/types'
 import { shouldWriteNaiBlueSidecar } from '@/lib/generation-metadata'
 import { runtimeCapabilities, type RuntimePlatform } from '@/platform/capabilities'
@@ -10,6 +11,8 @@ import {
     toArtifactSidecarPath,
     toDiagnosticSidecarPath,
     toSidecarFileName,
+    withDuplicateSuffix,
+    type PlannedOutputCollisionPolicy,
 } from './filename-policy'
 
 export interface GenerationOutputClaimPlan {
@@ -19,6 +22,19 @@ export interface GenerationOutputClaimPlan {
     readonly preserveProviderOriginal: boolean
     readonly artifactSidecar?: boolean
     readonly diagnosticSidecar?: boolean
+}
+
+export interface ExactOutputCommitSetAllocationRequest extends GenerationOutputClaimPlan {
+    readonly collisionPolicy: PlannedOutputCollisionPolicy
+    readonly directoryAuthorityId: string
+    readonly directoryAuthorityFingerprint: `sha256:${string}`
+    readonly filesystemSemantics?: OutputCommitSet['filesystemSemantics']
+}
+
+export interface ExactOutputCommitSetAllocation {
+    readonly fileName: string
+    readonly commitSet: OutputCommitSet
+    readonly commitSetHash: `sha256:${string}`
 }
 
 export function outputFilesystemSemantics(
@@ -78,4 +94,46 @@ export function createGenerationOutputCommitSet(input: GenerationOutputClaimPlan
             relativePath: generationOutputRelativePath(kind, input.fileName),
         })),
     })
+}
+
+/** Allocates each job's permanent files as one unit against one batch snapshot. */
+export function allocateExactOutputCommitSets(input: {
+    readonly requests: readonly ExactOutputCommitSetAllocationRequest[]
+    readonly occupiedCollisionKeys: ReadonlySet<string>
+}): readonly ExactOutputCommitSetAllocation[] {
+    const occupied = new Set(input.occupiedCollisionKeys)
+    return Object.freeze(input.requests.map(request => {
+        for (let duplicateIndex = 0; duplicateIndex < 10_000; duplicateIndex += 1) {
+            const fileName = withDuplicateSuffix(request.fileName, duplicateIndex)
+            const selected = createGenerationOutputCommitSet({ ...request, fileName })
+            const collides = selected.commitSet.claims.some(claim => occupied.has(claim.collisionKey))
+            if (!collides) {
+                for (const claim of selected.commitSet.claims) occupied.add(claim.collisionKey)
+                return Object.freeze({ fileName, ...selected })
+            }
+            if (request.collisionPolicy === 'fail') break
+        }
+        throw new Error(`Output destination is already occupied: ${request.fileName}`)
+    }))
+}
+
+/** Recomputes a planner response before Queue persists its immutable binding. */
+export function assertExactOutputCommitSetAllocation(
+    request: Omit<ExactOutputCommitSetAllocationRequest, 'directoryAuthorityFingerprint' | 'filesystemSemantics'>,
+    allocation: ExactOutputCommitSetAllocation & { readonly directoryIdentity: `sha256:${string}` },
+    filesystemSemantics: OutputCommitSet['filesystemSemantics'],
+): void {
+    if (request.collisionPolicy === 'fail' && allocation.fileName !== request.fileName) {
+        throw new Error('Fail-policy output allocation changed the exact filename')
+    }
+    const expected = createGenerationOutputCommitSet({
+        ...request,
+        fileName: allocation.fileName,
+        directoryAuthorityFingerprint: allocation.directoryIdentity,
+        filesystemSemantics,
+    })
+    if (allocation.commitSetHash !== expected.commitSetHash
+        || canonicalSerialize(allocation.commitSet) !== canonicalSerialize(expected.commitSet)) {
+        throw new Error('Output planner returned a non-canonical commit set')
+    }
 }

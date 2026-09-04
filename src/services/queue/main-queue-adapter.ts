@@ -47,8 +47,9 @@ import {
 import { bindOutputReservationSnapshot } from './job-snapshot'
 import { ensureImageFileExtension } from '@/services/output/filename-policy'
 import {
-    createGenerationOutputCommitSet,
+    assertExactOutputCommitSetAllocation,
     generationOutputClaimKinds,
+    outputFilesystemSemantics,
 } from '@/services/output/generation-output-commit-set'
 import { getRuntimeMainQueueDependencies } from './main-queue-runtime-dependencies'
 import {
@@ -424,64 +425,61 @@ async function enqueueMainBatch(
         const createdAt = new Date().toISOString()
         const jobs: EnqueueGenerationJobInput[] = []
         const reservations: OutputCommitSetReservation[] = []
-        const batchCollisionKeys = new Set<string>()
-        const occupiedNamesByDestination = new Map<string, string[]>()
-        for (const [ordinal, item] of plan.items.entries()) {
-            const jobId = `main-job-${idempotencyScope}-${ordinal}`
+        const allocationRequests = plan.items.map((item, ordinal) => {
             const requestedFileName = ensureImageFileExtension(
                 item.prepared.output.fileName ?? `NAI_Blue_${item.prepared.params.seed}`,
                 item.prepared.imageFormat,
             ) ?? `NAI_Blue_${item.prepared.params.seed}.${item.prepared.imageFormat}`
             const preserveProviderOriginal = item.prepared.metadataMode === 'strip-and-sidecar'
-            const claimPlan = {
-                fileName: requestedFileName,
-                imageFormat: item.prepared.imageFormat,
-                metadataMode: item.prepared.metadataMode,
-                preserveProviderOriginal,
-            } as const
-            const destination = {
-                ...(item.prepared.output.portableDirectory === undefined
-                    ? {}
-                    : { portableDirectory: item.prepared.output.portableDirectory }),
-                directory: item.prepared.output.directory,
-                useAbsolutePath: item.prepared.output.useAbsolutePath,
-                capabilityFallbackDirectory: item.prepared.output.capabilityFallbackDirectory,
-                workflowDefaultDirectory: 'NAI_Blue_Output' as const,
-                extension: item.prepared.imageFormat,
-                fileName: requestedFileName,
-                collisionPolicy: 'error' as const,
-            }
-            const destinationKey = canonicalSerialize(destination)
-            const occupiedNames = occupiedNamesByDestination.get(destinationKey) ?? []
-            const reservationCollisionPolicy = item.prepared.output.reservationCollisionPolicy
-                ?? (item.prepared.output.collisionPolicy === 'unique' ? 'suffix' : 'fail')
-            const preflight = await dependencies.outputReservations.preflight({
-                destination,
-                fileName: requestedFileName,
-                collisionPolicy: reservationCollisionPolicy,
-                claimKinds: generationOutputClaimKinds(claimPlan),
-                additionalOccupiedFileNames: occupiedNames,
-                probeWrite: true,
-            })
-            occupiedNames.push(preflight.fileName)
-            occupiedNamesByDestination.set(destinationKey, occupiedNames)
-            const { commitSet, commitSetHash } = createGenerationOutputCommitSet({
-                ...claimPlan,
-                fileName: preflight.fileName,
+            return {
+                destination: {
+                    ...(item.prepared.output.portableDirectory === undefined
+                        ? {}
+                        : { portableDirectory: item.prepared.output.portableDirectory }),
+                    directory: item.prepared.output.directory,
+                    useAbsolutePath: item.prepared.output.useAbsolutePath,
+                    capabilityFallbackDirectory: item.prepared.output.capabilityFallbackDirectory,
+                    workflowDefaultDirectory: 'NAI_Blue_Output' as const,
+                    extension: item.prepared.imageFormat,
+                    fileName: requestedFileName,
+                    collisionPolicy: 'error' as const,
+                },
+                claimPlan: {
+                    fileName: requestedFileName,
+                    imageFormat: item.prepared.imageFormat,
+                    metadataMode: item.prepared.metadataMode,
+                    preserveProviderOriginal,
+                },
+                collisionPolicy: item.prepared.output.reservationCollisionPolicy
+                    ?? (item.prepared.output.collisionPolicy === 'unique' ? 'suffix' as const : 'fail' as const),
                 directoryAuthorityId: folderBinding.resourceId,
-                directoryAuthorityFingerprint: preflight.directoryIdentity,
-            })
-            for (const claim of commitSet.claims) {
-                if (batchCollisionKeys.has(claim.collisionKey)) {
-                    throw new QueueExecutionError('fatal', `Main batch output is duplicated: ${claim.relativePath}`)
-                }
-                batchCollisionKeys.add(claim.collisionKey)
+                folderBinding,
+                reservationIdentity: {
+                    reservationId: `output-reservation:main-job-${idempotencyScope}-${ordinal}`,
+                    batchId,
+                    jobId: `main-job-${idempotencyScope}-${ordinal}`,
+                },
             }
+        })
+        const allocations = await dependencies.outputReservations.planBatch(allocationRequests)
+        if (allocations.length !== plan.items.length) {
+            throw new QueueExecutionError('fatal', 'Main output allocation did not preserve the requested count')
+        }
+        for (const [ordinal, item] of plan.items.entries()) {
+            const jobId = `main-job-${idempotencyScope}-${ordinal}`
+            const allocation = allocations[ordinal]
+            const reservationCollisionPolicy = allocationRequests[ordinal].collisionPolicy
+            assertExactOutputCommitSetAllocation({
+                ...allocationRequests[ordinal].claimPlan,
+                collisionPolicy: reservationCollisionPolicy,
+                directoryAuthorityId: folderBinding.resourceId,
+            }, allocation, outputFilesystemSemantics())
+            const { commitSet, commitSetHash } = allocation
             const exactPrepared: PreparedMainGeneration = {
                 ...item.prepared,
                 output: {
                     ...item.prepared.output,
-                    fileName: preflight.fileName,
+                    fileName: allocation.fileName,
                     collisionPolicy: 'error',
                     reservationCollisionPolicy,
                 },
@@ -496,8 +494,8 @@ async function enqueueMainBatch(
                 batchId,
                 jobId,
                 folderBinding,
-                directoryIdentity: preflight.directoryIdentity,
-                relativePath: preflight.fileName,
+                directoryIdentity: allocation.directoryIdentity,
+                relativePath: allocation.fileName,
                 collisionPolicy: reservationCollisionPolicy,
                 expectedExistingDigest: null,
                 commitSet,
@@ -544,6 +542,13 @@ async function enqueueMainBatch(
                 throw new QueueExecutionError('fatal', 'Generation folder changed before Queue reservation')
             }
         }
+        assertGenerationAtomicBatchAvailable(
+            jobs.length,
+            reservations.reduce((total, reservation) => (
+                total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
+            ), 0),
+            generationLimits,
+        )
         return await getRuntimeQueueRepository().createBatchAndEnqueue({
             batch: {
                 id: batchId,

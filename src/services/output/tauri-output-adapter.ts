@@ -151,6 +151,11 @@ abstract class TauriOutputPlatformAdapter implements OutputPlatformAdapter {
         return readFile(file.path, optionsFor(file))
     }
 
+    async readDirectoryEntries(directory: OutputFileRef): Promise<readonly string[]> {
+        if (!await exists(directory.path, optionsFor(directory))) return []
+        return (await readDir(directory.path, optionsFor(directory))).map(entry => entry.name)
+    }
+
     rename(from: OutputFileRef, to: OutputFileRef): Promise<void> {
         return rename(from.path, to.path, {
             ...(from.baseDir === undefined ? {} : { oldPathBaseDir: from.baseDir }),

@@ -12,7 +12,6 @@ import { assessGenerationStepQuality } from '@/services/generation/generation-qu
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { createGenerationFolderDocumentBinding } from '@/application/folder/generation-folder-binding'
-import { ensureImageFileExtension } from '@/services/output/filename-policy'
 
 export type MainGenerationStartOutcome = 'started' | 'low-quality-steps'
 
@@ -57,72 +56,8 @@ async function enqueueCurrentMainThroughApplication(): Promise<string> {
     const captureId = `main-capture:${globalThis.crypto.randomUUID()}`
     const folderDocument = useSettingsStore.getState().generationFolderDocument
     if (folderDocument === null) throw new Error('Generation folder authority is not ready.')
-    const occupiedByDirectory = new Map<string, string[]>()
-    const exactPrepared: (typeof prepared)[number][] = []
-    for (const item of prepared) {
-        if (item.output.collisionPolicy === 'overwrite') {
-            exactPrepared.push(item)
-            continue
-        }
-        const requestedFileName = ensureImageFileExtension(
-            item.output.fileName ?? `NAI_Blue_${item.params.seed}`,
-            item.imageFormat,
-        ) as string
-        let preflight = await queueDependencies.outputReservations.preflight({
-            destination: {
-                ...(item.output.portableDirectory === undefined
-                    ? {}
-                    : { portableDirectory: item.output.portableDirectory }),
-                directory: item.output.directory,
-                useAbsolutePath: item.output.useAbsolutePath,
-                capabilityFallbackDirectory: item.output.capabilityFallbackDirectory,
-                workflowDefaultDirectory: 'NAI_Blue_Output',
-                extension: item.imageFormat,
-                fileName: requestedFileName,
-                collisionPolicy: 'error',
-            },
-            fileName: requestedFileName,
-            collisionPolicy: item.output.collisionPolicy === 'unique' ? 'suffix' : 'fail',
-            probeWrite: true,
-        })
-        const occupied = occupiedByDirectory.get(preflight.directoryIdentity) ?? []
-        if (occupied.some(name => name.toLowerCase() === preflight.fileName.toLowerCase())) {
-            if (item.output.collisionPolicy !== 'unique') {
-                throw new Error(`Output is already planned in this batch: ${preflight.fileName}`)
-            }
-            preflight = await queueDependencies.outputReservations.preflight({
-                destination: {
-                    ...(item.output.portableDirectory === undefined
-                        ? {}
-                        : { portableDirectory: item.output.portableDirectory }),
-                    directory: item.output.directory,
-                    useAbsolutePath: item.output.useAbsolutePath,
-                    capabilityFallbackDirectory: item.output.capabilityFallbackDirectory,
-                    workflowDefaultDirectory: 'NAI_Blue_Output',
-                    extension: item.imageFormat,
-                    fileName: requestedFileName,
-                    collisionPolicy: 'error',
-                },
-                fileName: requestedFileName,
-                collisionPolicy: 'suffix',
-                additionalOccupiedFileNames: occupied,
-                probeWrite: true,
-            })
-        }
-        occupied.push(preflight.fileName)
-        occupiedByDirectory.set(preflight.directoryIdentity, occupied)
-        exactPrepared.push({
-            ...item,
-            output: {
-                ...item.output,
-                fileName: preflight.fileName,
-                collisionPolicy: 'error' as const,
-                reservationCollisionPolicy: item.output.collisionPolicy === 'unique' ? 'suffix' : 'fail',
-            },
-        })
-    }
     const result = await enqueuePreparedMainGeneration({
-        prepared: exactPrepared,
+        prepared,
         captureId,
         idempotencyKey: `main:${captureId}`,
         pricingBasis: resolveAnlasPricingBasis({

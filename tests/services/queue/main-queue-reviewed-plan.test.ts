@@ -19,7 +19,8 @@ import {
     type WorkflowDraft,
 } from '@/domain/workflow/single-image-draft'
 import type { PreparedMainGeneration } from '@/services/generation/main-generation-plan'
-import type { ExactOutputPreflightRequest } from '@/services/output/output-writer'
+import { createGenerationOutputCommitSet } from '@/services/output/generation-output-commit-set'
+import type { OutputCommitSetPlanningRequest } from '@/services/queue/main-queue-runtime-dependencies'
 
 const runtime = vi.hoisted(() => ({
     QueueRepositoryError: class QueueRepositoryError extends Error {
@@ -49,7 +50,7 @@ const runtime = vi.hoisted(() => ({
     })),
     compatibility: vi.fn(() => ({ status: 'supported' })),
     currentFolderBinding: vi.fn(),
-    preflight: vi.fn(),
+    planBatch: vi.fn(),
 }))
 
 vi.mock('@/platform/capabilities', () => ({
@@ -76,7 +77,7 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
         },
         outputReservations: {
             getCurrentFolderBinding: runtime.currentFolderBinding,
-            preflight: runtime.preflight,
+            planBatch: runtime.planBatch,
         },
     }),
 }))
@@ -265,15 +266,17 @@ describe('reviewed Main plan Queue bridge', () => {
         runtime.repository.mockReturnValue({ createBatchAndEnqueue: runtime.createBatchAndEnqueue })
         runtime.createBatchAndEnqueue.mockResolvedValue({ batch: {}, jobs: [] })
         runtime.currentFolderBinding.mockReturnValue(folderBinding)
-        runtime.preflight.mockImplementation(async (request: ExactOutputPreflightRequest) => ({
-            fileName: request.additionalOccupiedFileNames?.length
-                ? `image-${request.additionalOccupiedFileNames.length}.png`
-                : request.fileName,
-            directoryIdentity: `sha256:${'d'.repeat(64)}`,
-            availableSpaceCheck: 'unavailable',
-            foregroundSingleWriterOnly: true,
-            crossProcessReservation: false,
-        }))
+        runtime.planBatch.mockImplementation(async (requests: readonly OutputCommitSetPlanningRequest[]) => (
+            requests.map(request => ({
+                fileName: request.claimPlan.fileName,
+                directoryIdentity: `sha256:${'d'.repeat(64)}`,
+                ...createGenerationOutputCommitSet({
+                    ...request.claimPlan,
+                    directoryAuthorityId: request.directoryAuthorityId,
+                    directoryAuthorityFingerprint: `sha256:${'d'.repeat(64)}`,
+                }),
+            }))
+        ))
     })
 
     it('replays saved seeds and enqueues the replayed jobs under the stable plan identity', async () => {

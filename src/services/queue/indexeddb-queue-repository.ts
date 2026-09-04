@@ -2339,6 +2339,35 @@ export class IndexedDBQueueRepository {
         return values.map(value => structuredClone(parseOutputReservationClaim(value)))
     }
 
+    /** Reads replay identities and the sparse active-key set from one IndexedDB snapshot. */
+    async getOutputReservationPlanningSnapshot(reservationIds: readonly string[]): Promise<{
+        readonly reservations: readonly (OutputReservation | null)[]
+        readonly activeCollisionKeys: readonly string[]
+    }> {
+        for (const reservationId of reservationIds) assertIdentifier(reservationId, 'reservation id')
+        return this.runTransaction(
+            ['output-reservation-claims', 'output-reservations'],
+            'readonly',
+            async transaction => {
+                const reservationStore = transaction.objectStore('output-reservations')
+                const claimIndex = transaction.objectStore('output-reservation-claims')
+                    .index('by-active-collision-key')
+                const [reservationValues, claimValues] = await Promise.all([
+                    Promise.all(reservationIds.map(id => requestResult(reservationStore.get(id)))),
+                    requestResult(claimIndex.getAll()) as Promise<unknown[]>,
+                ])
+                return {
+                    reservations: reservationValues.map(value => (
+                        value === undefined ? null : structuredClone(parseOutputReservation(value))
+                    )),
+                    activeCollisionKeys: claimValues.map(value => (
+                        parseOutputReservationClaim(value).activeCollisionKey as string
+                    )),
+                }
+            },
+        )
+    }
+
     async transitionOutputReservation(input: {
         reservationId: string
         owner: Pick<OutputReservation, 'batchId' | 'jobId' | 'directoryIdentity' | 'relativePath'>

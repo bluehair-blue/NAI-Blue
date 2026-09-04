@@ -61,8 +61,9 @@ import { getRuntimeMainQueueDependencies } from './main-queue-runtime-dependenci
 import { bindOutputReservationSnapshot } from './job-snapshot'
 import type { OutputWriterDestination } from '@/services/output/output-writer'
 import {
-    createGenerationOutputCommitSet,
+    assertExactOutputCommitSetAllocation,
     generationOutputClaimKinds,
+    outputFilesystemSemantics,
 } from '@/services/output/generation-output-commit-set'
 
 // Queue Center passes explicit folder/scene/count tuples; this boundary keeps
@@ -505,7 +506,6 @@ async function enqueueSceneQueueTargetsOnce(
         const createdAt = planningNow.toISOString()
         const jobs: EnqueueGenerationJobInput[] = []
         const reservations: OutputCommitSetReservation[] = []
-        const collisionKeys = new Set<string>()
         const dependencies = getRuntimeMainQueueDependencies()
         const assertCurrentFolderBinding = async (): Promise<void> => {
             const currentDocument = await folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID)
@@ -513,6 +513,37 @@ async function enqueueSceneQueueTargetsOnce(
             if (current === null || canonicalSerialize(current) !== canonicalSerialize(folderBinding)) {
                 throw new QueueExecutionError('fatal', 'Generation folder changed before Queue reservation')
             }
+        }
+        const generationLimits = runtimeCapabilities.generationPublication.generationLimits
+        const plannedClaimCount = prepared.reduce((total, item) => total + generationOutputClaimKinds({
+            fileName: item.fileName,
+            imageFormat: item.prepared.imageFormat,
+            metadataMode: item.prepared.outputContext.metadataMode,
+            preserveProviderOriginal: item.prepared.outputContext.autoR2UploadProfileId != null
+                && item.prepared.outputContext.metadataMode === 'strip-and-sidecar',
+        }).length, 0)
+        assertGenerationAtomicBatchAvailable(prepared.length, plannedClaimCount, generationLimits)
+        const allocationRequests = prepared.map((item, ordinal) => ({
+            destination: item.prepared.destination,
+            claimPlan: {
+                fileName: item.fileName,
+                imageFormat: item.prepared.imageFormat,
+                metadataMode: item.prepared.outputContext.metadataMode,
+                preserveProviderOriginal: item.prepared.outputContext.autoR2UploadProfileId != null
+                    && item.prepared.outputContext.metadataMode === 'strip-and-sidecar',
+            },
+            collisionPolicy: 'fail' as const,
+            directoryAuthorityId: folderBinding.resourceId,
+            folderBinding,
+            reservationIdentity: {
+                reservationId: `output-reservation:scene-job-${requestIdentity}-${ordinal}`,
+                batchId,
+                jobId: `scene-job-${requestIdentity}-${ordinal}`,
+            },
+        }))
+        const allocations = await dependencies.outputReservations.planBatch(allocationRequests)
+        if (allocations.length !== prepared.length) {
+            throw new QueueExecutionError('fatal', 'Scene output allocation did not preserve the requested count')
         }
         await assertCurrentFolderBinding()
         let queueOrdinal = 0
@@ -527,40 +558,16 @@ async function enqueueSceneQueueTargetsOnce(
             // must remain unique across the one atomic batch.
             const ordinal = queueOrdinal++
             const jobId = `scene-job-${requestIdentity}-${ordinal}`
-            const preflight = await dependencies.outputReservations.preflight({
-                destination: item.prepared.destination,
-                fileName: item.fileName,
-                collisionPolicy: 'fail',
-                claimKinds: generationOutputClaimKinds({
-                    fileName: item.fileName,
-                    imageFormat: item.prepared.imageFormat,
-                    metadataMode: item.prepared.outputContext.metadataMode,
-                    preserveProviderOriginal: item.prepared.outputContext.autoR2UploadProfileId != null
-                        && item.prepared.outputContext.metadataMode === 'strip-and-sidecar',
-                }),
-                probeWrite: true,
-            })
-            if (preflight.fileName !== item.fileName) {
+            const allocation = allocations[ordinal]
+            if (allocation.fileName !== item.fileName) {
                 throw new QueueExecutionError('fatal', 'Scene output preflight changed the exact filename')
             }
-            const claimPlan = {
-                fileName: item.fileName,
-                imageFormat: item.prepared.imageFormat,
-                metadataMode: item.prepared.outputContext.metadataMode,
-                preserveProviderOriginal: item.prepared.outputContext.autoR2UploadProfileId != null
-                    && item.prepared.outputContext.metadataMode === 'strip-and-sidecar',
-            } as const
-            const { commitSet, commitSetHash } = createGenerationOutputCommitSet({
-                ...claimPlan,
+            assertExactOutputCommitSetAllocation({
+                ...allocationRequests[ordinal].claimPlan,
+                collisionPolicy: 'fail',
                 directoryAuthorityId: folderBinding.resourceId,
-                directoryAuthorityFingerprint: preflight.directoryIdentity,
-            })
-            for (const claim of commitSet.claims) {
-                if (collisionKeys.has(claim.collisionKey)) {
-                    throw new QueueExecutionError('fatal', `Scene batch output is duplicated: ${claim.relativePath}`)
-                }
-                collisionKeys.add(claim.collisionKey)
-            }
+            }, allocation, outputFilesystemSemantics())
+            const { commitSet, commitSetHash } = allocation
             const reservationId = `output-reservation:${jobId}`
             const reservation: OutputCommitSetReservation = {
                 reservationSchemaVersion: 1,
@@ -568,7 +575,7 @@ async function enqueueSceneQueueTargetsOnce(
                 batchId,
                 jobId,
                 folderBinding: plan.folderBinding,
-                directoryIdentity: preflight.directoryIdentity,
+                directoryIdentity: allocation.directoryIdentity,
                 relativePath: item.fileName,
                 collisionPolicy: 'fail',
                 expectedExistingDigest: null,
@@ -641,7 +648,6 @@ async function enqueueSceneQueueTargetsOnce(
         })) {
             throw new QueueExecutionError('fatal', 'Scene document changed before atomic Queue enqueue')
         }
-        const generationLimits = runtimeCapabilities.generationPublication.generationLimits
         assertGenerationAtomicBatchAvailable(
             jobs.length,
             reservations.reduce((total, reservation) => (

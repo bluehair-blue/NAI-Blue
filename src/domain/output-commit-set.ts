@@ -55,6 +55,18 @@ export function normalizeOutputRelativePath(
     return normalized.join('/')
 }
 
+/** Normalizes resolved directory paths with the same filesystem aliases used by claims. */
+export function normalizeOutputDirectoryPath(
+    path: string,
+    semantics: OutputCommitSet['filesystemSemantics'],
+): string {
+    return path.replace(/\\/g, '/').split('/').map(component => {
+        let selected = semantics === 'macos' ? component.normalize('NFD') : component.normalize('NFC')
+        if (semantics === 'windows') selected = selected.replace(/[ .]+$/g, '')
+        return semantics === 'windows' || semantics === 'macos' ? selected.toLowerCase() : selected
+    }).join('/')
+}
+
 export function createOutputCollisionKey(input: {
     readonly directoryAuthorityId: string
     readonly directoryAuthorityFingerprint: `sha256:${string}`

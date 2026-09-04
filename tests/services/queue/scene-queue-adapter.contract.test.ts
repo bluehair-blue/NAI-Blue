@@ -6,10 +6,25 @@ describe('Scene Queue boundaries', () => {
     it('uses measured total batch limits instead of the former per-scene ceiling', async () => {
         const adapter = await readFile(resolve(process.cwd(), 'src/services/queue/scene-queue-adapter.ts'), 'utf8')
 
-        expect(adapter.match(/assertGenerationAtomicBatchAvailable\(/g)).toHaveLength(2)
+        expect(adapter.match(/assertGenerationAtomicBatchAvailable\(/g)).toHaveLength(3)
         expect(adapter).toContain('targets.reduce((total, target) => total + target.count, 0)')
         expect(adapter).toContain('reservation.commitSet.claims.length')
         expect(adapter).not.toContain('999')
+    })
+
+    it('plans all exact Scene commit sets once after the early limit guard', async () => {
+        const adapter = await readFile(resolve(process.cwd(), 'src/services/queue/scene-queue-adapter.ts'), 'utf8')
+        const earlyLimit = adapter.indexOf('assertGenerationAtomicBatchAvailable(prepared.length, plannedClaimCount')
+        const allocation = adapter.indexOf('outputReservations.planBatch(allocationRequests)')
+
+        expect(adapter.match(/outputReservations\.planBatch\(/g)).toHaveLength(1)
+        expect(earlyLimit).toBeGreaterThan(-1)
+        expect(allocation).toBeGreaterThan(earlyLimit)
+        expect(adapter).toContain('if (allocation.fileName !== item.fileName)')
+        expect(adapter).toContain('assertExactOutputCommitSetAllocation({')
+        expect(adapter).toContain('reservationId: `output-reservation:scene-job-${requestIdentity}-${ordinal}`')
+        expect(adapter).toContain('jobId: `scene-job-${requestIdentity}-${ordinal}`')
+        expect(adapter).toContain('const { commitSet, commitSetHash } = allocation')
     })
 
     it('delegates V1 encoding and decoding to the Scene codec', async () => {

@@ -5,13 +5,34 @@ import type { NaiProviderFaultInjector } from '@/services/nai/transport'
 import type { ProviderResultSpool } from '@/application/generation/provider-result-spool'
 import type { OutputReservationFolderBinding } from '@/domain/queue/types'
 import type {
-    ExactOutputPreflightRequest,
-    ExactOutputPreflightResult,
+    OutputWriterDestination,
 } from '@/services/output/output-writer'
+import type {
+    ExactOutputCommitSetAllocation,
+    GenerationOutputClaimPlan,
+} from '@/services/output/generation-output-commit-set'
+import type { PlannedOutputCollisionPolicy } from '@/services/output/filename-policy'
+
+export interface OutputCommitSetPlanningRequest {
+    readonly destination: OutputWriterDestination
+    readonly claimPlan: GenerationOutputClaimPlan
+    readonly collisionPolicy: PlannedOutputCollisionPolicy
+    readonly directoryAuthorityId: string
+    readonly folderBinding: OutputReservationFolderBinding
+    readonly reservationIdentity: {
+        readonly reservationId: string
+        readonly batchId: string
+        readonly jobId: string
+    }
+}
+
+export interface PlannedOutputCommitSet extends ExactOutputCommitSetAllocation {
+    readonly directoryIdentity: `sha256:${string}`
+}
 
 export interface OutputReservationPlanningPort {
     getCurrentFolderBinding(): OutputReservationFolderBinding | null
-    preflight(request: ExactOutputPreflightRequest): Promise<ExactOutputPreflightResult>
+    planBatch(requests: readonly OutputCommitSetPlanningRequest[]): Promise<readonly PlannedOutputCommitSet[]>
 }
 
 export interface RuntimeMainQueueDependencies {

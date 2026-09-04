@@ -76,7 +76,10 @@ vi.mock('@tauri-apps/api/path', () => ({
 
 vi.mock('@/platform/runtime', () => ({ isMobileRuntime: false }))
 
-import { childOutputRef } from '@/services/output/platform-adapter'
+import {
+    childOutputRef,
+    directoryIdentityForResolvedOutputDirectory,
+} from '@/services/output/platform-adapter'
 import { createRuntimeCapabilities } from '@/platform/capabilities'
 import { InMemoryPlatformTokenRegistry } from '@/platform/portable-resources'
 import {
@@ -95,6 +98,19 @@ beforeEach(() => {
 })
 
 describe('Tauri output platform adapters', () => {
+    it('fingerprints resolved directories with runtime filesystem semantics', () => {
+        const directory = (path: string) => ({
+            path, displayPath: path, capabilityFallbackUsed: false,
+        })
+
+        expect(directoryIdentityForResolvedOutputDirectory(directory('C:\\Output\\Portraits'), 'windows'))
+            .toBe(directoryIdentityForResolvedOutputDirectory(directory('c:/output/portraits'), 'windows'))
+        expect(directoryIdentityForResolvedOutputDirectory(directory('/data/Output'), 'linux'))
+            .not.toBe(directoryIdentityForResolvedOutputDirectory(directory('/data/output'), 'linux'))
+        expect(directoryIdentityForResolvedOutputDirectory(directory('/Users/CAFÉ'), 'macos'))
+            .toBe(directoryIdentityForResolvedOutputDirectory(directory('/users/cafe\u0301'), 'macos'))
+    })
+
     it('grants atomic temp files only inside the existing output roots on Unix-like runtimes', async () => {
         const capabilityPaths = async (relativePath: string): Promise<string[]> => {
             const parsed = JSON.parse(await readFile(resolve(process.cwd(), relativePath), 'utf8')) as {
@@ -208,6 +224,20 @@ describe('Tauri output platform adapters', () => {
         )
         await expect(new AppScopedOutputPlatformAdapter().listJournalIds())
             .resolves.toEqual(['txn-a', 'txn-one', 'txn-z'])
+    })
+
+    it('reads only shallow directory entry names for batch planning', async () => {
+        fsCapture.existing.add('output')
+        fsCapture.entries.push(
+            { name: 'result.png', isFile: true, isDirectory: false, isSymlink: false },
+            { name: '._nai-blue-private', isFile: false, isDirectory: true, isSymlink: false },
+        )
+
+        await expect(new DesktopOutputPlatformAdapter().readDirectoryEntries({
+            path: 'output', displayPath: 'output', baseDir: 2,
+        })).resolves.toEqual(['result.png', '._nai-blue-private'])
+        expect(fsCapture.calls.filter(call => call.operation === 'readDir')).toHaveLength(1)
+        expect(fsCapture.calls.some(call => call.operation === 'mkdir')).toBe(false)
     })
 
     it('materializes scoped sibling paths for native no-replace publication', async () => {

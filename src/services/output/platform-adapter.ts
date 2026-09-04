@@ -1,6 +1,9 @@
 import type { BaseDirectory } from '@tauri-apps/plugin-fs'
 import type { PortablePathRef } from '@/domain/composition/types'
 import type { OutputReservationGuarantee } from '@/platform/capabilities'
+import type { OutputCommitSet } from '@/domain/queue/types'
+import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+import { normalizeOutputDirectoryPath } from '@/domain/output-commit-set'
 
 export type OutputRuntimeKind = 'desktop' | 'app-scoped'
 
@@ -43,6 +46,8 @@ export interface OutputPlatformAdapter {
     exists(file: OutputFileRef): Promise<boolean>
     writeFile(file: OutputFileRef, bytes: Uint8Array): Promise<void>
     readFile(file: OutputFileRef): Promise<Uint8Array>
+    /** Reads only direct child names; batch planning owns recursion and collision semantics. */
+    readDirectoryEntries(directory: OutputFileRef): Promise<readonly string[]>
     rename(from: OutputFileRef, to: OutputFileRef): Promise<void>
     commitSiblingIfAbsent(from: OutputFileRef, to: OutputFileRef): Promise<OutputCommitIfAbsentResult>
     remove(file: OutputFileRef): Promise<void>
@@ -50,6 +55,17 @@ export interface OutputPlatformAdapter {
     readJournal(transactionId: string): Promise<Uint8Array | null>
     removeJournal(transactionId: string): Promise<void>
     listJournalIds(): Promise<string[]>
+}
+
+/** Hashes adapter-owned path authority without persisting a raw local path. */
+export function directoryIdentityForResolvedOutputDirectory(
+    directory: ResolvedOutputDirectory,
+    filesystemSemantics: OutputCommitSet['filesystemSemantics'],
+): `sha256:${string}` {
+    return `sha256:${hashCanonicalValue({
+        baseDir: directory.baseDir ?? null,
+        path: normalizeOutputDirectoryPath(directory.path, filesystemSemantics),
+    })}`
 }
 
 export function childOutputRef(directory: OutputFileRef, fileName: string): OutputFileRef {

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MainBatchPlannerPort } from '@/application/generation/plan-main-batch'
 import { createAnlasCostConsentSnapshot } from '@/domain/queue/anlas-cost-consent'
 import type { PreparedMainGeneration } from '@/services/generation/main-generation-plan'
+import { createGenerationOutputCommitSet } from '@/services/output/generation-output-commit-set'
+import type { OutputCommitSetPlanningRequest } from '@/services/queue/main-queue-runtime-dependencies'
 
 const runtime = vi.hoisted(() => ({
     begin: vi.fn(() => 'operation:1'),
@@ -22,7 +24,8 @@ const runtime = vi.hoisted(() => ({
         compositionPlanHash: null,
     })),
     currentFolderBinding: vi.fn(),
-    preflight: vi.fn(),
+    planBatch: vi.fn(),
+    assertAtomic: vi.fn(),
 }))
 
 vi.mock('@/platform/capabilities', () => ({
@@ -49,14 +52,14 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
         },
         outputReservations: {
             getCurrentFolderBinding: runtime.currentFolderBinding,
-            preflight: runtime.preflight,
+            planBatch: runtime.planBatch,
         },
     }),
 }))
 
 vi.mock('@/services/queue/indexeddb-queue-repository', () => ({
     getRuntimeQueueRepository: () => ({ createBatchAndEnqueue: runtime.createBatchAndEnqueue }),
-    assertGenerationAtomicBatchAvailable: vi.fn(),
+    assertGenerationAtomicBatchAvailable: runtime.assertAtomic,
 }))
 
 vi.mock('@/services/queue/queue-resource-materializer', () => ({
@@ -114,13 +117,17 @@ describe('planned Main queue adapter', () => {
         vi.clearAllMocks()
         runtime.createBatchAndEnqueue.mockResolvedValue({ batch: {}, jobs: [] })
         runtime.currentFolderBinding.mockReturnValue(folderBinding)
-        runtime.preflight.mockResolvedValue({
-            fileName: 'planned.png',
-            directoryIdentity: `sha256:${'b'.repeat(64)}`,
-            availableSpaceCheck: 'unavailable',
-            foregroundSingleWriterOnly: true,
-            crossProcessReservation: false,
-        })
+        runtime.planBatch.mockImplementation(async (requests: readonly OutputCommitSetPlanningRequest[]) => (
+            requests.map(request => ({
+                fileName: request.claimPlan.fileName,
+                directoryIdentity: `sha256:${'b'.repeat(64)}`,
+                ...createGenerationOutputCommitSet({
+                    ...request.claimPlan,
+                    directoryAuthorityId: request.directoryAuthorityId,
+                    directoryAuthorityFingerprint: `sha256:${'b'.repeat(64)}`,
+                }),
+            }))
+        ))
     })
 
     it('reuses the Main codec/materializer and assigns stable Guided identities', async () => {
@@ -167,11 +174,15 @@ describe('planned Main queue adapter', () => {
             folderBinding,
         })
 
-        expect(runtime.preflight).toHaveBeenCalledWith(expect.objectContaining({
-            fileName: 'planned.png',
+        expect(runtime.planBatch).toHaveBeenCalledWith([expect.objectContaining({
+            claimPlan: expect.objectContaining({ fileName: 'planned.png' }),
             collisionPolicy: 'fail',
-            probeWrite: true,
-        }))
+            reservationIdentity: {
+                reservationId: 'output-reservation:main-job-guided:reserved-0',
+                batchId: 'main-batch-guided:reserved',
+                jobId: 'main-job-guided:reserved-0',
+            },
+        })])
         expect(runtime.createBatchAndEnqueue).toHaveBeenCalledWith(expect.objectContaining({
             jobs: [expect.objectContaining({
                 snapshot: expect.objectContaining({
@@ -205,7 +216,7 @@ describe('planned Main queue adapter', () => {
             folderBinding,
         })).rejects.toThrow('Generation folder changed before Queue reservation')
 
-        expect(runtime.preflight).toHaveBeenCalledOnce()
+        expect(runtime.planBatch).toHaveBeenCalledOnce()
         expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
     })
 
@@ -262,23 +273,49 @@ describe('planned Main queue adapter', () => {
                 { ...prepared, output: { ...prepared.output, fileName: 'planned-2.png' } },
             ],
         }
-        runtime.preflight
-            .mockResolvedValueOnce({
-                fileName: 'planned.png', directoryIdentity: `sha256:${'b'.repeat(64)}`,
-                availableSpaceCheck: 'unavailable', foregroundSingleWriterOnly: true, crossProcessReservation: false,
-            })
-            .mockResolvedValueOnce({
-                fileName: 'planned-2.png', directoryIdentity: `sha256:${'b'.repeat(64)}`,
-                availableSpaceCheck: 'unavailable', foregroundSingleWriterOnly: true, crossProcessReservation: false,
-            })
-
         await enqueuePlannedMainBatch({
             planner: twoRequests,
             submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
         })
 
         expect(runtime.dehydrate).toHaveBeenCalledTimes(2)
+        expect(runtime.planBatch).toHaveBeenCalledOnce()
+        expect(runtime.planBatch.mock.calls[0][0]).toHaveLength(2)
         expect(runtime.createBatchAndEnqueue).toHaveBeenCalledOnce()
+    })
+
+    it('performs no output planning I/O when the runtime limit guard rejects the batch', async () => {
+        runtime.assertAtomic.mockImplementationOnce(() => { throw new Error('limit exceeded') })
+
+        await expect(enqueuePlannedMainBatch({
+            planner: planner(),
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+        })).rejects.toThrow('limit exceeded')
+
+        expect(runtime.planBatch).not.toHaveBeenCalled()
+        expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
+    })
+
+    it('rejects a non-canonical planner commit set before atomic enqueue', async () => {
+        const selected = createGenerationOutputCommitSet({
+            fileName: 'planned.png', imageFormat: 'png', metadataMode: undefined,
+            preserveProviderOriginal: false,
+            directoryAuthorityId: folderBinding.resourceId,
+            directoryAuthorityFingerprint: `sha256:${'b'.repeat(64)}`,
+        })
+        runtime.planBatch.mockResolvedValueOnce([{
+            fileName: 'planned.png',
+            directoryIdentity: `sha256:${'b'.repeat(64)}`,
+            ...selected,
+            commitSet: { ...selected.commitSet, filesystemSemantics: 'linux' },
+        }])
+
+        await expect(enqueuePlannedMainBatch({
+            planner: planner(),
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+            folderBinding,
+        })).rejects.toThrow('non-canonical')
+        expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
     })
 
     it('rejects missing or stale Guided consent before resource materialization', async () => {

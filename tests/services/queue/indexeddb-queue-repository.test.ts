@@ -715,6 +715,74 @@ describe('normalized IndexedDB durable queue repository', () => {
         })).rejects.toMatchObject({ code: 'E_QUEUE_IDEMPOTENCY_CONFLICT' })
     })
 
+    it('lists only active reserved, writing, and conflict collision keys', async () => {
+        const factory = new IDBFactory()
+        const queue = repository(factory, databaseName('active-output-collision-keys'))
+        const current = commitSetReservation()
+        await queue.createBatchAndEnqueue({
+            batch: {
+                id: 'batch:1', workflow: 'main', createdAt: NOW,
+                failurePolicy: 'continue', origin: 'fresh', idempotencyKey: 'batch:1',
+            },
+            jobs: [reservedJobInput(current)],
+            reservations: [current],
+        })
+        const reservedKeys = (await queue.getOutputReservationPlanningSnapshot([])).activeCollisionKeys
+        expect(reservedKeys).toHaveLength(current.commitSet.claims.length)
+        expect(new Set(reservedKeys)).toEqual(new Set(current.commitSet.claims.map(claim => claim.collisionKey)))
+
+        await queue.transitionOutputReservation({
+            reservationId: current.reservationId, owner: current,
+            expectedState: 'reserved', expectedVersion: 1, state: 'writing',
+        })
+        expect((await queue.getOutputReservationPlanningSnapshot([])).activeCollisionKeys)
+            .toEqual(expect.arrayContaining(reservedKeys))
+        await queue.transitionOutputReservation({
+            reservationId: current.reservationId, owner: current,
+            expectedState: 'writing', expectedVersion: 2, state: 'conflict',
+        })
+        expect((await queue.getOutputReservationPlanningSnapshot([])).activeCollisionKeys)
+            .toEqual(expect.arrayContaining(reservedKeys))
+        await queue.abandonOutputReservation({
+            reservationId: current.reservationId, owner: current,
+            expectedVersion: 3, now: LATER,
+        })
+        expect((await queue.getOutputReservationPlanningSnapshot([])).activeCollisionKeys).toEqual([])
+    })
+
+    it('reads ordered replay reservations and active keys in one readonly transaction', async () => {
+        const factory = new IDBFactory()
+        const queue = repository(factory, databaseName('output-planning-snapshot'))
+        const current = commitSetReservation()
+        await queue.createBatchAndEnqueue({
+            batch: {
+                id: 'batch:1', workflow: 'main', createdAt: NOW,
+                failurePolicy: 'continue', origin: 'fresh', idempotencyKey: 'batch:1',
+            },
+            jobs: [reservedJobInput(current)],
+            reservations: [current],
+        })
+        const transactionSpy = vi.spyOn(
+            queue as unknown as { runTransaction: (...args: unknown[]) => unknown },
+            'runTransaction',
+        )
+
+        const selected = await queue.getOutputReservationPlanningSnapshot([
+            'reservation:missing', current.reservationId,
+        ])
+
+        expect(transactionSpy).toHaveBeenCalledOnce()
+        expect(transactionSpy).toHaveBeenCalledWith(
+            ['output-reservation-claims', 'output-reservations'],
+            'readonly',
+            expect.any(Function),
+        )
+        expect(selected.reservations).toEqual([null, current])
+        expect(new Set(selected.activeCollisionKeys)).toEqual(new Set(
+            current.commitSet.claims.map(claim => claim.collisionKey),
+        ))
+    })
+
     it('rejects a commit set bound to a different directory authority', async () => {
         const factory = new IDBFactory()
         const queue = repository(factory, databaseName('output-commit-set-authority'))
@@ -814,6 +882,7 @@ describe('normalized IndexedDB durable queue repository', () => {
             expectedState: 'writing', expectedVersion: 2, state: 'committed',
         })
         expect(committed).toMatchObject({ state: 'committed', version: 3 })
+        expect((await queue.getOutputReservationPlanningSnapshot([])).activeCollisionKeys).toEqual([])
         expect(await queue.listOutputReservationClaims(current.reservationId)).toEqual([
             expect.objectContaining({ claimId: 'image', activeCollisionKey: null }),
             expect.objectContaining({ claimId: 'metadata', activeCollisionKey: null }),
