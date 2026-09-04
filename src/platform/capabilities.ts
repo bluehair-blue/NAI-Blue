@@ -25,8 +25,24 @@ export interface RuntimeCapabilities {
     readonly secureLanSyncTransport: RuntimeCapability
     readonly lanBlobTransfer: RuntimeCapability
     readonly embeddedPngMetadataWrite: RuntimeCapability
+    readonly generationPublication: GenerationPublicationCapability
     readonly supportedImageFormats: readonly ('png' | 'webp')[]
 }
+
+const WINDOWS_GENERATION_LIMITS = Object.freeze({
+    maxJobsPerAtomicBatch: 100,
+    maxOutputClaimsPerAtomicBatch: 400,
+    measuredAt: '2026-09-04T06:37:16.424Z',
+    evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+})
+
+const NO_MEASURED_GENERATION_PUBLICATION = Object.freeze({
+    supported: false,
+    reason: 'Atomic generation publication has not been measured on this runtime.',
+    alternative: 'Use the measured Windows desktop runtime or replay reservation-free legacy work.',
+    outputReservationGuarantee: 'unmeasured' as const,
+    generationLimits: null,
+})
 
 const supported = (): RuntimeCapability => ({ supported: true })
 
@@ -118,6 +134,18 @@ export function createRuntimeCapabilities(platform: RuntimePlatform): RuntimeCap
         // PNG metadata insertion is a byte-level TypeScript adapter and works on
         // both desktop and Android; it does not depend on a native image library.
         embeddedPngMetadataWrite: supported(),
+        generationPublication: platform === 'windows'
+            ? {
+                supported: true,
+                outputReservationGuarantee: 'atomic-no-replace' as const,
+                generationLimits: WINDOWS_GENERATION_LIMITS,
+            }
+            : platform === 'android' || platform === 'ios'
+                ? {
+                    ...NO_MEASURED_GENERATION_PUBLICATION,
+                    outputReservationGuarantee: 'single-app-reservation-external-writer-best-effort' as const,
+                }
+                : NO_MEASURED_GENERATION_PUBLICATION,
         supportedImageFormats: Object.freeze(['png', 'webp'] as const),
     })
 }
@@ -127,6 +155,15 @@ interface RuntimePlatformDetectionInput {
     readonly hasWindow: boolean
     readonly hasTauriRuntime: boolean
     readonly userAgent: string
+}
+
+export type OutputReservationGuarantee = 'atomic-no-replace'
+    | 'single-app-reservation-external-writer-best-effort'
+    | 'unmeasured'
+
+export interface GenerationPublicationCapability extends RuntimeCapability {
+    readonly outputReservationGuarantee: OutputReservationGuarantee
+    readonly generationLimits: import('@/domain/queue/types').GenerationAtomicBatchLimits | null
 }
 
 /**

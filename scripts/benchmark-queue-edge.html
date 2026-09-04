@@ -18,6 +18,12 @@ const sizes = [
     { jobs: 100, claimsPerJob: 4 },
 ]
 const now = '2026-09-04T00:00:00.000Z'
+const generationLimits = {
+    maxJobsPerAtomicBatch: 100,
+    maxOutputClaimsPerAtomicBatch: 400,
+    measuredAt: '2026-09-04T06:37:16.424Z',
+    evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+}
 
 function baseSnapshot() {
     return createGenerationJobSnapshot({
@@ -116,13 +122,13 @@ async function runSample(size, index) {
     const databaseName = `nai-blue-queue-edge-benchmark-${index}-${crypto.randomUUID()}`
     const input = benchmarkInput(label, size)
     const expectedClaims = size.jobs * size.claimsPerJob
-    const repository = new IndexedDBQueueRepository({ databaseName })
+    const repository = new IndexedDBQueueRepository({ databaseName, generationLimits })
     const transactionStart = performance.now()
     const created = await repository.createBatchAndEnqueue(input)
     const transactionDurationMs = performance.now() - transactionStart
     repository.close()
 
-    const reopened = new IndexedDBQueueRepository({ databaseName })
+    const reopened = new IndexedDBQueueRepository({ databaseName, generationLimits })
     const reopenStart = performance.now()
     const recovery = await recoverQueueAfterRestart(reopened, { now })
     const [batch, page, persistedReservations] = await Promise.all([

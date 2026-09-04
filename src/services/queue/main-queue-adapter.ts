@@ -32,11 +32,13 @@ import {
     queryNaiGenerationCompatibility,
 } from '@/services/nai/compatibility'
 import {
+    assertGenerationAtomicBatchAvailable,
     getRuntimeQueueRepository,
     QueueRepositoryError,
     type CreateBatchAndEnqueueResult,
     type EnqueueGenerationJobInput,
 } from './indexeddb-queue-repository'
+import { runtimeCapabilities } from '@/platform/capabilities'
 import { QueueExecutionError } from './durable-queue-coordinator'
 import {
     encodeMainJobSnapshot,
@@ -292,6 +294,17 @@ export async function enqueueReviewedMainPlan(
         })
     } catch (error) {
         if (error instanceof QueueRepositoryError
+            && (error.code === 'GENERATION_ATOMIC_BATCH_UNAVAILABLE'
+                || error.code === 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED')) {
+            const issue: PlanIssue = Object.freeze({
+                code: error.code,
+                severity: 'blocking',
+                fieldPath: 'jobs',
+                message: error.message,
+            })
+            return Object.freeze({ status: 'invalid', issues: Object.freeze([issue]) })
+        }
+        if (error instanceof QueueRepositoryError
             && error.code === 'E_QUEUE_IDEMPOTENCY_CONFLICT') {
             const issue: PlanIssue = Object.freeze({
                 code: 'generation-idempotency-conflict',
@@ -391,6 +404,21 @@ async function enqueueMainBatch(
         // The durable repository requires the exact requested count before its
         // atomic write; an invalid/incomplete planner result persists nothing.
         if (plan === null) return null
+
+        const generationLimits = runtimeCapabilities.generationPublication.generationLimits
+        assertGenerationAtomicBatchAvailable(
+            plan.items.length,
+            plan.items.reduce((total, item) => total + generationOutputClaimKinds({
+                fileName: ensureImageFileExtension(
+                    item.prepared.output.fileName ?? `NAI_Blue_${item.prepared.params.seed}`,
+                    item.prepared.imageFormat,
+                ) ?? `NAI_Blue_${item.prepared.params.seed}.${item.prepared.imageFormat}`,
+                imageFormat: item.prepared.imageFormat,
+                metadataMode: item.prepared.metadataMode,
+                preserveProviderOriginal: item.prepared.metadataMode === 'strip-and-sidecar',
+            }).length, 0),
+            generationLimits,
+        )
 
         const batchId = `main-batch-${idempotencyScope}`
         const createdAt = new Date().toISOString()

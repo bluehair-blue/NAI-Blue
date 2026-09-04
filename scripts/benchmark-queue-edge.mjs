@@ -1,21 +1,29 @@
 import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { promisify } from 'node:util'
 
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 
 const execFileAsync = promisify(execFile)
-const outputPath = process.argv[2] ?? 'output/queue-edge-benchmark.json'
+const outputPath = process.argv[2] ?? 'docs/releases/evidence/queue-edge-benchmark.json'
 const cdpUrl = process.env.QUEUE_BENCHMARK_CDP_URL
 const timestamp = new Date().toISOString()
+const [{ stdout: commit }, { stdout: tree }, { stdout: status }] = await Promise.all([
+    execFileAsync('git', ['rev-parse', 'HEAD']),
+    execFileAsync('git', ['rev-parse', 'HEAD^{tree}']),
+    execFileAsync('git', ['status', '--porcelain=v1', '--untracked-files=all']),
+])
+if (status.trim().length > 0) {
+    throw new Error('Queue edge benchmark requires a clean Git checkout')
+}
 let server
 let browser
 let ownsBrowser = false
 let report
 
 try {
-    const { stdout: commit } = await execFileAsync('git', ['rev-parse', 'HEAD'])
     server = await createServer({ server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' })
     await server.listen()
     const address = server.httpServer.address()
@@ -42,7 +50,11 @@ try {
             reopenReadDurationMs: 'new repository startup recovery plus batch, job, reservation, and claim reads',
         },
         timestamp,
-        commit: commit.trim(),
+        source: {
+            commit: commit.trim(),
+            tree: tree.trim(),
+            clean: true,
+        },
         runtime: { platform: process.platform, node: process.version },
         browser: {
             channel: cdpUrl ? 'embedded-webview2-cdp' : 'msedge',
@@ -68,7 +80,17 @@ try {
             : 'Windows Microsoft Edge IndexedDB; not embedded WebView2 or Android',
         timestamp,
         runtime: { platform: process.platform, node: process.version },
-        error: error instanceof Error ? error.stack ?? error.message : String(error),
+        source: {
+            commit: commit.trim(),
+            tree: tree.trim(),
+            clean: true,
+        },
+        error: {
+            name: error instanceof Error ? error.name : 'UnknownError',
+            message: error instanceof Error
+                ? error.message.replace(/[A-Za-z]:[\\/][^\s"']+/g, '<local-path>')
+                : 'Unknown benchmark failure',
+        },
         pass: false,
     }
 } finally {
@@ -76,7 +98,7 @@ try {
     await server?.close()
 }
 
-await mkdir(new URL('../output/', import.meta.url), { recursive: true })
+await mkdir(dirname(outputPath), { recursive: true })
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`)
 console.log(JSON.stringify(report, null, 2))
 if (!report.pass) process.exitCode = 1

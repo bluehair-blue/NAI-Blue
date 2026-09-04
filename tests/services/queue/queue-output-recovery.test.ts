@@ -22,6 +22,12 @@ function queue(): IndexedDBQueueRepository {
         factory: factory as unknown as globalThis.IDBFactory,
         keyRange: IDBKeyRange as unknown as typeof globalThis.IDBKeyRange,
         databaseName: 'queue-output-recovery',
+        generationLimits: {
+            maxJobsPerAtomicBatch: 100,
+            maxOutputClaimsPerAtomicBatch: 400,
+            measuredAt: '2026-09-04T06:37:16.424Z',
+            evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+        },
     })
 }
 

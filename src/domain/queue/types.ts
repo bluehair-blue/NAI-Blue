@@ -28,6 +28,14 @@ export const TERMINAL_JOB_STATES = [
 
 export type TerminalGenerationJobState = typeof TERMINAL_JOB_STATES[number]
 export type GenerationWorkflow = 'main' | 'scene' | 'style-lab'
+
+/** Measured ceiling for one reservation-backed atomic Queue publication. */
+export interface GenerationAtomicBatchLimits {
+    readonly maxJobsPerAtomicBatch: number
+    readonly maxOutputClaimsPerAtomicBatch: number
+    readonly measuredAt: string
+    readonly evidenceId: string
+}
 export type SnapshotResourceRole = 'source' | 'mask' | 'character-reference' | 'vibe-reference' | 'other'
 export type SnapshotResourcePersistence = 'managed-app-data' | 'portable' | 'volatile'
 export type SnapshotResumability = 'resumable' | 'non-resumable'

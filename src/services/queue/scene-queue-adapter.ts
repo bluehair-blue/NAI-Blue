@@ -39,10 +39,12 @@ import {
 import { useSettingsStore } from '@/stores/settings-store'
 import { QueueExecutionError } from './durable-queue-coordinator'
 import {
+    assertGenerationAtomicBatchAvailable,
     getRuntimeQueueRepository,
     type CreateBatchAndEnqueueResult,
     type EnqueueGenerationJobInput,
 } from './indexeddb-queue-repository'
+import { runtimeCapabilities } from '@/platform/capabilities'
 import {
     encodeSceneJobSnapshot,
     type SceneQueueWorkflowSnapshot,
@@ -151,10 +153,17 @@ function planSceneFileName(input: {
 }
 
 function normalizeSceneQueueTargets(targets: readonly SceneQueueTarget[]): SceneQueueTarget[] {
+    if (targets.length === 0) return []
+    const generationLimits = runtimeCapabilities.generationPublication.generationLimits
+    assertGenerationAtomicBatchAvailable(
+        targets.reduce((total, target) => total + target.count, 0),
+        0,
+        generationLimits,
+    )
     const normalized = new Map<string, SceneQueueTarget>()
     for (const target of targets) {
-        if (!Number.isSafeInteger(target.count) || target.count < 1 || target.count > 999) {
-            throw new QueueExecutionError('fatal', 'Scene queue count must be an integer from 1 to 999')
+        if (!Number.isSafeInteger(target.count) || target.count < 1) {
+            throw new QueueExecutionError('fatal', 'Scene queue count must be a positive integer')
         }
         const count = target.count
         const key = `${target.presetId}:${target.sceneId}`
@@ -175,11 +184,8 @@ function normalizeSceneQueueTargets(targets: readonly SceneQueueTarget[]): Scene
             ...((target.expectedRevision ?? previous?.expectedRevision) === undefined
                 ? {}
                 : { expectedRevision: target.expectedRevision ?? previous?.expectedRevision }),
-            ...(fileNames.some(Boolean) ? { fileNames: fileNames.slice(0, 999) } : {}),
+            ...(fileNames.some(Boolean) ? { fileNames } : {}),
         })
-        if ((previous?.count ?? 0) + count > 999) {
-            throw new QueueExecutionError('fatal', `Scene queue count exceeds 999 for ${key}`)
-        }
     }
     return [...normalized.values()]
 }
@@ -635,6 +641,14 @@ async function enqueueSceneQueueTargetsOnce(
         })) {
             throw new QueueExecutionError('fatal', 'Scene document changed before atomic Queue enqueue')
         }
+        const generationLimits = runtimeCapabilities.generationPublication.generationLimits
+        assertGenerationAtomicBatchAvailable(
+            jobs.length,
+            reservations.reduce((total, reservation) => (
+                total + (reservation.reservationSchemaVersion === 1 ? reservation.commitSet.claims.length : 0)
+            ), 0),
+            generationLimits,
+        )
         const result = await getRuntimeQueueRepository().createBatchAndEnqueue({
             batch: {
                 id: batchId,

@@ -12,6 +12,7 @@ import {
     createEmptyGenerationBatchSummary,
 } from '@/domain/queue/summary'
 import { GENERATION_JOB_STATES } from '@/domain/queue/types'
+import { runtimeCapabilities } from '@/platform/capabilities'
 import type {
     ProviderAttemptEvidence,
     ProviderAttemptTransition,
@@ -23,6 +24,7 @@ import type {
 } from '@/domain/queue/provider-result'
 import type {
     GenerationAttempt,
+    GenerationAtomicBatchLimits,
     GenerationBatch,
     GenerationBatchProjectionMeta,
     GenerationBatchSummary,
@@ -65,6 +67,8 @@ const STORE_NAMES = [
 type QueueStoreName = typeof STORE_NAMES[number]
 
 export type QueueRepositoryErrorCode =
+    | 'GENERATION_ATOMIC_BATCH_UNAVAILABLE'
+    | 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED'
     | 'E_QUEUE_DB_UNAVAILABLE'
     | 'E_QUEUE_DB_BLOCKED'
     | 'E_QUEUE_SCHEMA_NEWER'
@@ -80,7 +84,11 @@ export type QueueRepositoryErrorCode =
     | 'E_QUEUE_CANCEL_REQUESTED'
 
 export class QueueRepositoryError extends Error {
-    constructor(readonly code: QueueRepositoryErrorCode, message: string) {
+    constructor(
+        readonly code: QueueRepositoryErrorCode,
+        message: string,
+        readonly generationLimits: GenerationAtomicBatchLimits | null = null,
+    ) {
         super(message)
         this.name = 'QueueRepositoryError'
     }
@@ -143,6 +151,7 @@ export interface IndexedDBQueueRepositoryOptions {
     keyRange?: typeof IDBKeyRange
     databaseName?: string
     openTimeoutMs?: number
+    generationLimits?: GenerationAtomicBatchLimits | null
 }
 
 export interface CreateGenerationBatchInput {
@@ -232,6 +241,28 @@ export interface CreateBatchAndEnqueueInput {
     jobs: readonly EnqueueGenerationJobInput[]
     resources?: readonly QueueResourceRecord[]
     reservations?: readonly OutputReservation[]
+}
+
+/** Shared by planning adapters and the repository trust boundary. */
+export function assertGenerationAtomicBatchAvailable(
+    jobCount: number,
+    outputClaimCount: number,
+    limits: GenerationAtomicBatchLimits | null | undefined,
+): asserts limits is GenerationAtomicBatchLimits {
+    if (limits === null || limits === undefined) {
+        throw new QueueRepositoryError(
+            'GENERATION_ATOMIC_BATCH_UNAVAILABLE',
+            'Reservation-backed generation publication is unavailable on this runtime',
+        )
+    }
+    if (jobCount > limits.maxJobsPerAtomicBatch
+        || outputClaimCount > limits.maxOutputClaimsPerAtomicBatch) {
+        throw new QueueRepositoryError(
+            'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED',
+            `Atomic generation batch exceeds the measured maximum of ${limits.maxJobsPerAtomicBatch} jobs or ${limits.maxOutputClaimsPerAtomicBatch} output claims`,
+            limits,
+        )
+    }
 }
 
 export interface CreateBatchAndEnqueueResult {
@@ -1756,6 +1787,7 @@ export class IndexedDBQueueRepository {
     private readonly keyRange: typeof IDBKeyRange
     private readonly databaseName: string
     private readonly openTimeoutMs: number
+    private readonly generationLimits: GenerationAtomicBatchLimits | null
     private databasePromise: Promise<IDBDatabase> | null = null
     private activeDatabase: IDBDatabase | null = null
 
@@ -1769,6 +1801,7 @@ export class IndexedDBQueueRepository {
         this.keyRange = keyRange
         this.databaseName = options.databaseName ?? QUEUE_DATABASE_NAME
         this.openTimeoutMs = options.openTimeoutMs ?? 10_000
+        this.generationLimits = options.generationLimits ?? null
     }
 
     initialize(): Promise<void> {
@@ -1992,6 +2025,13 @@ export class IndexedDBQueueRepository {
         const resources = [...(input.resources ?? [])]
         const reservations = (input.reservations ?? []).map(storedReservation)
         const reservationClaims = reservations.flatMap(storedClaimsForReservation)
+        if (reservations.length > 0) {
+            assertGenerationAtomicBatchAvailable(
+                validatedCandidates.length,
+                reservationClaims.length,
+                this.generationLimits,
+            )
+        }
         if (validatedCandidates.length === 0) {
             throw new QueueRepositoryError('E_QUEUE_RECORD_INVALID', 'A durable batch must contain at least one job')
         }
@@ -3484,6 +3524,15 @@ export class IndexedDBQueueRepository {
                 'Legacy or mixed failed jobs require a newly planned output reservation before retry',
             )
         }
+        assertGenerationAtomicBatchAvailable(
+            sourceJobs.length,
+            sourceJobs.reduce((total, source) => (
+                total + (source.snapshot.outputReservation?.reservationSchemaVersion === 1
+                    ? source.snapshot.outputReservation.commitSet.claims.length
+                    : 0)
+            ), 0),
+            this.generationLimits,
+        )
 
         const targetIdentity = batchFromInput(input.targetBatch, 1)
         const selected = await this.runTransaction(
@@ -4353,7 +4402,9 @@ function withBatchProjectionAdditions(
 let runtimeQueueRepository: IndexedDBQueueRepository | null = null
 
 export function getRuntimeQueueRepository(): IndexedDBQueueRepository {
-    runtimeQueueRepository ??= new IndexedDBQueueRepository()
+    runtimeQueueRepository ??= new IndexedDBQueueRepository({
+        generationLimits: runtimeCapabilities.generationPublication.generationLimits,
+    })
     return runtimeQueueRepository
 }
 

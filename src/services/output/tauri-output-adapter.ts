@@ -244,7 +244,7 @@ export class DesktopOutputPlatformAdapter extends TauriOutputPlatformAdapter {
         this.capabilities = {
             absolutePaths: runtime.absoluteOutputPath.supported,
             atomicSiblingRename: true,
-            outputReservationGuarantee: 'atomic-no-replace',
+            outputReservationGuarantee: runtime.generationPublication.outputReservationGuarantee,
             runtime: 'desktop',
         }
     }
@@ -286,7 +286,7 @@ export class AppScopedOutputPlatformAdapter extends TauriOutputPlatformAdapter {
         this.capabilities = {
             absolutePaths: runtime.absoluteOutputPath.supported,
             atomicSiblingRename: true,
-            outputReservationGuarantee: 'single-app-reservation-external-writer-best-effort',
+            outputReservationGuarantee: runtime.generationPublication.outputReservationGuarantee,
             runtime: 'app-scoped',
         }
     }

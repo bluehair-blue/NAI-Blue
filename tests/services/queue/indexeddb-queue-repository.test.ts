@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createEmptyGenerationBatchSummary } from '@/domain/queue/summary'
 import { createOutputCommitSet } from '@/domain/output-commit-set'
-import type { GenerationJobSnapshot, OutputCommitSetReservation, OutputReservation } from '@/domain/queue/types'
+import type {
+    GenerationAtomicBatchLimits,
+    GenerationJobSnapshot,
+    OutputCommitSetReservation,
+    OutputReservation,
+} from '@/domain/queue/types'
 import type { ProviderAttemptEvidence } from '@/domain/queue/provider-result'
 import {
     IndexedDBQueueRepository,
@@ -20,6 +25,12 @@ import { recoverQueueAfterRestart } from '@/services/queue/recovery'
 const NOW = '2026-07-14T04:00:00.000Z'
 const LATER = '2026-07-14T04:00:02.000Z'
 let databaseCounter = 0
+const GENERATION_LIMITS = {
+    maxJobsPerAtomicBatch: 100,
+    maxOutputClaimsPerAtomicBatch: 400,
+    measuredAt: '2026-09-04T06:37:16.424Z',
+    evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+} as const
 
 function databaseName(label: string): string {
     databaseCounter += 1
@@ -53,11 +64,16 @@ function providerSnapshot(): GenerationJobSnapshot {
     }
 }
 
-function repository(factory: IDBFactory, name: string): IndexedDBQueueRepository {
+function repository(
+    factory: IDBFactory,
+    name: string,
+    generationLimits: GenerationAtomicBatchLimits | null = GENERATION_LIMITS,
+): IndexedDBQueueRepository {
     return new IndexedDBQueueRepository({
         factory: factory as unknown as globalThis.IDBFactory,
         keyRange: IDBKeyRange as unknown as typeof globalThis.IDBKeyRange,
         databaseName: name,
+        generationLimits,
     })
 }
 
@@ -439,6 +455,60 @@ function reservedJobInput(
     }
 }
 
+function atomicBatchInput(jobCount: number, claimCount: number) {
+    const batchId = `batch:atomic:${jobCount}:${claimCount}`
+    const reservations = Array.from({ length: jobCount }, (_, ordinal): OutputCommitSetReservation => {
+        const jobId = `job:atomic:${ordinal}`
+        const claimsForJob = Math.floor(claimCount / jobCount) + (ordinal < claimCount % jobCount ? 1 : 0)
+        const directoryIdentity = `sha256:${'e'.repeat(64)}` as const
+        const { commitSet, commitSetHash } = createOutputCommitSet({
+            directoryAuthorityId: 'folder:1',
+            directoryAuthorityFingerprint: directoryIdentity,
+            filesystemSemantics: 'windows',
+            filenamePolicyRevision: 'filename-v1',
+            pathNormalizationRevision: 'path-v1',
+            claims: Array.from({ length: claimsForJob }, (_, claimOrdinal) => ({
+                claimId: `claim:${claimOrdinal}`,
+                kind: claimOrdinal === 0 ? 'image' as const : 'metadata-sidecar' as const,
+                relativePath: `atomic/${ordinal}-${claimOrdinal}.json`,
+            })),
+        })
+        return {
+            reservationSchemaVersion: 1,
+            reservationId: `reservation:atomic:${ordinal}`,
+            batchId,
+            jobId,
+            folderBinding: reservation().folderBinding,
+            directoryIdentity,
+            relativePath: `atomic/${ordinal}-0.json`,
+            collisionPolicy: 'fail',
+            expectedExistingDigest: null,
+            commitSet,
+            commitSetHash,
+            state: 'reserved',
+            version: 1,
+            updatedAt: NOW,
+        }
+    })
+    return {
+        batch: {
+            id: batchId,
+            workflow: 'main' as const,
+            createdAt: NOW,
+            failurePolicy: 'continue' as const,
+            origin: 'fresh' as const,
+            idempotencyKey: batchId,
+        },
+        jobs: reservations.map((value, ordinal) => reservedJobInput(value, {
+            id: value.jobId,
+            batchId,
+            ordinal,
+            idempotencyKey: `atomic:${ordinal}`,
+        })),
+        reservations,
+    }
+}
+
 async function updateRawAttempt(
     factory: IDBFactory,
     name: string,
@@ -495,6 +565,61 @@ describe('normalized IndexedDB durable queue repository', () => {
             'by-active-collision-key', 'by-reservation-id',
         ])
         queue.close()
+    })
+
+    it('accepts the measured 100-job and 400-claim atomic boundary', async () => {
+        const queue = repository(new IDBFactory(), databaseName('atomic-boundary'))
+        const result = await queue.createBatchAndEnqueue(atomicBatchInput(100, 400))
+
+        expect(result.jobs).toHaveLength(100)
+        expect(result.reservations.flatMap(value => value.reservationSchemaVersion === 1
+            ? value.commitSet.claims
+            : [])).toHaveLength(400)
+    })
+
+    it.each([[101, 400], [100, 401]])(
+        'rejects %i jobs / %i claims atomically',
+        async (jobCount, claimCount) => {
+            const queue = repository(new IDBFactory(), databaseName(`atomic-reject-${jobCount}-${claimCount}`))
+            const input = atomicBatchInput(jobCount, claimCount)
+
+            await expect(queue.createBatchAndEnqueue(input)).rejects.toMatchObject({
+                code: 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED',
+                generationLimits: GENERATION_LIMITS,
+            })
+            expect(await queue.getBatch(input.batch.id)).toBeNull()
+            expect((await queue.listJobs({ batchId: input.batch.id })).items).toEqual([])
+        },
+    )
+
+    it('rejects new reservations without measured limits but keeps reservation-free legacy enqueue', async () => {
+        const queue = repository(new IDBFactory(), databaseName('atomic-unavailable'), null)
+        const reserved = atomicBatchInput(1, 1)
+
+        await expect(queue.createBatchAndEnqueue(reserved))
+            .rejects.toMatchObject({ code: 'GENERATION_ATOMIC_BATCH_UNAVAILABLE' })
+        expect(await queue.getBatch(reserved.batch.id)).toBeNull()
+
+        const legacy = await queue.createBatchAndEnqueue({
+            batch: { ...reserved.batch, id: 'batch:legacy', idempotencyKey: 'batch:legacy' },
+            jobs: [jobInput({ batchId: 'batch:legacy' })],
+        })
+        expect(legacy.jobs).toHaveLength(1)
+    })
+
+    it('ignores a forged per-batch limit and uses constructor authority', async () => {
+        const queue = repository(new IDBFactory(), databaseName('atomic-forged'), null)
+        const forged = {
+            ...atomicBatchInput(1, 1),
+            generationLimits: {
+                ...GENERATION_LIMITS,
+                maxJobsPerAtomicBatch: Number.MAX_SAFE_INTEGER,
+                maxOutputClaimsPerAtomicBatch: Number.MAX_SAFE_INTEGER,
+            },
+        }
+
+        await expect(queue.createBatchAndEnqueue(forged))
+            .rejects.toMatchObject({ code: 'GENERATION_ATOMIC_BATCH_UNAVAILABLE' })
     })
 
     it('upgrades v7 reservations with a fail-closed synthetic directory identity', async () => {
@@ -901,6 +1026,86 @@ describe('normalized IndexedDB durable queue repository', () => {
             jobs: [reservedJobInput(current, { snapshot: providerSnapshot(), maxAttempts: 1 })],
             reservations: [current],
         })).rejects.toMatchObject({ code: 'E_QUEUE_IDEMPOTENCY_CONFLICT' })
+    })
+
+    it.each([
+        ['unavailable', null, 'GENERATION_ATOMIC_BATCH_UNAVAILABLE'],
+        ['job limit', { ...GENERATION_LIMITS, maxJobsPerAtomicBatch: 1 }, 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED'],
+        ['claim limit', { ...GENERATION_LIMITS, maxOutputClaimsPerAtomicBatch: 3 }, 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED'],
+    ] as const)('atomically rejects reservation retry when the %s is not satisfied', async (
+        label,
+        retryLimits,
+        code,
+    ) => {
+        const factory = new IDBFactory()
+        const name = databaseName(`retry-${label}`)
+        const seedQueue = repository(factory, name)
+        const seeded = atomicBatchInput(2, 4)
+        await seedQueue.createBatchAndEnqueue(seeded)
+        for (const item of seeded.jobs) {
+            const lease = await seedQueue.acquireLease({ jobId: item.id, owner: 'worker:1', now: NOW, ttlMs: 10_000 })
+            await seedQueue.transitionJob({
+                jobId: item.id, to: 'running', now: NOW,
+                leaseOwner: 'worker:1', leaseToken: lease?.leaseToken ?? '',
+            })
+            await seedQueue.transitionJob({
+                jobId: item.id, to: 'failed', now: LATER, failureKind: 'transient',
+                leaseOwner: 'worker:1', leaseToken: lease?.leaseToken ?? '',
+            })
+        }
+        const sourceBefore = await seedQueue.listJobs({ batchId: seeded.batch.id })
+        const reservationsBefore = await Promise.all(seeded.reservations.map(item => (
+            seedQueue.getOutputReservation(item.reservationId)
+        )))
+        seedQueue.close()
+
+        const retryQueue = repository(factory, name, retryLimits)
+        await expect(retryQueue.retryFailedJobs({
+            sourceBatchId: seeded.batch.id,
+            targetBatch: {
+                id: `batch:retry:${label}`, workflow: 'main', createdAt: '2026-07-14T04:00:03.000Z',
+                failurePolicy: 'continue', origin: 'retry', idempotencyKey: `batch:retry:${label}`,
+            },
+        })).rejects.toMatchObject({ code })
+
+        expect(await retryQueue.getBatch(`batch:retry:${label}`)).toBeNull()
+        expect((await retryQueue.listJobs({ batchId: `batch:retry:${label}` })).items).toEqual([])
+        expect(await retryQueue.listJobs({ batchId: seeded.batch.id })).toEqual(sourceBefore)
+        expect(await Promise.all(seeded.reservations.map(item => (
+            retryQueue.getOutputReservation(item.reservationId)
+        )))).toEqual(reservationsBefore)
+    })
+
+    it('allows reservation-free legacy retry without measured generation limits', async () => {
+        const factory = new IDBFactory()
+        const name = databaseName('retry-legacy-unmeasured')
+        const seedQueue = repository(factory, name, null)
+        await seedQueue.createBatchAndEnqueue({
+            batch: {
+                id: 'batch:legacy-source', workflow: 'main', createdAt: NOW,
+                failurePolicy: 'continue', origin: 'fresh', idempotencyKey: 'batch:legacy-source',
+            },
+            jobs: [jobInput({ id: 'job:legacy', batchId: 'batch:legacy-source' })],
+        })
+        const lease = await seedQueue.acquireLease({ jobId: 'job:legacy', owner: 'worker:1', now: NOW, ttlMs: 10_000 })
+        await seedQueue.transitionJob({
+            jobId: 'job:legacy', to: 'running', now: NOW,
+            leaseOwner: 'worker:1', leaseToken: lease?.leaseToken ?? '',
+        })
+        await seedQueue.transitionJob({
+            jobId: 'job:legacy', to: 'failed', now: LATER, failureKind: 'transient',
+            leaseOwner: 'worker:1', leaseToken: lease?.leaseToken ?? '',
+        })
+
+        const result = await seedQueue.retryFailedJobs({
+            sourceBatchId: 'batch:legacy-source',
+            targetBatch: {
+                id: 'batch:legacy-retry', workflow: 'main', createdAt: '2026-07-14T04:00:03.000Z',
+                failurePolicy: 'continue', origin: 'retry', idempotencyKey: 'batch:legacy-retry',
+            },
+        })
+        expect(result.jobs).toHaveLength(1)
+        expect(result.reservations).toEqual([])
     })
 
     it('rejects a reservation that is missing from the immutable job snapshot', async () => {

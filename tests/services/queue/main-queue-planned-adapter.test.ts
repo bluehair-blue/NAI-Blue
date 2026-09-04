@@ -25,6 +25,21 @@ const runtime = vi.hoisted(() => ({
     preflight: vi.fn(),
 }))
 
+vi.mock('@/platform/capabilities', () => ({
+    runtimeCapabilities: {
+        generationPublication: {
+            supported: true,
+            outputReservationGuarantee: 'atomic-no-replace',
+            generationLimits: {
+                maxJobsPerAtomicBatch: 100,
+                maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: '2026-09-04T06:37:16.424Z',
+                evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+            },
+        },
+    },
+}))
+
 vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
     getRuntimeMainQueueDependencies: () => ({
         planner: null,
@@ -41,6 +56,7 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
 
 vi.mock('@/services/queue/indexeddb-queue-repository', () => ({
     getRuntimeQueueRepository: () => ({ createBatchAndEnqueue: runtime.createBatchAndEnqueue }),
+    assertGenerationAtomicBatchAvailable: vi.fn(),
 }))
 
 vi.mock('@/services/queue/queue-resource-materializer', () => ({

@@ -211,7 +211,7 @@ describe('Tauri output platform adapters', () => {
     })
 
     it('materializes scoped sibling paths for native no-replace publication', async () => {
-        const adapter = new DesktopOutputPlatformAdapter()
+        const adapter = new DesktopOutputPlatformAdapter(createRuntimeCapabilities('windows'))
 
         await expect(adapter.commitSiblingIfAbsent(
             { path: 'output/.nai-blue-txn-a-image.tmp', displayPath: 'temp', baseDir: 1 },

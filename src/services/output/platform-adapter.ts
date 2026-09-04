@@ -1,5 +1,6 @@
 import type { BaseDirectory } from '@tauri-apps/plugin-fs'
 import type { PortablePathRef } from '@/domain/composition/types'
+import type { OutputReservationGuarantee } from '@/platform/capabilities'
 
 export type OutputRuntimeKind = 'desktop' | 'app-scoped'
 
@@ -27,7 +28,7 @@ export interface ResolvedOutputDirectory extends OutputFileRef {
 export interface OutputPlatformCapabilities {
     absolutePaths: boolean
     atomicSiblingRename: boolean
-    outputReservationGuarantee: 'atomic-no-replace' | 'single-app-reservation-external-writer-best-effort'
+    outputReservationGuarantee: OutputReservationGuarantee
     runtime: OutputRuntimeKind
 }
 

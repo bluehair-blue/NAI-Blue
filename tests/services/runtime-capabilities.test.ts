@@ -22,10 +22,28 @@ describe('RuntimeCapabilities', () => {
         expect(capabilities.secureLanSyncTransport.supported).toBe(true)
         expect(capabilities.lanBlobTransfer.supported).toBe(false)
         expect(capabilities.embeddedPngMetadataWrite.supported).toBe(true)
+        expect(capabilities.generationPublication).toEqual({
+            supported: true,
+            outputReservationGuarantee: 'atomic-no-replace',
+            generationLimits: {
+                maxJobsPerAtomicBatch: 100,
+                maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: '2026-09-04T06:37:16.424Z',
+                evidenceId: 'benchmark:queue:edge:webview2-152.0.4191.62@2f9d43b',
+            },
+        })
         expect(capabilities.supportedImageFormats).toEqual(['png', 'webp'])
         expect(createRuntimeCapabilities('web').nativePluginRuntime.supported).toBe(false)
         expect(createRuntimeCapabilities('web').novelAiCredentialVault.supported).toBe(false)
         expect(createRuntimeCapabilities('web').embeddedBrowser.supported).toBe(false)
+    })
+
+    it('does not extrapolate Windows publication measurements to other runtimes', () => {
+        for (const platform of ['android', 'ios', 'macos', 'linux', 'web', 'unknown', 'desktop'] as const) {
+            const publication = createRuntimeCapabilities(platform).generationPublication
+            expect(publication.supported).toBe(false)
+            expect(publication.generationLimits).toBeNull()
+        }
     })
 
     it('accepts the native WebView marker without trusting a browser preview build target', () => {

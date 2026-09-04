@@ -3,6 +3,15 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('durable Main sequential-fragment execution contract', () => {
+    it('passes measured atomic publication limits through both adapter boundaries', async () => {
+        const adapter = await readFile(resolve(process.cwd(), 'src/services/queue/main-queue-adapter.ts'), 'utf8')
+
+        expect(adapter.match(/assertGenerationAtomicBatchAvailable\(/g)).toHaveLength(1)
+        expect(adapter).toContain('runtimeCapabilities.generationPublication.generationLimits')
+        expect(adapter).not.toMatch(/reservations,\s*generationLimits,/)
+        expect(adapter).toContain("error.code === 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED'")
+    })
+
     it('reserves the immutable proposal before provider transport and never retries a conflict', async () => {
         const source = await readFile(
             resolve(process.cwd(), 'src/services/queue/main-queue-executor.ts'),
