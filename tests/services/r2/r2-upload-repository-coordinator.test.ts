@@ -55,12 +55,36 @@ function artifact(index: number, size = 128): NativeR2ScannedArtifact {
 }
 
 function adapter(overrides: Partial<NativeR2UploadAdapter> = {}): NativeR2UploadAdapter {
+    const objects = new Map<string, { size: number; contentSha256: string }>()
+    const multipart = new Map<string, { remoteKey: string; size: number; contentSha256: string }>()
     return {
-        headObject: vi.fn(async () => ({ exists: false, size: null, contentSha256: null, etag: null })),
-        putObject: vi.fn(async (_profile, job) => ({ remoteKey: job.remoteKey, uploaded: true, skippedSame: false, etag: 'etag' })),
-        createMultipart: vi.fn(async (_profile, job) => ({ remoteKey: job.remoteKey, uploadId: 'upload-1' })),
+        headObject: vi.fn(async (_profile, remoteKey) => {
+            const object = objects.get(remoteKey)
+            return object
+                ? { exists: true, ...object, etag: 'opaque-etag' }
+                : { exists: false, size: null, contentSha256: null, etag: null }
+        }),
+        putObject: vi.fn(async (_profile, job) => {
+            objects.set(job.remoteKey, {
+                size: (job as typeof job & { size: number }).size,
+                contentSha256: job.contentSha256,
+            })
+            return { remoteKey: job.remoteKey, uploaded: true, skippedSame: false, etag: 'etag' }
+        }),
+        createMultipart: vi.fn(async (_profile, job) => {
+            multipart.set('upload-1', {
+                remoteKey: job.remoteKey,
+                size: (job as typeof job & { size: number }).size,
+                contentSha256: job.contentSha256,
+            })
+            return { remoteKey: job.remoteKey, uploadId: 'upload-1' }
+        }),
         uploadPart: vi.fn(async (_profile, input) => ({ partNumber: input.partNumber, etag: `etag-${input.partNumber}`, size: input.length })),
-        completeMultipart: vi.fn(async (_profile, input) => ({ remoteKey: input.remoteKey, uploaded: true, skippedSame: false, etag: 'complete-etag' })),
+        completeMultipart: vi.fn(async (_profile, input) => {
+            const completed = multipart.get(input.uploadId)
+            if (completed) objects.set(completed.remoteKey, { size: completed.size, contentSha256: completed.contentSha256 })
+            return { remoteKey: input.remoteKey, uploaded: true, skippedSame: false, etag: 'complete-etag' }
+        }),
         abortMultipart: vi.fn(async () => undefined),
         ...overrides,
     }
@@ -95,6 +119,97 @@ describe('R2 upload repository and coordinator', () => {
         expect(second.jobs).toHaveLength(0)
         expect(second.alreadyCompleted).toBe(1)
         await expect(coordinator.manifest(currentProfile)).resolves.toMatchObject({ schemaVersion: 2 })
+    })
+
+    it.each([
+        ['size', { exists: true, size: 127, contentSha256: artifact(1).contentSha256, etag: artifact(1).contentSha256 }],
+        ['digest', { exists: true, size: 128, contentSha256: `sha256:${'f'.repeat(64)}`, etag: artifact(1).contentSha256 }],
+    ])('does not succeed or write manifest when HEAD has a %s mismatch', async (label, mismatched) => {
+        const repo = repository(`head-${label}-mismatch`)
+        const currentProfile = profile()
+        let headCount = 0
+        const fake = adapter({
+            headObject: vi.fn(async () => {
+                headCount += 1
+                return headCount === 1
+                    ? { exists: false, size: null, contentSha256: null, etag: null }
+                    : mismatched
+            }),
+            putObject: vi.fn(async (_profile, job) => ({ remoteKey: job.remoteKey, uploaded: true, skippedSame: false, etag: 'opaque-etag' })),
+        })
+        const coordinator = new R2UploadCoordinator(repo, fake, () => new Date(NOW))
+        await coordinator.enqueuePlan(await coordinator.plan(currentProfile, [artifact(1)], 'full-sync'))
+
+        await expect(coordinator.runUntilIdle(currentProfile)).resolves.toMatchObject({ succeeded: 0, queued: 1 })
+        await expect(repo.listJobs(currentProfile.id)).resolves.toEqual([expect.not.objectContaining({ state: 'succeeded' })])
+        await expect(coordinator.manifest(currentProfile)).resolves.toMatchObject({ items: [] })
+        expect(fake.putObject).toHaveBeenCalledTimes(1)
+    })
+
+    it('atomically reconciles an exact HEAD without a remote mutation', async () => {
+        const repo = repository('head-exact-atomic')
+        const currentProfile = profile()
+        const expected = artifact(3)
+        const fake = adapter({
+            headObject: vi.fn(async () => ({
+                exists: true,
+                size: expected.size,
+                contentSha256: expected.contentSha256,
+                etag: 'not-a-checksum',
+            })),
+        })
+        const coordinator = new R2UploadCoordinator(repo, fake, () => new Date(NOW))
+        await coordinator.enqueuePlan(await coordinator.plan(currentProfile, [expected], 'full-sync'))
+
+        await expect(coordinator.runUntilIdle(currentProfile)).resolves.toMatchObject({ succeeded: 1, failed: 0 })
+        await expect(repo.listJobs(currentProfile.id)).resolves.toEqual([
+            expect.objectContaining({ state: 'succeeded', contentSha256: expected.contentSha256 }),
+        ])
+        await expect(coordinator.manifest(currentProfile)).resolves.toMatchObject({
+            items: [expect.objectContaining({ remoteKey: expected.remoteKey, contentSha256: expected.contentSha256 })],
+        })
+        expect(fake.putObject).not.toHaveBeenCalled()
+        expect(fake.createMultipart).not.toHaveBeenCalled()
+    })
+
+    it('refuses atomic success while the authoritative job is queued', async () => {
+        const repo = repository('atomic-requires-running')
+        const currentProfile = profile()
+        const queued = createUploadJob(currentProfile.id, artifact(11), { id: 'job:queued-atomic', now: NOW })
+        const [stored] = await repo.enqueue([queued])
+
+        await expect(repo.succeedJobWithManifest(currentProfile, stored.id, stored.version, {
+            profileId: stored.profileId,
+            artifactId: stored.artifactId,
+            localVariant: stored.localVariant,
+            remoteKey: stored.remoteKey,
+            contentSha256: stored.contentSha256,
+            size: stored.size,
+            completedAt: NOW,
+        }, NOW)).rejects.toMatchObject({ code: 'E_R2_VERSION_CONFLICT' })
+        await expect(repo.listJobs(currentProfile.id)).resolves.toEqual([expect.objectContaining({ state: 'queued' })])
+        await expect(repo.getManifest(currentProfile)).resolves.toMatchObject({ items: [] })
+    })
+
+    it('reconciles a recovered exact remote object without a second PUT', async () => {
+        const repo = repository('recovered-exact')
+        const currentProfile = profile()
+        const queued = createUploadJob(currentProfile.id, artifact(4), { id: 'job:recovered-exact', now: NOW })
+        const [stored] = await repo.enqueue([queued])
+        await repo.updateJob(stored.id, stored.version, { state: 'running' }, NOW)
+        await repo.recoverInterrupted(NOW)
+        const fake = adapter({
+            headObject: vi.fn(async () => ({
+                exists: true,
+                size: queued.size,
+                contentSha256: queued.contentSha256,
+                etag: 'opaque-etag',
+            })),
+        })
+
+        await expect(new R2UploadCoordinator(repo, fake, () => new Date(NOW)).runUntilIdle(currentProfile))
+            .resolves.toMatchObject({ succeeded: 1 })
+        expect(fake.putObject).not.toHaveBeenCalled()
     })
 
     it('previews conditional conflicts without writing remote objects', async () => {
@@ -152,23 +267,71 @@ describe('R2 upload repository and coordinator', () => {
     it('reconciles a lost multipart completion response as already complete', async () => {
         const repo = repository('multipart-complete-reconcile')
         const currentProfile = profile()
+        const expected = artifact(5, 9 * 1024 * 1024)
+        let headCount = 0
         const fake = adapter({
+            headObject: vi.fn(async () => {
+                headCount += 1
+                return headCount === 1
+                    ? { exists: false, size: null, contentSha256: null, etag: null }
+                    : { exists: true, size: expected.size, contentSha256: expected.contentSha256, etag: 'opaque-etag' }
+            }),
             completeMultipart: vi.fn(async () => {
                 throw new NativeR2Error('E_R2_ALREADY_COMPLETE', 'Typed reconciliation.', false, null)
             }),
         })
         const coordinator = new R2UploadCoordinator(repo, fake, () => new Date(NOW))
-        await coordinator.enqueuePlan(await coordinator.plan(currentProfile, [artifact(5, 9 * 1024 * 1024)], 'full-sync'))
+        await coordinator.enqueuePlan(await coordinator.plan(currentProfile, [expected], 'full-sync'))
         await expect(coordinator.runUntilIdle(currentProfile)).resolves.toMatchObject({ succeeded: 1, failed: 0 })
         await expect(coordinator.manifest(currentProfile)).resolves.toMatchObject({
             items: [expect.objectContaining({ contentSha256: artifact(5).contentSha256 })],
         })
     })
 
+    it('does not reconcile E_R2_ALREADY_COMPLETE when HEAD mismatches', async () => {
+        const repo = repository('already-complete-mismatch')
+        const currentProfile = profile()
+        const fake = adapter({
+            headObject: vi.fn(async () => ({ exists: true, size: 1, contentSha256: `sha256:${'f'.repeat(64)}`, etag: 'opaque-etag' })),
+            completeMultipart: vi.fn(async () => {
+                throw new NativeR2Error('E_R2_ALREADY_COMPLETE', 'Typed reconciliation.', false, null)
+            }),
+        })
+        const coordinator = new R2UploadCoordinator(repo, fake, () => new Date(NOW))
+        await coordinator.enqueuePlan(await coordinator.plan(currentProfile, [artifact(6, 9 * 1024 * 1024)], 'full-sync'))
+
+        await expect(coordinator.runUntilIdle(currentProfile)).resolves.toMatchObject({ succeeded: 0, failed: 1 })
+        await expect(coordinator.manifest(currentProfile)).resolves.toMatchObject({ items: [] })
+    })
+
+    it('requires exact HEAD proof after multipart completion', async () => {
+        const repo = repository('multipart-head-proof')
+        const currentProfile = profile()
+        const fake = adapter({
+            headObject: vi.fn(async () => ({ exists: false, size: null, contentSha256: null, etag: null })),
+        })
+        const coordinator = new R2UploadCoordinator(repo, fake, () => new Date(NOW))
+        await coordinator.enqueuePlan(await coordinator.plan(currentProfile, [artifact(7, 9 * 1024 * 1024)], 'full-sync'))
+
+        await expect(coordinator.runUntilIdle(currentProfile)).resolves.toMatchObject({ succeeded: 0, queued: 1 })
+        await expect(coordinator.manifest(currentProfile)).resolves.toMatchObject({ items: [] })
+        expect(fake.completeMultipart).toHaveBeenCalledTimes(1)
+        expect(fake.headObject).toHaveBeenCalledTimes(2)
+    })
+
     it('continues a 1,000-object batch after isolated non-retryable failures', async () => {
         const repo = repository('thousand')
         const currentProfile = profile()
+        const headCalls = new Map<string, number>()
         const fake = adapter({
+            headObject: vi.fn(async (_profile, remoteKey) => {
+                const calls = (headCalls.get(remoteKey) ?? 0) + 1
+                headCalls.set(remoteKey, calls)
+                const index = Number(remoteKey.match(/(\d+)\.png$/)?.[1] ?? 0)
+                return calls === 1 || index % 100 === 0
+                    ? { exists: false, size: null, contentSha256: null, etag: null }
+                    : { exists: true, size: 128, contentSha256: artifact(index).contentSha256, etag: `etag-${index}` }
+            }),
             putObject: vi.fn(async (_profile, job) => {
                 const index = Number(job.remoteKey.match(/(\d+)\.png$/)?.[1] ?? 0)
                 if (index % 100 === 0) throw new NativeR2Error('E_R2_AUTH', 'Typed fixture failure.', false, 403)
@@ -188,7 +351,15 @@ describe('R2 upload repository and coordinator', () => {
         const currentProfile = profile()
         const first = createUploadJob(currentProfile.id, artifact(1), { id: 'job:snapshot:first', now: NOW })
         const second = createUploadJob(currentProfile.id, artifact(2), { id: 'job:snapshot:second', now: NOW })
+        let firstHeadCalls = 0
         const fake = adapter({
+            headObject: vi.fn(async (_profile, remoteKey) => {
+                if (remoteKey !== first.remoteKey) return { exists: false, size: null, contentSha256: null, etag: null }
+                firstHeadCalls += 1
+                return firstHeadCalls === 1
+                    ? { exists: false, size: null, contentSha256: null, etag: null }
+                    : { exists: true, size: first.size, contentSha256: first.contentSha256, etag: 'etag' }
+            }),
             putObject: vi.fn(async (_profile, job) => {
                 if (job.id === first.id) {
                     const target = await repo.getJob(second.id)

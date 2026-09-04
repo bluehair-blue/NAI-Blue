@@ -206,6 +206,10 @@ export class R2UploadCoordinator {
         }, startedAt.toISOString())
 
         try {
+            if (await this.hasExactRemoteObject(profile, job)) {
+                await this.succeedVerifiedJob(profile, job)
+                return
+            }
             if (job.size < MULTIPART_THRESHOLD_BYTES) {
                 const result = await this.adapter.putObject(profile, job)
                 if (result.remoteKey !== job.remoteKey) {
@@ -214,20 +218,21 @@ export class R2UploadCoordinator {
             } else {
                 job = await this.runMultipart(profile, job)
             }
-            const completedAt = this.now().toISOString()
-            const succeeded = await this.repository.updateJob(job.id, job.version, { state: 'succeeded' }, completedAt)
-            await this.repository.putManifestItem(profile, manifestItem(succeeded, completedAt))
+            if (!await this.hasExactRemoteObject(profile, job)) {
+                throw new NativeR2Error('E_R2_VERIFICATION', 'Uploaded R2 object did not match the expected size and SHA-256.', true, null)
+            }
+            await this.succeedVerifiedJob(profile, job)
         } catch (error) {
             if (error instanceof NativeR2Error && error.code === 'E_R2_ALREADY_COMPLETE') {
-                const completedAt = this.now().toISOString()
                 const reconciled = await this.repository.getJob(job.id)
                 if (!reconciled) throw error
-                const succeeded = await this.repository.updateJob(reconciled.id, reconciled.version, { state: 'succeeded' }, completedAt)
-                await this.repository.putManifestItem(profile, manifestItem(succeeded, completedAt))
-                return
+                if (await this.hasExactRemoteObject(profile, reconciled)) {
+                    await this.succeedVerifiedJob(profile, reconciled)
+                    return
+                }
             }
             const current = await this.repository.getJob(job.id)
-            if (!current || current.state === 'cancelled') return
+            if (!current || current.state === 'cancelled' || current.state === 'succeeded') return
             const eventId = diagnosticId(error, current)
             const retry = isRetryable(error) && current.attempt < current.maxAttempts
             await this.repository.updateJob(current.id, current.version, {
@@ -236,6 +241,23 @@ export class R2UploadCoordinator {
                 diagnosticEventId: eventId,
             }, this.now().toISOString())
         }
+    }
+
+    /** ETag is deliberately ignored because multipart and encrypted objects do not expose a content checksum there. */
+    private async hasExactRemoteObject(profile: R2ProfileV2, job: UploadJob): Promise<boolean> {
+        const head = await this.adapter.headObject(profile, job.remoteKey)
+        return head.exists && head.size === job.size && head.contentSha256 === job.contentSha256
+    }
+
+    private async succeedVerifiedJob(profile: R2ProfileV2, job: UploadJob): Promise<void> {
+        const completedAt = this.now().toISOString()
+        await this.repository.succeedJobWithManifest(
+            profile,
+            job.id,
+            job.version,
+            manifestItem(job, completedAt),
+            completedAt,
+        )
     }
 
     private async runMultipart(profile: R2ProfileV2, initial: UploadJob): Promise<UploadJob> {

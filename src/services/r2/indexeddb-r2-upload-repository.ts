@@ -301,6 +301,74 @@ export class IndexedDBR2UploadRepository {
         return cloneJob(next)
     }
 
+    /** Commits the verified manifest fact and terminal job transition without a crash window. */
+    async succeedJobWithManifest(
+        profile: R2ProfileV2,
+        id: string,
+        expectedVersion: number,
+        item: R2ManifestV2Item,
+        now = new Date().toISOString(),
+    ): Promise<UploadJob> {
+        assertSafeValue(item)
+        if (item.profileId !== profile.id) {
+            throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'R2 manifest item profile does not match its authority')
+        }
+        const db = await this.open()
+        const manifestId = `${item.profileId}\u001f${item.remoteKey}`
+        const transaction = db.transaction(['jobs', 'manifest'], 'readwrite')
+        const jobs = transaction.objectStore('jobs')
+        const current = await requestValue(jobs.get(id)) as StoredUploadJob | undefined
+        if (!current) {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_NOT_FOUND', 'R2 upload job was not found')
+        }
+        if (current.version !== expectedVersion) {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'R2 upload job version changed')
+        }
+        if (isTerminal(current.state)) {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_TERMINAL_IMMUTABLE', 'Terminal R2 upload jobs are immutable')
+        }
+        if (current.state !== 'running') {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'R2 upload job is not running')
+        }
+        if (item.artifactId !== current.artifactId
+            || item.localVariant !== current.localVariant
+            || item.remoteKey !== current.remoteKey
+            || item.contentSha256 !== current.contentSha256
+            || item.size !== current.size
+            || item.completedAt !== now) {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_RECORD_INVALID', 'R2 manifest item does not exactly match its upload job')
+        }
+        const succeeded: StoredUploadJob = {
+            ...current,
+            state: 'succeeded',
+            updatedAt: now,
+            version: current.version + 1,
+        }
+        validateUploadJob(succeeded)
+        jobs.put(succeeded)
+        transaction.objectStore('manifest').put({ ...item, id: manifestId })
+        await transactionDone(transaction)
+
+        const readback = db.transaction(['jobs', 'manifest'], 'readonly')
+        const [storedJob, storedItem] = await Promise.all([
+            requestValue(readback.objectStore('jobs').get(id)) as Promise<StoredUploadJob | undefined>,
+            requestValue(readback.objectStore('manifest').get(manifestId)) as Promise<(R2ManifestV2Item & { id: string }) | undefined>,
+        ])
+        await transactionDone(readback)
+        if (!storedJob || storedJob.state !== 'succeeded' || storedJob.version !== succeeded.version
+            || !storedItem || storedItem.contentSha256 !== item.contentSha256 || storedItem.size !== item.size
+            || storedItem.completedAt !== item.completedAt) {
+            throw new R2UploadRepositoryError('E_R2_NOT_FOUND', 'Atomic R2 completion was not readable')
+        }
+        validateUploadJob(storedJob)
+        return cloneJob(storedJob)
+    }
+
     async recoverInterrupted(now = new Date().toISOString()): Promise<number> {
         const jobs = await this.listJobs()
         let recovered = 0
