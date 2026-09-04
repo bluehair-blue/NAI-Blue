@@ -35,6 +35,10 @@ import type {
 } from '@/services/queue/main-queue-runtime-dependencies'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import { normalizeOutputDirectoryPath } from '@/domain/output-commit-set'
+import {
+    discardGeneratedProviderOriginal,
+    releaseGeneratedOutputToR2,
+} from '@/services/r2/generated-release'
 
 function planningPathSegments(
     value: string,
@@ -237,6 +241,8 @@ export function initializeCoreRuntime(): void {
             providerResultSpool: new DesktopProviderResultSpool(),
             planner: createZustandMainBatchPlanner(),
             presentation: createZustandMainQueuePresentation(),
+            legacyR2Release: releaseGeneratedOutputToR2,
+            legacyR2Cleanup: discardGeneratedProviderOriginal,
             outputReservations: {
                 getCurrentFolderBinding: () => {
                     const document = useSettingsStore.getState().generationFolderDocument

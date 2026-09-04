@@ -10,6 +10,36 @@ import {
     encodeSceneJobSnapshot,
     type EncodeSceneJobSnapshotInput,
 } from '@/services/queue/scene-job-snapshot-codec'
+import {
+    createR2ProfileV2,
+    hashR2ProfileV2,
+    type R2QueueDeliverySnapshot,
+} from '@/domain/r2/types'
+
+function currentR2Delivery(): R2QueueDeliverySnapshot {
+    const profile = createR2ProfileV2({
+        id: 'profile-1', name: 'Release', accountId: 'account-1', jurisdiction: null,
+        endpoint: null, bucket: 'release-bucket', prefix: 'generated/images',
+        credentialRef: 'stronghold:r2-profile-1', transport: 'native-s3', conflictPolicy: 'suffix',
+        publicMode: 'private', publicBaseUrl: null,
+    }, '2026-09-04T00:00:00.000Z')
+    return {
+        requirement: 'best-effort',
+        planned: {
+            destination: {
+                requirement: 'best-effort', profileId: profile.id, profileHash: hashR2ProfileV2(profile),
+                bucket: profile.bucket, key: 'generated/images/image-abcd1234abcd.webp', conflictPolicy: 'suffix',
+                verification: 'head-metadata-sha256',
+                provenance: {
+                    profileId: 'generation-folder', bucket: 'profile-snapshot',
+                    prefix: 'profile-snapshot', key: 'planned-output',
+                },
+            },
+            profile,
+            credentialBinding: { credentialRef: profile.credentialRef },
+        },
+    }
+}
 
 function params(overrides: Partial<GenerationParams> = {}): GenerationParams {
     return {
@@ -174,7 +204,8 @@ describe('Scene Job Snapshot codec', () => {
             },
         }), dehydrated).snapshot
 
-        expect(decodeSceneJobSnapshot(snapshot).sceneWorkflow.outputContext).toMatchObject({
+        const decoded = decodeSceneJobSnapshot(snapshot)
+        expect(decoded.sceneWorkflow.outputContext).toMatchObject({
             generationFolderId: 'folder-01',
             directory: 'D:\\Images\\Prime\\01',
             r2Bucket: 'scene-bucket',
@@ -182,6 +213,53 @@ describe('Scene Job Snapshot codec', () => {
             sceneSubfoldersEnabled: false,
             filenameTemplate: 'opening_{seed}_{timestamp}',
         })
+        expect(decoded.sceneWorkflow.r2Delivery).toEqual({ requirement: 'best-effort', planned: null })
+
+        const legacy = JSON.parse(JSON.stringify(snapshot)) as GenerationJobSnapshot
+        delete (legacy.parameters as unknown as { sceneWorkflow: { r2Delivery?: unknown } })
+            .sceneWorkflow.r2Delivery
+        expect(decodeSceneJobSnapshot(legacy).sceneWorkflow.r2Delivery).toEqual({
+            requirement: 'best-effort', planned: null,
+        })
+    })
+
+    it('round-trips a strict current R2 binding and rejects disabled delivery with a legacy profile', () => {
+        const delivery = currentR2Delivery()
+        const snapshot = encodeSceneJobSnapshot(input({ r2Delivery: delivery }), dehydrated).snapshot
+        expect(decodeSceneJobSnapshot(snapshot).sceneWorkflow.r2Delivery).toEqual(delivery)
+
+        const contradictory = JSON.parse(JSON.stringify(encodeSceneJobSnapshot(input({
+            outputContext: {
+                ...input().outputContext,
+                autoR2UploadProfileId: 'profile-1',
+            },
+        }), dehydrated).snapshot)) as GenerationJobSnapshot
+        const workflow = (contradictory.parameters as unknown as {
+            sceneWorkflow: { r2Delivery: R2QueueDeliverySnapshot }
+        }).sceneWorkflow
+        workflow.r2Delivery = { requirement: 'disabled', planned: null }
+        expect(() => decodeSceneJobSnapshot(contradictory)).toThrowError(QueueExecutionError)
+    })
+
+    it('keeps passive bucket/prefix config disabled and rejects legacy best-effort without activation', () => {
+        const passive = encodeSceneJobSnapshot(input({
+            outputContext: {
+                ...input().outputContext,
+                autoR2UploadProfileId: null,
+                r2Bucket: 'release-bucket',
+                r2Prefix: 'generated/images',
+            },
+        }), dehydrated).snapshot
+        expect(decodeSceneJobSnapshot(passive).sceneWorkflow.r2Delivery).toEqual({
+            requirement: 'disabled', planned: null,
+        })
+
+        const silentDrop = JSON.parse(JSON.stringify(passive)) as GenerationJobSnapshot
+        const workflow = (silentDrop.parameters as unknown as {
+            sceneWorkflow: { r2Delivery: R2QueueDeliverySnapshot }
+        }).sceneWorkflow
+        workflow.r2Delivery = { requirement: 'best-effort', planned: null }
+        expect(() => decodeSceneJobSnapshot(silentDrop)).toThrowError(QueueExecutionError)
     })
 
     it('rejects a Scene batch whose public request shape is malformed', () => {

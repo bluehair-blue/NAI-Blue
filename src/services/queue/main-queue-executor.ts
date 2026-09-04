@@ -16,10 +16,6 @@ import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calcul
 import { projectMainGenerationSemantic } from '@/services/generation/main-generation-semantic'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { getRuntimeOutputWriter, OutputWriterError } from '@/services/output/output-writer'
-import {
-    discardGeneratedProviderOriginal,
-    releaseGeneratedOutputToR2,
-} from '@/services/r2/generated-release'
 import type { QueueExecutorContext } from './durable-queue-coordinator'
 import { QueueExecutionError } from './durable-queue-coordinator'
 import { decodeMainJobSnapshot } from './main-job-snapshot-codec'
@@ -79,8 +75,18 @@ function isReservedOutputCollision(error: unknown): error is OutputWriterError {
  * the adapter so retries replay the persisted request without reading UI state.
  */
 export async function executeMainQueueJob(job: GenerationJob, context: QueueExecutorContext): Promise<void> {
-    const { presentation, providerResultSpool, faultInjector } = getRuntimeMainQueueDependencies()
+    const {
+        presentation,
+        providerResultSpool,
+        faultInjector,
+        legacyR2Release,
+        legacyR2Cleanup,
+    } = getRuntimeMainQueueDependencies()
     const payload = decodeMainJobSnapshot(job.snapshot)
+    // Phase 7C removes this guard when durable release enqueue consumes the immutable binding.
+    if (payload.mainWorkflow.r2Delivery.planned !== null) {
+        throw new QueueExecutionError('fatal', 'Current R2 delivery snapshot requires durable release enqueue')
+    }
     if (!isSupportedNaiPayloadBuilderRevision(payload.payloadBuilderRevision)) {
         throw new QueueExecutionError(
             'compatibility',
@@ -389,7 +395,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
             let releaseVerified = payload.mainWorkflow.output.autoR2UploadProfileId == null
             if (payload.mainWorkflow.output.autoR2UploadProfileId != null) {
                 try {
-                    const release = await releaseGeneratedOutputToR2({
+                    const release = await legacyR2Release({
                         profileId: payload.mainWorkflow.output.autoR2UploadProfileId,
                         sourceJobId: job.id,
                         imageFormat: payload.mainWorkflow.imageFormat,
@@ -415,7 +421,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
             }
             if (payload.mainWorkflow.output.deleteOriginalAfterRelease === true && releaseVerified) {
                 try {
-                    await discardGeneratedProviderOriginal(output.result)
+                    await legacyR2Cleanup(output.result)
                 } catch (error) {
                     reportDiagnostic(error, {
                         operation: 'output.provider-original',

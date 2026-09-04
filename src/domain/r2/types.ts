@@ -62,6 +62,150 @@ export interface R2ProfileV2 {
 
 export type R2ProfileHash = `sha256:${string}`
 
+export type R2DeliveryRequirement =
+    | { readonly mode: 'disabled' }
+    | { readonly mode: 'best-effort'; readonly profileId: string }
+    | { readonly mode: 'required'; readonly profileId: string }
+
+export interface R2DestinationProvenance {
+    readonly profileId: 'explicit-request' | 'generation-folder' | 'legacy-output'
+    readonly bucket: 'profile-snapshot'
+    readonly prefix: 'profile-snapshot'
+    readonly key: 'planned-output'
+}
+
+/** Agent-visible release identity. Credential references remain internal. */
+export type PlannedR2Destination =
+    | {
+        readonly requirement: 'disabled'
+        readonly profileId: null
+        readonly profileHash: null
+        readonly bucket: null
+        readonly key: null
+        readonly conflictPolicy: null
+        readonly verification: 'head-metadata-sha256'
+        readonly provenance: null
+    }
+    | {
+        readonly requirement: 'best-effort' | 'required'
+        readonly profileId: string
+        readonly profileHash: R2ProfileHash
+        readonly bucket: string
+        readonly key: string
+        readonly conflictPolicy: 'fail' | 'suffix'
+        readonly verification: 'head-metadata-sha256'
+        readonly provenance: R2DestinationProvenance
+    }
+
+/** Durable Queue-only binding; never project this object into plan views or command results. */
+export interface PlannedR2DestinationSnapshot {
+    readonly destination: Exclude<PlannedR2Destination, { readonly requirement: 'disabled' }>
+    readonly profile: R2ProfileV2
+    readonly credentialBinding: { readonly credentialRef: string }
+}
+
+export type R2QueueDeliverySnapshot =
+    | { readonly requirement: 'disabled'; readonly planned: null }
+    | {
+        readonly requirement: 'best-effort'
+        /** Null only when decoding a legacy fields-only Queue snapshot. */
+        readonly planned: PlannedR2DestinationSnapshot | null
+    }
+    | { readonly requirement: 'required'; readonly planned: PlannedR2DestinationSnapshot }
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    const actual = Object.keys(value).sort()
+    const expected = [...keys].sort()
+    return actual.length === expected.length && actual.every((key, index) => key === expected[index])
+}
+
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0 && value === value.trim()
+}
+
+function isNullableString(value: unknown): value is string | null {
+    return value === null || typeof value === 'string'
+}
+
+function isTimestamp(value: unknown): value is string {
+    return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
+
+function isStrictPlannedR2Profile(value: unknown): value is R2ProfileV2 {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+    const profile = value as Record<string, unknown>
+    if (!hasExactKeys(profile, [
+        'schemaVersion', 'id', 'name', 'accountId', 'jurisdiction', 'endpoint', 'bucket', 'prefix',
+        'credentialRef', 'transport', 'conflictPolicy', 'publicMode', 'publicBaseUrl', 'createdAt', 'updatedAt',
+    ])) return false
+    return profile.schemaVersion === 2
+        && isNonEmptyString(profile.id)
+        && isNonEmptyString(profile.name)
+        && typeof profile.accountId === 'string'
+        && isNullableString(profile.jurisdiction)
+        && isNullableString(profile.endpoint)
+        && isR2BucketName(profile.bucket)
+        && isResolvedR2Prefix(profile.prefix)
+        && isNonEmptyString(profile.credentialRef)
+        && !profile.credentialRef.startsWith('Bearer ')
+        && (profile.transport === 'native-s3' || profile.transport === 'wrangler' || profile.transport === 'relay')
+        && (profile.conflictPolicy === 'fail' || profile.conflictPolicy === 'suffix')
+        && (profile.publicMode === 'private' || profile.publicMode === 'r2-dev' || profile.publicMode === 'custom')
+        && isNullableString(profile.publicBaseUrl)
+        && (profile.publicMode !== 'custom'
+            || (typeof profile.publicBaseUrl === 'string' && profile.publicBaseUrl.startsWith('https://')))
+        && isTimestamp(profile.createdAt)
+        && isTimestamp(profile.updatedAt)
+}
+
+export function isR2QueueDeliverySnapshot(value: unknown): value is R2QueueDeliverySnapshot {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+    const candidate = value as Record<string, unknown>
+    if (!hasExactKeys(candidate, ['requirement', 'planned'])) return false
+    if (candidate.requirement === 'disabled') return candidate.planned === null
+    if (candidate.requirement !== 'best-effort' && candidate.requirement !== 'required') return false
+    if (candidate.planned === null) return candidate.requirement === 'best-effort'
+    if (typeof candidate.planned !== 'object' || candidate.planned === null || Array.isArray(candidate.planned)) return false
+    const planned = candidate.planned as Record<string, unknown>
+    if (!hasExactKeys(planned, ['destination', 'profile', 'credentialBinding'])) return false
+    if (typeof planned.destination !== 'object' || planned.destination === null
+        || Array.isArray(planned.destination)
+        || !isStrictPlannedR2Profile(planned.profile)
+        || typeof planned.credentialBinding !== 'object' || planned.credentialBinding === null
+        || Array.isArray(planned.credentialBinding)) return false
+    const destination = planned.destination as Record<string, unknown>
+    const profile = planned.profile
+    const credential = planned.credentialBinding as Record<string, unknown>
+    if (!hasExactKeys(destination, [
+        'requirement', 'profileId', 'profileHash', 'bucket', 'key', 'conflictPolicy', 'verification', 'provenance',
+    ]) || !hasExactKeys(credential, ['credentialRef'])
+        || typeof destination.provenance !== 'object' || destination.provenance === null
+        || Array.isArray(destination.provenance)) return false
+    const provenance = destination.provenance as Record<string, unknown>
+    if (!hasExactKeys(provenance, ['profileId', 'bucket', 'prefix', 'key'])) return false
+    try {
+        return destination.requirement === candidate.requirement
+            && destination.profileId === profile.id
+            && typeof destination.profileHash === 'string'
+            && /^sha256:[a-f0-9]{64}$/u.test(destination.profileHash)
+            && destination.profileHash === hashR2ProfileV2(profile)
+            && destination.bucket === profile.bucket
+            && typeof destination.key === 'string' && destination.key.length > 0
+            && isResolvedR2Prefix(destination.key)
+            && destination.conflictPolicy === profile.conflictPolicy
+            && destination.verification === 'head-metadata-sha256'
+            && (provenance.profileId === 'explicit-request'
+                || provenance.profileId === 'generation-folder'
+                || provenance.profileId === 'legacy-output')
+            && provenance.bucket === 'profile-snapshot'
+            && provenance.prefix === 'profile-snapshot'
+            && provenance.key === 'planned-output'
+            && credential.credentialRef === profile.credentialRef
+    } catch {
+        return false
+    }
+}
+
 /** Hashes only the durable profile binding; edit timestamps are intentionally excluded. */
 export function hashR2ProfileV2(profile: R2ProfileV2): R2ProfileHash {
     return `sha256:${hashCanonicalValue({

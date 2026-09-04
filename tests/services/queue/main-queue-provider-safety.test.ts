@@ -66,6 +66,8 @@ vi.mock('@/services/queue/main-job-snapshot-codec', () => ({
         mainWorkflow: {
             imageFormat: 'png', metadataMode: 'embed', finalPrompt: 'prompt',
             sequenceCommitProposal: { changes: [] },
+            r2Delivery: (snapshot.parameters as unknown as { r2Delivery?: unknown })?.r2Delivery
+                ?? { requirement: 'disabled', planned: null },
             ...(snapshot.outputReservation === undefined
                 ? {}
                 : {
@@ -153,6 +155,7 @@ const providerEnvelope: ProviderExecutionEnvelope = {
 function job(options: {
     envelope?: Partial<typeof providerEnvelope>
     withReservation?: boolean
+    currentR2Delivery?: boolean
 } = {}): GenerationJob {
     const folderBinding = {
         resourceType: 'generation-folder-document' as const,
@@ -165,6 +168,9 @@ function job(options: {
         snapshot: {
             providerExecutionEnvelope: { ...providerEnvelope, ...options.envelope },
             resources: [],
+            parameters: options.currentR2Delivery === true
+                ? { r2Delivery: { requirement: 'required', planned: {} } }
+                : {},
             ...(options.withReservation === true
                 ? {
                     outputReservation: {
@@ -248,6 +254,19 @@ describe('Main Queue Provider result safety', () => {
             await request.commitWorkflow({ path: 'output/image.png' })
             return { status: 'committed', result: { path: 'output/image.png' } }
         })
+    })
+
+    it('fails a dormant current R2 snapshot before any Provider or output preflight call', async () => {
+        await expect(executeMainQueueJob(
+            job({ currentR2Delivery: true }),
+            context(prepared).value,
+        )).rejects.toMatchObject({
+            kind: 'fatal',
+            message: 'Current R2 delivery snapshot requires durable release enqueue',
+        })
+        expect(mocks.transport).not.toHaveBeenCalled()
+        expect(mocks.preflight).not.toHaveBeenCalled()
+        expect(mocks.write).not.toHaveBeenCalled()
     })
 
     it('resumes result-spooled storage with zero Provider calls', async () => {

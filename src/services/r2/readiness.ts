@@ -9,6 +9,24 @@ export type DefaultR2Readiness =
     | { readonly status: 'unavailable'; readonly reason: 'runtime' | 'profile' | 'credential'; readonly profile: R2ProfileV2 | null }
     | { readonly status: 'ready'; readonly profile: R2ProfileV2 }
 
+/** Checks one already-snapshotted profile without re-reading mutable profile storage. */
+export async function getR2ProfileReadiness(
+    profile: R2ProfileV2,
+): Promise<Exclude<DefaultR2Readiness, { status: 'loading' }>> {
+    if (!runtimeCapabilities.r2ForegroundUpload.supported || typeof indexedDB === 'undefined') {
+        return { status: 'unavailable', reason: 'runtime', profile }
+    }
+    if (profile.transport !== 'native-s3'
+        || profile.accountId.trim().length === 0
+        || profile.bucket.trim().length === 0) {
+        return { status: 'unavailable', reason: 'profile', profile }
+    }
+    const credential = await nativeR2CredentialStatus(profile.credentialRef).catch(() => null)
+    return credential?.available
+        ? { status: 'ready', profile }
+        : { status: 'unavailable', reason: 'credential', profile }
+}
+
 export async function getDefaultR2Readiness(
     profileId = DEFAULT_R2_PROFILE_ID,
 ): Promise<Exclude<DefaultR2Readiness, { status: 'loading' }>> {
@@ -21,16 +39,8 @@ export async function getDefaultR2Readiness(
     } catch {
         return { status: 'unavailable', reason: 'profile', profile: null }
     }
-    if (!profile
-        || profile.transport !== 'native-s3'
-        || profile.accountId.trim().length === 0
-        || profile.bucket.trim().length === 0) {
-        return { status: 'unavailable', reason: 'profile', profile }
-    }
-    const credential = await nativeR2CredentialStatus(profile.credentialRef).catch(() => null)
-    return credential?.available
-        ? { status: 'ready', profile }
-        : { status: 'unavailable', reason: 'credential', profile }
+    if (!profile) return { status: 'unavailable', reason: 'profile', profile }
+    return getR2ProfileReadiness(profile)
 }
 
 /** A saved preference cannot activate release work after its runtime prerequisites disappear. */

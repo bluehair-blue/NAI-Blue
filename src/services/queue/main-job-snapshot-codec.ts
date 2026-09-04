@@ -6,7 +6,12 @@ import {
 } from '@/domain/queue/anlas-cost-consent'
 import type { GenerationJobSnapshot } from '@/domain/queue/types'
 import type { ProviderExecutionEnvelope, ProviderSha256 } from '@/domain/queue/provider-result'
-import { isR2BucketName, isResolvedR2Prefix } from '@/domain/r2/types'
+import {
+    isR2BucketName,
+    isR2QueueDeliverySnapshot,
+    isResolvedR2Prefix,
+    type R2QueueDeliverySnapshot,
+} from '@/domain/r2/types'
 import type { PreparedMainGeneration } from '@/services/generation/main-generation-plan'
 import {
     CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
@@ -52,6 +57,7 @@ export interface MainQueueWorkflowSnapshot {
     readonly metadataMode: PreparedMainGeneration['metadataMode']
     readonly sequenceCommitProposal: FragmentSequenceCommitProposal | null
     readonly costConsent?: AnlasCostConsentSnapshot
+    readonly r2Delivery: R2QueueDeliverySnapshot
     readonly output: MainQueueOutputSnapshot
 }
 
@@ -79,6 +85,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function hasLegacyR2Activation(value: unknown): boolean {
+    return isRecord(value) && (
+        value.autoR2UploadProfileId != null
+        || value.deleteOriginalAfterRelease === true
+    )
+}
+
+function hasLegacyR2Profile(value: unknown): boolean {
+    return isRecord(value) && value.autoR2UploadProfileId != null
+}
+
+function isR2DeliveryCoherent(delivery: unknown, output: unknown): boolean {
+    if (!isRecord(delivery)) return true
+    if (delivery.requirement === 'disabled') return !hasLegacyR2Activation(output)
+    if (delivery.requirement === 'best-effort' && delivery.planned === null) {
+        return hasLegacyR2Profile(output)
+    }
+    return true
+}
+
 function invalidSnapshot(): never {
     throw new QueueExecutionError('fatal', 'Main queue snapshot parameters are invalid')
 }
@@ -93,6 +119,7 @@ export function encodeMainJobSnapshot(
     dehydrated: Pick<DehydratedGenerationResult, 'parameters' | 'resources'>,
     costConsent?: AnlasCostConsentSnapshot,
     providerExecution?: MainProviderExecutionReviewContext,
+    r2Delivery?: R2QueueDeliverySnapshot,
 ): EncodedMainJobSnapshot {
     const fileName = prepared.output.fileName ?? ensureImageFileExtension(
         `NAI_Blue_${prepared.params.seed}`,
@@ -111,6 +138,9 @@ export function encodeMainJobSnapshot(
             metadataMode: prepared.metadataMode,
             sequenceCommitProposal: prepared.sequenceCommitProposal as FragmentSequenceCommitProposal | null,
             ...(costConsent === undefined ? {} : { costConsent }),
+            r2Delivery: r2Delivery ?? (prepared.output.autoR2UploadProfileId == null
+                ? { requirement: 'disabled', planned: null }
+                : { requirement: 'best-effort', planned: null }),
             output: {
                 directory: prepared.output.directory,
                 useAbsolutePath: prepared.output.useAbsolutePath,
@@ -215,6 +245,9 @@ export function decodeMainJobSnapshot(snapshot: GenerationJobSnapshot): MainQueu
         || (candidate.mainWorkflow.imageFormat !== 'png' && candidate.mainWorkflow.imageFormat !== 'webp')
         || (candidate.mainWorkflow.costConsent !== undefined
             && !isAnlasCostConsentSnapshot(candidate.mainWorkflow.costConsent))
+        || (candidate.mainWorkflow.r2Delivery !== undefined
+            && !isR2QueueDeliverySnapshot(candidate.mainWorkflow.r2Delivery))
+        || !isR2DeliveryCoherent(candidate.mainWorkflow.r2Delivery, candidate.mainWorkflow.output)
         || !isRecord(candidate.mainWorkflow.output)
         || typeof candidate.mainWorkflow.output.directory !== 'string'
         || typeof candidate.mainWorkflow.output.useAbsolutePath !== 'boolean'
@@ -255,6 +288,14 @@ export function decodeMainJobSnapshot(snapshot: GenerationJobSnapshot): MainQueu
     }
     return {
         ...candidate,
+        mainWorkflow: {
+            ...candidate.mainWorkflow,
+            r2Delivery: candidate.mainWorkflow.r2Delivery ?? (
+                candidate.mainWorkflow.output.autoR2UploadProfileId == null
+                    ? { requirement: 'disabled', planned: null }
+                    : { requirement: 'best-effort', planned: null }
+            ),
+        },
         payloadBuilderRevision: candidate.payloadBuilderRevision
             ?? LEGACY_NAI_PAYLOAD_BUILDER_REVISION,
     } as unknown as MainQueueSnapshotParameters

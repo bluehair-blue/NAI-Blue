@@ -16,6 +16,36 @@ import {
     queryNaiGenerationCompatibility,
 } from '@/services/nai/compatibility'
 import { CURRENT_NAI_MODEL_CATALOG_REVISION } from '@/services/nai/model-catalog'
+import {
+    createR2ProfileV2,
+    hashR2ProfileV2,
+    type R2QueueDeliverySnapshot,
+} from '@/domain/r2/types'
+
+function currentR2Delivery(accountId = 'account-1'): R2QueueDeliverySnapshot {
+    const profile = createR2ProfileV2({
+        id: 'profile-1', name: 'Release', accountId, jurisdiction: null,
+        endpoint: null, bucket: 'release-bucket', prefix: 'generated/images',
+        credentialRef: 'stronghold:r2-profile-1', transport: 'native-s3', conflictPolicy: 'fail',
+        publicMode: 'private', publicBaseUrl: null,
+    }, '2026-09-04T00:00:00.000Z')
+    return {
+        requirement: 'required',
+        planned: {
+            destination: {
+                requirement: 'required', profileId: profile.id, profileHash: hashR2ProfileV2(profile),
+                bucket: profile.bucket, key: 'generated/images/image.png', conflictPolicy: 'fail',
+                verification: 'head-metadata-sha256',
+                provenance: {
+                    profileId: 'explicit-request', bucket: 'profile-snapshot',
+                    prefix: 'profile-snapshot', key: 'planned-output',
+                },
+            },
+            profile,
+            credentialBinding: { credentialRef: profile.credentialRef },
+        },
+    }
+}
 
 function params(overrides: Partial<GenerationParams> = {}): GenerationParams {
     return {
@@ -239,7 +269,8 @@ describe('Main Job Snapshot codec', () => {
             },
         }, dehydrated).snapshot
 
-        expect(decodeMainJobSnapshot(snapshot).mainWorkflow.output).toMatchObject({
+        const decoded = decodeMainJobSnapshot(snapshot)
+        expect(decoded.mainWorkflow.output).toMatchObject({
             directory: 'D:\\Images\\Prime\\01',
             generationFolderId: 'folder-01',
             generationFolderPath: 'Prime / 01',
@@ -247,11 +278,77 @@ describe('Main Job Snapshot codec', () => {
             r2Bucket: 'scene-bucket',
             r2Prefix: 'prime/bluehair/01',
         })
+        expect(decoded.mainWorkflow.r2Delivery).toEqual({ requirement: 'best-effort', planned: null })
+
+        const legacy = JSON.parse(JSON.stringify(snapshot)) as GenerationJobSnapshot
+        delete (legacy.parameters as unknown as { mainWorkflow: { r2Delivery?: unknown } })
+            .mainWorkflow.r2Delivery
+        expect(decodeMainJobSnapshot(legacy).mainWorkflow.r2Delivery).toEqual({
+            requirement: 'best-effort', planned: null,
+        })
 
         const malformed = JSON.parse(JSON.stringify(snapshot)) as GenerationJobSnapshot
         const parameters = malformed.parameters as Record<string, unknown>
         const workflow = parameters.mainWorkflow as { output: { r2Bucket: string } }
         workflow.output.r2Bucket = 'Invalid_Bucket'
         expect(() => decodeMainJobSnapshot(malformed)).toThrowError(QueueExecutionError)
+    })
+
+    it('round-trips a strict current R2 binding and rejects unsafe or contradictory variants', () => {
+        const delivery = currentR2Delivery()
+        const snapshot = encodeMainJobSnapshot(prepared(), dehydrated, undefined, undefined, delivery).snapshot
+        expect(decodeMainJobSnapshot(snapshot).mainWorkflow.r2Delivery).toEqual(delivery)
+
+        const overwrite = JSON.parse(JSON.stringify(snapshot)) as GenerationJobSnapshot
+        const overwriteDelivery = (overwrite.parameters as unknown as {
+            mainWorkflow: { r2Delivery: { planned: { profile: { conflictPolicy: string } } } }
+        }).mainWorkflow.r2Delivery
+        overwriteDelivery.planned.profile.conflictPolicy = 'overwrite'
+        expect(() => decodeMainJobSnapshot(overwrite)).toThrowError(QueueExecutionError)
+
+        const secret = JSON.parse(JSON.stringify(snapshot)) as GenerationJobSnapshot
+        const secretPlanned = (secret.parameters as unknown as {
+            mainWorkflow: { r2Delivery: { planned: Record<string, unknown> } }
+        }).mainWorkflow.r2Delivery.planned
+        secretPlanned.secretAccessKey = 'prohibited'
+        expect(() => decodeMainJobSnapshot(secret)).toThrowError(QueueExecutionError)
+
+        const contradictory = JSON.parse(JSON.stringify(encodeMainJobSnapshot({
+            ...prepared(),
+            output: { ...prepared().output, autoR2UploadProfileId: 'profile-1' },
+        }, dehydrated).snapshot)) as GenerationJobSnapshot
+        const workflow = (contradictory.parameters as unknown as {
+            mainWorkflow: { r2Delivery: R2QueueDeliverySnapshot }
+        }).mainWorkflow
+        workflow.r2Delivery = { requirement: 'disabled', planned: null }
+        expect(() => decodeMainJobSnapshot(contradictory)).toThrowError(QueueExecutionError)
+
+        const notReadyProfile = currentR2Delivery('')
+        const notReadySnapshot = encodeMainJobSnapshot(
+            prepared(), dehydrated, undefined, undefined, notReadyProfile,
+        ).snapshot
+        expect(decodeMainJobSnapshot(notReadySnapshot).mainWorkflow.r2Delivery).toEqual(notReadyProfile)
+    })
+
+    it('keeps passive bucket/prefix config disabled and rejects legacy best-effort without activation', () => {
+        const passive = encodeMainJobSnapshot({
+            ...prepared(),
+            output: {
+                ...prepared().output,
+                autoR2UploadProfileId: null,
+                r2Bucket: 'release-bucket',
+                r2Prefix: 'generated/images',
+            },
+        }, dehydrated).snapshot
+        expect(decodeMainJobSnapshot(passive).mainWorkflow.r2Delivery).toEqual({
+            requirement: 'disabled', planned: null,
+        })
+
+        const silentDrop = JSON.parse(JSON.stringify(passive)) as GenerationJobSnapshot
+        const workflow = (silentDrop.parameters as unknown as {
+            mainWorkflow: { r2Delivery: R2QueueDeliverySnapshot }
+        }).mainWorkflow
+        workflow.r2Delivery = { requirement: 'best-effort', planned: null }
+        expect(() => decodeMainJobSnapshot(silentDrop)).toThrowError(QueueExecutionError)
     })
 })

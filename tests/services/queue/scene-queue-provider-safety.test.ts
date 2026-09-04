@@ -137,6 +137,7 @@ const payload = {
             sceneName: 'Opening',
         },
         sequenceCommitProposal: null,
+        r2Delivery: { requirement: 'disabled', planned: null },
     },
 }
 
@@ -221,6 +222,29 @@ describe('Scene Queue Provider safety', () => {
             }
             return { success: true, imageData: 'data:image/png;base64,AQID' }
         })
+    })
+
+    it('fails a dormant current R2 snapshot before any Scene Provider or save call', async () => {
+        mocks.decode.mockReturnValue({
+            ...payload,
+            sceneWorkflow: {
+                ...payload.sceneWorkflow,
+                r2Delivery: { requirement: 'best-effort', planned: {} },
+            },
+        })
+        await expect(executeSceneQueueJob(
+            job(),
+            context({
+                dispatchState: 'prepared', providerOutcome: 'running', billingRisk: 'none',
+                responseDigest: null, spoolReceipt: null,
+            }).value,
+            { presentation: {} as never },
+        )).rejects.toMatchObject({
+            kind: 'fatal',
+            message: 'Current R2 delivery snapshot requires durable release enqueue',
+        })
+        expect(mocks.transport).not.toHaveBeenCalled()
+        expect(mocks.save).not.toHaveBeenCalled()
     })
 
     it('dispatches new envelope jobs through evidence and the durable spool', async () => {

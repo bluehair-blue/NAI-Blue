@@ -8,7 +8,12 @@ import {
     isAnlasCostConsentSnapshot,
     type AnlasCostConsentSnapshot,
 } from '@/domain/queue/anlas-cost-consent'
-import { isR2BucketName, isResolvedR2Prefix } from '@/domain/r2/types'
+import {
+    isR2BucketName,
+    isR2QueueDeliverySnapshot,
+    isResolvedR2Prefix,
+    type R2QueueDeliverySnapshot,
+} from '@/domain/r2/types'
 import type {
     SaveSceneResultContext,
     SaveSceneResultOptions,
@@ -52,6 +57,7 @@ export interface SceneQueueWorkflowSnapshot {
     }
     /** Absent only on pre-cost-consent Scene snapshots. */
     readonly costConsent?: AnlasCostConsentSnapshot
+    readonly r2Delivery: R2QueueDeliverySnapshot
 }
 
 export interface SceneQueueSnapshotParameters extends DehydratedGenerationParameters {
@@ -73,6 +79,7 @@ export interface EncodeSceneJobSnapshotInput {
     readonly sceneBinding: SceneGenerationBinding
     readonly batch: NonNullable<SceneQueueWorkflowSnapshot['batch']>
     readonly costConsent: NonNullable<SceneQueueWorkflowSnapshot['costConsent']>
+    readonly r2Delivery?: R2QueueDeliverySnapshot
 }
 
 export interface EncodedSceneJobSnapshot {
@@ -87,6 +94,19 @@ function asJson(value: unknown): JsonValue {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasLegacyR2Profile(value: unknown): boolean {
+    return isRecord(value) && value.autoR2UploadProfileId != null
+}
+
+function isR2DeliveryCoherent(delivery: unknown, output: unknown): boolean {
+    if (!isRecord(delivery)) return true
+    if (delivery.requirement === 'disabled') return !hasLegacyR2Profile(output)
+    if (delivery.requirement === 'best-effort' && delivery.planned === null) {
+        return hasLegacyR2Profile(output)
+    }
+    return true
 }
 
 function invalidSnapshot(): never {
@@ -157,6 +177,9 @@ export function encodeSceneJobSnapshot(
             sceneBinding: input.sceneBinding,
             batch: input.batch,
             costConsent: input.costConsent,
+            r2Delivery: input.r2Delivery ?? (input.outputContext.autoR2UploadProfileId == null
+                ? { requirement: 'disabled', planned: null }
+                : { requirement: 'best-effort', planned: null }),
         },
     }
     return {
@@ -226,6 +249,9 @@ export function decodeSceneJobSnapshot(snapshot: GenerationJobSnapshot): SceneQu
                 || !/^sha256:[a-f0-9]{64}$/.test(candidate.sceneWorkflow.batch.planHash)))
         || (candidate.sceneWorkflow.costConsent !== undefined
             && !isAnlasCostConsentSnapshot(candidate.sceneWorkflow.costConsent))
+        || (candidate.sceneWorkflow.r2Delivery !== undefined
+            && !isR2QueueDeliverySnapshot(candidate.sceneWorkflow.r2Delivery))
+        || !isR2DeliveryCoherent(candidate.sceneWorkflow.r2Delivery, candidate.sceneWorkflow.outputContext)
         || !isRecord(candidate.sceneWorkflow.saveContext)
         || typeof candidate.sceneWorkflow.saveContext.activePresetId !== 'string'
         || typeof candidate.sceneWorkflow.saveContext.sceneSavePath !== 'string'
@@ -269,6 +295,14 @@ export function decodeSceneJobSnapshot(snapshot: GenerationJobSnapshot): SceneQu
     }
     return {
         ...candidate,
+        sceneWorkflow: {
+            ...candidate.sceneWorkflow,
+            r2Delivery: candidate.sceneWorkflow.r2Delivery ?? (
+                candidate.sceneWorkflow.outputContext.autoR2UploadProfileId == null
+                    ? { requirement: 'disabled', planned: null }
+                    : { requirement: 'best-effort', planned: null }
+            ),
+        },
         payloadBuilderRevision: candidate.payloadBuilderRevision
             ?? LEGACY_NAI_PAYLOAD_BUILDER_REVISION,
     } as unknown as SceneQueueSnapshotParameters

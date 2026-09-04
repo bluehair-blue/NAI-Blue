@@ -41,6 +41,9 @@ export interface RuntimeMainQueueDependencies {
     readonly presentation: MainQueuePresentationPort
     readonly providerResultSpool: ProviderResultSpool
     readonly outputReservations: OutputReservationPlanningPort
+    /** Transitional Phase 7A seam; 7C replaces blocking release with durable enqueue. */
+    readonly legacyR2Release: typeof import('@/services/r2/generated-release')['releaseGeneratedOutputToR2']
+    readonly legacyR2Cleanup: typeof import('@/services/r2/generated-release')['discardGeneratedProviderOriginal']
     /** Phase 3 tests inject failures here; production composition leaves it absent. */
     readonly faultInjector?: NaiProviderFaultInjector
 }

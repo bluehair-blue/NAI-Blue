@@ -279,6 +279,32 @@ describe('planGeneration', () => {
         }
     })
 
+    it('keeps legacy workflow R2 fields fail-closed until the R2 planner is wired into each job', async () => {
+        const base = workflowDraft()
+        const draft: WorkflowDraft = {
+            ...base,
+            payload: {
+                ...base.payload,
+                output: {
+                    ...base.payload.output,
+                    autoR2UploadProfileId: 'profile-1',
+                    r2Bucket: 'release-bucket',
+                    r2Prefix: 'generated/images',
+                },
+            },
+        }
+        const deps = dependencies(draft)
+
+        const result = await planGeneration(baseInput, deps)
+
+        expect(result).toMatchObject({
+            status: 'unsupported',
+            capability: 'unsupported-r2-delivery',
+            issues: [{ fieldPath: 'draft.payload.output', severity: 'blocking' }],
+        })
+        expect(deps.planner.prepare).not.toHaveBeenCalled()
+    })
+
     it('deep-freezes the internal plan and detached view', async () => {
         const result = await readyPlan()
 

@@ -92,6 +92,15 @@ module.exports = {
             to: { path: '^src/stores/' },
         },
         {
+            name: 'generation-local-output-does-not-import-r2-services',
+            comment: 'Generation and local output execution consume immutable delivery bindings instead of live R2 services.',
+            severity: 'error',
+            from: {
+                path: '^src/(?:application/generation|services/(?:output|queue/(?:main|scene)-queue-executor))(?:/|\\.ts$)',
+            },
+            to: { path: '^src/services/r2/' },
+        },
+        {
             name: 'scene-output-transaction-does-not-import-presentation',
             comment: 'Scene output commits project through an Application port instead of importing UI state or notifications.',
             severity: 'error',

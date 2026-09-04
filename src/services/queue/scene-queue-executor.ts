@@ -8,7 +8,6 @@ import { reserveSceneFragmentSequenceProposal } from '@/lib/scene-generation/fra
 import { saveSceneResult } from '@/lib/scene-generation/save-scene-result'
 import { executeNovelAIImageTransport } from '@/services/generation/novelai-image-transport'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
-import { releaseGeneratedOutputToR2 } from '@/services/r2/generated-release'
 import {
     CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
     isSupportedNaiPayloadBuilderRevision,
@@ -94,7 +93,12 @@ export async function executeSceneQueueJob(
     context: QueueExecutorContext,
     dependencies: { readonly presentation: SceneResultPresentationPort },
 ): Promise<void> {
+    const { legacyR2Release } = getRuntimeMainQueueDependencies()
     const payload = decodeSceneJobSnapshot(job.snapshot)
+    // Phase 7C removes this guard when durable release enqueue consumes the immutable binding.
+    if (payload.sceneWorkflow.r2Delivery.planned !== null) {
+        throw new QueueExecutionError('fatal', 'Current R2 delivery snapshot requires durable release enqueue')
+    }
     const params = await hydrateGenerationParams(payload, job.snapshot.resources, getRuntimeQueueResourceMaterializer())
     params.sourceJobId = job.id
     const imageFormat = payload.sceneWorkflow.mimeType === 'image/webp' ? 'webp' : 'png'
@@ -303,7 +307,7 @@ export async function executeSceneQueueJob(
                         : {
                             afterSave: async output => {
                                 try {
-                                    const release = await releaseGeneratedOutputToR2({
+                                    const release = await legacyR2Release({
                                         profileId: autoR2UploadProfileId,
                                         sourceJobId: job.id,
                                         imageFormat: payload.sceneWorkflow.mimeType === 'image/webp' ? 'webp' : 'png',
