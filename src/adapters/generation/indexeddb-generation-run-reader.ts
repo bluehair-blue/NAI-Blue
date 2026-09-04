@@ -8,7 +8,8 @@ import {
     getGenerationRun,
     type GenerationRunReadPort,
 } from '@/application/generation/get-generation-run'
-import type { GenerationJob } from '@/domain/queue/types'
+import type { GenerationJob, OutputReservation } from '@/domain/queue/types'
+import type { PendingQueueOutputTransaction } from '@/services/output/output-writer'
 import type { R2ManifestV2, R2ProfileV2, UploadJob } from '@/domain/r2/types'
 import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 import { getRuntimeOutputWriter } from '@/services/output/output-writer'
@@ -24,7 +25,7 @@ import type { SceneDocument, SceneRepositoryPort } from '@/application/scene/sce
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 
 export interface GenerationRunAuthorityReaders {
-    readonly queue: Pick<IndexedDBQueueRepository, 'getBatch' | 'listJobs'>
+    readonly queue: Pick<IndexedDBQueueRepository, 'getBatch' | 'listJobs' | 'getOutputReservation' | 'listAttempts'>
     readonly output: Pick<OutputWriter, 'inspectPendingQueueTransactions'>
     readonly artifacts: Pick<IndexedDBArtifactRepository, 'get'>
     readonly r2: Pick<IndexedDBR2UploadRepository, 'listJobs' | 'getProfile' | 'getManifest'>
@@ -69,6 +70,39 @@ function scenePresetId(job: GenerationJob): string | null {
     return isRecord(saveContext) && typeof saveContext.activePresetId === 'string'
         ? saveContext.activePresetId.trim() || null
         : null
+}
+
+function journalMatchesJob(transaction: PendingQueueOutputTransaction | undefined, job: GenerationJob): boolean {
+    if (transaction === undefined
+        || transaction.phase !== 'files-committed'
+        || job.outputTransactionId !== transaction.transactionId
+        || job.artifactReference === null) return false
+    const snapshot = job.snapshot.outputReservation
+    if (snapshot === undefined) return transaction.outputReservation === undefined
+    return transaction.outputReservation?.reservationId === snapshot.reservationId
+        && transaction.outputReservation.directoryIdentity === snapshot.directoryIdentity
+        && transaction.outputReservation.relativePath === snapshot.relativePath
+        && (snapshot.reservationSchemaVersion !== 1
+            || transaction.outputReservation.commitSetHash === snapshot.commitSetHash)
+}
+
+function reservationMatchesJob(reservation: OutputReservation | null | undefined, job: GenerationJob): boolean {
+    const snapshot = job.snapshot.outputReservation
+    return reservation !== null && reservation !== undefined && snapshot !== undefined
+        && reservation.reservationId === snapshot.reservationId
+        && reservation.jobId === job.id
+        && reservation.batchId === job.batchId
+        && reservation.folderBinding.resourceType === snapshot.folderBinding.resourceType
+        && reservation.folderBinding.resourceId === snapshot.folderBinding.resourceId
+        && reservation.folderBinding.revision === snapshot.folderBinding.revision
+        && reservation.folderBinding.contentHash === snapshot.folderBinding.contentHash
+        && reservation.directoryIdentity === snapshot.directoryIdentity
+        && reservation.relativePath === snapshot.relativePath
+        && reservation.collisionPolicy === snapshot.collisionPolicy
+        && reservation.expectedExistingDigest === snapshot.expectedExistingDigest
+        && reservation.reservationSchemaVersion === snapshot.reservationSchemaVersion
+        && (reservation.reservationSchemaVersion !== 1
+            || (snapshot.reservationSchemaVersion === 1 && reservation.commitSetHash === snapshot.commitSetHash))
 }
 
 function directFact(
@@ -179,12 +213,17 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
 
         const jobs = await listBatchJobs(this.authorities.queue, batch.id)
         const [pendingTransactions, r2Jobs] = await Promise.all([
-            this.authorities.output.inspectPendingQueueTransactions().catch(() => []),
+            this.authorities.output.inspectPendingQueueTransactions().catch(() => null),
             jobs.some(job => releaseProfileId(job) !== null)
                 ? this.authorities.r2.listJobs().catch(() => null)
                 : Promise.resolve([]),
         ])
-        const pendingJobIds = new Set(pendingTransactions.map(transaction => transaction.sourceJobId))
+        const pendingByJobId = new Map<string, PendingQueueOutputTransaction[]>()
+        for (const transaction of pendingTransactions ?? []) {
+            const linked = pendingByJobId.get(transaction.sourceJobId) ?? []
+            linked.push(transaction)
+            pendingByJobId.set(transaction.sourceJobId, linked)
+        }
         const r2JobsByArtifactId = new Map<string, UploadJob[]>()
         for (const r2Job of r2Jobs ?? []) {
             const linked = r2JobsByArtifactId.get(r2Job.artifactId) ?? []
@@ -195,6 +234,16 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
             job.artifactReference === null
                 ? Promise.resolve(null)
                 : this.authorities.artifacts.get(job.artifactReference.artifactId).catch(() => null)
+        )))
+        const reservations = await Promise.all(jobs.map(job => (
+            job.snapshot.outputReservation === undefined
+                ? Promise.resolve(null)
+                : this.authorities.queue.getOutputReservation(job.snapshot.outputReservation.reservationId).catch(() => null)
+        )))
+        const attempts = await Promise.all(jobs.map(job => (
+            job.attemptCount === 0
+                ? Promise.resolve([])
+                : this.authorities.queue.listAttempts(job.id).catch(() => null)
         )))
         const scenePresetIds = [...new Set(jobs.map(scenePresetId).filter((id): id is string => id !== null))]
         const sceneDocuments = new Map<string, SceneDocument | null>(this.authorities.scenes === undefined
@@ -207,6 +256,12 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
         const facts = await Promise.all(jobs.map(async (job, index): Promise<GenerationFulfillmentJobFacts> => {
             const artifact = artifacts[index]
             const reservation = job.snapshot.outputReservation
+            const reservationRow = reservations[index]
+            const attemptRows = attempts[index]
+            const currentAttempt = attemptRows?.find(candidate => candidate.attemptNumber === job.attemptCount)
+            const pendingTransaction = pendingByJobId.get(job.id)?.find(transaction => journalMatchesJob(transaction, job))
+                ?? pendingByJobId.get(job.id)?.[0]
+            const filesCommitted = journalMatchesJob(pendingTransaction, job)
             const artifactHasCurrentLineage = reservation?.reservationSchemaVersion !== 1
                 || artifact?.outputCommitSetHash === reservation.commitSetHash
             const artifactMatchesJob = artifact?.sourceJobId === job.id && artifactHasCurrentLineage
@@ -214,14 +269,19 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                 ? directFact('succeeded', 'artifact-record', `${job.id}:artifact`, artifact.updatedAt)
                 : job.state === 'succeeded' && job.outputTransactionId !== null && job.artifactReference !== null
                     ? directFact('succeeded', 'queue-output-commit', `${job.id}:storage`, job.updatedAt)
-                    : pendingJobIds.has(job.id)
+                    : pendingTransaction !== undefined
                         ? directFact('pending', 'output-journal', `${job.id}:storage`, job.updatedAt)
                         : ['queued', 'leased', 'running', 'recovering'].includes(job.state)
                             ? derivedFact('pending', 'queue-job', `${job.id}:storage`, job.updatedAt)
                             : undefined
-            const provider = job.attemptCount > 0 && storage === undefined
-                ? derivedFact('uncertain', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
-                : undefined
+            const providerEvidence = currentAttempt?.providerEvidence
+            const provider = providerEvidence?.dispatchState === 'result-spooled'
+                ? directFact('succeeded', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
+                : providerEvidence?.providerOutcome === 'unknown'
+                    ? directFact('uncertain', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
+                    : job.attemptCount > 0 && storage === undefined
+                        ? derivedFact('uncertain', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
+                        : undefined
             const presetId = scenePresetId(job)
             const sceneDocument = presetId === null ? undefined : sceneDocuments.get(presetId)
             const scene = sceneDocument?.scenes.find(candidate => candidate.id === job.sceneId)
@@ -230,6 +290,58 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                 && presetId !== null
                 && (scene === undefined
                     || !scene.artifactRefs.some(reference => reference.artifactId === artifact.artifactId))
+            const reservationMatches = reservationMatchesJob(reservationRow, job)
+            const issues = [] as NonNullable<GenerationFulfillmentJobFacts['issues']>[number][]
+            if (filesCommitted) {
+                issues.push({
+                    code: 'OUTPUT_RESERVATION_CONFLICT',
+                    jobId: job.id,
+                    severity: 'blocking',
+                    action: { kind: 'retry-storage', requiresHuman: false },
+                })
+            }
+            const destructiveEligible = pendingTransactions !== null
+                && attemptRows !== null
+                && job.outputTransactionId === null
+                && job.artifactReference === null
+                && !artifactMatchesJob
+                && storage === undefined
+                && reservationRow !== null
+                && reservationRow.state !== 'committed'
+                && reservationRow.state !== 'abandoned'
+                && ['failed', 'blocked', 'cancelled', 'skipped'].includes(job.state)
+            if (!filesCommitted && reservationMatches && destructiveEligible
+                && providerEvidence?.dispatchState === 'result-spooled') {
+                issues.push({
+                    code: 'OUTPUT_RESERVATION_CONFLICT',
+                    jobId: job.id,
+                    severity: 'blocking',
+                    action: { kind: 'discard-result-and-abandon-reservation', requiresHuman: true },
+                })
+            } else if (!filesCommitted && reservationMatches && attemptRows !== null
+                && providerEvidence?.providerOutcome === 'unknown') {
+                issues.push({
+                    code: 'OUTPUT_RESERVATION_CONFLICT',
+                    jobId: job.id,
+                    severity: 'blocking',
+                    action: { kind: 'review-provider-unknown', requiresHuman: true },
+                })
+            } else if (!filesCommitted && reservationMatches && destructiveEligible) {
+                issues.push({
+                    code: 'OUTPUT_RESERVATION_CONFLICT',
+                    jobId: job.id,
+                    severity: 'blocking',
+                    action: { kind: 'abandon-reservation', requiresHuman: true },
+                })
+            }
+            if (sceneLinkPending) {
+                issues.push({
+                    code: 'SCENE_LINK_PENDING',
+                    jobId: job.id,
+                    severity: 'warning',
+                    action: { kind: 'retry-scene-link', requiresHuman: false },
+                })
+            }
 
             return {
                 jobId: job.id,
@@ -246,16 +358,7 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                         ...(r2JobsByArtifactId.get(`${job.id}:release-sidecar`) ?? []),
                     ], this.authorities.r2),
                 acceptance: { required: false },
-                ...(sceneLinkPending
-                    ? {
-                            issues: [{
-                                code: 'SCENE_LINK_PENDING' as const,
-                                jobId: job.id,
-                                severity: 'warning' as const,
-                                action: { kind: 'retry-scene-link' as const, requiresHuman: false },
-                            }],
-                        }
-                    : {}),
+                ...(issues.length === 0 ? {} : { issues }),
             }
         }))
 

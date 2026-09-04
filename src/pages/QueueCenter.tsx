@@ -42,6 +42,8 @@ import { calculateFixedVirtualRange } from '@/lib/virtualization/fixed-range'
 import { cn } from '@/lib/utils'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { getRuntimeQueueRepository } from '@/services/queue/indexeddb-queue-repository'
+import { getRuntimeQueueRecoveryCommandAdapter } from '@/services/queue/queue-recovery-command-adapter'
+import { QueueRecoveryActionGate } from '@/services/queue/queue-recovery-action-gate'
 import { getRuntimeDurableQueueCoordinator } from '@/services/queue/runtime'
 import {
     enqueueReviewedSceneQueue,
@@ -122,6 +124,7 @@ export default function QueueCenter() {
     const windowRequestId = useRef(0)
     const fulfillmentRequestId = useRef(0)
     const pendingFocusIndex = useRef<number | null>(null)
+    const recoveryGate = useRef(new QueueRecoveryActionGate())
     const selectedBatchIdRef = useRef<string | null>(selectedBatchId)
     selectedBatchIdRef.current = selectedBatchId
     const [batches, setBatches] = useState<GenerationBatch[]>([])
@@ -138,6 +141,7 @@ export default function QueueCenter() {
     const [fulfillment, setFulfillment] = useState<GenerationFulfillmentProjection | null>(null)
     const [fulfillmentLoading, setFulfillmentLoading] = useState(false)
     const [fulfillmentError, setFulfillmentError] = useState(false)
+    const [destructiveIssue, setDestructiveIssue] = useState<FulfillmentIssue | null>(null)
 
     const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null
     const summary = projectionMeta?.batchId === selectedBatchId ? projectionMeta.summary : null
@@ -379,6 +383,27 @@ export default function QueueCenter() {
         })
     }
 
+    const runFulfillmentAction = (issue: FulfillmentIssue, preserveRejection = false): Promise<void> => {
+        const key = `${issue.jobId}:${issue.action.kind}`
+        if (issue.action.kind === 'review-provider-unknown') {
+            openDrawer()
+            return Promise.resolve()
+        }
+        return recoveryGate.current.run(key, async () => {
+            if (busy) throw new Error('Queue Center is busy')
+            setBusy(true)
+            try {
+                await getRuntimeQueueRecoveryCommandAdapter().execute(issue)
+                await Promise.all([refresh(), loadFulfillment()])
+            } catch (error) {
+                reportDiagnostic(error, { operation: 'queue-center.recovery', stage: 'mutate', category: 'persistence' })
+                if (preserveRejection) throw error
+            } finally {
+                setBusy(false)
+            }
+        })
+    }
+
     const prepareSelectedScenes = async (targets: readonly SceneQueueTarget[]): Promise<PreparedSceneQueueReview | null> => {
         let prepared: PreparedSceneQueueReview | null = null
         await runAction(async () => {
@@ -497,6 +522,18 @@ export default function QueueCenter() {
             return t('queue.fulfillment.issue.sceneLinkPending', 'Saved on this device · Scene link needs retry')
         }
         if (issue.code === 'OUTPUT_RESERVATION_CONFLICT') {
+            if (issue.action.kind === 'retry-storage') {
+                return t('queue.fulfillment.issue.storagePending', 'Provider result retained · Storage commit needs retry')
+            }
+            if (issue.action.kind === 'discard-result-and-abandon-reservation') {
+                return t('queue.fulfillment.issue.spooledResult', 'Received result retained · Output reservation is still held')
+            }
+            if (issue.action.kind === 'review-provider-unknown') {
+                return t('queue.fulfillment.issue.providerUnknown', 'Provider outcome is uncertain · No automatic retry')
+            }
+            if (issue.action.kind === 'abandon-reservation') {
+                return t('queue.fulfillment.issue.reservationHeld', 'Inactive output reservation is still held')
+            }
             return t('queue.fulfillment.issue.outputReservationConflict', 'Output reservation conflict · Replan required')
         }
         return t('queue.fulfillment.issue.directoryAuthorizationRequired', 'Output folder access is required')
@@ -744,8 +781,24 @@ export default function QueueCenter() {
                                         <p className="font-medium">{t('queue.fulfillment.issue.title', 'Recovery actions')}</p>
                                         <ul className="mt-1 space-y-1 text-muted-foreground">
                                             {fulfillment.issues.map(issue => (
-                                                <li key={`${issue.jobId}:${issue.code}`}>
-                                                    {fulfillmentIssueLabel(issue)} · {fulfillmentActionLabel(issue)}
+                                                <li key={`${issue.jobId}:${issue.code}:${issue.action.kind}`} className="flex flex-wrap items-center gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant={issue.action.requiresHuman ? 'outline' : 'default'}
+                                                        size="sm"
+                                                        disabled={busy}
+                                                        onClick={() => {
+                                                            if (issue.action.kind === 'abandon-reservation'
+                                                                || issue.action.kind === 'discard-result-and-abandon-reservation') {
+                                                                setDestructiveIssue(issue)
+                                                                return
+                                                            }
+                                                            void runFulfillmentAction(issue).catch(() => undefined)
+                                                        }}
+                                                    >
+                                                        {fulfillmentActionLabel(issue)}
+                                                    </Button>
+                                                    <span>{fulfillmentIssueLabel(issue)}</span>
                                                 </li>
                                             ))}
                                         </ul>
@@ -882,6 +935,24 @@ export default function QueueCenter() {
                     </div>
                 )}
             </div>
+            <ConfirmDialog
+                open={destructiveIssue !== null}
+                onOpenChange={open => {
+                    if (!open) setDestructiveIssue(null)
+                }}
+                title={t('queue.fulfillment.confirm.title', 'Confirm recovery action')}
+                description={destructiveIssue?.action.kind === 'discard-result-and-abandon-reservation'
+                    ? t('queue.fulfillment.confirm.discard', 'The received result will be permanently discarded before its output reservation is released.')
+                    : t('queue.fulfillment.confirm.abandon', 'The output reservation will be released. This cannot be undone.')}
+                confirmText={destructiveIssue === null ? '' : fulfillmentActionLabel(destructiveIssue)}
+                cancelText={t('common.cancel', 'Cancel')}
+                variant="destructive"
+                busy={busy}
+                onConfirm={async () => {
+                    if (destructiveIssue === null) return
+                    await runFulfillmentAction(destructiveIssue, true)
+                }}
+            />
             <ConfirmDialog
                 open={conversionOpen}
                 onOpenChange={setConversionOpen}

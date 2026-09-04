@@ -1039,6 +1039,86 @@ describe('normalized IndexedDB durable queue repository', () => {
         })).resolves.toMatchObject({ state: 'abandoned', version: 3 })
     })
 
+    it('keeps claims for recovering or bound jobs and keeps abandoned claims released', async () => {
+        const seed = async (label: string) => {
+            const queue = repository(new IDBFactory(), databaseName(label))
+            const current = commitSetReservation()
+            await queue.createBatchAndEnqueue({
+                batch: {
+                    id: 'batch:1', workflow: 'main', createdAt: NOW,
+                    failurePolicy: 'continue', origin: 'fresh', idempotencyKey: 'batch:1',
+                },
+                jobs: [reservedJobInput(current)],
+                reservations: [current],
+            })
+            return { queue, current }
+        }
+
+        const recovering = await seed('abandon-recovering-guard')
+        const recoveringLease = await recovering.queue.acquireLease({
+            jobId: 'job:1', owner: 'worker:1', now: NOW, ttlMs: 60_000,
+        })
+        await recovering.queue.transitionJob({
+            jobId: 'job:1', to: 'recovering', now: LATER,
+            leaseOwner: 'worker:1', leaseToken: recoveringLease?.leaseToken ?? '',
+        })
+        await expect(recovering.queue.abandonOutputReservation({
+            reservationId: recovering.current.reservationId,
+            owner: recovering.current,
+            expectedVersion: 1,
+            now: LATER,
+        })).rejects.toMatchObject({ code: 'E_QUEUE_INVALID_TRANSITION' })
+        expect(await recovering.queue.listOutputReservationClaims(recovering.current.reservationId))
+            .toEqual(expect.arrayContaining([
+                expect.objectContaining({ activeCollisionKey: expect.any(String) }),
+            ]))
+
+        const bound = await seed('abandon-bound-guard')
+        const boundLease = await bound.queue.acquireLease({ jobId: 'job:1', owner: 'worker:1', now: NOW, ttlMs: 60_000 })
+        await bound.queue.transitionJob({
+            jobId: 'job:1', to: 'running', now: NOW,
+            leaseOwner: 'worker:1', leaseToken: boundLease?.leaseToken ?? '',
+        })
+        await bound.queue.bindOutputTransaction({
+            jobId: 'job:1', leaseOwner: 'worker:1', leaseToken: boundLease?.leaseToken ?? '', now: NOW,
+            outputTransactionId: 'transaction:bound',
+            artifactReference: { kind: 'output-writer', artifactId: 'artifact:bound', digest: 'sha256:bound' },
+        })
+        await bound.queue.transitionJob({
+            jobId: 'job:1', to: 'failed', now: LATER,
+            leaseOwner: 'worker:1', leaseToken: boundLease?.leaseToken ?? '', failureKind: 'local-io',
+        })
+        await expect(bound.queue.abandonOutputReservation({
+            reservationId: bound.current.reservationId,
+            owner: bound.current,
+            expectedVersion: 1,
+            now: LATER,
+        })).rejects.toMatchObject({ code: 'E_QUEUE_INVALID_TRANSITION' })
+        expect(await bound.queue.listOutputReservationClaims(bound.current.reservationId))
+            .toEqual(expect.arrayContaining([
+                expect.objectContaining({ activeCollisionKey: expect.any(String) }),
+            ]))
+
+        const abandoned = await seed('abandon-idempotent-claims')
+        await abandoned.queue.abandonOutputReservation({
+            reservationId: abandoned.current.reservationId,
+            owner: abandoned.current,
+            expectedVersion: 1,
+            now: LATER,
+        })
+        await expect(abandoned.queue.abandonOutputReservation({
+            reservationId: abandoned.current.reservationId,
+            owner: abandoned.current,
+            expectedVersion: 2,
+            now: LATER,
+        })).resolves.toMatchObject({ state: 'abandoned' })
+        expect(await abandoned.queue.listOutputReservationClaims(abandoned.current.reservationId))
+            .toEqual(abandoned.current.commitSet.claims.map(claim => expect.objectContaining({
+                claimId: claim.claimId,
+                activeCollisionKey: null,
+            })))
+    })
+
     it('CAS-transfers a pre-dispatch failed reservation to one retry successor', async () => {
         const factory = new IDBFactory()
         const queue = repository(factory, databaseName('retry-reservation-transfer'))

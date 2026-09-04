@@ -2500,8 +2500,9 @@ export class IndexedDBQueueRepository {
                 const jobValue = await requestResult(jobs.get(reservation.jobId))
                 if (jobValue === undefined) throw new QueueRepositoryError('E_QUEUE_NOT_FOUND', 'Reservation job does not exist')
                 const job = parseStoredJob(jobValue)
-                if (job.state === 'running' || job.state === 'leased') {
-                    throw new QueueRepositoryError('E_QUEUE_INVALID_TRANSITION', 'Active output cannot be abandoned')
+                if (job.state === 'running' || job.state === 'leased' || job.state === 'recovering'
+                    || job.outputTransactionId !== null || job.artifactReference !== null) {
+                    throw new QueueRepositoryError('E_QUEUE_INVALID_TRANSITION', 'Active or bound output cannot be abandoned')
                 }
                 const attempt = job.attemptCount === 0
                     ? null
