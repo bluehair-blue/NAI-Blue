@@ -349,14 +349,22 @@ async function runPostRenderStartupTasks(): Promise<void> {
         { startStoreSnapshotScheduler },
         { initializeQueueAfterRestart },
         { startAgentWorkspaceBridge },
+        { startRuntimeAgentCommands },
     ] = await Promise.all([
         import('./stores/asset-module-store'),
         import('./stores/character-store'),
         import('./lib/store-snapshots'),
         import('./services/queue/queue-startup'),
         import('./services/agent/agent-workspace-runtime'),
+        import('./composition-root/runtime-agent-commands'),
     ])
-    void initializeQueueAfterRestart().then(async recovery => {
+    const queueRecovery = initializeQueueAfterRestart()
+    // The native command owner waits for this same recovery authority. A resolved
+    // partial recovery or rejected recovery keeps every inbox handler unavailable.
+    void startRuntimeAgentCommands(queueRecovery).catch(err => {
+        reportDiagnostic(err, { operation: 'startup.agent-commands', stage: 'initialize', category: 'persistence' })
+    })
+    void queueRecovery.then(async recovery => {
         const results = [...recovery.linkedOutputs, ...recovery.orphanOutputs]
         const failures = results.filter(result => result.action === 'failed')
         if (results.length > 0) {

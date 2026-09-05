@@ -22,6 +22,8 @@ export interface SpoolReconcileResult {
     readonly removedTemporarySpoolIds: readonly string[]
     readonly removedOrphanSpoolIds: readonly string[]
     readonly corruptSpoolIds: readonly string[]
+    /** Retained committed corruption, excluding temporary files successfully cleaned during recovery. */
+    readonly unresolvedCorruptSpoolIds?: readonly string[]
 }
 
 /** App-private byte spool; callers persist only its redacted receipt in Queue attempts. */

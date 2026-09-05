@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "phase": "9B",
+  "recordedAt": "2026-09-05T09:28:28.029Z",
+  "baseCommit": "b03021f330f5e46c09771717b24588f8f29333d0",
+  "sourceScope": "Source and tests in the commit containing this evidence.",
+  "implementation": "windows-foreground-authenticated-read-plan-implemented",
+  "runtimeActivation": "windows-foreground-read-plan",
+  "phase9Complete": false,
+  "node": "v24.19.0",
+  "platform": "win32",
+  "automatedTests": {
+    "command": "npx vitest run --exclude 'tests/live/**' --reporter=json --outputFile=docs/local/evidence/phase-09b/automated-tests-final.json",
+    "success": true,
+    "files": 311,
+    "passed": 2201,
+    "failed": 0,
+    "skipped": 0,
+    "targetedCommand": "npm run test:agent-inbox",
+    "targetedFiles": 7,
+    "targetedPassed": 80,
+    "liveSuitesExcluded": true,
+    "localReport": "docs/local/evidence/phase-09b/automated-tests-final.json",
+    "localReportSha256": "19516a04f72a56aa441e2f4773cbbc9b477893b5f58585d5ab93bedc4d1c4ff8"
+  },
+  "nativeValidation": {
+    "command": "cargo test --offline --lib agent_commands -- --test-threads=1 --nocapture",
+    "environment": "Actual Windows filesystem and dedicated agent-commands.test keyring namespace; PHASE9_QA_PYTHON selects bundled Python for separate-process QA.",
+    "passed": 3,
+    "failed": 0,
+    "nativeChecks": [
+      "Native register, authenticate, rotate, old-key rejection, new-key acceptance, revoke and revoked rejection.",
+      "Private current-user/SYSTEM ACL, permissive Everyone ACL rejection, hardlink rejection, exclusive owner and reacquisition, ancestor directory pinning.",
+      "Atomic result replacement, rejection no-replace conflict, digest-bound retirement and preservation of changed ready bytes.",
+      "Oversized bounded read retains exclusive handle through rejection/retire; malformed UTF-8 is safely rejected and retired; later valid file remains processable.",
+      "Exactly 64 KiB public result projects inside a bounded receipt; receipt and rejection over-limit publication is rejected."
+    ],
+    "externalProcess": {
+      "executed": true,
+      "status": "passed",
+      "path": "Native registration -> production Python signer in separate process -> real CredReadW -> native-private inbox -> native read/HMAC authenticate/retire",
+      "substitution": "Only signer SERVICE changed to isolated test namespace. No credential passed through argv, environment, stdin or stdout; stdin carries public metadata only.",
+      "defaultTestBehavior": "This additional process check explicitly skips when PHASE9_QA_PYTHON is unset. It was set for this recorded run."
+    },
+    "localLog": "docs/local/evidence/phase-09b/native-tests-final.log",
+    "localLogSha256": "eeb594e8156e2849a16d0fd1bbe6be90b50025e5ad7e5f990accb87e31b33ec1",
+    "compileCommand": "cargo check --offline --lib",
+    "compileExitCode": 0,
+    "compileLog": "docs/local/evidence/phase-09b/native-check-final.log",
+    "compileLogSha256": "54f2fa495070f8311a576c0446e5c74e4dcd1f5d5f84216630e3a48c4b9f60de",
+    "warnings": ["Existing scrypt dev-profile package does not match any package."]
+  },
+  "browserQA": {
+    "command": "npm run qa:agent-inbox",
+    "status": "passed",
+    "checks": 8,
+    "pageErrors": 0,
+    "consoleErrors": 0,
+    "environment": "Isolated Chromium + local Vite 9090; actual Data Hub unsupported state and actual AgentCommandPanel/ForegroundAgentCommandRuntime/IndexedDB receipt; native port/auth and read-plan handlers substituted.",
+    "coverage": ["register/copy public metadata", "real dispatcher receipt", "read-plan capability registry and unavailable mutations", "stop/resume", "key rotation", "revocation", "390px no horizontal overflow"],
+    "localReport": "docs/local/evidence/phase-09b/browser-qa-report.json",
+    "localReportSha256": "4b1a80c27e985f98be55abb06e79a2afc2448220eb7673a5c179a4792a644888",
+    "screenshots": [
+      "docs/local/evidence/phase-09b/01-data-hub-browser-unsupported.png",
+      "docs/local/evidence/phase-09b/02-ready-registered-rotated.png",
+      "docs/local/evidence/phase-09b/03-mobile-revoked.png"
+    ],
+    "visualReview": "Mobile screenshot inspected; controls and capability rows readable."
+  },
+  "checks": [
+    { "command": "npm run lint", "exitCode": 0 },
+    { "command": "npm run test:architecture", "exitCode": 0, "modules": 608, "dependencies": 3329, "violations": 0 },
+    { "command": "npm run build", "exitCode": 0, "includesTypecheck": true, "localLog": "docs/local/evidence/phase-09b/build-final.log" },
+    { "command": "npm run test:secret-redaction", "exitCode": 0, "tests": 17 },
+    { "command": "node scripts/verify-rescue-mode.mjs", "exitCode": 0, "environment": "Isolated Chromium; blocked IndexedDB keyboard/touch recovery UI." },
+    { "command": "Locale JSON and key parity", "exitCode": 0, "locales": ["ko", "en", "ja"], "keysPerLocale": 30 },
+    { "command": "git diff --check", "exitCode": 0 }
+  ],
+  "review": {
+    "status": "All reported correctness findings resolved with focused regression evidence; no outstanding actionable P1/P2 finding reported in final targeted review.",
+    "method": "Independent cross-review of native/signer and runtime/startup/UI, root integration, real filesystem and browser QA.",
+    "fixes": [
+      "Stop initial scan immediately after in-flight work and serialize restart behind owner release.",
+      "Reject and retire oversized or malformed-encoding files without disabling valid subsequent requests.",
+      "Reject credential-string corpus before any Python vault access or inbox archive publication.",
+      "Allow bounded receipt metadata overhead above the 64 KiB public result limit."
+    ]
+  },
+  "observedValidationFailures": [
+    { "failure": "Sandboxed Playwright launch returned spawn EPERM.", "resolution": "Reviewed escalation allowed isolated Chromium; UI QA and rescue verification passed." }
+  ],
+  "limitations": [
+    "Installed Tauri GUI human-registration to external submission to foreground consumption has not been exercised end to end.",
+    "Native tests use actual Windows keyring in a dedicated test service, never production client credentials.",
+    "No forced process crash or actual junction creation/reparse attack reproduction.",
+    "No Provider/R2 network execution or generated image/output QA.",
+    "Phase 9C durable approval/replan/expiry, versioned policy, rolling/outstanding budget and mutations remain unavailable.",
+    "Phase 10 MCP SDK/sidecar/spike and Phase 11 background/headless remain unimplemented."
+  ]
+}

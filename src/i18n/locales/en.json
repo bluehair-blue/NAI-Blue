@@ -3444,5 +3444,37 @@
             "accepted": "Accepted",
             "rejected": "Rejected"
         }
+    },
+    "agentInbox": {
+        "clientChanged": "Client access updated.",
+        "changeFailed": "Could not update client access. Check the app recovery status.",
+        "toggleFailed": "Could not change the inbox status. Restart the app.",
+        "windowsOnly": "Available in the Windows app",
+        "starting": "Checking saved data and recovery status",
+        "ready": "Receiving authenticated requests",
+        "busy": "Another app process is handling requests",
+        "unavailable": "The inbox could not be started. Check the recovery status and restart the app.",
+        "stopped": "Inbox stopped",
+        "stopping": "Finishing the current request",
+        "title": "Authenticated AI requests",
+        "description": "Registered AI clients can view saved work and review generation plans. Image generation and changes are not yet supported. Requests are processed only while the app is running.",
+        "workspace": "Workspace ID",
+        "resume": "Resume inbox",
+        "pause": "Stop inbox",
+        "clientLabel": "AI client name",
+        "clientPlaceholder": "e.g. Local task assistant",
+        "register": "Register read and plan access",
+        "keyStorage": "Secret keys are stored in Windows Credential Manager. Copy the connection details for your external submission tool. After rotating a key, use the updated connection details.",
+        "clients": "Registered AI clients",
+        "revoked": "Access revoked",
+        "copied": "Connection details copied without secret keys.",
+        "copyFailed": "Could not copy the connection details.",
+        "copyConnection": "Copy connection details",
+        "rotate": "Rotate key",
+        "revoke": "Revoke access",
+        "capabilities": "Supported requests",
+        "available": "Available",
+        "notAvailable": "Currently unavailable",
+        "recent": "Recent requests in this session"
     }
 }

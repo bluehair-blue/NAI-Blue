@@ -16,7 +16,17 @@ import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { recoverQueueR2Release } from './queue-r2-release-recovery'
 
+/** Safe readiness codes; exception text, paths, and Provider payloads stay out of the inbox gate. */
+export type QueueStartupRecoveryIssue =
+    | 'provider-spool-reconcile'
+    | 'linked-output-recovery'
+    | 'orphan-output-recovery'
+    | 'scene-artifact-reconcile'
+    | 'r2-release-reconcile'
+
 export interface QueueStartupRecoveryResult {
+    readonly inboxReady: boolean
+    readonly recoveryIssues: readonly QueueStartupRecoveryIssue[]
     linkedOutputs: OutputRecoveryResult[]
     orphanOutputs: OutputRecoveryResult[]
     leases: QueueRecoveryResult
@@ -103,6 +113,7 @@ async function reconcileProviderAttempts(
 /** Recreates only missing durable delivery jobs from committed local authority; Provider is never consulted. */
 export async function reconcileR2ReleaseJobs(
     repository: ReturnType<typeof getRuntimeQueueRepository>,
+    onRecoveryFailure?: () => void,
 ): Promise<number> {
     let enqueued = 0
     let cursor: string | null = null
@@ -114,6 +125,7 @@ export async function reconcileR2ReleaseJobs(
                 const handle = await recoverQueueR2Release(job)
                 enqueued += handle?.jobIds.length ?? 0
             } catch (error) {
+                onRecoveryFailure?.()
                 reportDiagnostic(error, { operation: 'queue.startup', stage: 'r2-release-reconcile', jobId: job.id })
             }
         }
@@ -126,23 +138,37 @@ export function initializeQueueAfterRestart(options: {
     providerResultSpool: ProviderResultSpool
 } = { providerResultSpool: getRuntimeMainQueueDependencies().providerResultSpool }): Promise<QueueStartupRecoveryResult> {
     startupPromise ??= (async () => {
+        const recoveryIssues = new Set<QueueStartupRecoveryIssue>()
         const repository = getRuntimeQueueRepository()
         const writer = getRuntimeOutputWriter()
         await repository.initialize()
         const providerSpool = await options.providerResultSpool.reconcile()
+        if ((providerSpool.unresolvedCorruptSpoolIds ?? providerSpool.corruptSpoolIds).length > 0) {
+            recoveryIssues.add('provider-spool-reconcile')
+        }
         await reconcileProviderAttempts(repository, providerSpool.receipts, new Date().toISOString())
         const linkedOutputs = await recoverQueueLinkedOutputs(repository, writer, {
             now: new Date().toISOString(),
         })
         const orphanOutputs = await writer.recoverPending()
+        // These resolved outcomes leave recovery unproven. A blocked Provider
+        // attempt or terminal lease disposition, by contrast, is reconciled truth.
+        const incompleteOutput = (output: OutputRecoveryResult) =>
+            output.action === 'failed' || output.action === 'ineligible' || output.action === 'missing'
+        if (linkedOutputs.some(incompleteOutput)) recoveryIssues.add('linked-output-recovery')
+        if (orphanOutputs.some(incompleteOutput)) recoveryIssues.add('orphan-output-recovery')
         const sceneLinks = await reconcileSceneArtifactLinks(
             getRuntimeSceneRepository(),
             getRuntimeArtifactRepository(),
         ).catch(error => {
+            recoveryIssues.add('scene-artifact-reconcile')
             reportDiagnostic(error, { operation: 'queue.startup', stage: 'scene-artifact-reconcile' })
             return []
         })
-        const r2ReleaseJobs = await reconcileR2ReleaseJobs(repository)
+        if (sceneLinks.some(link => link.status === 'PENDING_CONFLICT' || link.status === 'SCENE_MISSING')) {
+            recoveryIssues.add('scene-artifact-reconcile')
+        }
+        const r2ReleaseJobs = await reconcileR2ReleaseJobs(repository, () => recoveryIssues.add('r2-release-reconcile'))
         const leases = await recoverQueueAfterRestart(repository, {
             now: new Date().toISOString(),
             // This gate runs once before the process-local coordinator starts.
@@ -153,7 +179,13 @@ export function initializeQueueAfterRestart(options: {
         // Lease recovery determines terminal Queue truth before render costs are
         // reconciled; this releases failed/cancelled work after desktop restarts.
         const styleLabReservations = await reconcileStyleLabRenderReservations({ queueRepository: repository })
-        return { linkedOutputs, orphanOutputs, leases, providerSpool, styleLabReservations, sceneLinks, r2ReleaseJobs }
+        // Preserve rejected infrastructure failures for the Queue coordinator;
+        // only previously resolved partial failures become an explicit inbox gate.
+        return {
+            linkedOutputs, orphanOutputs, leases, providerSpool, styleLabReservations, sceneLinks, r2ReleaseJobs,
+            inboxReady: recoveryIssues.size === 0,
+            recoveryIssues: [...recoveryIssues],
+        }
     })()
     return startupPromise
 }

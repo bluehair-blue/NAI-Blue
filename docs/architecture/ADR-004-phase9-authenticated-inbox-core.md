@@ -5,6 +5,8 @@
 - 선행 계약: [ADR-001](ADR-001-modular-monolith-boundaries.md), [ADR-002](ADR-002-phase7-r2-delivery.md), [ADR-003](ADR-003-phase8-human-intent-assessment.md)
 - 검증 기록: [Phase 9A validation](../releases/evidence/phase9a-validation-2026-09-05.json)
 
+이 문서는 9A checkpoint 당시의 범위를 기록한다. 이후 native foreground 조회·계획 연결은 [ADR-005: Phase 9B](ADR-005-phase9-windows-foreground-inbox.md)에 구현 및 검증 범위를 기록했다.
+
 ## 결정과 범위
 
 Phase 9를 인증·영속 코어, native 수신·등록, 승인·실행의 순서로 구현한다. 이번 9A는 실제 HMAC 검증, IndexedDB receipt와 immutable plan, planner를 호출하는 `generation.plan` handler, readiness 순서 및 파일별 처리 코어를 제공한다. 현재 앱의 `main.tsx`에 inbox를 연결하지 않는다. 기존 편집 bridge의 `request.json/result.json`은 기존 역할을 유지한다.

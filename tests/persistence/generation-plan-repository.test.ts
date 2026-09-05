@@ -8,6 +8,7 @@ import type { JsonObject } from '@/domain/composition/types'
 import { createAgentGenerationPlanHandler } from '@/application/agent/agent-generation-plan-handler'
 import { createSingleImageDraft, reviseSingleImageDraft } from '@/domain/workflow/single-image-draft'
 import { getIndexedDBItemStrict, resetIndexedDBConnectionForRetry, setIndexedDBItemStrict } from '@/lib/indexed-db'
+import { createWorkflowDraftGenerationPlanDependencies } from '@/presentation/generation/workflow-draft-main-batch-planner'
 
 function plannerFixture(maxAnlas = 100) {
     const initial = createSingleImageDraft({ id: 'draft-1', now: '2026-09-05T00:00:00.000Z', seed: 42 })
@@ -46,6 +47,30 @@ beforeEach(() => { resetIndexedDBConnectionForRetry(); vi.stubGlobal('indexedDB'
 afterEach(() => { resetIndexedDBConnectionForRetry(); vi.unstubAllGlobals() })
 
 describe('immutable generation plan authority', () => {
+    it('roundtrips actual Guided planner preparation through the agent handler and durable repository', async () => {
+        const created = createSingleImageDraft({ id: 'real-guided-draft', now: '2026-09-05T00:00:00.000Z', seed: 42 })
+        const draft = reviseSingleImageDraft(created, { updatedAt: '2026-09-05T00:00:01.000Z',
+            currentNodeId: 'review', status: 'review', payload: { ...created.payload,
+                model: 'nai-diffusion-4-5-full', prompt: { positive: 'blue hair', negative: 'lowres' },
+                resolution: { width: 832, height: 1216 } } })
+        const dependencies = createWorkflowDraftGenerationPlanDependencies({ drafts: { get: async () => draft },
+            fragmentRepository: { findMetadataByPath: () => undefined, loadDefinitionByPath: async () => null,
+                getSequenceSnapshot: () => ({ revision: 0, counters: {} }),
+                commitSequenceProposal: () => { throw new Error('Agent planning must not commit module state') } },
+            pricingBasis: 'paid' })
+        const handler = createAgentGenerationPlanHandler(dependencies, new IndexedDbGenerationPlanRepository())
+        const input = { source: { kind: 'workflow-draft', draftId: draft.id, expectedRevision: draft.revision },
+            count: 1, seedPolicy: { kind: 'fixed', seed: 42 }, budget: { maxImages: 1, maxAnlas: 100 } } as JsonObject
+        const result = await handler.execute(handler.validate(input), {} as Parameters<typeof handler.execute>[1])
+        expect(result).toMatchObject({ status: 'ready', jobCount: 1 })
+        resetIndexedDBConnectionForRetry()
+        const saved = await new IndexedDbGenerationPlanRepository().get(String(result.planId))
+        expect(saved?.jobs[0].prepared).toMatchObject({ finalPrompt: 'blue hair',
+            params: { model: 'nai-diffusion-4-5-full', seed: 42 }, streaming: false })
+        expect(saved?.planHash).toBe(result.planHash)
+        expect(JSON.stringify(result)).not.toContain('blue hair')
+    })
+
     it('uses the agent handler to durably save full plans and return only public review facts', async () => {
         for (const budget of [100, 1]) {
             const { input, dependencies } = plannerFixture(budget)

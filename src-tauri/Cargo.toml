@@ -39,6 +39,8 @@ tokio = { version = "1", features = ["full"] }
 zip = "2.2"
 base64 = "0.22"
 sha2 = "0.10"
+hmac = "=0.12.1"
+time = { version = "=0.3.53", features = ["formatting"] }
 
 # Phase 12 LAN sync shares one audited TLS/client implementation between the
 # desktop listener and Android's outbound-only client. These crates provide the
@@ -79,6 +81,11 @@ default-features = true
 [target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+
+# Authenticated local inbox checks Windows handles and private DACLs directly;
+# this does not grant the renderer any additional filesystem scope.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 # Recommended by the official Stronghold plugin setup to keep the password KDF
 # usable in development builds without changing release cryptography.

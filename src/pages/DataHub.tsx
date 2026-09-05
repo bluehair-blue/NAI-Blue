@@ -42,6 +42,7 @@ import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { exportTextFile } from '@/platform/export-text-file'
 import { runtimeCapabilities } from '@/platform/capabilities'
+import { AgentCommandPanel } from '@/presentation/agent/AgentCommandPanel'
 import { getRuntimePlatform, isAndroidRuntime, isDesktopRuntime } from '@/platform/runtime'
 import {
     getAgentWorkspaceAbsolutePath,
@@ -929,7 +930,7 @@ export default function DataHub() {
                         </TabsTrigger>
                     </TabsList>
                     <TabsContent value="metadata"><MetadataWorkspace /></TabsContent>
-                    <TabsContent value="agent"><AgentWorkspacePanel /></TabsContent>
+                    <TabsContent value="agent"><AgentCommandPanel /><AgentWorkspacePanel /></TabsContent>
                     <TabsContent value="sync"><DeviceConnectionPanel /></TabsContent>
                 </Tabs>
 

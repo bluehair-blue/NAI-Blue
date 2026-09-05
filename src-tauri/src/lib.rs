@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 mod nai_transport;
+mod agent_commands;
 mod novelai_credentials;
 mod r2_native;
 mod sync_transport;
@@ -1006,6 +1007,18 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            agent_commands::agent_commands_initialize,
+            agent_commands::agent_commands_register_client,
+            agent_commands::agent_commands_rotate_client,
+            agent_commands::agent_commands_revoke_client,
+            agent_commands::agent_commands_acquire_owner,
+            agent_commands::agent_commands_release_owner,
+            agent_commands::agent_commands_list_ready,
+            agent_commands::agent_commands_read_ready,
+            agent_commands::agent_commands_publish_result,
+            agent_commands::agent_commands_publish_rejection,
+            agent_commands::agent_commands_retire_ready,
+            agent_commands::agent_commands_authenticate,
             verify_token,
             get_anlas_balance,
             augment_image,

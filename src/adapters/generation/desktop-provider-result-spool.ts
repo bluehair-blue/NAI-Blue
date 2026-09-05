@@ -272,6 +272,7 @@ export class DesktopProviderResultSpool implements ProviderResultSpool {
         const removedTemps: string[] = []
         const removedOrphans: string[] = []
         const corrupt: string[] = []
+        const unresolvedCorrupt: string[] = []
 
         for (const name of names.filter(value => value.endsWith('.json.tmp'))) {
             const spoolId = name.slice(0, -'.json.tmp'.length)
@@ -325,6 +326,7 @@ export class DesktopProviderResultSpool implements ProviderResultSpool {
                 receipts.push(await this.verify(spoolId))
             } catch {
                 corrupt.push(spoolId)
+                unresolvedCorrupt.push(spoolId)
             }
         }
         return Object.freeze({
@@ -333,6 +335,7 @@ export class DesktopProviderResultSpool implements ProviderResultSpool {
             removedTemporarySpoolIds: Object.freeze([...new Set(removedTemps)].sort()),
             removedOrphanSpoolIds: Object.freeze([...new Set(removedOrphans)].sort()),
             corruptSpoolIds: Object.freeze([...new Set(corrupt)].sort()),
+            unresolvedCorruptSpoolIds: Object.freeze([...new Set(unresolvedCorrupt)].sort()),
         })
     }
 }

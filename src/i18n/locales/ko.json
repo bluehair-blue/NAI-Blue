@@ -3453,5 +3453,37 @@
             "pass": "충족",
             "fail": "미충족"
         }
+    },
+    "agentInbox": {
+        "clientChanged": "접속 권한을 갱신했습니다.",
+        "changeFailed": "접속 권한을 갱신하지 못했습니다. 앱의 복구 상태를 확인해 주세요.",
+        "toggleFailed": "수신 상태를 변경하지 못했습니다. 앱을 다시 시작해 주세요.",
+        "windowsOnly": "Windows 앱에서 사용 가능",
+        "starting": "저장 데이터와 복구 상태 확인 중",
+        "ready": "인증된 요청 수신 중",
+        "busy": "다른 앱 프로세스가 처리 중",
+        "unavailable": "수신을 준비하지 못했습니다. 복구 상태 확인 후 앱을 다시 시작해 주세요.",
+        "stopped": "요청 수신 중지됨",
+        "stopping": "진행 중인 요청을 정리하는 중",
+        "title": "인증된 AI 요청",
+        "description": "등록한 AI가 저장된 작업을 조회하고 생성 계획을 검토할 수 있습니다. 이미지 생성과 변경 작업은 아직 지원하지 않으며, 요청 처리는 앱이 실행 중일 때만 가능합니다.",
+        "workspace": "작업공간 ID",
+        "resume": "수신 재개",
+        "pause": "수신 중지",
+        "clientLabel": "AI 접속 이름",
+        "clientPlaceholder": "예: 로컬 작업 도우미",
+        "register": "조회·계획 권한 등록",
+        "keyStorage": "비밀키는 Windows 자격 증명 저장소에 보관됩니다. 접속 정보를 복사해 외부 제출 도구에 전달할 수 있으며, 키 교체 후에는 새 접속 정보를 사용해야 합니다.",
+        "clients": "등록된 AI 접속",
+        "revoked": "권한 폐기됨",
+        "copied": "비밀키가 없는 접속 정보를 복사했습니다.",
+        "copyFailed": "접속 정보를 복사하지 못했습니다.",
+        "copyConnection": "접속 정보 복사",
+        "rotate": "키 교체",
+        "revoke": "권한 폐기",
+        "capabilities": "요청별 지원 상태",
+        "available": "사용 가능",
+        "notAvailable": "현재 사용 불가",
+        "recent": "이번 실행의 최근 요청"
     }
 }

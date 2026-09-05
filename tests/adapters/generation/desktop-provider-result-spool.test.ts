@@ -165,6 +165,23 @@ describe('DesktopProviderResultSpool', () => {
         expect(storage.files.size).toBe(0)
     })
 
+    it('distinguishes cleaned temporary corruption from retained committed corruption', async () => {
+        const storage = new MemoryStorage()
+        const spool = new DesktopProviderResultSpool(storage)
+        await spool.commit(input())
+        storage.files.set(`${DIRECTORY}/spool-1.bin`, new Uint8Array([9]))
+        storage.files.set(`${DIRECTORY}/temp-corrupt.json.tmp`, new TextEncoder().encode('{invalid'))
+
+        const result = await spool.reconcile()
+
+        expect(result.corruptSpoolIds).toEqual(['spool-1', 'temp-corrupt'])
+        expect(result.unresolvedCorruptSpoolIds).toEqual(['spool-1'])
+        expect(result.removedTemporarySpoolIds).toContain('temp-corrupt')
+        expect(storage.files.has(`${DIRECTORY}/temp-corrupt.json.tmp`)).toBe(false)
+        expect(storage.files.has(`${DIRECTORY}/spool-1.bin`)).toBe(true)
+        expect(result.receipts).toEqual([])
+    })
+
     it('removes committed data only after storage, release, and 24-hour grace are complete', async () => {
         const storage = new MemoryStorage()
         const spool = new DesktopProviderResultSpool(storage)
