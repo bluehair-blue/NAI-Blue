@@ -4,6 +4,7 @@
 - 구현 상태: Windows foreground의 인증된 조회·계획 수신과 사람의 client 관리 구현. 승인·변경 실행은 Phase 9C로 남긴다.
 - 선행 계약: [ADR-004: 인증·영속 코어](ADR-004-phase9-authenticated-inbox-core.md)
 - 검증 기록: [Phase 9B validation](../releases/evidence/phase9b-validation-2026-09-05.json)
+- 실제 데스크톱 QA: [Phase 9B desktop QA](../releases/evidence/phase9b-desktop-qa-2026-09-05.json) — 독립 실행 Windows Tauri 앱의 등록·제출·계획·재시작 replay 검증 완료
 
 ## 활성화 범위
 
@@ -34,7 +35,13 @@ agent-commands/
 
 Windows Credential Manager의 전용 service는 `blue.bluehair.naiblue.agent-commands`, account는 `<workspaceId>:<clientId>:<keyId>`다. 현재 keyring backend의 Generic Credential target은 `<workspaceId>:<clientId>:<keyId>.blue.bluehair.naiblue.agent-commands`, blob은 원시 32바이트 HMAC 키다. 등록·회전·폐기 API는 사람 UI가 호출하며 외부 command로 노출하지 않는다. key ID 변경과 폐기는 metadata와 vault를 함께 다룬다. native 인증은 HMAC을 검증하는 동일 signing payload에서 workspace/client/key/actor를 확인한다. TS 코어는 request hash, expiry와 공개 payload 정책을 검증한다.
 
-OS 사용자 경계의 보호다. 같은 Windows 사용자로 실행되는 모든 프로그램을 서로 격리하는 보안 장치로 해석하지 않는다. 테스트 빌드는 production과 다른 `.agent-commands.test` service만 사용한다.
+OS 사용자 경계의 보호다. 같은 Windows 사용자로 실행되는 모든 프로그램을 서로 격리하는 보안 장치로 해석하지 않는다. Rust 자동 테스트의 `#[cfg(test)]` 경로만 production과 다른 `blue.bluehair.naiblue.agent-commands.test` service를 사용한다. 일반 debug/release 실행 파일은 production service를 사용한다. 실제 GUI QA에서는 별도 앱 ID·WebView 프로필·workspace로 격리하되 production service와 실제 Python 제출 도구 사이의 연결을 검증했다.
+
+### 공개 식별자와 오류 코드
+
+공유 payload scanner는 `clientId`, `workspaceId`, `correlationId`, `idempotencyKey`, `draftId`, `runId`, `jobId`를 기존 `id`·`requestId`·`planId`와 같은 공개 식별자 필드로 취급한다. native가 생성한 32자리 난수 hex ID를 일반 binary payload로 오인하지 않기 위한 명시적 목록이며 임의의 `*Id` 필드로 확장하지 않는다.
+
+`code`와 `issueCodes`에서는 128자 이하의 대문자 snake case·소문자 kebab case machine code에 같은 일반 entropy 예외를 적용한다. `SOURCE_REVISION_CONFLICT`가 우연히 Base64로 해석되어 control byte 비율로 차단되던 문제를 바로잡았다. 두 예외 모두 credential·JWT·image signature·경로 검사를 유지하며 임의의 본문 필드에는 적용하지 않는다. 결과를 표현하기 위해 protocol 이름을 바꾸거나 context 검사를 제거하지 않는다.
 
 ## 파일과 복구
 
@@ -70,4 +77,14 @@ python scripts/submit-agent-command.py --connection connection.json --command co
 
 별도 Python 프로세스 연동도 실행했다. production signer를 import하고 테스트 service만 바꾼 harness로 native 등록 → 실제 `CredReadW` → private inbox 제출 → native read/HMAC 인증/retire를 확인했다. 비밀키는 프로세스 간 전달하지 않았다. 이 추가 native 테스트는 `PHASE9_QA_PYTHON`에 Python 실행 파일 경로를 지정하면 수행하며, 지정하지 않은 일반 실행에서는 별도 프로세스 부분이 명시적으로 skip된다.
 
-설치된 Tauri GUI에서 사람 등록부터 외부 제출·소비까지 연결한 QA, 강제 process crash와 실제 junction 공격 재현은 별도 운영 증거다. Provider/R2 요청이나 실제 생성은 수행하지 않는다. Phase 9 전체 완료는 승인·예산·실행 연결인 9C 이후 판정한다. 문제 발생 시 foreground startup 연결을 비활성화해도 native identity, receipt와 plan은 보존한다.
+2026-09-05 실제 데스크톱 QA는 production frontend를 내장한 독립 실행 Windows debug Tauri EXE에서 수행했다. 실제 WebView2·native port·Windows Credential Manager와 production Python signer를 사용했으며 native port를 대체하지 않았다. 앱 ID는 `blue.bluehair.naiblue.phase9bqa`, WebView 프로필과 workspace는 QA 전용이었다. 최종 EXE SHA-256은 `4618A50C4AFAA333167708C11CE9880CD6F3BDE04AF1D0DB7C5C0B17BEA2989E`다. 다음 항목을 확인했다.
+
+- 사용자 승인 아래 GUI에서 QA client 1개를 등록하고 접속 정보를 복사하여 별도 Python 프로세스가 제출한 요청을 앱이 인증·처리했다.
+- GUI에서 저장한 파란색 프롬프트 draft revision 1을 계획했다. 예상 비용 29 Anlas와 budget 0의 `needs_input` 결과를 얻었고 Queue·reservation·artifact는 모두 0건이었다.
+- GUI에서 빨간색 프롬프트로 수정한 revision 2와 앱 재시작 뒤에도 기존 요청의 receipt와 저장된 plan bytes가 그대로 replay되었다. 새 request ID로 이전 revision을 요청하면 `SOURCE_REVISION_CONFLICT`가 공개 결과로 반환되었다.
+- 수신 중지·재개와 앱 종료 중 제출 후 재시작 소비를 확인했다. 앱이 닫혀 있을 때는 transport 제출만 완료되었다.
+- QA client의 키를 교체한 뒤 폐기했다. 교체 전 키와 폐기된 현재 키를 사용한 Python 제출은 `CREDENTIAL_UNAVAILABLE`로 실패했다. 폐기 뒤 기존 서명 archive를 재투영한 요청은 `AUTHENTICATION_FAILED`로 거부되고 원래 receipt는 보존되었다.
+
+최종 non-live 검증은 311개 파일의 2,205개 테스트, lint, architecture, secret-redaction 17개 검사와 build를 통과했다. QA 앱의 종료와 9329 포트 종료도 확인했다. 상세 관측과 artifact 연결은 [desktop QA evidence](../releases/evidence/phase9b-desktop-qa-2026-09-05.json)에 둔다.
+
+이 증거는 standalone 실행 파일의 실제 GUI/native 경로에 해당한다. 설치된 MSI의 설치·업데이트 경로와 기존 production 앱 프로필, 강제 process crash, 실제 junction 공격 재현, Provider/R2 호출·실제 이미지 생성은 검증하지 않았다. Phase 9C의 승인·예산·변경 실행, Phase 10 MCP와 Phase 11 background/headless는 남아 있다. Phase 9 전체 완료는 9C 이후 판정한다. 문제 발생 시 foreground startup 연결을 비활성화해도 native identity, receipt와 plan은 보존한다.

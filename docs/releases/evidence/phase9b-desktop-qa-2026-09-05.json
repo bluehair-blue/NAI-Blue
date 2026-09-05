@@ -1,0 +1,436 @@
+{
+  "schemaVersion": 1,
+  "phase": "9B",
+  "status": "passed-with-two-corrected-runtime-defects",
+  "recordedAt": "2026-09-05T11:15:05.088Z",
+  "baseCommit": "d0951ec2e987eb0763dd961635fbd83d4418a917",
+  "sourceScope": "Scanner and regression tests in the commit containing this evidence; docs changes followed the tested source.",
+  "priorValidation": "docs/releases/evidence/phase9b-validation-2026-09-05.json",
+  "environment": {
+    "platform": "win32",
+    "node": "v24.19.0",
+    "webviewVersion": "152.0.4191.62",
+    "target": "Actual standalone debug Tauri EXE with embedded frontend, real WebView2, native inbox and production Python signer.",
+    "nativeAndHandlerSubstitution": false,
+    "appIdentifier": "blue.bluehair.naiblue.phase9bqa",
+    "webviewDataDirectory": "phase9b-desktop-qa",
+    "origin": "http://tauri.localhost/",
+    "credentialScope": "One explicitly approved QA client in production agent-commands service, bound to a unique QA workspace; rotated and revoked. No secret exported.",
+    "diagnostics": "Read-only CDP on loopback 9329; real GUI actions through Windows computer use. QA process and diagnostic listener closed at completion.",
+    "binarySha256": "4618a50c4afaa333167708c11ce9880cd6f3bde04af1d0db7c5c0b17bea2989e",
+    "build": "npx tauri build --debug --no-bundle --config docs/local/evidence/phase-09b-desktop/tauri.qa.json",
+    "installationExercised": false
+  },
+  "fixes": [
+    {
+      "trigger": "The native workspace/client random-hex identifiers in a correctly signed capabilities request were classified as encoded binary.",
+      "observed": "UNSAFE_PAYLOAD before durable acceptance.",
+      "change": "Extend the existing explicit opaque-identifier field set with clientId, workspaceId, correlationId, idempotencyKey, draftId, runId and jobId.",
+      "verified": "Real native signed capabilities, snapshot, plan and missing-run commands complete after rebuilding."
+    },
+    {
+      "trigger": "SOURCE_REVISION_CONFLICT accidentally decodes as URL-safe Base64 with control bytes.",
+      "observed": "The real stale-draft plan result was replaced by RESULT_NOT_PUBLIC.",
+      "change": "Apply the existing generic-entropy exemption only to <=128-character conventional upper-snake/lower-kebab machine codes under code and issueCodes.",
+      "verified": "A fresh actual GUI/native request returns completed SOURCE_REVISION_CONFLICT after rebuilding. The earlier durable receipt is retained."
+    }
+  ],
+  "retainedSecurityChecks": "Credential, path, URL, raw/base64/hex image and unrelated-field checks remain active; negative-corpus regressions pass.",
+  "desktopChecks": {
+    "registration": "Actual Data Hub UI registers one read/plan client and copies only workspaceId, clientId, keyId and actorKind.",
+    "appClosedSubmission": {
+      "appClosed": true,
+      "readyExists": true,
+      "resultExists": false,
+      "resultAfterRestart": "completed"
+    },
+    "capabilities": {
+      "capabilities": [
+        {
+          "available": true,
+          "canExecuteWhileAppClosed": false,
+          "command": "system.describe_capabilities",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        },
+        {
+          "available": true,
+          "canExecuteWhileAppClosed": false,
+          "command": "workspace.get_snapshot",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        },
+        {
+          "available": true,
+          "canExecuteWhileAppClosed": false,
+          "command": "generation.plan",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "generation.enqueue",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": true
+        },
+        {
+          "available": true,
+          "canExecuteWhileAppClosed": false,
+          "command": "generation.get_run",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "generation.cancel",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": true
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "generation.retry_storage",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": true
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "scene.retry_link",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": true
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "output.abandon_reservation",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": true
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "scene.resolve_many",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "scene.patch_many",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": true
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "folder.plan_changes",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        },
+        {
+          "available": false,
+          "canExecuteWhileAppClosed": false,
+          "command": "r2.get_readiness",
+          "reason": "handler-not-registered",
+          "requiresAppProcess": true,
+          "requiresHumanApproval": false
+        }
+      ]
+    },
+    "missingRun": {
+      "found": false
+    },
+    "realPlan": {
+      "publicResult": {
+        "estimatedAnlas": 29,
+        "jobCount": 1,
+        "planHash": "sha256:18bf8272ca7be9f92955e53a139835b743b2ffb4cd2ac1280e12486e630487c2",
+        "planId": "sha256:18bf8272ca7be9f92955e53a139835b743b2ffb4cd2ac1280e12486e630487c2",
+        "requiredApprovals": [
+          {
+            "allowed": 0,
+            "fieldPath": "budget.maxAnlas",
+            "kind": "budget",
+            "required": 29
+          }
+        ],
+        "status": "needs_input"
+      },
+      "storedPlanCount": 1,
+      "originalDraftRevision": 1,
+      "currentDraftRevision": 2,
+      "preparedPrompt": "a blue ceramic teacup on a wooden table, soft daylight, still life",
+      "currentPrompt": "a red ceramic teacup on a wooden table, soft daylight, still life",
+      "persistedRecordByteIdenticalAfterRestart": true
+    },
+    "replay": {
+      "requestId": "qa9b-gui-plan",
+      "originalReceiptSha256": "92D60BA2716019753CB5AEA2931E1E957C9C4F568B811B53C7C8502A7C33910E",
+      "replayedReceiptSha256": "92D60BA2716019753CB5AEA2931E1E957C9C4F568B811B53C7C8502A7C33910E",
+      "byteIdentical": true,
+      "readyRetired": true
+    },
+    "stalePlan": {
+      "code": "SOURCE_REVISION_CONFLICT",
+      "status": "conflict"
+    },
+    "stopResume": {
+      "requestId": "qa9b-gui-paused-final",
+      "readyExists": true,
+      "resultExists": false,
+      "recordedAt": "2026-09-05T10:32:27.6300241+00:00",
+      "resultAfterResume": "completed"
+    },
+    "rotation": {
+      "priorKey": {
+        "exitCode": 1,
+        "output": "{\"status\": \"not-submitted\", \"accepted\": false, \"code\": \"CREDENTIAL_UNAVAILABLE\"}",
+        "readyExists": false,
+        "archiveExists": false
+      },
+      "newKeyReceiptState": "completed"
+    },
+    "revocation": {
+      "currentKey": {
+        "exitCode": 1,
+        "output": "{\"status\": \"not-submitted\", \"accepted\": false, \"code\": \"CREDENTIAL_UNAVAILABLE\"}",
+        "readyExists": false,
+        "archiveExists": false
+      },
+      "nativeRejection": {
+        "accepted": false,
+        "code": "AUTHENTICATION_FAILED"
+      },
+      "priorReceiptPreserved": true,
+      "readyRetired": true,
+      "clientCount": 1,
+      "allClientsRevoked": true
+    },
+    "queue": {
+      "attempts": 0,
+      "batches": 0,
+      "jobs": 0,
+      "leases": 0,
+      "output-reservation-claims": 0,
+      "output-reservations": 0,
+      "resources": 0
+    },
+    "artifacts": {
+      "artifacts": 0
+    },
+    "runtimePageErrors": [],
+    "observedExternalRequests": [
+      "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2-dynamic-subset/PretendardVariable.subset.84.woff2"
+    ],
+    "cleanup": {
+      "qaProcessRunning": false,
+      "qaDiagnosticPortListening": false,
+      "clientRevoked": true,
+      "oldAndCurrentCredentialUnavailable": true,
+      "recordedAt": "2026-09-05T11:12:21.7183142+00:00"
+    }
+  },
+  "validation": {
+    "fullNonliveVitest": {
+      "success": true,
+      "files": 311,
+      "passed": 2205,
+      "failed": 0,
+      "skipped": 0,
+      "report": {
+        "path": "docs/local/evidence/phase-09b-desktop/regression-final.json",
+        "sha256": "f70a7b7ef7c6747a542536ea53fd50279b0fcdb34f87a1f2a2b4fc6145e4eb9a"
+      }
+    },
+    "lint": {
+      "exitCode": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09b-desktop/lint-final.log",
+        "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+      }
+    },
+    "architecture": {
+      "exitCode": 0,
+      "modules": 608,
+      "dependencies": 3329,
+      "violations": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09b-desktop/architecture-final.log",
+        "sha256": "9da192bade26522a69ffde3b6a16770ca44957079ef71f4e56b15c27c2c162e9"
+      }
+    },
+    "secretRedaction": {
+      "exitCode": 0,
+      "passed": 17,
+      "log": {
+        "path": "docs/local/evidence/phase-09b-desktop/redaction-final.log",
+        "sha256": "2e62b4b700db2320f95758052be0f4b138d6495e520d3125621835f8eedec293"
+      }
+    },
+    "frontendBuildAndTypecheck": {
+      "exitCode": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09b-desktop/frontend-build-final.log",
+        "sha256": "2d809bb8c7b28e5efbac7474a7f8915798c66b5aa19e4cfb31ad73c43baa5a31"
+      }
+    },
+    "nativeEmbeddedBuild": {
+      "exitCode": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09b-desktop/build-final.log",
+        "sha256": "33e196c45f823ffe66e4ffd411c1b1916c9bb7b4c70ca037a57859135aa71462"
+      }
+    },
+    "review": "Independent read-only review found no outstanding actionable correctness/security findings in the final two fixes."
+  },
+  "observedEnvironmentIssue": "Existing node_modules updater 2.11.0 differed from lockfile/Rust 2.10.1. Restored the exact cached 2.10.1 package after verifying lockfile integrity; no manifest/lock change, version-check bypass or network install.",
+  "limitations": [
+    "Standalone actual GUI QA does not prove MSI installation, installed production-profile behavior or release packaging.",
+    "No forced process crash or actual junction attack reproduction in this desktop pass.",
+    "No Provider/R2 execution or image generation. Zero Queue jobs, batches, attempts, output reservations and artifact records observed.",
+    "Read-only CDP request observation is renderer-scoped and is not a packet capture of all native network traffic.",
+    "Phase 9C durable approval, policy, rolling/outstanding budgets and mutations remain unavailable; Phase 9 is not complete.",
+    "Phase 10 MCP and Phase 11 background/headless remain unimplemented."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/tauri.qa.json",
+      "sha256": "045f67a8871ed08702801fdeb1c652490934443cd833c7ca11d3f53c1b8ff28b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/app-closed-submission.json",
+      "sha256": "9b355a135894eff35ccd41f0d21cec615b20b1754bd5c39f37ecfb18f73eafbf"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-app-closed.receipt.json",
+      "sha256": "df5585b06d4cd204cdf74ce09d66db604c14939e38be93dd135a95b8aa3f8abe"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/submitted-capabilities.json",
+      "sha256": "d02b8c8d9249051d65a4695229f7f286d2232dc7a11ea7d5d785f5fc92dfe07a"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/rejection-initial-capabilities.json",
+      "sha256": "28f6a30c7559dafa7c7b4c5eb66875f6c505f4c6a5b3d73b3e33335dd3cfe130"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-capabilities-fixed.receipt.json",
+      "sha256": "511f31fa896c75c8bdf87fe3c2f4e194c2250dc33ee07915856ceef5741de8e5"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-plan.receipt.json",
+      "sha256": "92d60ba2716019753cb5aea2931e1e957c9c4f568b811b53c7c8502a7c33910e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-missing-run.receipt.json",
+      "sha256": "50edd0bbef3269a72c7d2fe320e5991ef9ca7764084eb224255f2f61fbfa05fa"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-stale-plan.receipt.json",
+      "sha256": "fa5a4bd4bd679bd00efa02234a056f850b5e35e39a21f6157dd0fed0ce237220"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-stale-plan-fixed.receipt.json",
+      "sha256": "eb13a14dab7c8d5b558b1e7ad1b090adadbee44d264c914eed77b8b073898ede"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/replay-proof.json",
+      "sha256": "426e8ea2abbf06ebf0c2d805670ccfa41924c9ab7348f21d03d9b5a6991c81ad"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/persisted-before-restart.json",
+      "sha256": "22568bcade0e7e5428b5c01dc93cffbf1817c6e003c321566120b8e08b673ba3"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/counts-and-plan-after-restart.json",
+      "sha256": "d6c8b1cc123c26d6646e9fccdbf18763984b9fc935c9f4f19ffa81aeef4ed5aa"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/paused-submission-final.json",
+      "sha256": "1432c0b9ad6e341cce0071102f609cd5338323dc04a57398fc6aa3faaf9a2b7a"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-paused-final.receipt.json",
+      "sha256": "0665191e9d40ea0b583523398d279c3dd15440270a8b6c2f501a56f5aa5cdf75"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/connection-v1.json",
+      "sha256": "5d1ec64c5360890ded0e4f0d186e46aba2db288dbeb95b3c915b605f07fffad0"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/connection-v2.json",
+      "sha256": "8c31c75dc730a5ef9c6e6f1635349a6113df29d7d216f28342876e38681241fa"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/old-key-rejection.json",
+      "sha256": "b846627444ce930e30370d29102d31971e71297528dddc72432470ca5dce0965"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/qa9b-gui-new-key.receipt.json",
+      "sha256": "b6a94bd915e66549f9748b0e8ec65658d795ac82325ad4dee53f83a96c59821d"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/revoked-key-rejection.json",
+      "sha256": "b846627444ce930e30370d29102d31971e71297528dddc72432470ca5dce0965"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/revoked-native-rejection.json",
+      "sha256": "4085f87de30b9821da569158435d22f98bc6a6d6fa28d77c797f03f051bf37f3"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/revocation-proof.json",
+      "sha256": "a247d6d6cd6e43dbef17ecfe8a94bc1b1b8e216932c6a760cb82d6e202d13903"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/cleanup-proof.json",
+      "sha256": "4761c9ba7780d63078e619a071d87301891e4d2752e5210b0ab860d2fd2649da"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/runtime-before-final-restart.json",
+      "sha256": "37934efbf01823060695acc62afc288cffdefbb5a2b4a178b260b79e503a6f03"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/runtime-final.json",
+      "sha256": "82ff125e171c582c09d64370477f2b2b1ce75d5bdf47165d997ef953b600a0cb"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/final-binary.json",
+      "sha256": "088682296fb9becd2c7b9dca9d2e1eb2db8f629a9b1a237d2e2974ad6f42bc2e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/01-guided-draft.png",
+      "sha256": "781ef33566cf3d5e81b59c8357c0f80ee0df241047f59fdcd85898ba445f072e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/03-registered.png",
+      "sha256": "0414b50614e3f5f375bc9ec0a78617a0e1874a55c41cc402874b64fa45ce0dce"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/04-reception-paused.png",
+      "sha256": "71aba72225bceaba23bfffa63f662eec1195b6b30a6dcf94832aedfddd638159"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/05-restart-replay-and-conflict.png",
+      "sha256": "fcb0e658744084b0ceac5d2057586a8b4069c05a40204afd2f925f33a951971a"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/06-rotated-key-accepted.png",
+      "sha256": "a966004dcef3a70a47933fe406831753afade740c65bc06b4ae0a18246a0f081"
+    },
+    {
+      "path": "docs/local/evidence/phase-09b-desktop/07-client-revoked.png",
+      "sha256": "637f6bd9d6297d8be0e679f376552f7594f02f755fe69321c5860fd7458b3c7d"
+    }
+  ]
+}

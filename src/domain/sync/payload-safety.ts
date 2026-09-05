@@ -393,6 +393,10 @@ function containsEncodedBinary(
 }
 
 const OPAQUE_IDENTIFIER_FIELDS = new Set([
+    // Agent envelopes/results use these public identity/reference fields. Their
+    // random IDs are not generic encoded payloads; credential/image/path checks
+    // still run, exactly as for the existing id/requestId/planId fields below.
+    'clientid', 'workspaceid', 'correlationid', 'idempotencykey', 'draftid', 'runid', 'jobid',
     'id', 'actionid', 'activeprofileid', 'artifactid', 'baseopid', 'bookmarkid', 'characterid', 'characterids',
     'defaultparamspresetid', 'defaultrecipeid', 'deviceid', 'documentid', 'entityid', 'fromid', 'libraryimageid',
     'maskresourceid', 'moduleid', 'moduleids', 'opid', 'paramspresetid', 'paramspresetids', 'parentid', 'planid',
@@ -403,6 +407,15 @@ const OPAQUE_IDENTIFIER_FIELDS = new Set([
 
 function isOpaqueIdentifierField(fieldKey: string | undefined): boolean {
     return fieldKey !== undefined && OPAQUE_IDENTIFIER_FIELDS.has(normalizeSyncFieldKey(fieldKey))
+}
+
+function isMachineCode(value: string, fieldKey: string | undefined): boolean {
+    if (fieldKey === undefined || !['code', 'issuecodes'].includes(normalizeSyncFieldKey(fieldKey))) return false
+    // Protocol enum labels such as SOURCE_REVISION_CONFLICT can accidentally
+    // decode to control bytes. Only bounded snake/kebab-case codes receive the
+    // existing generic-entropy exemption; all credential/image/path checks stay.
+    return value.length <= 128
+        && /^(?:[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)+|[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)$/.test(value)
 }
 
 function isDigestOrReferenceField(fieldKey: string | undefined): boolean {
@@ -510,7 +523,7 @@ function unsafeString(value: string, fieldKey?: string): boolean {
     if (containsLocalPathMaterial(nonUrlMaterial)) return true
     if (containsEncodedBinary(
         normalized,
-        isOpaqueIdentifierField(fieldKey),
+        isOpaqueIdentifierField(fieldKey) || isMachineCode(normalized, fieldKey),
         isDigestOrReferenceField(fieldKey),
     )) return true
     return false

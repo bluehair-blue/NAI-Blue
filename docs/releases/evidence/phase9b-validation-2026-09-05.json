@@ -7,6 +7,7 @@
   "implementation": "windows-foreground-authenticated-read-plan-implemented",
   "runtimeActivation": "windows-foreground-read-plan",
   "phase9Complete": false,
+  "followupDesktopQA": "docs/releases/evidence/phase9b-desktop-qa-2026-09-05.json",
   "node": "v24.19.0",
   "platform": "win32",
   "automatedTests": {

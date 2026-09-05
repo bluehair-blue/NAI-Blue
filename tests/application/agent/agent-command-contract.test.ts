@@ -38,6 +38,70 @@ async function fixture() {
 }
 
 describe('agent command wire boundary', () => {
+    it('accepts the real native registration envelope and public workspace identifiers', () => {
+        // Public request captured during native GUI QA; no credential is included.
+        const envelope = {
+            authentication: { keyId: 'key\u002dd1b012e9bdba63fbbfce154da21d4818', scheme: 'hmac-sha256',
+                signature: 'hmac-sha256:0692a4cfc564482190d513a31876a6ba28c7f63d59a6d624744995d6c363e1d7' },
+            command: { input: {}, name: 'system.describe_capabilities' },
+            context: { actor: { kind: 'agent' }, apiVersion: 'nai-blue.agent/v1alpha1',
+                clientId: 'client-e363a1741656e987c2ca6535a258533e', idempotencyKey: 'qa9b-gui-capabilities',
+                workspaceId: 'workspace-7fd51b694896777c32f9a6a2c33e16c4' },
+            expiresAt: '2026-09-05T11:02:19.442Z',
+            requestHash: 'sha256:aac2a023fbf36b966c58f6a8d740a59f732502a7b2b5ac3174557d7153dc7675',
+            requestId: 'qa9b-gui-capabilities', schemaVersion: 1, submittedAt: '2026-09-05T10:02:19.442Z',
+        }
+        expect(agentRequestHash(envelope as AgentCommandEnvelope)).toBe(envelope.requestHash)
+        expect(parseAgentCommandEnvelope(envelope)).toEqual(envelope)
+        expect(() => assertAgentPublicValue({ workspaceId: envelope.context.workspaceId, workflowDrafts: [] })).not.toThrow()
+    })
+    it('limits random identifier allowance to named protocol references without bypassing forbidden material', () => {
+        const randomId = 'client-e363a1741656e987c2ca6535a258533e'
+        for (const field of ['clientId', 'workspaceId', 'correlationId', 'idempotencyKey', 'draftId', 'runId', 'jobId']) {
+            expect(() => assertAgentPublicValue({ [field]: randomId })).not.toThrow()
+            for (const forbidden of [
+                'sk-proj-abcdefgh12345678', 'ghp_abcdefgh12345678',
+                'Bearer secretvalue012345678901234567890123',
+                'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature',
+                'iVBORw0KGgo=', '89504e470d0a1a0a', 'C:\\Users\\Private\\file.png',
+            ]) expect(() => assertAgentPublicValue({ [field]: forbidden })).toThrow()
+        }
+        for (const field of ['message', 'payload', 'unregisteredId']) {
+            expect(() => assertAgentPublicValue({ [field]: randomId })).toThrow()
+        }
+        const nativeIds = { workspaceId: 'workspace-7fd51b694896777c32f9a6a2c33e16c4', clientId: randomId,
+            idempotencyKey: 'request-e363a1741656e987c2ca6535a258533e',
+            correlationId: 'correlation-e363a1741656e987c2ca6535a258533e' }
+        const envelope = { ...unsigned(), context: { ...unsigned().context, ...nativeIds } }
+        expect(parseAgentCommandEnvelope(envelope)).toEqual(envelope)
+    })
+    it('keeps fixed planner issue codes public without making arbitrary code payloads safe', () => {
+        const codes = [
+            'SOURCE_REVISION_CONFLICT', 'invalid-human-assessment', 'invalid-source', 'invalid-detached-capture',
+            'invalid-detached-capture-digest', 'invalid-detached-source-bindings', 'invalid-detached-capture-jobs',
+            'invalid-detached-seed-policy', 'detached-capture-hash-mismatch', 'invalid-detached-capture-content',
+            'invalid-count', 'invalid-image-budget', 'invalid-anlas-budget', 'invalid-seed', 'invalid-trace-id',
+            'invalid-seed-policy', 'unsupported-collision-policy', 'unsupported-r2-delivery', 'prepared-count-mismatch',
+            'prepared-seed-mismatch', 'invalid-anlas-estimate', 'compatibility-synthetic-only',
+            'compatibility-known-divergence', 'compatibility-unsupported', 'anlas-total-overflow',
+            'replay-trace-unavailable', 'random-source-unavailable', 'prompt-module-unavailable',
+            'character-prompt-invalid', 'fragment-sequence-conflict',
+            'draft-model-required', 'draft-prompt-required', 'draft-character-prompt-invalid',
+            'draft-resolution-required', 'draft-resolution-invalid', 'draft-generation-settings-invalid',
+            'draft-output-invalid', 'draft-rights-owner-invalid', 'draft-rights-effective-date-required',
+            'draft-credential-invalid', 'draft-count-invalid', 'draft-scenes-required', 'draft-scene-invalid',
+            'COMMAND_OUTCOME_UNKNOWN', 'RESULT_NOT_PUBLIC',
+        ]
+        for (const code of codes) expect(() => assertAgentPublicValue({ code })).not.toThrow()
+        expect(() => assertAgentPublicValue({ issueCodes: codes })).not.toThrow()
+        expect(() => assertAgentPublicValue({ message: 'SOURCE_REVISION_CONFLICT' })).toThrow()
+        for (const value of ['sk-proj-abcdefgh12345678', 'ghp_abcdefgh12345678', 'token=hidden',
+            'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature', 'iVBORw0KGgo=',
+            '89504e470d0a1a0a', 'C:\\Users\\Private\\file.png', 'aGVsbG8gd29ybGQ=']) {
+            expect(() => assertAgentPublicValue({ code: value })).toThrow()
+            expect(() => assertAgentPublicValue({ issueCodes: [value] })).toThrow()
+        }
+    })
     it('accepts a canonical bounded request and returns a detached value', () => {
         const value = unsigned()
         expect(parseAgentCommandEnvelope(value)).toEqual(value)

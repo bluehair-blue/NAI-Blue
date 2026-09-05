@@ -12,6 +12,11 @@ import { createInboxSubmissionReceipt, processAgentInboxFile } from '@/adapters/
 import { initializeAgentCommandRuntime } from '@/composition-root/agent-command-runtime'
 import { resetIndexedDBConnectionForRetry } from '@/lib/indexed-db'
 import type { JsonObject } from '@/domain/composition/types'
+import { createAgentGenerationPlanHandler } from '@/application/agent/agent-generation-plan-handler'
+import { IndexedDbGenerationPlanRepository } from '@/adapters/generation/indexeddb-generation-plan-repository'
+import { getWorkflowDraftRepository } from '@/adapters/workflow/indexeddb-workflow-draft-repository'
+import { createSingleImageDraft, reviseSingleImageDraft } from '@/domain/workflow/single-image-draft'
+import { createWorkflowDraftGenerationPlanDependencies } from '@/presentation/generation/workflow-draft-main-batch-planner'
 
 const now = '2026-09-05T00:00:01.000Z'
 const subtle = webcrypto.subtle as unknown as SubtleCrypto
@@ -58,6 +63,33 @@ beforeEach(() => { resetIndexedDBConnectionForRetry(); vi.stubGlobal('indexedDB'
 afterEach(() => { resetIndexedDBConnectionForRetry(); vi.unstubAllGlobals() })
 
 describe('authenticated durable command integration (simulated file port)', () => {
+    it('preserves the actual saved-draft revision conflict through handler, dispatcher and durable replay', async () => {
+        const f = await fixture()
+        const drafts = getWorkflowDraftRepository()
+        const created = createSingleImageDraft({ id: 'guided-single-stale-plan', now, seed: 42 })
+        expect((await drafts.commit({ expectedRevision: null, draft: created })).status).toBe('committed')
+        const updated = reviseSingleImageDraft(created, { updatedAt: now,
+            payload: { ...created.payload, prompt: { positive: 'a blue ceramic teacup', negative: '' } } })
+        expect((await drafts.commit({ expectedRevision: created.revision, draft: updated })).status).toBe('committed')
+        const dependencies = createWorkflowDraftGenerationPlanDependencies({ drafts, pricingBasis: 'paid',
+            fragmentRepository: { findMetadataByPath: () => undefined, loadDefinitionByPath: async () => null,
+                getSequenceSnapshot: () => ({ revision: 0, counters: {} }), commitSequenceProposal: () => false } })
+        const prepare = vi.fn(dependencies.planner.prepare)
+        const plans = new IndexedDbGenerationPlanRepository()
+        const persist = vi.spyOn(plans, 'putIfAbsent')
+        f.handlers[1] = createAgentGenerationPlanHandler({ ...dependencies, planner: { prepare } }, plans)
+        const request = await f.sign('qa9b-gui-stale-plan', 'generation.plan', {
+            source: { kind: 'workflow-draft', draftId: created.id, expectedRevision: created.revision },
+            count: 1, seedPolicy: { kind: 'fixed', seed: 42 }, budget: { maxImages: 1, maxAnlas: 100 },
+        })
+        const receipt = await f.dispatcher().dispatch(request)
+        expect(receipt).toMatchObject({ state: 'completed',
+            result: { status: 'conflict', code: 'SOURCE_REVISION_CONFLICT' } })
+        expect(prepare).not.toHaveBeenCalled()
+        expect(persist).not.toHaveBeenCalled()
+        resetIndexedDBConnectionForRetry()
+        expect(await f.dispatcher(new IndexedDbCommandReceiptRepository()).dispatch(request)).toEqual(receipt)
+    })
     it('keeps the claim but never executes a request that expires during its durable write', async () => {
         const f = await fixture()
         const receipts: CommandReceiptRepository = {
