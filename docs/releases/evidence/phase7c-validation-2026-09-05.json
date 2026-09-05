@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "phase": "7C",
+  "recordedAt": "2026-09-05T04:41:59.768Z",
+  "codeCommit": "b3aa026b6804e050dc73fd556c42a296509506fa",
+  "codeTree": "fec7311ec2cbd355f28b937527c977944511a7ae",
+  "node": "v24.19.0",
+  "platform": "win32",
+  "implementation": "complete",
+  "operationalValidation": "pending",
+  "automatedTests": {
+    "command": "node node_modules/vitest/vitest.mjs run --exclude 'tests/live/**' --reporter=json",
+    "startedAt": "2026-09-05T04:36:14.498Z",
+    "files": 299,
+    "passed": 2065,
+    "failed": 0,
+    "liveSuitesExcluded": true,
+    "groups": {
+      "r2": {
+        "files": 10,
+        "tests": 75
+      },
+      "queue": {
+        "files": 31,
+        "tests": 254
+      },
+      "persistence": {
+        "files": 3,
+        "tests": 15
+      }
+    },
+    "initialRun": {
+      "passed": 2056,
+      "failed": 8,
+      "resolution": "Updated provenance/current snapshot fixtures, explicit disabled codec arguments, and startup repository mock. Safety guards retained."
+    }
+  },
+  "checks": [
+    {
+      "name": "rescue-mode",
+      "command": "node scripts/verify-rescue-mode.mjs",
+      "exitCode": 0,
+      "durationMs": 11683
+    },
+    {
+      "name": "secret-redaction",
+      "command": "node scripts/verify-secret-redaction.mjs",
+      "exitCode": 0,
+      "durationMs": 1211
+    },
+    {
+      "name": "architecture",
+      "command": "node scripts/run-dependency-cruiser.mjs --config .dependency-cruiser.cjs src",
+      "exitCode": 0,
+      "durationMs": 4141
+    },
+    {
+      "name": "lint",
+      "command": "node node_modules/eslint/bin/eslint.js . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+      "exitCode": 0,
+      "durationMs": 9359
+    },
+    {
+      "name": "typecheck",
+      "command": "node node_modules/typescript/bin/tsc",
+      "exitCode": 0,
+      "durationMs": 2788
+    },
+    {
+      "name": "build",
+      "command": "node node_modules/vite/bin/vite.js build",
+      "exitCode": 0,
+      "durationMs": 4968
+    }
+  ],
+  "afterFixtureChanges": {
+    "focusedEslint": "passed",
+    "normalRepositoryGitDiffCheck": "passed"
+  },
+  "architecture": {
+    "modules": 584,
+    "dependencies": 3202,
+    "violations": 0
+  },
+  "secretRedaction": {
+    "tests": 17,
+    "passed": 17
+  },
+  "nativeTests": {
+    "command": "cargo test --manifest-path src-tauri/Cargo.toml --lib r2_native:: -- --nocapture",
+    "tests": 14,
+    "passed": 14,
+    "environment": "Windows MSVC native test binary with loopback fake R2",
+    "evidence": "Executed twice by the native integrity worker, including after rustfmt; both tool runs passed.",
+    "remoteCloudflareR2": false,
+    "knownCost": "Multipart verifies the full local file for every part; current part size 8 MiB, native body limit 64 MiB."
+  },
+  "browserSmoke": {
+    "environment": "Codex in-app browser, localhost Vite development app, empty test origin",
+    "paths": [
+      "/queue",
+      "/r2"
+    ],
+    "observations": [
+      "Queue runtime loaded with empty-state controls",
+      "R2 page explicitly showed native upload unavailable in browser",
+      "Browser error log empty"
+    ],
+    "limits": "Basic browser runtime only; pending/success/recovery interactions were covered by automated fixtures, not installed-app UI."
+  },
+  "notExecuted": [
+    "NovelAI Provider generation",
+    "Cloudflare R2 remote upload and HEAD",
+    "Installed desktop app with real vault credential rotation",
+    "Forced process termination at PUT/HEAD/link boundaries"
+  ],
+  "phase8Through11Implemented": false,
+  "localDetailedLogs": "docs/local/reviews/phase7c-validation/"
+}
