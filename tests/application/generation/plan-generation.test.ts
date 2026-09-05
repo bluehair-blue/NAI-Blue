@@ -19,6 +19,7 @@ import {
     type WorkflowDraft,
 } from '@/domain/workflow/single-image-draft'
 import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+import { createAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 
 function workflowDraft(overrides: { prompt?: string; model?: string; directory?: string } = {}): WorkflowDraft {
     const created = createSingleImageDraft({
@@ -171,6 +172,77 @@ async function readyPlan(
 }
 
 describe('planGeneration', () => {
+    const humanRubric = {
+        rubricId: 'portrait-review', version: 1,
+        hardConstraints: [{ criterionId: 'identity', label: 'Correct character' }],
+        softCriteria: [], acceptanceThreshold: 80,
+    }
+
+    it('binds optional human review to the full plan without changing Provider semantics', async () => {
+        const legacy = await readyPlan()
+        const assessment = createAssessmentRequirement(humanRubric, 1)
+        const reviewed = await readyPlan({ ...baseInput, assessment })
+        expect(reviewed.plan.planHash).not.toBe(legacy.plan.planHash)
+        expect(reviewed.plan.semanticPlanHash).toBe(legacy.plan.semanticPlanHash)
+        expect(reviewed.plan.jobs).toEqual(legacy.plan.jobs)
+        expect(reviewed.plan.sourceBindings).toContainEqual({
+            resourceType: 'visual-rubric', resourceId: humanRubric.rubricId,
+            revision: humanRubric.version, contentHash: assessment.rubricHash,
+        })
+        expect(reviewed.view.assessment).toEqual(assessment)
+        expect(Object.isFrozen(reviewed.plan.assessment?.rubric.hardConstraints)).toBe(true)
+        expect(legacy.plan).not.toHaveProperty('assessment')
+        expect(legacy.view).not.toHaveProperty('assessment')
+        expect((await readyPlan({ ...baseInput, assessment: undefined })).plan.planHash).toBe(legacy.plan.planHash)
+    })
+
+    it('invalidates reviewed replay when rubric, acceptance count, or review requirement changes', async () => {
+        const assessment = createAssessmentRequirement(humanRubric, 1)
+        const reviewed = await readyPlan({ ...baseInput, assessment })
+        const replayInput = { source: baseInput.source, count: baseInput.count, budget: baseInput.budget }
+        expect((await replayGenerationPlan(reviewed.plan, { ...replayInput, assessment }, dependencies())).status).toBe('ready')
+        for (const changed of [
+            createAssessmentRequirement({ ...humanRubric, version: 2 }, 1),
+            createAssessmentRequirement({ ...humanRubric, hardConstraints: [{ criterionId: 'identity', label: 'Exact requested identity' }] }, 1),
+            createAssessmentRequirement(humanRubric, 2),
+            undefined,
+        ]) {
+            const result = await replayGenerationPlan(reviewed.plan, { ...replayInput, assessment: changed }, dependencies())
+            expect(result.status).toBe('conflict')
+            if (result.status === 'conflict') expect(result.mismatch?.fieldPath).toMatch(/sourceBindings|planHash/u)
+        }
+    })
+
+    it('rejects impossible acceptance counts and forged rubric hashes before preparing jobs', async () => {
+        for (const assessment of [
+            createAssessmentRequirement(humanRubric, baseInput.count + 1),
+            { ...createAssessmentRequirement(humanRubric, 1), rubricHash: `sha256:${'f'.repeat(64)}` as const },
+        ]) {
+            const deps = dependencies()
+            const result = await planGeneration({ ...baseInput, assessment }, deps)
+            expect(result).toMatchObject({ status: 'invalid', issues: [{ code: 'invalid-human-assessment', fieldPath: 'assessment' }] })
+            expect(deps.drafts.get).not.toHaveBeenCalled()
+            expect(deps.planner.prepare).not.toHaveBeenCalled()
+        }
+    })
+
+    it('adds the same rubric provenance to detached Main captures and preserves their legacy hash', async () => {
+        const input = detachedInput()
+        const legacy = await planGeneration(input, dependencies())
+        const assessment = createAssessmentRequirement(humanRubric, 1)
+        const reviewed = await planGeneration({ ...input, assessment }, dependencies())
+        expect(legacy.status).toBe('ready')
+        expect(reviewed.status).toBe('ready')
+        if (legacy.status !== 'ready' || reviewed.status !== 'ready') throw new Error('Expected detached plans')
+        expect(reviewed.plan.semanticPlanHash).toBe(legacy.plan.semanticPlanHash)
+        expect(reviewed.plan.planHash).not.toBe(legacy.plan.planHash)
+        expect(reviewed.plan.sourceBindings.filter(binding => binding.resourceType === 'visual-rubric')).toEqual([{
+            resourceType: 'visual-rubric', resourceId: humanRubric.rubricId,
+            revision: humanRubric.version, contentHash: assessment.rubricHash,
+        }])
+        expect(legacy.plan.sourceBindings.some(binding => binding.resourceType === 'visual-rubric')).toBe(false)
+    })
+
     it('produces stable canonical hashes and changes the relevant hashes with semantic inputs', async () => {
         const first = await readyPlan()
         const second = await readyPlan()

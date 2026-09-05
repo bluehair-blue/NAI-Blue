@@ -1,4 +1,5 @@
 import type { JsonValue } from '@/domain/composition/types'
+import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import type { PlannedR2Destination } from '@/domain/r2/types'
 import type { CredentialDispatchPolicy, WorkflowDraft } from '@/domain/workflow/single-image-draft'
 
@@ -113,6 +114,8 @@ export interface GenerationPlan<TPrepared = unknown> {
     readonly requiredApprovals: readonly ApprovalRequirement[]
     readonly executionPolicy: GenerationExecutionPolicySnapshot
     readonly budget: { readonly maxImages: number; readonly maxAnlas: number }
+    /** Human rubric is part of the immutable plan, independently of technical delivery. */
+    readonly assessment?: GenerationAssessmentRequirement
 }
 
 export interface GenerationPlanJobView {
@@ -140,6 +143,7 @@ export interface GenerationPlanView {
     readonly requiredApprovals: readonly ApprovalRequirement[]
     readonly executionPolicy: GenerationExecutionPolicySnapshot
     readonly budget: GenerationPlan['budget']
+    readonly assessment?: GenerationAssessmentRequirement
 }
 
 export interface DetachedGenerationCapture<TPrepared = unknown> {
@@ -182,6 +186,7 @@ export interface PlanGenerationInput<TPrepared = unknown> {
         | { readonly kind: 'increment'; readonly firstSeed: number }
         | { readonly kind: 'replay'; readonly traceId: string }
     readonly budget: { readonly maxImages: number; readonly maxAnlas: number }
+    readonly assessment?: GenerationAssessmentRequirement
 }
 
 export interface PreparedJobPlannerPort<TPrepared = unknown> {

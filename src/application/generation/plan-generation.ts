@@ -9,6 +9,7 @@ import {
     type WorkflowDraft,
 } from '@/domain/workflow/single-image-draft'
 import type { WorkflowDraftRepositoryPort } from '@/application/workflow/workflow-draft-repository'
+import { parseAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import type {
     ApprovalRequirement,
     CompatibilitySnapshot,
@@ -95,6 +96,15 @@ function conflictSource<TPrepared>(source: PlanGenerationInput<TPrepared>['sourc
 
 function validateInput<TPrepared>(input: PlanGenerationInput<TPrepared>): readonly PlanIssue[] {
     const issues: PlanIssue[] = []
+    if (input.assessment !== undefined) {
+        try {
+            if (parseAssessmentRequirement(input.assessment).requiredAcceptedCount > input.count) {
+                throw new TypeError('Required acceptance count exceeds planned images.')
+            }
+        } catch {
+            issues.push(issue('invalid-human-assessment', 'assessment', 'A valid rubric and acceptance count within the planned images are required.'))
+        }
+    }
     if (input.source.kind === 'workflow-draft') {
         if (!input.source.draftId
             || !Number.isSafeInteger(input.source.expectedRevision)
@@ -281,6 +291,7 @@ function createView<TPrepared>(plan: GenerationPlan<TPrepared>): GenerationPlanV
         requiredApprovals: structuredClone(plan.requiredApprovals),
         executionPolicy: structuredClone(plan.executionPolicy),
         budget: structuredClone(plan.budget),
+        ...(plan.assessment === undefined ? {} : { assessment: structuredClone(plan.assessment) }),
     })
 }
 
@@ -441,6 +452,13 @@ export async function planGeneration<TPrepared = unknown>(
                 : null,
         seeds,
     } as const
+    const assessment = input.assessment === undefined ? undefined : parseAssessmentRequirement(input.assessment)
+    if (assessment !== undefined) {
+        sourceBindings = [...sourceBindings.filter(binding => binding.resourceType !== 'visual-rubric'), {
+            resourceType: 'visual-rubric', resourceId: assessment.rubric.rubricId,
+            revision: assessment.rubric.version, contentHash: assessment.rubricHash,
+        }]
+    }
     const planHash = digest({
         schemaVersion: 1,
         semanticPlanHash,
@@ -455,6 +473,7 @@ export async function planGeneration<TPrepared = unknown>(
         materializedSeeds: seeds,
         estimatedAnlas,
         requiredApprovals: approvals,
+        ...(assessment === undefined ? {} : { assessment }),
     })
     const plan = immutable({
         schemaVersion: 1 as const,
@@ -469,6 +488,7 @@ export async function planGeneration<TPrepared = unknown>(
         requiredApprovals: approvals,
         executionPolicy: structuredClone(executionPolicy),
         budget: structuredClone(input.budget),
+        ...(assessment === undefined ? {} : { assessment }),
     })
     const view = createView(plan)
     return approvals.length > 0

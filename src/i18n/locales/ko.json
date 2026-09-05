@@ -3405,5 +3405,53 @@
             "description": "기술 식별자와 복구 맥락을 확인합니다.",
             "help": "DiagnosticCode 값과 model ID는 로그 및 지원 자료와 일치하도록 번역하지 않습니다."
         }
+    },
+    "assessment": {
+        "enable": "생성 후 요청 충족 판정하기",
+        "setupDescription": "생성된 이미지에서 확인할 요구사항을 적어 주세요.",
+        "hardConstraints": "필수 조건 (한 줄에 하나씩)",
+        "requiredCount": "승인에 필요한 이미지 수 (1~{{count}})",
+        "enableSoft": "점수로 평가할 기준 추가",
+        "softCriterion": "점수 평가 기준",
+        "weight": "가중치",
+        "threshold": "승인 기준 점수 (0~100)",
+        "invalidSetup": "기준을 하나 이상 적고, 이미지 수·양수 가중치·점수 범위를 확인해 주세요.",
+        "title": "요청 충족 판정",
+        "description": "이미지를 직접 확인하고 저장된 요구사항의 충족 여부를 기록합니다.",
+        "loading": "평가를 불러오는 중…",
+        "runSummary": "{{accepted}} / {{required}}장 승인 · 후보 {{candidates}}장",
+        "closed": "사용자가 이 실행을 거절로 종료했습니다.",
+        "candidate": "평가할 이미지",
+        "imageNumber": "이미지 {{number}}",
+        "noCandidates": "아직 평가할 생성 이미지가 없습니다.",
+        "notFound": "이 실행에는 생성 전에 저장된 평가 기준이 없습니다.",
+        "closeRejected": "이 실행을 거절로 종료",
+        "refresh": "새로고침",
+        "close": "닫기",
+        "previewAlt": "요청 충족 여부를 평가할 생성 이미지",
+        "previewFailed": "이미지 미리보기를 표시하지 못했습니다.",
+        "loadingPreview": "이미지 미리보기를 불러오는 중…",
+        "latestDecision": "마지막 저장 판정: {{decision}}",
+        "hardResults": "필수 조건 판정",
+        "softScore": "종합 기준 점수 (0~100, 비워 두면 검토 필요)",
+        "criterionWeight": "가중치 {{weight}}",
+        "thresholdValue": "승인 기준 점수: {{threshold}}",
+        "explanation": "메모 (선택)",
+        "resultingDecision": "저장할 판정: {{decision}}",
+        "saveCorrection": "평가 정정 저장",
+        "save": "평가 저장",
+        "acceptedCount": "{{accepted}} / {{required}}장 승인",
+        "reviewRequirement": "사람 평가: {{count}}장 승인 필요",
+        "state": {
+            "not-evaluated": "미평가",
+            "needs-review": "검토 필요",
+            "accepted": "승인",
+            "rejected": "거절"
+        },
+        "result": {
+            "needs-review": "검토 필요",
+            "pass": "충족",
+            "fail": "미충족"
+        }
     }
 }

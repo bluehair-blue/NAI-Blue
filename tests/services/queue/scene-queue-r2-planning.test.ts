@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
+import { createAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 
 import type { GenerationFolderDocument, GenerationFolderV2 } from '@/domain/generation-folders'
 import { createR2ProfileV2, hashR2ProfileV2 } from '@/domain/r2/types'
@@ -106,6 +108,53 @@ beforeEach(() => {
 })
 
 describe('Scene Queue R2 reviewed planning', () => {
+    it('restores one human assessment binding across selected preset outputs after Queue reopen', async () => {
+        const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
+        const options = {
+            factory: new IDBFactory(), keyRange: IDBKeyRange, databaseName: 'scene-reviewed-human-assessment',
+            generationLimits: { maxJobsPerAtomicBatch: 100, maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: '2026-09-05T00:00:00.000Z', evidenceId: 'test-scene-assessment' },
+        }
+        const queue = new IndexedDBQueueRepository(options)
+        const document = await runtime.scene()
+        runtime.scene.mockImplementation(async (presetId: string) => ({ ...document, presetId }))
+        const assessment = createAssessmentRequirement({ rubricId: 'scene-rubric', version: 2,
+            hardConstraints: [{ criterionId: 'layout', label: 'Requested layout' }], softCriteria: [], acceptanceThreshold: 80 }, 2)
+        runtime.enqueue.mockImplementationOnce(input => queue.createBatchAndEnqueue(input))
+        try {
+            const prepared = await prepareSceneQueueReview([
+                { ...target, r2Requirement: { mode: 'disabled' } },
+                { ...target, presetId: 'second-preset', fileNames: ['second-scene.png'], r2Requirement: { mode: 'disabled' } },
+            ], { assessment })
+            expect(prepared).not.toBeNull()
+            expect(prepared!.review.assessment).toEqual(assessment)
+            await enqueueReviewedSceneQueue(prepared!.submission)
+            const before = await queue.listJobs()
+            expect(before.items).toHaveLength(2)
+            const expected = before.items[0].snapshot.intentAssessment
+            expect(expected).toMatchObject({ runId: before.items[0].batchId, requirement: assessment })
+            expect(expected?.planHash).toMatch(/^sha256:[a-f0-9]{64}$/u)
+            expect(before.items[1].snapshot.intentAssessment).toEqual(expected)
+            expect(new Set(before.items.map(item => decodeSceneJobSnapshot(item.snapshot).sceneWorkflow.batch?.planHash)).size).toBe(2)
+            queue.close()
+            const reopened = new IndexedDBQueueRepository(options)
+            try {
+                const restored = await reopened.listJobs({ batchId: expected!.runId })
+                expect(restored.items).toHaveLength(2)
+                expect(restored.items.every(item => JSON.stringify(item.snapshot.intentAssessment) === JSON.stringify(expected))).toBe(true)
+                expect((await reopened.getJob(before.items[1].id))?.snapshot.intentAssessment).toEqual(expected)
+            } finally { reopened.close() }
+        } finally { queue.close() }
+    })
+
+    it('rejects Scene acceptance counts above selected outputs before any Queue enqueue', async () => {
+        const assessment = createAssessmentRequirement({ rubricId: 'scene-rubric', version: 1,
+            hardConstraints: [{ criterionId: 'layout', label: 'Requested layout' }], softCriteria: [], acceptanceThreshold: 80 }, 2)
+        await expect(prepareSceneQueueReview([target], { assessment })).rejects.toThrow()
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+        expect(runtime.build).not.toHaveBeenCalled()
+    })
+
     it.each([
         { patch: {}, bucket: 'ancestor-bucket', prefix: 'ancestor/child', bucketSource: 'ancestor', prefixSource: 'ancestor', sourceId: 'parent' },
         { patch: { r2BucketPolicy: { mode: 'set', value: 'child-bucket' }, r2PrefixPolicy: { mode: 'set', value: 'chosen' } }, bucket: 'child-bucket', prefix: 'chosen', bucketSource: 'folder', prefixSource: 'folder', sourceId: 'child' },

@@ -94,6 +94,7 @@ export type EnqueueReviewedMainPlanResult =
     | Exclude<PlanGenerationResult<PreparedMainGeneration>, { readonly status: 'ready' }>
 
 interface EnqueueMainBatchOptions {
+    readonly assessment?: { readonly planHash: GenerationPlan['planHash']; readonly requirement: NonNullable<GenerationPlan['assessment']> }
     readonly planner: MainBatchPlannerPort<PreparedMainGeneration>
     readonly submissionPolicy:
         | { readonly kind: 'advanced' }
@@ -297,6 +298,9 @@ export async function enqueueReviewedMainPlan(
                 maxAttempts: executionPolicy.maxAttempts,
             },
             providerExecutionContexts,
+            ...(replayed.plan.assessment === undefined ? {} : { assessment: {
+                planHash: replayed.plan.planHash, requirement: replayed.plan.assessment,
+            } }),
             idempotencyScope: options.idempotencyScope ?? replayed.plan.planId,
             ...(folderBinding === undefined ? {} : { folderBinding }),
         })
@@ -599,7 +603,12 @@ async function enqueueMainBatch(
                 ? { ...exactPrepared, output: { ...exactPrepared.output, autoR2UploadProfileId: null } }
                 : exactPrepared
             const encoded = encodeMainJobSnapshot(deliveryPrepared, item.dehydrated, costConsent, item.providerExecution, r2Delivery)
-            const snapshot = bindOutputReservationSnapshot(encoded.snapshot, reservationSnapshot)
+            const snapshot = bindOutputReservationSnapshot({
+                ...encoded.snapshot,
+                ...(options.assessment === undefined ? {} : { intentAssessment: {
+                    runId: batchId, ...options.assessment,
+                } }),
+            }, reservationSnapshot)
             reservations.push(reservation)
             jobs.push({
                 id: jobId,

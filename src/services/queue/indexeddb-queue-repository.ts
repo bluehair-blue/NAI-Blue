@@ -1175,12 +1175,16 @@ function snapshotFromRecord(value: unknown, expectedHash: unknown): GenerationJo
                 providerExecutionEnvelope: structuredClone(value.providerExecutionEnvelope),
             }
         })()
-    const snapshot: GenerationJobSnapshot = value.outputReservation === undefined
+    const destinationSnapshot: GenerationJobSnapshot = value.outputReservation === undefined
         ? providerSnapshot
         : {
             ...providerSnapshot,
             outputReservation: parseOutputReservationSnapshot(value.outputReservation),
         }
+    const snapshot: GenerationJobSnapshot = value.intentAssessment === undefined ? destinationSnapshot : {
+        ...destinationSnapshot,
+        intentAssessment: structuredClone(value.intentAssessment) as GenerationJobSnapshot['intentAssessment'],
+    }
     assertGenerationJobSnapshotSafe(snapshot)
     if (typeof expectedHash !== 'string' || hashGenerationJobSnapshot(snapshot) !== expectedHash) {
         throw new QueueRepositoryError('E_QUEUE_RECORD_INVALID', 'job snapshot hash mismatch')

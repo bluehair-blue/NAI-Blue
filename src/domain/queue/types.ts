@@ -140,6 +140,8 @@ export interface GenerationSnapshotResource {
 
 export interface GenerationJobSnapshot {
     readonly schemaVersion: 1
+    /** Copied on manual retry so acceptance remains attached to its original run. */
+    readonly intentAssessment?: import('@/domain/assessment/intent-assessment').IntentAssessmentRunBinding
     /** Absent only on legacy snapshots that retain the pre-Phase-3 executor contract. */
     readonly providerExecutionEnvelope?: ProviderExecutionEnvelope
     /** Immutable exact local destination; absent on pre-Phase-6 jobs. */

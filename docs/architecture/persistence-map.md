@@ -33,6 +33,7 @@
 | `nai-blue-tools` | tool preference와 최근 입력 | transient 실행 결과는 제외한다. |
 | `nai-blue-update` | update 확인 preference/cache | best-effort이며 설치 기준 데이터가 아니다. |
 | `nai-blue-style-lab` | Style Lab authoring state | 생성 실행과 결과는 queue/artifact 경계를 따른다. |
+| `nai-blue-intent-assessment:<encoded runId>` | 사람의 요청 충족 평가, immutable rubric/run binding, append-only event | strict read와 원자적 CAS를 사용한다. 정정은 새 event이며 자동 삭제하지 않는다. `BACKUP_STORE_KEYS`와 설정 restore 대상에서 제외한다. 이미지 bytes·경로·credential은 저장하지 않고 사람의 rubric/메모는 로컬 평가 자료로 보존한다. 후보는 Queue/Artifact에서 재검증한다. [ADR-003](ADR-003-phase8-human-intent-assessment.md) 참고. |
 | `nai-blue-asset-modules` | Asset profile의 managed projection | 외부 JSON과 충돌할 때 profile revision/mtime 규칙을 사용한다. |
 | `nai-blue-queue-ui` | Queue Center 선택과 execution rollback switch | UI projection이다. job/status authority는 durable queue DB다. |
 | `nai-blue-composition-repository` | canonical v2 document, revision, hash, migration marker | critical CAS authority. repository command 외 직접 덮어쓰기를 금지한다. |

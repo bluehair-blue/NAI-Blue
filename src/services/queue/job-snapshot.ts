@@ -6,6 +6,7 @@ import type {
     SnapshotResumability,
 } from '@/domain/queue/types'
 import type { ProviderExecutionEnvelope } from '@/domain/queue/provider-result'
+import { parseIntentAssessmentRunBinding } from '@/domain/assessment/intent-assessment'
 
 export const GENERATION_JOB_SNAPSHOT_SCHEMA_VERSION = 1 as const
 
@@ -98,7 +99,11 @@ function deepFreeze<T>(value: T): T {
 
 export function assertGenerationJobSnapshotSafe(snapshot: unknown): void {
     assertSafeValue(snapshot, [], new Set())
+    if (snapshot !== null && typeof snapshot === 'object' && 'intentAssessment' in snapshot) {
+        parseIntentAssessmentRunBinding(snapshot.intentAssessment)
+    }
 }
+
 
 export function createGenerationJobSnapshot(input: CreateGenerationJobSnapshotInput): GenerationJobSnapshot {
     if (input.resources.some(resource => resource.persistence === 'volatile')

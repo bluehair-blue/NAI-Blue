@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
+import { createAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 
 import {
     hashGenerationSemanticIntent,
@@ -280,6 +282,65 @@ describe('reviewed Main plan Queue bridge', () => {
                 }),
             }))
         ))
+    })
+
+    it('persists the reviewed human rubric binding through real Queue close and reopen', async () => {
+        const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
+        const { encodeMainJobSnapshot } = await vi.importActual<typeof import('@/services/queue/main-job-snapshot-codec')>('@/services/queue/main-job-snapshot-codec')
+        const options = {
+            factory: new IDBFactory(), keyRange: IDBKeyRange, databaseName: 'main-reviewed-human-assessment',
+            generationLimits: { maxJobsPerAtomicBatch: 100, maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: '2026-09-05T00:00:00.000Z', evidenceId: 'test-main-assessment' },
+        }
+        const queue = new IndexedDBQueueRepository(options)
+        const assessment = createAssessmentRequirement({ rubricId: 'main-rubric', version: 3,
+            hardConstraints: [{ criterionId: 'identity', label: 'Requested identity' }], softCriteria: [], acceptanceThreshold: 80 }, 1)
+        const input: PlanGenerationInput = { source, count: 1, seedPolicy: { kind: 'fixed', seed: 7 },
+            budget: { maxImages: 1, maxAnlas: 0 }, assessment }
+        const deps = dependencies()
+        const prepare = deps.planner.prepare
+        deps.planner.prepare = async request => (await prepare(request)).map(item => ({
+            ...item, prepared: { ...item.prepared, params: { ...item.prepared.params, negative_prompt: 'lowres' } },
+        }))
+        const reviewed = await reviewedPlan(input, deps)
+        runtime.repository.mockReturnValue(queue)
+        runtime.compatibility.mockReturnValue({ status: 'supported', compatibilityProfileId: 'nai:test', action: 'generate' })
+        runtime.encode.mockImplementationOnce(encodeMainJobSnapshot)
+        try {
+            const result = await enqueueReviewedMainPlan({ reviewed,
+                input: { source, count: 1, budget: input.budget, assessment }, dependencies: deps,
+                submissionPolicy: { kind: 'guided', costConsent: costConsent() },
+            })
+            expect(result.status).toBe('enqueued')
+            const batchId = `main-batch-${reviewed.planId}`
+            const before = await queue.listJobs({ batchId })
+            expect(before.items).toHaveLength(1)
+            const expected = { runId: batchId, planHash: reviewed.planHash, requirement: assessment }
+            expect(before.items[0].snapshot.intentAssessment).toEqual(expected)
+            queue.close()
+            const reopened = new IndexedDBQueueRepository(options)
+            try {
+                expect((await reopened.getJob(before.items[0].id))?.snapshot.intentAssessment).toEqual(expected)
+                expect((await reopened.listJobs({ batchId })).items[0].snapshot.intentAssessment).toEqual(expected)
+            } finally { reopened.close() }
+        } finally {
+            queue.close()
+            runtime.compatibility.mockReturnValue({ status: 'supported' })
+        }
+    })
+
+    it('rejects a changed human rubric before reviewed Main enqueue touches the Queue', async () => {
+        const rubric = { rubricId: 'main-rubric', version: 1,
+            hardConstraints: [{ criterionId: 'identity', label: 'Requested identity' }], softCriteria: [], acceptanceThreshold: 80 }
+        const input: PlanGenerationInput = { source, count: 1, seedPolicy: { kind: 'fixed', seed: 7 },
+            budget: { maxImages: 1, maxAnlas: 0 }, assessment: createAssessmentRequirement(rubric, 1) }
+        const reviewed = await reviewedPlan(input, dependencies())
+        const result = await enqueueReviewedMainPlan({ reviewed,
+            input: { source, count: 1, budget: input.budget, assessment: createAssessmentRequirement({ ...rubric, version: 2 }, 1) },
+            dependencies: dependencies(), submissionPolicy: { kind: 'guided', costConsent: costConsent() },
+        })
+        expect(result).toMatchObject({ status: 'conflict', mismatch: { fieldPath: 'sourceBindings' } })
+        expectNoQueueSideEffects()
     })
 
     it('replays saved seeds and enqueues the replayed jobs under the stable plan identity', async () => {

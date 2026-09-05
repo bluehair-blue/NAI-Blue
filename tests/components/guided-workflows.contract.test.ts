@@ -171,7 +171,7 @@ describe('Guided single-image production contract', () => {
         const single = await source('src/presentation/workflow/GuidedSingleImage.tsx')
 
         expect(single).toContain(') : estimatedAnlas > 0 ? (')
-        expect(single).toContain('disabled={(estimatedAnlas > 0 && !consented)')
+        expect(single).toContain('disabled={!assessmentValid || (estimatedAnlas > 0 && !consented)')
         expect(single).toContain("t('guided.single.review.free', '0 Anlas · 무료 조건')")
         expect(single).toContain("t('guided.single.review.enqueue', '이미지 1장 만들기')")
         expect(single).toContain("t('guided.single.review.queueHelp', '다른 작업이 실행 중이면 다음 순서에서 자동으로 시작합니다.')")

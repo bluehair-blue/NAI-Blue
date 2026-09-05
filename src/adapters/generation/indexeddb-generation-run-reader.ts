@@ -31,6 +31,10 @@ import type { IndexedDBR2UploadRepository } from '@/services/r2/indexeddb-r2-upl
 import { getRuntimeR2UploadRepository } from '@/services/r2/runtime'
 import type { SceneDocument, SceneRepositoryPort } from '@/application/scene/scene-repository'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
+import type { IntentAssessmentRepository } from '@/application/assessment/intent-assessment-repository'
+import { IndexedDbIntentAssessmentRepository } from '@/adapters/assessment/indexeddb-intent-assessment-repository'
+import { readQueueIntentAssessmentRun } from '@/adapters/assessment/queue-intent-assessment-reader'
+import { latestArtifactAssessments } from '@/domain/assessment/intent-assessment'
 
 export interface GenerationRunAuthorityReaders {
     readonly queue: Pick<IndexedDBQueueRepository, 'getBatch' | 'listJobs' | 'getOutputReservation' | 'listAttempts'>
@@ -39,6 +43,7 @@ export interface GenerationRunAuthorityReaders {
     readonly r2: Pick<IndexedDBR2UploadRepository, 'listJobs' | 'getProfile' | 'getManifest'>
     /** Optional in injected readers; runtime supplies it to project Scene-link issues. */
     readonly scenes?: Pick<SceneRepositoryPort, 'getDocument'>
+    readonly assessments?: IntentAssessmentRepository
 }
 
 function runtimeAuthorities(): GenerationRunAuthorityReaders {
@@ -48,6 +53,7 @@ function runtimeAuthorities(): GenerationRunAuthorityReaders {
         artifacts: getRuntimeArtifactRepository(),
         r2: getRuntimeR2UploadRepository(),
         scenes: getRuntimeSceneRepository(),
+        assessments: new IndexedDbIntentAssessmentRepository(),
     }
 }
 
@@ -299,6 +305,14 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
         if (batch === null) return null
 
         const jobs = await listBatchJobs(this.authorities.queue, batch.id)
+        const assessmentRun = jobs.some(job => job.snapshot.intentAssessment !== undefined)
+            ? await readQueueIntentAssessmentRun(runId, {
+                ...this.authorities, assessments: this.authorities.assessments ?? new IndexedDbIntentAssessmentRepository(),
+            }, jobs)
+            : null
+        const latestAssessments = assessmentRun === null ? new Map() : latestArtifactAssessments(
+            assessmentRun.binding, assessmentRun.candidateArtifactIds, assessmentRun.events,
+        )
         const [pendingTransactions, r2Jobs] = await Promise.all([
             this.authorities.output.inspectPendingQueueTransactions().catch(() => null),
             jobs.some(job => releaseProfileId(job) !== null)
@@ -459,7 +473,17 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                 provider,
                 storage,
                 release,
-                acceptance: { required: false },
+                acceptance: {
+                    required: assessmentRun !== null,
+                    ...(job.artifactReference === null || !latestAssessments.has(job.artifactReference.artifactId) ? {} : {
+                        assessment: {
+                            state: latestAssessments.get(job.artifactReference.artifactId)!.decision,
+                            assessmentId: latestAssessments.get(job.artifactReference.artifactId)!.assessmentId,
+                            acceptedArtifactIds: latestAssessments.get(job.artifactReference.artifactId)!.decision === 'accepted'
+                                ? [job.artifactReference.artifactId] : [],
+                        },
+                    }),
+                },
                 ...(issues.length === 0 ? {} : { issues }),
             }
         }))
@@ -467,6 +491,7 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
         return {
             batchId: batch.id,
             queueState: batch.state,
+            ...(assessmentRun === null ? {} : { runAcceptance: assessmentRun.projection }),
             jobs: facts,
         }
     }

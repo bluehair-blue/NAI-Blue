@@ -93,7 +93,7 @@ describe('Guided batch production contract', () => {
         const component = await source('src/presentation/workflow/GuidedBatchImages.tsx')
 
         expect(component).toContain('{estimatedAnlas > 0 && (')
-        expect(component).toContain('disabled={(estimatedAnlas > 0 && !consented)')
+        expect(component).toContain('disabled={!assessmentValid || (estimatedAnlas > 0 && !consented)')
         expect(component).toContain("t('guided.batch.review.free', '0 Anlas · 무료 조건')")
         expect(component).toContain("t('guided.batch.review.enqueue', '{{count}}장 만들기'")
         expect(component).toContain("t('guided.batch.review.queueHelp', '다른 작업이 실행 중이면 다음 순서에서 자동으로 시작합니다.')")

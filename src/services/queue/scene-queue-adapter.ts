@@ -51,6 +51,8 @@ import {
 import { useSettingsStore } from '@/stores/settings-store'
 import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
 import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
+import { parseAssessmentRequirement, type GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
+import type { IntentAssessmentRunBinding } from '@/domain/assessment/intent-assessment'
 import { QueueExecutionError } from './durable-queue-coordinator'
 import {
     assertGenerationAtomicBatchAvailable,
@@ -114,6 +116,7 @@ export interface SceneQueueDestinationReview {
 }
 
 export interface SceneQueueReview {
+    readonly assessment?: GenerationAssessmentRequirement
     readonly reviewId: string
     readonly sceneCount: number
     readonly imageCount: number
@@ -175,6 +178,7 @@ interface PreparedSceneQueueJob {
 }
 
 interface SceneQueueSubmissionData {
+    readonly intentAssessment?: IntentAssessmentRunBinding
     readonly submission: SceneQueueSubmission
     readonly review: SceneQueueReview
     readonly selected: readonly ResolvedSceneQueueTarget[]
@@ -334,7 +338,7 @@ export function enqueueSceneQueueTargets(
 /** Reads Scene/Folder authority and the exact allocator, returning UI-safe review data without Queue or presentation writes. */
 export function prepareSceneQueueReview(
     targets: readonly SceneQueueTarget[],
-    options: { origin?: QueueBatchOrigin; consumePendingEntries?: boolean } = {},
+    options: { origin?: QueueBatchOrigin; consumePendingEntries?: boolean; assessment?: GenerationAssessmentRequirement } = {},
 ): Promise<PreparedSceneQueueReview | null> {
     const normalizedTargets = normalizeSceneQueueTargets(targets)
     if (normalizedTargets.length === 0) return Promise.resolve(null)
@@ -342,6 +346,7 @@ export function prepareSceneQueueReview(
         normalizedTargets,
         options.origin ?? 'fresh',
         options.consumePendingEntries === true,
+        options.assessment,
     )
 }
 
@@ -349,7 +354,12 @@ async function prepareSceneQueueReviewOnce(
     targets: readonly SceneQueueTarget[],
     origin: QueueBatchOrigin,
     consumePendingEntries: boolean,
+    requestedAssessment?: GenerationAssessmentRequirement,
 ): Promise<PreparedSceneQueueReview> {
+        const assessment = requestedAssessment === undefined ? undefined : parseAssessmentRequirement(requestedAssessment)
+        if (assessment !== undefined && assessment.requiredAcceptedCount > targets.reduce((sum, target) => sum + target.count, 0)) {
+            throw new TypeError('Required acceptance count exceeds planned Scene images.')
+        }
         const sceneState = useSceneStore.getState()
         const settings = useSettingsStore.getState()
         const folderRepository = new IndexedDbGenerationFolderRepository()
@@ -382,6 +392,7 @@ async function prepareSceneQueueReviewOnce(
             schemaVersion: 1,
             reviewId,
             requestedDay,
+            ...(assessment === undefined ? {} : { assessment }),
             folderBinding,
             targets: selected.map(({ target, document }) => ({
                 presetId: target.presetId,
@@ -696,6 +707,7 @@ async function prepareSceneQueueReviewOnce(
             destinations.set(item.prepared.reviewDestinationKey, destination)
         })
         const review: SceneQueueReview = Object.freeze({
+            ...(assessment === undefined ? {} : { assessment }),
             reviewId,
             sceneCount: selected.length,
             imageCount: prepared.length,
@@ -712,6 +724,15 @@ async function prepareSceneQueueReviewOnce(
         })
         const submission = Object.freeze({ reviewId }) as SceneQueueSubmission
         sceneQueueSubmissions.set(submission, {
+            // One run can span presets: bind their plans and exact destinations to a single human rubric.
+            ...(assessment === undefined ? {} : { intentAssessment: {
+                runId: batchId, requirement: assessment,
+                planHash: `sha256:${hashCanonicalValue({
+                    plans: [...plans.values()].map(plan => plan.planHash),
+                    commitSets: allocations.map(allocation => allocation.commitSetHash),
+                    r2Deliveries, assessment,
+                })}` as const,
+            } }),
             submission,
             review,
             selected,
@@ -906,7 +927,10 @@ async function enqueueReviewedSceneQueueOnce(
                         createdAt: data.createdAt,
                         priority: 0,
                         ordinal,
-                        snapshot: bindOutputReservationSnapshot(encoded.snapshot, reservationSnapshot),
+                        snapshot: bindOutputReservationSnapshot({
+                            ...encoded.snapshot,
+                            ...(data.intentAssessment === undefined ? {} : { intentAssessment: data.intentAssessment }),
+                        }, reservationSnapshot),
                         compositionPlanHash: destinationBoundPlanHash,
                         maxAttempts: 3,
                         idempotencyKey: `scene-enqueue-${data.requestIdentity}-${ordinal}`,

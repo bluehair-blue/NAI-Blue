@@ -7,6 +7,8 @@ import {
     type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { HumanAssessmentSetup } from '@/components/assessment/HumanAssessmentSetup'
+import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
     ArrowLeft,
@@ -756,7 +758,8 @@ function SettingsStep({ draft, disabled, onGeneration }: {
     )
 }
 
-function ReviewStep({ draft, activeTokenCount, estimatedAnlas, consented, submitting, submitError, onConsent, onEdit, onSubmit }: {
+function ReviewStep({ draft, activeTokenCount, estimatedAnlas, consented, submitting, submitError, onConsent, onEdit, onSubmit, assessmentValid = true }: {
+    assessmentValid?: boolean
     draft: BatchImageDraft
     activeTokenCount: number
     estimatedAnlas: number
@@ -851,7 +854,7 @@ function ReviewStep({ draft, activeTokenCount, estimatedAnlas, consented, submit
             <p className="text-sm leading-6 text-muted-foreground">{t('guided.batch.review.queueHelp', '다른 작업이 실행 중이면 다음 순서에서 자동으로 시작합니다.')}</p>
             {activeTokenCount === 0 && <p className="text-sm text-destructive" role="alert">{t('guided.batch.review.tokenRequired', '먼저 사용할 NovelAI API 토큰을 등록해 주세요.')}</p>}
             {submitError !== null && <p className="text-sm text-destructive" role="alert">{submitError}</p>}
-            <Button type="button" className="w-full" onClick={onSubmit} disabled={(estimatedAnlas > 0 && !consented) || submitting || activeTokenCount === 0 || !isBatchImageDraftReady(draft)}>
+            <Button type="button" className="w-full" onClick={onSubmit} disabled={!assessmentValid || (estimatedAnlas > 0 && !consented) || submitting || activeTokenCount === 0 || !isBatchImageDraftReady(draft)}>
                 {submitting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Images className="mr-2 h-4 w-4" aria-hidden="true" />}
                 {t('guided.batch.review.enqueue', '{{count}}장 만들기', { count: requestedCount(draft) })}
             </Button>
@@ -1278,6 +1281,12 @@ export function GuidedBatchImages() {
     const [incomingImport, setIncomingImport] = useState<GuidedPromptImportValue | null>(null)
     const [scenes, setScenes] = useState<readonly BatchImageScene[]>([])
     const [consented, setConsented] = useState(false)
+    const [assessment, setAssessment] = useState<GenerationAssessmentRequirement | null>(null)
+    const [assessmentValid, setAssessmentValid] = useState(true)
+    useEffect(() => {
+        setAssessment(null)
+        setAssessmentValid(true)
+    }, [params.draftId])
     const [submitting, setSubmitting] = useState(false)
     const [submitError, setSubmitError] = useState<string | null>(null)
     const [summary, setSummary] = useState<GenerationBatchSummary | null>(null)
@@ -1625,6 +1634,7 @@ export function GuidedBatchImages() {
     const previous = nodes[nodes.indexOf(nodeId) - 1]
     const back = () => previous === undefined ? navigate('/guided-preview/guide/batch') : void goTo(previous)
     const submit = async () => {
+        if (!assessmentValid || submitting) return
         setSubmitting(true)
         setSubmitError(null)
         try {
@@ -1632,6 +1642,7 @@ export function GuidedBatchImages() {
             const ready = await saveEditable() ?? draft
             const result = await enqueueWorkflowDraftGenerationCommand({
                 draft: ready,
+                ...(assessment === null ? {} : { assessment }),
                 maxImages: total,
                 maxAnlas: estimatedAnlas,
                 pricingBasis,
@@ -1824,7 +1835,8 @@ export function GuidedBatchImages() {
                     onChange={patch => { void patchOutput(patch).catch(() => undefined) }}
                 />
             )}
-            {nodeId === 'review' && <ReviewStep draft={{ ...draft, payload: { ...draft.payload, prompt: { positive, negative }, scenes, characterPrompts } }} activeTokenCount={activeTokenCount} estimatedAnlas={estimatedAnlas} consented={consented} submitting={submitting} submitError={submitError} onConsent={setConsented} onEdit={target => void goTo(target)} onSubmit={() => void submit()} />}
+            {nodeId === 'review' && !locked && <HumanAssessmentSetup count={total} value={assessment} onChange={setAssessment} onValidityChange={setAssessmentValid} />}
+            {nodeId === 'review' && <ReviewStep assessmentValid={assessmentValid} draft={{ ...draft, payload: { ...draft.payload, prompt: { positive, negative }, scenes, characterPrompts } }} activeTokenCount={activeTokenCount} estimatedAnlas={estimatedAnlas} consented={consented} submitting={submitting} submitError={submitError} onConsent={setConsented} onEdit={target => void goTo(target)} onSubmit={() => void submit()} />}
             {nodeId === 'result' && <ResultGallery draft={draft} summary={summary} jobs={resultJobs} hasMore={resultHasMore} loadingMore={resultLoading} onLoadMore={() => setResultLimit(current => current + 48)} onEdit={() => void reviseResult('prompt', false)} onRetry={() => void reviseResult('review', true)} />}
         </BatchStepFrame>
     )

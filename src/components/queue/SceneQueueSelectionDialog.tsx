@@ -12,6 +12,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { HumanAssessmentSetup } from '@/components/assessment/HumanAssessmentSetup'
+import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import type { ScenePreset } from '@/stores/scene-store'
 import type {
@@ -25,7 +27,7 @@ interface SceneQueueSelectionDialogProps {
     onOpenChange: (open: boolean) => void
     presets: readonly ScenePreset[]
     busy?: boolean
-    onPrepare: (targets: readonly SceneQueueTarget[]) => Promise<PreparedSceneQueueReview | null>
+    onPrepare: (targets: readonly SceneQueueTarget[], assessment?: GenerationAssessmentRequirement) => Promise<PreparedSceneQueueReview | null>
     onApprove: (submission: SceneQueueSubmission) => Promise<boolean>
 }
 
@@ -50,11 +52,15 @@ export function SceneQueueSelectionDialog({
     const [selected, setSelected] = useState<Record<string, SelectedScene>>({})
     const [submitting, setSubmitting] = useState(false)
     const [prepared, setPrepared] = useState<PreparedSceneQueueReview | null>(null)
+    const [assessment, setAssessment] = useState<GenerationAssessmentRequirement | null>(null)
+    const [assessmentValid, setAssessmentValid] = useState(true)
 
     useEffect(() => {
         if (open) {
             setSelected({})
             setPrepared(null)
+            setAssessment(null)
+            setAssessmentValid(true)
         }
     }, [open])
 
@@ -106,10 +112,10 @@ export function SceneQueueSelectionDialog({
     }
 
     const prepare = async () => {
-        if (selectedTargets.length === 0 || submitting || busy) return false
+        if (selectedTargets.length === 0 || submitting || busy || !assessmentValid) return false
         setSubmitting(true)
         try {
-            const next = await onPrepare(selectedTargets)
+            const next = await onPrepare(selectedTargets, assessment ?? undefined)
             setPrepared(next)
             return next !== null
         } finally {
@@ -140,6 +146,7 @@ export function SceneQueueSelectionDialog({
                 </DialogHeader>
 
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                    <HumanAssessmentSetup count={totalImages} value={assessment} onChange={setAssessment} onValidityChange={setAssessmentValid} />
                     {presets.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">
                             {t('queue.noSceneFolders', 'No scene folders are available.')}
@@ -243,7 +250,7 @@ export function SceneQueueSelectionDialog({
                     <Button type="button" variant="outline" disabled={submitting} onClick={() => onOpenChange(false)}>
                         {t('common.cancel', 'Cancel')}
                     </Button>
-                    <Button type="button" disabled={selectedTargets.length === 0 || busy || submitting} onClick={() => void prepare()}>
+                    <Button type="button" disabled={selectedTargets.length === 0 || busy || submitting || !assessmentValid} onClick={() => void prepare()}>
                         {t('queue.reviewSelectedImages', 'Review {{count}} images', { count: totalImages })}
                     </Button>
                 </DialogFooter>

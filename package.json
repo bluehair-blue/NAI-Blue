@@ -24,6 +24,8 @@
     "test:nai-transport": "vitest run tests/transport",
     "test:persistence": "vitest run tests/persistence && node scripts/verify-rescue-mode.mjs",
     "test:queue": "vitest run tests/domain/queue tests/services/queue",
+    "test:assessment": "vitest run tests/domain/assessment tests/application/assessment tests/adapters/assessment tests/persistence/intent-assessment-repository.test.ts tests/application/generation/plan-generation.test.ts tests/application/generation/generation-fulfillment.test.ts tests/services/queue/main-queue-reviewed-plan.test.ts tests/services/queue/scene-queue-r2-planning.test.ts tests/services/agent/agent-workspace-contract.test.ts",
+    "qa:assessment": "node scripts/qa-phase8-human-assessment.mjs",
     "benchmark:queue:edge": "node scripts/benchmark-queue-edge.mjs",
     "test:sync": "vitest run tests/domain/sync tests/services/sync",
     "test:r2": "vitest run tests/domain/r2 tests/services/r2",

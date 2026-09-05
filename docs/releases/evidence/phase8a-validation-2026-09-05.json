@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "phase": "8A",
+  "recordedAt": "2026-09-05T06:12:43.398Z",
+  "sourceScope": "Source and tests in the commit containing this evidence; no native/Provider execution",
+  "baseCommit": "0e53546ac4339e7b97f8eec7609321e7ea831abf",
+  "node": "v24.19.0",
+  "platform": "win32",
+  "implementation": "8a-implemented",
+  "operationalValidation": "native-installed-app-pending",
+  "conditionalGates": {
+    "agentIntentAssessment": "unavailable",
+    "boundedCandidateSearch": "unavailable"
+  },
+  "automatedTests": {
+    "command": "node node_modules/vitest/vitest.mjs run --exclude 'tests/live/**' --reporter=json --outputFile=docs/local/evidence/phase-08/automated-tests.json",
+    "startedAt": "2026-09-05T06:10:18.506Z",
+    "files": 304,
+    "passed": 2100,
+    "failed": 0,
+    "skipped": 0,
+    "liveSuitesExcluded": true,
+    "groups": {
+      "queue": {
+        "files": 31,
+        "tests": 258,
+        "failed": 0
+      },
+      "persistence": {
+        "files": 4,
+        "tests": 19,
+        "failed": 0
+      },
+      "assessment": {
+        "files": 5,
+        "tests": 23,
+        "failed": 0
+      }
+    },
+    "initialFailuresResolved": "Updated three existing UI source-contract assertions for the added assessment validation gate and prepare argument; no production guard removed."
+  },
+  "checks": [
+    {
+      "command": "npm run test:architecture",
+      "exitCode": 0,
+      "modules": 593,
+      "dependencies": 3261,
+      "violations": 0
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "includesTypecheck": true
+    },
+    {
+      "command": "npm run test:secret-redaction",
+      "exitCode": 0,
+      "tests": 17
+    },
+    {
+      "command": "node scripts/verify-rescue-mode.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "browser": {
+    "command": "npm run qa:assessment",
+    "startedAt": "2026-09-05T06:10:19.597Z",
+    "completedAt": "2026-09-05T06:10:31.915Z",
+    "status": "passed",
+    "environment": "isolated Chromium + local Vite; no native/installed-app verification",
+    "fixture": "single completed Queue job + registered PNG Artifact; native byte reader replaced only for fixture path",
+    "checks": [
+      "Actual QueueCenter fulfillment button opens assessment and decodes verified 64x64 PNG",
+      "Hard fail + soft score 100 persists rejected artifact; run stays needs-review without explicit close",
+      "Full browser document reload restores identical immutable binding and assessment projection from IndexedDB",
+      "Hard-pass correction appends a superseding event, retains prior rejection unchanged, counts artifact exactly once",
+      "390px mobile assessment dialog and document have no horizontal overflow",
+      "Explicit close appends run-decision and is the only transition to rejected run",
+      "Setup component harness: enabled empty draft, over-count and zero weight disable generation gate and valid hard-only/weighted drafts enable it; no generation called"
+    ],
+    "consoleErrors": 0,
+    "pageErrors": 0,
+    "mobileDimensions": {
+      "viewport": 390,
+      "width": 358,
+      "scrollWidth": 358,
+      "clientWidth": 358,
+      "documentWidth": 390
+    },
+    "externalRequests": "Only font stylesheets were intercepted and replaced locally; no Provider or other external request.",
+    "evidenceDirectory": "docs/local/evidence/phase-08"
+  },
+  "knownLimits": [
+    "Installed Tauri app with real local filesystem/vault/Provider and forced termination not exercised.",
+    "Assessment setting UI supports Guided single/batch and Scene selection, not Advanced Main or legacy jobs.",
+    "Per-run assessment evidence is excluded from existing settings backup/restore registry.",
+    "Assessment lineage scan is paginated and on demand; no run index added."
+  ]
+}

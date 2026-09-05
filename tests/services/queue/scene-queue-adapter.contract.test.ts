@@ -115,7 +115,7 @@ describe('Scene Queue boundaries', () => {
         ])
 
         expect(dialog.match(/setPrepared\(null\)/g)?.length).toBeGreaterThanOrEqual(4)
-        expect(dialog).toContain('const next = await onPrepare(selectedTargets)')
+        expect(dialog).toContain('const next = await onPrepare(selectedTargets, assessment ?? undefined)')
         expect(dialog).toContain('setPrepared(next)')
         expect(dialog).toContain('<SceneQueueReviewDialog')
         expect(review).toContain('await onApprove(prepared.submission)')

@@ -11,6 +11,14 @@ import {
 } from '@/services/agent/agent-workspace-contract'
 
 describe('agent workspace contract', () => {
+    it.each(['intent_assessment.record', 'assessment.record', 'style_lab.record_preference'])(
+        'rejects external human recording through %s', type => {
+            expect(() => parseAgentEditRequest({
+                schemaVersion: 1, requestId: 'forged-human', baseRevision: 1, status: 'ready',
+                action: { type, evaluator: { kind: 'human', actorId: 'local-user' } },
+            })).toThrow(/Unsupported agent action/)
+        },
+    )
     it('grants the desktop bridge exactly the file commands it invokes', () => {
         const capability = JSON.parse(readFileSync(
             new URL('../../../src-tauri/capabilities/default.json', import.meta.url),
@@ -133,6 +141,10 @@ describe('agent workspace contract', () => {
             credentialsIncluded: false,
             imageBytesIncluded: false,
             historyIncluded: false,
+        })
+        expect(snapshot.capabilities).toEqual({
+            'agent-intent-assessment': { available: false, reason: expect.any(String) },
+            'bounded-candidate-search': { available: false, reason: expect.any(String) },
         })
         expect(JSON.stringify(snapshot)).not.toMatch(/api.?token|authorization|image.?bytes\s*:/i)
 

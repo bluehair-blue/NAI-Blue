@@ -7,6 +7,8 @@ import {
     type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { HumanAssessmentSetup } from '@/components/assessment/HumanAssessmentSetup'
+import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
     ArrowLeft,
@@ -723,6 +725,7 @@ function ReviewRow({
 }
 
 function ReviewStep({
+    assessmentValid = true,
     draft,
     activeTokenCount,
     estimatedAnlas,
@@ -735,6 +738,7 @@ function ReviewStep({
     onManageAccount,
     onOpenResult,
 }: {
+    assessmentValid?: boolean
     draft: SingleImageDraft
     activeTokenCount: number
     estimatedAnlas: number
@@ -912,7 +916,7 @@ function ReviewStep({
                         type="button"
                         className="sm:flex-1"
                         onClick={onSubmit}
-                        disabled={(estimatedAnlas > 0 && !consented) || activeTokenCount === 0 || submitting || !isSingleImageDraftReady(draft)}
+                        disabled={!assessmentValid || (estimatedAnlas > 0 && !consented) || activeTokenCount === 0 || submitting || !isSingleImageDraftReady(draft)}
                     >
                         {submitting && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
                         <ImageIcon className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -1222,6 +1226,12 @@ export function GuidedSingleImage() {
     })
     const [incomingImport, setIncomingImport] = useState<GuidedPromptImportValue | null>(null)
     const [consented, setConsented] = useState(false)
+    const [assessment, setAssessment] = useState<GenerationAssessmentRequirement | null>(null)
+    const [assessmentValid, setAssessmentValid] = useState(true)
+    useEffect(() => {
+        setAssessment(null)
+        setAssessmentValid(true)
+    }, [params.draftId])
     const [submitting, setSubmitting] = useState(false)
     const [submitError, setSubmitError] = useState<string | null>(null)
     const [stepError, setStepError] = useState<{ nodeId: GuidedSingleImageNodeId; message: string } | null>(null)
@@ -1649,12 +1659,14 @@ export function GuidedSingleImage() {
         })
 
     const submit = async () => {
+        if (!assessmentValid || submitting) return
         setSubmitting(true)
         setSubmitError(null)
         try {
             const result = await enqueueWorkflowDraftGenerationCommand({
                 draft,
                 maxImages: 1,
+                ...(assessment === null ? {} : { assessment }),
                 maxAnlas: estimatedAnlas,
                 pricingBasis,
                 approvedAt: new Date().toISOString(),
@@ -1896,8 +1908,11 @@ export function GuidedSingleImage() {
                     onChange={patch => { void patchOutput(patch).catch(() => undefined) }}
                 />
             )}
+            {nodeId === 'review' && !locked && <HumanAssessmentSetup count={1} value={assessment}
+                onChange={setAssessment} onValidityChange={setAssessmentValid} />}
             {nodeId === 'review' && (
                 <ReviewStep
+                    assessmentValid={assessmentValid}
                     draft={draft}
                     activeTokenCount={activeTokenCount}
                     estimatedAnlas={estimatedAnlas}

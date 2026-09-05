@@ -1,3 +1,5 @@
+import type { RunAcceptanceProjection } from '@/domain/assessment/intent-assessment'
+
 export type TechnicalStageState =
     | 'not-required'
     | 'pending'
@@ -124,6 +126,8 @@ export interface GenerationFulfillmentFacts {
     readonly batchId: string
     readonly queueState: string
     readonly requiredAcceptedCount?: number | null
+    /** Run acceptance is authoritative across artifacts and retry batches; job rejection alone cannot close a run. */
+    readonly runAcceptance?: RunAcceptanceProjection
     readonly jobs: readonly GenerationFulfillmentJobFacts[]
 }
 
@@ -193,9 +197,7 @@ function aggregateAcceptance(
 ): AcceptanceProjection {
     const states = jobs.map(job => job.acceptance.state)
     const acceptedArtifactIds = [...new Set(jobs.flatMap(job => job.acceptance.acceptedArtifactIds))]
-    let state: AcceptanceState = states.includes('rejected')
-        ? 'rejected'
-        : states.includes('needs-review')
+    let state: AcceptanceState = states.includes('rejected') || states.includes('needs-review')
             ? 'needs-review'
             : states.includes('not-evaluated')
                 ? 'not-evaluated'
@@ -231,6 +233,7 @@ function deriveOverall(
                 || job.release.state === 'uncertain'
                 || (job.release.state === 'unavailable' && !IN_FLIGHT_QUEUE_STATES.has(job.queue.state))))
         || (facts.jobs[index]?.acceptance.required === true
+            && acceptance.state !== 'accepted'
             && job.acceptance.state === 'not-evaluated'
             && !IN_FLIGHT_QUEUE_STATES.has(job.queue.state))
     ))
@@ -258,7 +261,7 @@ function deriveOverall(
 
 /** Builds the read model only from supplied authority facts; no result is persisted or inferred from Queue success. */
 export function deriveGenerationFulfillment(facts: GenerationFulfillmentFacts): GenerationFulfillmentProjection {
-    const requiredAcceptedCount = facts.requiredAcceptedCount ?? null
+    const requiredAcceptedCount = facts.runAcceptance?.requiredAcceptedCount ?? facts.requiredAcceptedCount ?? null
     const jobs = facts.jobs.map((job): GenerationJobFulfillmentProjection => ({
         jobId: job.jobId,
         queue: { state: job.queueState },
@@ -269,7 +272,15 @@ export function deriveGenerationFulfillment(facts: GenerationFulfillmentFacts): 
         acceptance: projectAcceptance(job.acceptance.required, job.acceptance.assessment, requiredAcceptedCount),
         issues: [...(job.issues ?? [])],
     }))
-    const acceptance = aggregateAcceptance(jobs, requiredAcceptedCount)
+    const runAcceptance = facts.runAcceptance
+    const acceptance: AcceptanceProjection = runAcceptance === undefined
+        ? aggregateAcceptance(jobs, requiredAcceptedCount)
+        : {
+            state: runAcceptance.state,
+            assessmentIds: [...runAcceptance.latestAssessmentIds],
+            acceptedArtifactIds: [...runAcceptance.acceptedArtifactIds],
+            requiredAcceptedCount,
+        }
     const issues = jobs.flatMap(job => job.issues)
 
     return {

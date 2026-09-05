@@ -172,7 +172,7 @@ describe('deriveGenerationFulfillment matrix', () => {
         expect(result.overall).toBe('delivered')
     })
 
-    it('reports a rubric rejection after all technical stages succeed', () => {
+    it('keeps an artifact rejection open for review until a human explicitly closes the run', () => {
         const result = run(job({
             release: { policy: 'required', fact: fact('succeeded', 'r2-manifest') },
             acceptance: {
@@ -186,12 +186,27 @@ describe('deriveGenerationFulfillment matrix', () => {
         }), { requiredAcceptedCount: 1 })
 
         expect(result.acceptance).toEqual({
-            state: 'rejected',
+            state: 'needs-review',
             assessmentIds: ['assessment-1'],
             acceptedArtifactIds: [],
             requiredAcceptedCount: 1,
         })
-        expect(result.overall).toBe('rejected')
+        expect(result.overall).toBe('needs-attention')
+    })
+
+    it('uses run-wide distinct acceptance and explicit close evidence independently of surplus job assessments', () => {
+        const projection = {
+            runId: 'batch-1', planHash: `sha256:${'a'.repeat(64)}`,
+            requiredAcceptedCount: 1, candidateArtifactIds: ['artifact-1', 'artifact-2'],
+            acceptedArtifactIds: ['artifact-1'], latestAssessmentIds: ['assessment-1'], state: 'accepted' as const,
+        }
+        const facts = { batchId: 'batch-1', queueState: 'active', jobs: [job({ acceptance: { required: true } })], runAcceptance: projection }
+        expect(deriveGenerationFulfillment(facts).overall).toBe('accepted')
+        const closed = deriveGenerationFulfillment({ ...facts, runAcceptance: {
+            ...projection, state: 'rejected', latestAssessmentIds: ['assessment-1', 'close-1'],
+        } })
+        expect(closed.overall).toBe('rejected')
+        expect(closed.acceptance.assessmentIds).toContain('close-1')
     })
 
     it('marks missing direct evidence unavailable without inferring success from Queue', () => {

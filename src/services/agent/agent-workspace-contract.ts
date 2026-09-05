@@ -35,6 +35,11 @@ export interface AgentWorkspaceSnapshot {
     revision: number
     generatedAt: string
     updatedBy: 'app'
+    /** Automated evaluation/search remain closed until their evidence gates pass. */
+    capabilities: {
+        'agent-intent-assessment': { available: false; reason: string }
+        'bounded-candidate-search': { available: false; reason: string }
+    }
     editable: {
         activePresetId: string
         presets: Preset[]
@@ -383,6 +388,16 @@ export function createAgentWorkspaceSnapshot(input: {
         revision: input.revision,
         generatedAt: input.generatedAt ?? new Date().toISOString(),
         updatedBy: 'app',
+        capabilities: {
+            'agent-intent-assessment': {
+                available: false,
+                reason: 'Human assessment only; the vision evaluator evidence gate has not passed.',
+            },
+            'bounded-candidate-search': {
+                available: false,
+                reason: 'Candidate search requires a validated evaluator and explicit search budget.',
+            },
+        },
         editable: {
             activePresetId: input.activePresetId,
             presets: input.presets.map(preset => ({ ...preset, selectedResolution: { ...preset.selectedResolution } })),

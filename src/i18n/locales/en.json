@@ -3396,5 +3396,53 @@
             "description": "Technical identifiers and recovery context.",
             "help": "DiagnosticCode values and model IDs remain untranslated so they can be matched in logs and support material."
         }
+    },
+    "assessment": {
+        "enable": "Assess request fulfillment after generation",
+        "setupDescription": "Write the requirements you will check against each generated image.",
+        "hardConstraints": "Hard constraints (one per line)",
+        "requiredCount": "Required accepted images (1–{{count}})",
+        "enableSoft": "Add a scored criterion",
+        "softCriterion": "Scored criterion",
+        "weight": "Weight",
+        "threshold": "Acceptance threshold (0–100)",
+        "invalidSetup": "Add at least one criterion and check the count, positive weight, and score range.",
+        "close": "Close",
+        "title": "Request fulfillment assessment",
+        "description": "Inspect each image and record whether it meets the saved requirements.",
+        "loading": "Loading assessment…",
+        "runSummary": "{{accepted}} / {{required}} accepted · {{candidates}} candidates",
+        "closed": "This run was explicitly closed as rejected.",
+        "candidate": "Image to assess",
+        "imageNumber": "Image {{number}}",
+        "noCandidates": "No generated images are available for assessment yet.",
+        "notFound": "No assessment requirement was found for this run.",
+        "closeRejected": "Close run as rejected",
+        "refresh": "Refresh",
+        "previewAlt": "Generated image being assessed",
+        "previewFailed": "The image preview could not be displayed.",
+        "loadingPreview": "Loading image preview…",
+        "latestDecision": "Last saved decision: {{decision}}",
+        "hardResults": "Hard constraint results",
+        "result": {
+            "needs-review": "Needs review",
+            "pass": "Pass",
+            "fail": "Fail"
+        },
+        "softScore": "Overall criterion score (0–100; blank means needs review)",
+        "criterionWeight": "weight {{weight}}",
+        "thresholdValue": "Acceptance threshold: {{threshold}}",
+        "explanation": "Notes (optional)",
+        "resultingDecision": "Decision to save: {{decision}}",
+        "saveCorrection": "Save revised assessment",
+        "save": "Save assessment",
+        "acceptedCount": "{{accepted}} / {{required}} accepted images",
+        "reviewRequirement": "Human assessment: {{count}} accepted images required.",
+        "state": {
+            "not-evaluated": "Not evaluated",
+            "needs-review": "Needs review",
+            "accepted": "Accepted",
+            "rejected": "Rejected"
+        }
     }
 }

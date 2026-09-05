@@ -16,6 +16,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { SceneQueueSelectionDialog } from '@/components/queue/SceneQueueSelectionDialog'
+import { HumanAssessmentDialog } from '@/components/assessment/HumanAssessmentDialog'
+import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import type {
     FulfillmentIssue,
@@ -141,6 +143,7 @@ export default function QueueCenter() {
     const [fulfillment, setFulfillment] = useState<GenerationFulfillmentProjection | null>(null)
     const [fulfillmentLoading, setFulfillmentLoading] = useState(false)
     const [fulfillmentError, setFulfillmentError] = useState(false)
+    const [assessmentOpen, setAssessmentOpen] = useState(false)
     const [destructiveIssue, setDestructiveIssue] = useState<FulfillmentIssue | null>(null)
 
     const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null
@@ -202,6 +205,7 @@ export default function QueueCenter() {
         setFulfillment(null)
         setFulfillmentLoading(false)
         setFulfillmentError(false)
+        setAssessmentOpen(false)
     }, [selectedBatchId])
 
     // This joins several durable authorities, so Queue polling never calls it;
@@ -404,10 +408,10 @@ export default function QueueCenter() {
         })
     }
 
-    const prepareSelectedScenes = async (targets: readonly SceneQueueTarget[]): Promise<PreparedSceneQueueReview | null> => {
+    const prepareSelectedScenes = async (targets: readonly SceneQueueTarget[], assessment?: GenerationAssessmentRequirement): Promise<PreparedSceneQueueReview | null> => {
         let prepared: PreparedSceneQueueReview | null = null
         await runAction(async () => {
-            prepared = await prepareSceneQueueReview(targets)
+            prepared = await prepareSceneQueueReview(targets, { assessment })
         })
         return prepared
     }
@@ -788,6 +792,15 @@ export default function QueueCenter() {
                                         </div>
                                     ))}
                                 </dl>
+                                {fulfillment.acceptance.requiredAcceptedCount !== null && <div className="flex flex-wrap items-center gap-3">
+                                    <Button type="button" variant="outline" onClick={() => setAssessmentOpen(true)}>
+                                        {t('assessment.title', 'Request fulfillment assessment')}
+                                    </Button>
+                                    <span className="text-sm">{t('assessment.acceptedCount', '{{accepted}} / {{required}} accepted images', {
+                                        accepted: fulfillment.acceptance.acceptedArtifactIds.length,
+                                        required: fulfillment.acceptance.requiredAcceptedCount,
+                                    })}</span>
+                                </div>}
                                 {fulfillment.jobs.some(job => (job.release.jobIds?.length ?? 0) > 0) && (
                                     <details className="text-xs text-muted-foreground">
                                         <summary>{t('queue.fulfillment.deliveryJobs', 'R2 delivery jobs')}</summary>
@@ -985,6 +998,8 @@ export default function QueueCenter() {
                 cancelText={t('common.cancel', 'Cancel')}
                 onConfirm={convertLegacyQueue}
             />
+            {selectedBatchId !== null && <HumanAssessmentDialog key={selectedBatchId} open={assessmentOpen} onOpenChange={setAssessmentOpen}
+                runId={selectedBatchId} onSaved={loadFulfillment} />}
             <SceneQueueSelectionDialog
                 open={sceneSelectionOpen}
                 onOpenChange={setSceneSelectionOpen}

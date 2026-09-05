@@ -15,6 +15,7 @@ import {
 import type { PreparedMainGeneration } from '@/services/generation/main-generation-plan'
 import { enqueueReviewedMainPlan } from '@/services/queue/main-queue-adapter'
 import type { FragmentLookupRepository } from '@/stores/fragment-store'
+import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 
 type GuidedDraft = SingleImageDraft | BatchImageDraft
 
@@ -31,11 +32,12 @@ export async function enqueueWorkflowDraftGenerationCommand(input: {
     readonly approvedAt: string
     readonly drafts: Pick<WorkflowDraftRepositoryPort, 'get'>
     readonly fragmentRepository: FragmentLookupRepository
+    readonly assessment?: GenerationAssessmentRequirement
 }): Promise<WorkflowDraftGenerationCommandResult> {
-    const planInput = createWorkflowDraftGenerationInput(input.draft, {
+    const planInput = { ...createWorkflowDraftGenerationInput(input.draft, {
         maxImages: input.maxImages,
         maxAnlas: input.maxAnlas,
-    })
+    }), ...(input.assessment === undefined ? {} : { assessment: input.assessment }) }
     const dependencies = createWorkflowDraftGenerationPlanDependencies({
         drafts: input.drafts,
         fragmentRepository: input.fragmentRepository,
@@ -63,6 +65,7 @@ export async function enqueueWorkflowDraftGenerationCommand(input: {
                     source: planInput.source,
                     count: planInput.count,
                     budget: planInput.budget,
+                    ...(planInput.assessment === undefined ? {} : { assessment: planInput.assessment }),
                 },
                 dependencies,
                 submissionPolicy: { kind: 'guided', costConsent: request.costConsent },
@@ -96,6 +99,7 @@ export async function enqueueWorkflowDraftGenerationCommand(input: {
             source: planInput.source,
             count: planInput.count,
             budget: planInput.budget,
+            ...(planInput.assessment === undefined ? {} : { assessment: planInput.assessment }),
         },
     }, { replan: dependencies, enqueue: enqueuePort })
 }

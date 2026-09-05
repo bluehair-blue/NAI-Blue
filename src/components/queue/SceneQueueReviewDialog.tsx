@@ -101,6 +101,9 @@ export function SceneQueueReviewDialog({
                             maximum: prepared.review.maxAnlas,
                         })}</p>
                         <p>{t('queue.reviewClaims', '{{count}} output files reserved', { count: prepared.review.claimCount })}</p>
+                        {prepared.review.assessment !== undefined && <p>
+                            {t('assessment.reviewRequirement', 'Human assessment: {{count}} accepted images required.', { count: prepared.review.assessment.requiredAcceptedCount })}
+                        </p>}
                         <p className="text-xs text-muted-foreground">
                             {t('queue.reservationSummary', 'The complete output file set is reserved before work starts. Existing files are never overwritten.')}
                         </p>
