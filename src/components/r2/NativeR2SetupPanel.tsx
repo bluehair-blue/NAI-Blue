@@ -36,6 +36,7 @@ import {
     testNativeR2TemporaryObject,
 } from '@/services/r2/native-r2-adapter'
 import { type R2UploadMode } from '@/services/r2/r2-upload-coordinator'
+import { useR2ForegroundState } from '@/services/r2/foreground-scheduler'
 import { getRuntimeR2UploadCoordinator, getRuntimeR2UploadRepository } from '@/services/r2/runtime'
 import type { AssetProfile } from '@/types/asset-profile'
 
@@ -174,6 +175,7 @@ export function NativeR2SetupPanel({
     const [setupPage, setSetupPage] = useState(0)
 
     const foreground = runtimeCapabilities.r2ForegroundUpload
+    const scheduler = useR2ForegroundState()
     const nativeEnabled = foreground.supported && profile.transport === 'native-s3'
 
     useEffect(() => {
@@ -376,6 +378,18 @@ export function NativeR2SetupPanel({
                 <div className="border-y border-warning/35 py-4 text-sm" role="status">
                     <div className="font-medium">현재 실행 환경에서는 직접 업로드할 수 없습니다.</div>
                     <div className="mt-1 text-muted-foreground">설치형 NAI Blue 데스크톱 앱에서 이 화면을 다시 열어 주세요. 브라우저에서는 설정을 확인할 수 있지만 파일 업로드는 실행되지 않습니다.</div>
+                </div>
+            )}
+
+            {foreground.supported && (
+                <div className="border-y border-border/70 py-3 text-sm text-muted-foreground" role="status" aria-label="R2 자동 전달 상태">
+                    {scheduler.status === 'retrying'
+                        ? '전달 작업 목록을 읽지 못해 자동 재개를 기다리고 있습니다. 앱이 열려 있는 동안 다시 확인합니다.'
+                        : scheduler.status === 'stopped'
+                            ? '자동 전달이 중지되어 있습니다. 앱을 다시 열면 저장된 작업에서 이어집니다.'
+                            : '앱이 열려 있는 동안 저장된 전달 작업을 자동으로 이어갑니다.'}
+                    {scheduler.blockedJobIds.length > 0 && <p className="mt-1">설정 또는 보안 키 준비를 기다리는 작업 {scheduler.blockedJobIds.length}개. 기존 작업에 연결된 설정이 준비되면 자동 재개합니다.</p>}
+                    {scheduler.faultedJobIds.length > 0 && <p className="mt-1">오류로 재확인을 기다리는 작업 {scheduler.faultedJobIds.length}개. 다른 준비된 작업은 계속 진행합니다.</p>}
                 </div>
             )}
 

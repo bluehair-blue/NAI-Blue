@@ -220,7 +220,8 @@ export class R2UploadCoordinator {
         return this.repository.getManifest(profile)
     }
 
-    private async runJob(profile: R2ProfileV2, initial: UploadJob): Promise<void> {
+    /** One snapshotted job lets foreground readiness isolate credentials even within one profile. */
+    async runJob(profile: R2ProfileV2, initial: UploadJob): Promise<void> {
         if (initial.contractVersion === 'phase7-v1') {
             await this.runPhase7Job(initial)
             return
