@@ -19,9 +19,28 @@ vi.mock('@/hooks/useDefaultR2Readiness', () => ({
     }),
 }))
 
+vi.mock('@/components/generation-folders/GenerationFolderPicker', () => ({
+    GenerationFolderPicker: () => null,
+}))
+
 import { GuidedDeliveryStep } from '@/presentation/workflow/GuidedMetadataPolicy'
+import { GuidedOutputDestinationStep } from '@/presentation/workflow/GuidedOutputDestinationStep'
 
 describe('Guided output workflow steps', () => {
+    it.each(['unique', 'error', 'overwrite'] as const)('shows the saved %s collision policy without enabling overwrite', collisionPolicy => {
+        const draft = createSingleImageDraft({
+            id: 'draft:collision', now: '2026-09-05T00:00:00.000Z', seed: 42,
+            output: { collisionPolicy },
+        })
+        const html = renderToStaticMarkup(createElement(GuidedOutputDestinationStep, {
+            value: draft.payload.output, disabled: false, onChange: vi.fn(),
+        }))
+        expect(html).toMatch(new RegExp(`<option value="${collisionPolicy}"[^>]*selected=""`))
+        expect(html).toContain('value="error"')
+        if (collisionPolicy === 'overwrite') expect(html).toMatch(/<option value="overwrite"[^>]*disabled=""/)
+        else expect(html).not.toContain('value="overwrite"')
+    })
+
     it('disables automatic R2 upload and offers setup when no profile is ready', () => {
         const draft = createSingleImageDraft({
             id: 'draft:r2-unavailable',

@@ -1,0 +1,523 @@
+{
+  "schemaVersion": 1,
+  "phase": "9C",
+  "implementationSlice": "native-desktop-approval-to-durable-queue-qa-fixes",
+  "recordedAt": "2026-09-05T23:08:10.957312+00:00",
+  "verifiedLocalDate": "2026-09-06",
+  "timezone": "Asia/Seoul",
+  "baseCommit": "f0b593c1b83dddf7c0390017a87d16d8e4b80ac5",
+  "sourceScope": "Seven source/test files in the commit containing this evidence. Source hashes normalize CRLF to LF. Artifact hashes use exact bytes.",
+  "priorEvidence": "docs/releases/evidence/phase9c-validation-2026-09-05.json",
+  "phase9Complete": false,
+  "runtimeActivation": "windows-foreground-read-plan-and-policy-gated-enqueue",
+  "environment": {
+    "os": "Windows",
+    "node": "v24.19.0",
+    "application": "Standalone debug Tauri EXE with production Vite frontend and actual WebView2/native ports",
+    "binary": {
+      "path": "src-tauri/target/debug/NAI-Blue.exe",
+      "sha256": "f330fe8172f59361bfcdc45c88ee33e72b587538323591f8d09f377b4110db1c"
+    },
+    "identifier": "blue.bluehair.naiblue.phase9cfinalqa",
+    "webviewDataDirectory": "phase9c-final-desktop-qa",
+    "connection": {
+      "workspaceId": "workspace-b8a4d2df662d982c3095010f5c66924a",
+      "clientId": "client-ee7b4048a799cbdc66cba48466a37b83",
+      "keyId": "key\u002decc01ed7d3dbd817be157c4edf5bec73",
+      "actorKind": "agent"
+    },
+    "clientLabel": "Phase 9C final isolated QA",
+    "nativeTransport": "Production scripts/submit-agent-command.py, Windows keyring signing, native authenticated inbox and public result files",
+    "applicationAuthorities": "Actual stored Workflow Draft, immutable generation planner, policy/approval CAS ledger and existing Main Queue transaction; no native/auth/planner/Queue fixture injection",
+    "uiDriver": "Native Windows computer-use controls; diagnostic CDP on loopback 9331 reads DOM and application IndexedDB",
+    "providerControls": {
+      "queueExecutionAuthority": "legacy",
+      "credentialPresent": false,
+      "secondCredentialPresent": false,
+      "providerAttempts": 0
+    },
+    "productionProfileUsed": false
+  },
+  "fixes": [
+    {
+      "problem": "Guided output UI could only create the default unique collision policy, while authenticated generation enqueue requires error.",
+      "change": "Expose unique/error through the existing output destination update callback. Keep unique default, show pre-existing overwrite as a disabled current-only option, and translate the control in Korean/English/Japanese.",
+      "proof": "Real GUI persisted error in the saved draft and after restart; the corrected native plan was ready and the approved request reached Queue."
+    },
+    {
+      "problem": "Settings persistence version 2 introduced by Phase 9C was rejected by the Folder legacy projection reader that accepted only version 1, preventing startup Folder authority readiness.",
+      "observedErrors": [
+        "Unsupported generation folder settings envelope",
+        "QueueExecutionError: Generation folder authority is not ready"
+      ],
+      "change": "Accept known settings envelopes 1 and 2 while preserving rejection of missing or unknown versions, invalid-state rejection, and existing Folder authority/document data.",
+      "proof": "Two new regression cases failed with the observed envelope error before the fix; five focused files/29 tests passed after it. Actual corrected Windows startup and approval-to-Queue succeeded."
+    }
+  ],
+  "desktopChecks": {
+    "guiSavedDraft": {
+      "id": "guided-single-5291ad1e-be5a-4d02-a883-407a8eab0c01",
+      "revision": 5,
+      "collisionPolicy": "error",
+      "outputPath": "NAI_Blue_Phase9C_QA_20260906"
+    },
+    "humanPolicy": {
+      "mode": "suggest",
+      "revision": 1,
+      "maxAnlasPerRun": 30,
+      "syntheticOnlyExplicitlySelectedInGui": true,
+      "boundedAutoEnabled": false
+    },
+    "realPlan": {
+      "requestId": "qa9c-final-plan",
+      "status": "ready",
+      "estimatedAnlas": 29,
+      "imageCount": 1,
+      "planHash": "sha256:18ec4979c670988a1ca4dc1caefd537eb6520e61281901112c337866cf0c6bf9"
+    },
+    "pendingRestart": {
+      "requestId": "qa9c-final-approval",
+      "durableLedgerUnchanged": true,
+      "policyUnchanged": true,
+      "jobsBeforeAndAfter": 0,
+      "normalCloseAndRestart": true
+    },
+    "humanApprove": {
+      "state": "completed",
+      "result": {
+        "batchId": "main-batch-agent-dbe4f2d96161f10b48104a1522e7269abfb8a16ee223c7514912b5c8afc282d2",
+        "jobIds": [
+          "main-job-agent-dbe4f2d96161f10b48104a1522e7269abfb8a16ee223c7514912b5c8afc282d2-0"
+        ],
+        "runId": "main-batch-agent-dbe4f2d96161f10b48104a1522e7269abfb8a16ee223c7514912b5c8afc282d2",
+        "status": "ready"
+      },
+      "snapshotHash": "sha256:ee2c639eb4e2a474b7f5e628d0a949e88a94e40221eb614e88a5196cb3ca8845",
+      "grantHash": "sha256:5590f2024f3733c9ba3c837614101fe91dce0225dad3cb68fc22fc4888ec555e",
+      "batches": 1,
+      "jobs": 1,
+      "outputReservations": 1,
+      "providerAttempts": 0,
+      "artifacts": 0
+    },
+    "exactReplay": {
+      "receiptUnchanged": true,
+      "additionalJobs": 0,
+      "providerAttempts": 0
+    },
+    "humanReject": {
+      "requestId": "qa9c-final-reject",
+      "state": "rejected",
+      "code": "AGENT_HUMAN_REJECTED",
+      "additionalJobs": 0
+    },
+    "getRun": {
+      "requestId": "qa9c-final-get-run",
+      "found": true,
+      "runIdMatchesBatch": true,
+      "jobCount": 1,
+      "jobState": "queued"
+    },
+    "registeredBatchLink": {
+      "actualUiClick": true,
+      "route": "/queue",
+      "selectedBatchId": "main-batch-agent-dbe4f2d96161f10b48104a1522e7269abfb8a16ee223c7514912b5c8afc282d2",
+      "visibleJobs": 1,
+      "executionAuthority": "legacy"
+    },
+    "completedRestart": {
+      "normalCloseAndRestart": true,
+      "ledgerUnchanged": true,
+      "jobsUnchanged": true,
+      "sameEnvelopeReceiptAfterRestart": true,
+      "finalQueueCounts": {
+        "batches": 1,
+        "jobs": 1,
+        "attempts": 0,
+        "output-reservations": 1
+      }
+    },
+    "nativeResultProjection": [
+      {
+        "requestId": "qa9c-final-plan",
+        "exactReceiptMatch": true,
+        "resultDigest": "sha256:3a20e95619d1bd2251ee23cb5094d3b640a5bfb346a7d1648f86c39bebe9f1d4",
+        "state": "completed"
+      },
+      {
+        "requestId": "qa9c-final-approval",
+        "exactReceiptMatch": true,
+        "resultDigest": "sha256:3d959b118c4b105b6488860371bcc45ac153e8e5fbbdb6b87d0256f56592f66d",
+        "state": "completed"
+      },
+      {
+        "requestId": "qa9c-final-get-run",
+        "exactReceiptMatch": true,
+        "resultDigest": "sha256:a2b89ceb1917bdae2a436e1d7dc6c659b26b52f124b7727fae292edd936b0952",
+        "state": "completed"
+      },
+      {
+        "requestId": "qa9c-final-reject",
+        "exactReceiptMatch": true,
+        "resultDigest": "sha256:50c5cf7a63db5194349392ecedf5aed9b10947a2d2445c207f9e52341715aee0",
+        "state": "rejected"
+      }
+    ],
+    "revocation": {
+      "recordedAt": "2026-09-05T23:03:58.0479300Z",
+      "clientId": "client-ee7b4048a799cbdc66cba48466a37b83",
+      "exitCode": 1,
+      "credentialUnavailable": true
+    }
+  },
+  "priorFailureEvidence": {
+    "identifier": "blue.bluehair.naiblue.phase9cqa",
+    "scope": "Earlier binary/profile evidence, retained separately from the corrected success run. No consumed grant was reset or retried.",
+    "records": [
+      {
+        "requestId": "qa9c-native-approval",
+        "state": "unknown",
+        "result": {
+          "code": "AGENT_EXECUTION_UNKNOWN"
+        }
+      },
+      {
+        "requestId": "qa9c-native-diagnostic",
+        "state": "pending",
+        "result": {
+          "code": "AGENT_APPROVAL_REQUIRED"
+        }
+      },
+      {
+        "requestId": "qa9c-native-diagnostic-2",
+        "state": "unknown",
+        "result": {
+          "code": "AGENT_EXECUTION_UNKNOWN"
+        }
+      }
+    ],
+    "jobs": 0,
+    "providerAttempts": 0,
+    "globalPause": "In the earlier GUI run, saving global pause disabled approval and retained zero jobs; this check was not repeated on the final corrected binary.",
+    "cleanup": "Earlier QA client revoked; production signer reported CREDENTIAL_UNAVAILABLE; owned process and loopback 9330 closed. Failure ledger retained."
+  },
+  "validation": {
+    "regression": {
+      "command": "npx vitest run --exclude 'tests/live/**' --reporter=json --outputFile=docs/local/evidence/phase-09c-desktop/regression-corrected.json",
+      "files": 316,
+      "passed": 2270,
+      "failed": 0,
+      "skipped": 0,
+      "liveSuitesExcluded": true
+    },
+    "lint": {
+      "exitCode": 0,
+      "warnings": 0
+    },
+    "architecture": {
+      "exitCode": 0,
+      "modules": 614,
+      "dependencies": 3382,
+      "violations": 0
+    },
+    "secretRedaction": {
+      "exitCode": 0,
+      "files": 2,
+      "passed": 17
+    },
+    "folderRegression": {
+      "redCases": 2,
+      "greenFiles": 5,
+      "greenTests": 29
+    },
+    "frontendBuild": {
+      "exitCode": 0,
+      "checks": "TypeScript and Vite production build"
+    },
+    "nativeBuild": {
+      "exitCode": 0,
+      "configuration": "tauri.fixed.qa.json; debug; no bundle",
+      "log": "docs/local/evidence/phase-09c-desktop/native-build-corrected-retry.log"
+    },
+    "review": {
+      "uiChange": "Reviewed scoped worker implementation results and actual native UI evidence",
+      "folderFix": "Independent worker review found no actionable issues",
+      "finalEvidenceAudit": "Independent read-only audit verified seven normalized source hashes, 55 artifact hashes, final EXE hash, regression counts, native lifecycle/receipt/Queue facts and cleanup. One inaccurate unversioned-support sentence was corrected; no actionable issues remain."
+    }
+  },
+  "cleanup": {
+    "recordedAt": "2026-09-05T23:05:21.1489892Z",
+    "ownedProcessesRemaining": [],
+    "debugListenersRemaining": [],
+    "closedBy": "normal window close",
+    "finalClientRevoked": true,
+    "firstProfileClientRevoked": true,
+    "preservedQueuedJobs": 1,
+    "providerAttempts": 0,
+    "profilesDeleted": false
+  },
+  "limitations": [
+    "Completed enqueue means durable Queue registration. No live Provider request, paid generation, produced image, output-file commit, billing proof or R2 delivery was exercised.",
+    "This was an isolated standalone debug build, not MSI installation/update or verification of the existing production user profile.",
+    "Restarts were normal window closure. Forced process crash, OS interruption and device-level adversarial filesystem cases remain unverified.",
+    "Native bounded-auto execution and expiry were not exercised. The earlier browser fixture QA for those cases remains separate evidence.",
+    "generation.cancel, storage/Scene retry, reservation abandonment and Scene/Folder/R2 mutations remain unavailable; MCP stdio and background/headless are not activated."
+  ],
+  "qaToolingNotes": [
+    "A premature QA launch locked the previous EXE during the first corrected native build attempt. The owned process was closed and the successful retry completed before the final binary was launched.",
+    "A post-restart diagnostic read used a nonexistent database name and timed out, leaving an unused empty diagnostic database in the isolated QA profile. The helper was corrected to the existing keyval receipt key; no application authority was replaced and final Queue counts were re-read.",
+    "Automatic approval review rejected printing the complete protected clients.json because public-only content could not be guaranteed. The actual UI copy action supplied only the four public connection fields; protected client settings were not read afterward."
+  ],
+  "sourceFiles": [
+    {
+      "path": "src/adapters/folder/indexeddb-generation-folder-repository.ts",
+      "sha256": "e8aa310a3dcb5f8c8f4ec1b42f9d292cf88bfbe1493bf24eb4c2b9c7edab6d26"
+    },
+    {
+      "path": "src/presentation/workflow/GuidedOutputDestinationStep.tsx",
+      "sha256": "f5da200f802d995dd92a0467078622392287447831787d083398192620c4be97"
+    },
+    {
+      "path": "src/i18n/locales/en.json",
+      "sha256": "4d3fae8123d3118debae5d8e54bf67c315aa57c1ff8b41c034d0bc93ce193ae6"
+    },
+    {
+      "path": "src/i18n/locales/ja.json",
+      "sha256": "79d2b3ae721c7c6d7e0b9077c413290f6f4e31143e86b39e89fa8d720606c560"
+    },
+    {
+      "path": "src/i18n/locales/ko.json",
+      "sha256": "6c912c0010dcc46467fdf990d7241b1b85778527025df6ffe5314e6443930727"
+    },
+    {
+      "path": "tests/adapters/folder/indexeddb-generation-folder-repository.test.ts",
+      "sha256": "c7d515314ddab9250269485b0e6cab15f1b281869ff55d1036cb68b30bd6bf05"
+    },
+    {
+      "path": "tests/components/guided-output-steps.behavior.test.ts",
+      "sha256": "4b9bb563a82f91335347974fdb15c8156832255134e6fbb7e3cd2e42d9dbbed0"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-binary.json",
+      "sha256": "21ff9cd9166b5431acc999482941d52ba5fe7114d308305558fc318a0e9a3b70"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/tauri.fixed.qa.json",
+      "sha256": "b309ab086edc7b01cd2b7dd63722b83d7292deb51417d2031d2ce3cb1602b5f9"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/regression-corrected.json",
+      "sha256": "4a52b26ebc2b7a4013f0cb3196d05335032c52e223a3d790f5e654eb7c0a9d31"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/regression-corrected.log",
+      "sha256": "4221b7a4f63d90b9188702f0640c27d41c3350f2f2c273f14294628277bd8c63"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/lint-corrected.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/architecture-corrected.log",
+      "sha256": "2006766a5aeb914038accb155670ac936d645336945d2c38c6104f61c4b8c2db"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/redaction-corrected.log",
+      "sha256": "1134cbe7a4d214024db34befee65a1021c99b602bf81daa81c9ce3df1540b335"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/frontend-build-corrected.log",
+      "sha256": "443636cf42b22859d9d667c6d471262e0173648e880db953173940cb29b3d588"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/native-build-corrected-retry.log",
+      "sha256": "09fd62fcfbae9494f8cf9997fb42a0fc8f5c344cfea5c6a3d347470c760c3e99"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/folder-envelope-red.log",
+      "sha256": "948875d53a579ca2b8aa0db340a5b5076a5a299766aeb3ce0dd8336cd4e154d7"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/folder-envelope-green.log",
+      "sha256": "68c6cb009601889dee9bea43e88b66003dd78531f5b2cb0a6532d70919821f20"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/folder-envelope-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/native-enqueue-exceptions.json",
+      "sha256": "1237040009ca566223f9b8f15e1023408704d95ab01e0b4adbc7b20f1f6b9c4e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/startup-folder-authority-diagnostic.txt",
+      "sha256": "13682e60eca8d3b8f7a38c1d9d8a8878eeb1189bd41f7a9353bd6babc32c52e6"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/global-pause.json",
+      "sha256": "7f3bda979c15953232b40c357dd1f5ef705cd68fbb438f14ba122c7ba8aeb43c"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/failed-profile-final-facts.json",
+      "sha256": "f062b4d16ea8e7a9df114409df73d23765bee11441a96ea4f5cc36052fac39c9"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/first-profile-cleanup.json",
+      "sha256": "bf9583aa592de472a35912d4603ef8288c6c1a627691040246d61a24492f3c12"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/first-profile-revocation-proof.json",
+      "sha256": "6681cd0926be342ff4806c8d5379e77a06081dd0b0d819212ec70f487feb0065"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/final-cleanup.json",
+      "sha256": "1f7831919e6039c91e6e16579f138e26fe154997f9bc0da9817466c4f4700bfb"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/01-output-collision-policy.png",
+      "sha256": "5572f727b858adc9741d1ae739e4bdfed163f145a98c42d12f61959f39c9a1dc"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/02-queue-pump-disabled.png",
+      "sha256": "625fb8b9aa09bc46049d14e49efa08c43eb70f0d356b88863dbb06a6800db214"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/05-failed-profile-client-revoked.png",
+      "sha256": "af3d43668b1c46d8ad817ef36654aa0007554ce03d105fd889bee50da1fc1cda"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/01-restored-approval.png",
+      "sha256": "8c4428deab8fe99e1b112bfd21069ee956d9ba33f5607ea5467d17701770da60"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/02-approved-batch-link.png",
+      "sha256": "09b228cf07a1f55ed124826485a74e98edc7bd8925acd81ea8a9b49d66ec3dc5"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/03-opened-registered-batch.png",
+      "sha256": "a7f728e3a68b5248a5c9ce8256fe348176f7ead1669d627ecb365cd8dde11664"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/04-completed-after-restart.png",
+      "sha256": "148efb9b830a5d16c6736111e194cfd442be8522086353120424551a9d145854"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/05-client-revoked.png",
+      "sha256": "59b17ab211b378cc617db7047a8b6d9d682192d64b9aa904f3c295904c236227"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/after-approval.json",
+      "sha256": "fdbb9b71953eaa2a5716c1592e1b0f378b046d2850001308256378a013a63534"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/after-completed-restart.json",
+      "sha256": "1a59d0c75ef1faadffe0f97f40c3d63fdb5d3c3276805bc83a6428f9079bfb76"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/after-reject.json",
+      "sha256": "11c1b802a17e99332d470fe309331a191604ddb22c329acdbf470780458cce78"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/after-replay.json",
+      "sha256": "840ba1620615b4d3d1e928f28156bd75c15d901eb6450fcba31642467547a05e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/after-restart-replay-proof.json",
+      "sha256": "458d0227c9f76deb9625397a8e017e673fc5cb2e041af1747fe8ee50645fb6e1"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/after-restart.json",
+      "sha256": "207a0339bfaaa494b62260d747a42bb2f17c936c5297e8589ba3b031f09ba8a4"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/approved.receipt.json",
+      "sha256": "e5c92df3c440c9e40236e2f3521aadd2bc07064fc297d5f523189e8e83605b98"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/before-completed-restart.json",
+      "sha256": "37e0ff053b0f9761785f5d41a2bc3f0d754a2dfdeecb2e7a6a0f813647f545a5"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/before-restart.json",
+      "sha256": "986374600844b589f8b3641218305ccd9e7466a5fab3a5168064568cd64dfc03"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/connection.json",
+      "sha256": "d597b4204ff126aae7e9d13aebd735f4958168178a998fd5a7f1c348e0d4b83d"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/draft.json",
+      "sha256": "6e98252b0e2df3272e1fab878dadca2d38fd4dcb77f8fead29cd83c0fe73dfa1"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/enqueue-command.json",
+      "sha256": "5f5a5b73530e38ca00b7808b50534e4032324099a50c28ca5f22a50a1559edda"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/final-counts.json",
+      "sha256": "e4cd9c4eac37ef60dd7f0cadc2e635cf30ecbca855b63427bf238574eb0538c4"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/get-run-command.json",
+      "sha256": "77001f962bb623e980d0c4b2c4ceb38bb32ad728d4d32467192685fb30bd746c"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/get-run.receipt.json",
+      "sha256": "2fdc5fa4857cfd392ad3976008c16ac1f074f36aec4a1c3bdcf5261ef2ed0c90"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/native-projection-proof.json",
+      "sha256": "baee3b56164eb6e729bc180e014161e1a94f03e76ccd915da8656feb5608c392"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/native-qa9c-final-approval.json",
+      "sha256": "ae60c000762232a68e64343ad99823e2f326cf0f37daade49a7f6f8c36f08723"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/native-qa9c-final-get-run.json",
+      "sha256": "37482d8d6a7d6b104723ff0a72636371aa8122437ef30915e6ba348601db42a2"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/native-qa9c-final-plan.json",
+      "sha256": "45fc70006f1f690d195c8fa51426fadc961ca55bd001c12763b183e4a129b8f9"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/native-qa9c-final-reject.json",
+      "sha256": "5565b9432a66e730999d0c2b8c8eca92c98640d8cd9e709a184a4db32f363ab6"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/opened-batch-ui.txt",
+      "sha256": "7ee0197343bf1865d5f093180fe4d5c76c5949d0dcc50f4109d576e1a41a0447"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/pending.receipt.json",
+      "sha256": "1d50bfa21b3794046f33ad08373b5fef0ef81270a712c42368c45d63ce88464b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/plan-command.json",
+      "sha256": "69948d3f5480b6109c90bffd10e9e58a015c4ad5bf778f4d45402fde47df1354"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/plan.receipt.json",
+      "sha256": "9a5a2f60a831b49ac37eb95fbd1a09662b164aeed30092e9c491a5d4fea58644"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/rejected.receipt.json",
+      "sha256": "a12cd27aff441c5c56bf66ed8e0415229eadde4b2f3c274b29570ca5c17e6e4b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/revocation-proof.json",
+      "sha256": "8bf299c76fc6df2b8fc8f209ba167f4918a9fdefe1b012fd9c45803b8890fc12"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/revoked-signer.log",
+      "sha256": "6681cd0926be342ff4806c8d5379e77a06081dd0b0d819212ec70f487feb0065"
+    },
+    {
+      "path": "docs/local/evidence/phase-09c-desktop/corrected-native/revoked-ui.txt",
+      "sha256": "ff2003f113a93a47fbbdfb6b905928c6f6584dbbb0328c5bdab5cec338fea598"
+    }
+  ]
+}

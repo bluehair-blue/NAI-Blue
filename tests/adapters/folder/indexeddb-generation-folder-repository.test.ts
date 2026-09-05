@@ -7,7 +7,9 @@ import {
     resolveGenerationFolder,
     type GenerationFolder,
 } from '@/domain/generation-folders'
-import { FOLDER_DOCUMENT_STORE_KEY } from '@/lib/indexed-db'
+import { FOLDER_DOCUMENT_STORE_KEY, FOLDER_V1_PREIMAGE_STORE_KEY } from '@/lib/indexed-db'
+import { GenerationFolderAuthorityRuntime } from '@/lib/generation-folder-authority-runtime'
+import { runGenerationFolderMigrationStartup } from '@/lib/generation-folder-migration-startup'
 import { normalizePersistedSettingsState } from '@/stores/settings-store'
 
 const NOW = '2026-09-04T00:00:00.000Z'
@@ -54,8 +56,8 @@ const legacyState = {
 }
 
 describe('IndexedDbGenerationFolderRepository', () => {
-    it('reads the V1 envelope without changing its preimage and matches settings hydration', async () => {
-        const preimage = JSON.stringify({ state: legacyState, version: 1 })
+    it.each([1, 2])('reads settings version %i without changing its preimage and matches hydration', async version => {
+        const preimage = JSON.stringify({ state: legacyState, version })
         const reads: string[] = []
         const persistence = {
             getItem: async (key: string) => {
@@ -68,7 +70,7 @@ describe('IndexedDbGenerationFolderRepository', () => {
         const hydrated = normalizePersistedSettingsState(legacyState)
 
         expect(reads).toEqual(['nai-blue-generation-folder-v1-preimage', 'nai-blue-settings'])
-        expect(JSON.stringify({ state: legacyState, version: 1 })).toBe(preimage)
+        expect(JSON.stringify({ state: legacyState, version })).toBe(preimage)
         expect(legacyState.generationFolders[0].rootDirectory).toBe('stale-root')
         expect(projection).toEqual({
             savePath: hydrated.savePath,
@@ -141,11 +143,38 @@ describe('IndexedDbGenerationFolderRepository', () => {
         '{',
         'null',
         JSON.stringify({ state: legacyState }),
-        JSON.stringify({ state: legacyState, version: 2 }),
+        JSON.stringify({ state: legacyState, version: 3 }),
         JSON.stringify({ state: [], version: 1 }),
     ])('rejects a malformed or unsupported envelope without repairing it: %s', async serialized => {
         const repository = new IndexedDbGenerationFolderRepository({ getItem: async () => serialized })
         await expect(repository.readLegacyProjection()).rejects.toBeInstanceOf(TypeError)
+    })
+
+    it('restores the authoritative Folder projection after settings version 2 is preserved on restart', async () => {
+        const document = {
+            ...migrateGenerationFolderV1Projection('local', normalizePersistedSettingsState(legacyState)),
+            revision: 3,
+        }
+        // A fresh profile can first preserve settings after Phase 9C wrote its v2 envelope.
+        const preimage = JSON.stringify({ version: 2, state: { sceneSavePath: 'existing-scene' } })
+        const documents = JSON.stringify({ schemaVersion: 1, documents: [document] })
+        const values = new Map([[FOLDER_V1_PREIMAGE_STORE_KEY, preimage], [FOLDER_DOCUMENT_STORE_KEY, documents]])
+        const repository = new IndexedDbGenerationFolderRepository({ getItem: async key => values.get(key) ?? null })
+        const applied: typeof document[] = []
+        const runtime = new GenerationFolderAuthorityRuntime(repository, restored => applied.push(restored), undefined,
+            dependencies => runGenerationFolderMigrationStartup({
+                ...dependencies,
+                persistence: {
+                    preservePreimage: async () => preimage,
+                    readMarker: async () => ({ reader: 'v2', verifiedAt: NOW }),
+                    writeMarker: async () => { throw new Error('Existing authority must not be rewritten') },
+                },
+            }))
+
+        await expect(runtime.initialize()).resolves.toEqual(document)
+        expect(applied).toEqual([document])
+        expect(values.get(FOLDER_DOCUMENT_STORE_KEY)).toBe(documents)
+        expect(values.get(FOLDER_V1_PREIMAGE_STORE_KEY)).toBe(preimage)
     })
 
     it('creates revision 1, rejects stale commits, and preserves another workspace through a storage race', async () => {

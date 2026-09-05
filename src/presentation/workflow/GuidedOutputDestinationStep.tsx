@@ -18,6 +18,7 @@ export function GuidedOutputDestinationStep({
     const { t } = useTranslation()
     const directoryId = useId()
     const formatId = useId()
+    const collisionId = useId()
     const [directory, setDirectory] = useState(value.directory)
 
     useEffect(() => setDirectory(value.directory), [value.directory])
@@ -67,6 +68,34 @@ export function GuidedOutputDestinationStep({
                     </label>
                 )}
             </section>
+
+            <label className="grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center" htmlFor={collisionId}>
+                <span>
+                    <span className="block text-sm font-semibold">
+                        {t('guided.output.collisionTitle', '같은 이름의 파일이 있을 때')}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        {t('guided.output.collisionHelp', '다른 이름으로 저장하거나, 저장을 중단하고 충돌을 확인할 수 있어요.')}
+                    </span>
+                </span>
+                <select
+                    id={collisionId}
+                    value={value.collisionPolicy}
+                    disabled={disabled}
+                    onChange={event => {
+                        const collisionPolicy = event.target.value
+                        if (collisionPolicy === 'unique' || collisionPolicy === 'error') onChange({ collisionPolicy })
+                    }}
+                    className="min-h-11 w-full border-x-0 border-y border-input bg-background px-3 text-sm focus:border-primary focus:outline-none"
+                >
+                    <option value="unique">{t('guided.output.collisionUnique', '다른 이름으로 저장')}</option>
+                    <option value="error">{t('guided.output.collisionError', '충돌 시 저장 중단')}</option>
+                    {/* Preserve the displayed value of older drafts without offering new overwrite consent. */}
+                    {value.collisionPolicy === 'overwrite' && <option value="overwrite" disabled>
+                        {t('guided.output.collisionOverwrite', '덮어쓰기 (기존 설정)')}
+                    </option>}
+                </select>
+            </label>
 
             <label className="grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center" htmlFor={formatId}>
                 <span>

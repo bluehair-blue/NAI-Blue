@@ -432,6 +432,11 @@
         },
         "output": {
             "folderTitle": "저장 폴더",
+            "collisionTitle": "같은 이름의 파일이 있을 때",
+            "collisionHelp": "다른 이름으로 저장하거나, 저장을 중단하고 충돌을 확인할 수 있어요.",
+            "collisionUnique": "다른 이름으로 저장",
+            "collisionError": "충돌 시 저장 중단",
+            "collisionOverwrite": "덮어쓰기 (기존 설정)",
             "folderHelp": "폴더별 저장 위치와 R2 대상을 함께 불러옵니다. 필요하면 이번 작업에서 다른 폴더를 고르세요.",
             "manualPath": "직접 입력 저장 경로",
             "formatTitle": "이미지 형식",

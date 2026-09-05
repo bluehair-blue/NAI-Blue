@@ -432,6 +432,11 @@
         },
         "output": {
             "folderTitle": "保存フォルダー",
+            "collisionTitle": "同じ名前のファイルがある場合",
+            "collisionHelp": "別の名前で保存するか、保存を中止して競合を確認できます。",
+            "collisionUnique": "別の名前で保存",
+            "collisionError": "競合時に保存を中止",
+            "collisionOverwrite": "上書き（既存の設定）",
             "folderHelp": "フォルダーに割り当てた保存先とR2対象を一緒に読み込みます。必要なら、この作業だけ別のフォルダーを選べます。",
             "manualPath": "直接入力する保存パス",
             "formatTitle": "画像形式",

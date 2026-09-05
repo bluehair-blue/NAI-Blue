@@ -8,7 +8,6 @@ import {
 } from '@/lib/indexed-db'
 
 const SETTINGS_STORAGE_KEY = 'nai-blue-settings'
-const SETTINGS_PERSIST_VERSION = 1
 const COLLECTION_SCHEMA_VERSION = 1 as const
 const MAX_CAS_ATTEMPTS = 3
 
@@ -66,7 +65,9 @@ export class IndexedDbGenerationFolderRepository implements GenerationFolderRepo
         let parsed: unknown
         try { parsed = JSON.parse(serialized) as unknown } catch { throw new TypeError('Generation folder settings envelope is invalid') }
         if (!isRecord(parsed)) throw new TypeError('Generation folder settings envelope is invalid')
-        if (parsed.version !== SETTINGS_PERSIST_VERSION || !isRecord(parsed.state)) throw new TypeError('Unsupported generation folder settings envelope')
+        // Settings v2 adds agent policy; the legacy Folder projection is unchanged.
+        // Accept both known envelopes so a v2 preimage cannot block V2 authority on restart.
+        if ((parsed.version !== 1 && parsed.version !== 2) || !isRecord(parsed.state)) throw new TypeError('Unsupported generation folder settings envelope')
         return normalizeGenerationFolderV1Projection(parsed.state)
     }
 

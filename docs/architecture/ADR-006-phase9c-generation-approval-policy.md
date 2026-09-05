@@ -4,7 +4,8 @@
 - 구현 범위: Windows foreground의 `generation.enqueue`, 사람의 일회 승인·거절, versioned 실행 정책, 영속 예산 예약과 Queue 사실 기반 복구
 - 선행 계약: [ADR-004](ADR-004-phase9-authenticated-inbox-core.md), [ADR-005](ADR-005-phase9-windows-foreground-inbox.md)
 - 검증 기록: [Phase 9C validation](../releases/evidence/phase9c-validation-2026-09-05.json)
-- Phase 9 전체 상태: 진행 중. 이 기록은 생성 enqueue 경로의 구현 단위이며 다른 mutation과 실제 Windows 실행 QA를 완료로 간주하지 않는다.
+- 실제 Windows 검증: [Phase 9C desktop QA](../releases/evidence/phase9c-desktop-qa-2026-09-06.json)
+- Phase 9 전체 상태: 진행 중. 생성 enqueue의 실제 Windows 승인·거절·정상 재시작 경로를 검증했으며, 다른 mutation과 최종 운영 gate는 남아 있다.
 
 ## 실행 경로와 지원 입력
 
@@ -79,6 +80,10 @@ Queue 사실이 없거나 일치하지 않으면 `AGENT_EXECUTION_UNKNOWN`으로
 
 계약·persistence 테스트는 실제 IndexedDB adapter와 Queue transaction을 사용한다. Provider executor 검사는 transport fixture를 사용한다. 브라우저 QA는 실제 panel/runtime/coordinator/settings와 IndexedDB를 사용하고 native/auth·계획 조회·Queue 실행은 명시적 fixture로 대체한다. 상세 실행 결과와 해시는 위 evidence에 둔다.
 
-이 변경의 실제 Windows GUI에서 새 승인·정책 경로를 통한 실행, MSI 설치, 강제 native process crash, 실제 Provider·생성 파일·R2 결과는 별도 QA다. 이전 Phase 9B의 실제 데스크톱 증거를 이번 실행 기능의 실기기 검증으로 확대하지 않는다.
+2026-09-06 격리된 standalone Windows Tauri 앱에서 실제 native 인증·production Python signer·기존 planner·Main Queue를 연결했다. GUI에서 저장한 직접 출력 draft에 충돌 시 저장 중단을 선택하고, `suggest` 정책의 30 Anlas 한도와 `synthetic-only` 허용을 명시적으로 저장했다. 예상 29 Anlas 계획의 승인 대기는 job 0개였고 정상 재시작 후 같은 원장이 복원되었다. 사람 승인 후 batch 1개·job 1개·reservation 1개가 저장되었으며 attempt와 artifact는 각각 0개였다. 동일 요청 replay, native run 조회, 정확한 batch 링크, 별도 요청의 `AGENT_HUMAN_REJECTED`, 승인 완료 후 정상 재시작과 동일 receipt 재투영을 확인했다. 이 결과는 Queue 저장 완료이며 Provider 실행이나 실제 비용 청구 증거가 아니다.
+
+이 과정에서 기본 `unique` 충돌 정책만 제공하던 Guided 출력 UI에 기존 `error` 정책을 선택하는 컨트롤을 추가했다. 또 settings version 2의 보존된 preimage를 Folder projection reader가 거부하여 재시작 시 Folder authority가 복원되지 않던 결함을 수정했다. 기존 version 1과 현재 version 2만 허용하며 preimage·authoritative document·CAS 계약은 유지한다. 수정 후 비실시간 회귀 316파일·2,270테스트, lint, architecture(614모듈·3,382의존성·위반 0), secret-redaction 17테스트가 통과했다.
+
+첫 실패 프로필의 `globalPause` 승인 비활성·job 0개 증거는 최종 EXE 이전 기록으로 구분한다. 최종 EXE SHA-256은 `F330FE8172F59361BFCDC45C88EE33E72B587538323591F8D09F377B4110DB1C`이며 두 QA 프로필의 client를 GUI에서 폐기하고 signer의 `CREDENTIAL_UNAVAILABLE`, 소유 프로세스와 진단 포트 9330·9331 종료를 확인했다. installer, 강제 native process crash, 실제 native bounded-auto, Provider·생성 파일·R2 결과는 아직 검증하지 않았다.
 
 `generation.cancel`, storage/Scene retry, reservation 포기, Scene/Folder/R2 mutation은 계속 unavailable이다. MCP stdio, background/headless도 이 변경으로 활성화하지 않는다. 취소/저장 재시도에 이 승인 계약을 확대하는 후속 구현과 Phase 9의 최종 운영 gate를 통과한 뒤 다음 Phase 완료 여부를 판단한다.

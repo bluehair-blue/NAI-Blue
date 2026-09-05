@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "phase": "9C",
+  "followUpDesktopQA": "docs/releases/evidence/phase9c-desktop-qa-2026-09-06.json",
   "implementationSlice": "durable-generation-enqueue-approval-policy",
   "recordedAt": "2026-09-05T13:01:41.239Z",
   "baseCommit": "999b983be403cd3abf3117a3612d97ff017d958f",

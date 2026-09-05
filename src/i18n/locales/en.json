@@ -432,6 +432,11 @@
         },
         "output": {
             "folderTitle": "Save folder",
+            "collisionTitle": "When a file name already exists",
+            "collisionHelp": "Save under a different name, or stop saving to review the conflict.",
+            "collisionUnique": "Save under another name",
+            "collisionError": "Stop on conflict",
+            "collisionOverwrite": "Overwrite (existing setting)",
             "folderHelp": "Load the local destination and R2 target assigned to a folder. Choose another folder for this task if needed.",
             "manualPath": "Manually entered save path",
             "formatTitle": "Image format",
