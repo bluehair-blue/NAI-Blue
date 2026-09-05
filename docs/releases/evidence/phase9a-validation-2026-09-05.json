@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "phase": "9A",
+  "recordedAt": "2026-09-05T08:47:52.698Z",
+  "baseCommit": "2b04736e823ab112e1a6783679178674b4bdc58f",
+  "sourceScope": "Source and tests in the commit containing this evidence.",
+  "implementation": "authenticated-durable-core-implemented",
+  "runtimeActivation": "unavailable",
+  "node": "v24.19.0",
+  "platform": "win32",
+  "automatedTests": {
+    "command": "node node_modules/vitest/vitest.mjs run --exclude 'tests/live/**' --reporter=json --outputFile=docs/local/evidence/phase-09/automated-tests-verified.json",
+    "success": true,
+    "files": 308,
+    "passed": 2162,
+    "failed": 0,
+    "skipped": 0,
+    "agentInboxFiles": 4,
+    "agentInboxTests": 62,
+    "targetedCommand": "npm run test:agent-inbox",
+    "targetedCommandCoveredBy": "Full regression above includes all four files selected by this script.",
+    "liveSuitesExcluded": true,
+    "localReport": "docs/local/evidence/phase-09/automated-tests-verified.json",
+    "localReportSha256": "4333a5b619ee602f0f3dd92e708099219c742c6001e66fe25ca634b3f5dd4a22"
+  },
+  "checks": [
+    {
+      "command": "npm run test:architecture",
+      "exitCode": 0,
+      "modules": 604,
+      "dependencies": 3295,
+      "violations": 0
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "includesTypecheck": true
+    },
+    {
+      "command": "npm run test:secret-redaction",
+      "exitCode": 0,
+      "tests": 17
+    },
+    {
+      "command": "node scripts/verify-rescue-mode.mjs",
+      "exitCode": 0,
+      "environment": "Isolated Chromium and localhost Vite; blocked IndexedDB keyboard/touch rescue UI; no native/Provider execution.",
+      "port": 5189
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "review": {
+    "status": "No remaining actionable P1/P2 findings in final targeted review.",
+    "method": "Independent read-only review, separate regression author, root integration and full suite.",
+    "fixes": [
+      "Preserve post-handler receipt storage errors instead of publishing accepted:false.",
+      "Fix command-effect authority so mutation cannot register itself as read.",
+      "Authenticate existing receipt replay after expiry and validator changes; still deny revoked identities.",
+      "Recheck expiry after slow durable claim before handler execution.",
+      "Preserve non-string keyval corruption in both strict reads and atomic CAS, including explicit undefined."
+    ]
+  },
+  "observedValidationFailures": [
+    {
+      "failure": "Initial browser launch: spawn EPERM under sandbox.",
+      "resolution": "Executed the existing isolated rescue script with reviewed escalation; final check passed and leftover test Vite process was terminated."
+    },
+    {
+      "failure": "Initial full suite: oversized JSON rejection exceeded the test timeout while scanning a 65537-character string.",
+      "resolution": "Moved 64 KiB size rejection before the shared redaction scan; final full suite passed 2162/2162."
+    }
+  ],
+  "limitations": [
+    "No OS-private client key provisioning, native inbox ACL/reparse/atomic publication or real ownership QA.",
+    "No actual app startup wiring or external read/plan activation.",
+    "No durable approval, rolling/outstanding admission or mutation/bounded-auto activation.",
+    "Plan repository validates JSON/structure/checksum, not current source authority or execution consent; enqueue must replay.",
+    "No Provider/R2 network execution, forced process crash or installed Tauri app QA.",
+    "Phase 10 SDK/sidecar/MCP config and Phase 11 background/headless remain unimplemented and unavailable."
+  ]
+}

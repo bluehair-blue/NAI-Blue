@@ -545,6 +545,25 @@ if (typeof window !== 'undefined') {
     void installTauriCloseFlushHandler()
 }
 
+/** Shared read/CAS invariant: a present non-string is corruption, never an absent key. */
+function readStoredString(
+    store: IDBObjectStore, name: string,
+    accept: (value: string | null) => void, reject: (error: unknown) => void,
+): void {
+    const request = store.get(name)
+    const invalid = () => reject(new Error('IndexedDB keyval contains a non-string record.'))
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB keyval read failed.'))
+    request.onsuccess = () => {
+        if (typeof request.result === 'string') return accept(request.result)
+        if (request.result !== undefined) return invalid()
+        // IndexedDB can store undefined explicitly. Check existence in this same
+        // transaction so neither reads nor null-to-value CAS can overwrite it.
+        const key = store.getKey(name)
+        key.onerror = () => reject(key.error ?? new Error('IndexedDB key existence read failed.'))
+        key.onsuccess = () => key.result === undefined ? accept(null) : invalid()
+    }
+}
+
 async function readIndexedDBItem(name: string): Promise<string | null> {
     try {
         const db = await getDb()
@@ -577,9 +596,7 @@ async function readIndexedDBItem(name: string): Promise<string | null> {
                     transaction?.error ?? new Error(`getItem transaction aborted for ${name}`),
                     'transaction-aborted',
                 )
-                const request = transaction.objectStore(STORE_NAME).get(name)
-                request.onsuccess = () => finishResolve(typeof request.result === 'string' ? request.result : null)
-                request.onerror = () => finishReject(request.error ?? new Error(`getItem request failed for ${name}`))
+                readStoredString(transaction.objectStore(STORE_NAME), name, finishResolve, finishReject)
             } catch (error) {
                 finishReject(error)
             }
@@ -837,15 +854,12 @@ export async function compareAndSetIndexedDBItem(
                 try {
                     transaction = db.transaction(STORE_NAME, 'readwrite')
                     const store = transaction.objectStore(STORE_NAME)
-                    const read = store.get(name)
-                    read.onsuccess = () => {
-                        const current = typeof read.result === 'string' ? read.result : null
+                    readStoredString(store, name, current => {
                         if (current !== expected) return
                         matched = true
                         if (next === null) store.delete(name)
                         else store.put(next, name)
-                    }
-                    read.onerror = () => finishReject(read.error ?? new Error(`CAS read failed for ${name}`))
+                    }, finishReject)
                     transaction.oncomplete = finishResolve
                     transaction.onerror = () => finishReject(
                         transaction?.error ?? new Error(`CAS transaction failed for ${name}`),

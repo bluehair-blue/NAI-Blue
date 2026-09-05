@@ -26,6 +26,15 @@ function installFakeIndexedDB(options: { blocked?: boolean } = {}): FakeIndexedD
                 onabort: null as (() => void) | null,
                 abort: vi.fn(),
                 objectStore: () => ({
+                    getKey: (key: string) => {
+                        const request = { result: undefined as string | undefined,
+                            onsuccess: null as (() => void) | null, onerror: null as (() => void) | null }
+                        queueMicrotask(() => {
+                            request.result = control.values.has(key) ? key : undefined
+                            request.onsuccess?.()
+                        })
+                        return request
+                    },
                     put: (value: string, key: string) => {
                         const request = {
                             error: null as DOMException | null,

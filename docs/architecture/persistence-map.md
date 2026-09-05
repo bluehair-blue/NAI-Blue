@@ -21,6 +21,8 @@
 | `nai-blue-character-prompts` | character prompt group·위치 | Composition adapter가 읽는 authoring source다. |
 | `nai-blue-presets` | 저장된 generation preset과 선택 상태 | generation draft를 자동 저장하지 않는다. Save/Revert 명령만 preset을 변경한다. |
 | `nai-blue-settings` | 사용자 설정과 출력 정책 기본값 | 경로는 플랫폼 capability와 OutputWriter에서 재검증한다. |
+| `nai-blue-agent-command-receipt:<requestId>` | 인증된 command의 claim·완료 결과·digest | strict read와 원자적 CAS. result 파일은 projection이며 replay authority가 아니다. 미확정 accepted는 재실행하지 않는다. 설정 backup/restore·자동 삭제 대상에서 제외한다. [ADR-004](ADR-004-phase9-authenticated-inbox-core.md) 참고. |
+| `nai-blue-generation-plan:<digest>` | immutable 내부 GenerationPlan과 전체 checksum | strict read/CAS, JSON-only 8 MiB 한도. prepared 내부 경로가 포함될 수 있어 public result와 backup에 넣지 않는다. overwrite·자동 삭제하지 않고 enqueue 전 authoritative replay를 요구한다. [ADR-004](ADR-004-phase9-authenticated-inbox-core.md) 참고. |
 | `nai-blue-auth` | vault reference, slot 상태, 비밀이 아닌 표시 정보 | critical. raw token/password를 저장하거나 backup projection으로 내보내지 않는다. |
 | `nai-blue-scenes` | Scene authoring state | durable job과 ArtifactRecord를 복제하지 않는다. |
 | `nai-blue-character-rotation` | rotation 계획과 재개 snapshot | worker controller 자체는 저장하지 않고 재개 가능한 계획만 저장한다. |
