@@ -12,7 +12,8 @@ export interface LibraryItem {
     generationFolderId?: string | null
     format?: 'png' | 'webp'
     sidecarPath?: string | null
-    r2Status?: 'not-requested' | 'uploaded' | 'pending-or-failed'
+    r2JobIds?: readonly string[]
+    r2Status?: 'not-requested' | 'queued' | 'uploaded' | 'pending-or-failed'
     // Stack support
     isStack?: boolean
     stackItems?: LibraryItem[]  // Items inside this stack (only if isStack=true)

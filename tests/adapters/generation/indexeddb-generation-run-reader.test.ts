@@ -8,7 +8,8 @@ import { getGenerationRun } from '@/application/generation/get-generation-run'
 import type { GenerationBatch, GenerationJob } from '@/domain/queue/types'
 import type { GenerationAttempt, OutputReservation } from '@/domain/queue/types'
 import type { PendingQueueOutputTransaction } from '@/services/output/output-writer'
-import type { R2ProfileV2, UploadJob } from '@/domain/r2/types'
+import { createR2ProfileV2, hashR2ProfileV2, type R2ProfileV2, type UploadJob } from '@/domain/r2/types'
+import type { ArtifactRemoteObjectRef } from '@/domain/organizer/types'
 
 const observedAt = '2026-09-03T00:00:00.000Z'
 const commitSetHash = `sha256:${'c'.repeat(64)}` as const
@@ -104,6 +105,7 @@ function authorities(
         readonly pendingTransactions?: readonly PendingQueueOutputTransaction[]
         readonly journalReject?: boolean
         readonly attemptsReject?: boolean
+        readonly artifactRemoteRefs?: readonly ArtifactRemoteObjectRef[]
     } = {},
 ): GenerationRunAuthorityReaders {
     return {
@@ -124,10 +126,13 @@ function authorities(
             get: vi.fn(async () => ({
                 artifactId: 'artifact:job-1',
                 sourceJobId: 'job-1',
+                original: { contentChecksum: `sha256:${'a'.repeat(64)}`, size: 3 },
+                sidecar: null,
                 ...(options.artifactCommitSetHash === undefined
                     ? {}
                     : { outputCommitSetHash: options.artifactCommitSetHash }),
                 updatedAt: observedAt,
+                remoteObjectRefs: [...(options.artifactRemoteRefs ?? [])],
             }) as never),
         },
         r2: {
@@ -193,6 +198,57 @@ function upload(state: UploadJob['state']): UploadJob {
         createdAt: observedAt,
         updatedAt: observedAt,
         version: 1,
+    }
+}
+
+const phase7Profile = createR2ProfileV2({
+    id: 'phase7-profile', name: 'Phase 7', accountId: 'account', jurisdiction: null, endpoint: null,
+    bucket: 'phase7-bucket', prefix: 'images', credentialRef: 'stronghold:r2', transport: 'native-s3',
+    conflictPolicy: 'fail', publicMode: 'r2-dev', publicBaseUrl: null,
+}, observedAt)
+
+function currentReleaseJob(): GenerationJob {
+    return job({
+        snapshot: {
+            ...job().snapshot,
+            parameters: {
+                mainWorkflow: {
+                    metadataMode: 'embedded', output: { autoR2UploadProfileId: 'phase7-profile' },
+                    r2Delivery: {
+                        requirement: 'required',
+                        planned: {
+                            destination: {
+                                requirement: 'required', profileId: phase7Profile.id,
+                                profileHash: hashR2ProfileV2(phase7Profile), bucket: phase7Profile.bucket,
+                                key: 'images/output.png', conflictPolicy: 'fail', verification: 'head-metadata-sha256',
+                                provenance: { profileId: 'generation-folder', bucket: 'profile-snapshot', prefix: 'profile-snapshot', key: 'planned-output' },
+                            },
+                            profile: phase7Profile,
+                            credentialBinding: { credentialRef: phase7Profile.credentialRef },
+                        },
+                    },
+                },
+            },
+        },
+    })
+}
+
+function currentUpload(state: UploadJob['state'], contractVersion: UploadJob['contractVersion'] = 'phase7-v1'): UploadJob {
+    return {
+        ...upload(state), id: 'phase7-upload', contractVersion, profileId: phase7Profile.id,
+        profileSnapshot: contractVersion === 'phase7-v1' ? phase7Profile : null,
+        artifactId: 'artifact:job-1', localVariant: 'C:/output.png', remoteKey: 'images/output.png',
+        contentSha256: `sha256:${'a'.repeat(64)}`, size: 3,
+        artifactBinding: contractVersion === 'phase7-v1'
+            ? { artifactId: 'artifact:job-1', artifactVersion: 1, localVariant: 'original' }
+            : null,
+        linkExpectedArtifactVersion: contractVersion === 'phase7-v1' ? 1 : null,
+        remoteRef: contractVersion === 'phase7-v1' ? {
+            contractVersion: 'phase7-v1', profileId: phase7Profile.id, profileHash: hashR2ProfileV2(phase7Profile),
+            bucket: phase7Profile.bucket, uploadJobId: 'phase7-upload', artifactId: 'artifact:job-1',
+            variantId: 'original', remoteKey: 'images/output.png', contentSha256: `sha256:${'a'.repeat(64)}`,
+            size: 3, verifiedAt: observedAt,
+        } : null,
     }
 }
 
@@ -369,6 +425,58 @@ describe('IndexedDbGenerationRunReader', () => {
 
         expect(result?.release.state).toBe('uncertain')
         expect(result?.overall).toBe('partial')
+    })
+
+    it('requires a current Phase 7 job and exact Artifact linkage for required delivery', async () => {
+        const queueJob = currentReleaseJob()
+        const legacy = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob, {
+            r2Jobs: [currentUpload('succeeded', 'legacy-v1')],
+        })), 'batch-1')
+        const uploadJob = currentUpload('succeeded')
+        const remote = {
+            ...uploadJob.remoteRef!, state: 'succeeded' as const, updatedAt: observedAt, failure: null,
+        }
+        const linked = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob, {
+            r2Jobs: [uploadJob], artifactRemoteRefs: [remote],
+        })), 'batch-1')
+
+        expect(legacy?.release.state).not.toBe('succeeded')
+        expect(legacy?.overall).toBe('needs-attention')
+        expect(linked?.release.state).toBe('succeeded')
+        expect(linked?.overall).toBe('delivered')
+    })
+
+    it('projects missing/failed delivery recovery and queued handles without claiming success', async () => {
+        const queueJob = currentReleaseJob()
+        const missing = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob)), 'batch-1')
+        expect(missing?.issues).toContainEqual({
+            code: 'R2_DELIVERY_MISSING', jobId: queueJob.id, severity: 'blocking',
+            action: { kind: 'retry-r2-release', requiresHuman: false },
+        })
+        const failed = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob, {
+            r2Jobs: [currentUpload('failed')],
+        })), 'batch-1')
+        expect(failed?.overall).toBe('needs-attention')
+        expect(failed?.issues[0]?.code).toBe('R2_DELIVERY_FAILED')
+        const queued = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob, {
+            r2Jobs: [{ ...currentUpload('queued'), remoteRef: null }],
+        })), 'batch-1')
+        expect(queued?.jobs[0]?.release).toMatchObject({ state: 'pending', jobIds: ['phase7-upload'] })
+        expect(queued?.issues).toHaveLength(0)
+        expect(queued?.overall).toBe('running')
+    })
+
+    it('rejects a same-profile success with a different destination hash or Artifact bucket', async () => {
+        const uploadJob = currentUpload('succeeded')
+        const remote = { ...uploadJob.remoteRef!, state: 'succeeded' as const, updatedAt: observedAt, failure: null }
+        const wrongSnapshot = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(currentReleaseJob(), {
+            r2Jobs: [{ ...uploadJob, profileSnapshot: { ...phase7Profile, bucket: 'another-bucket' } }], artifactRemoteRefs: [remote],
+        })), 'batch-1')
+        const wrongLink = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(currentReleaseJob(), {
+            r2Jobs: [uploadJob], artifactRemoteRefs: [{ ...remote, bucket: 'another-bucket' }],
+        })), 'batch-1')
+        expect(wrongSnapshot?.release.state).not.toBe('succeeded')
+        expect(wrongLink?.release.state).toBe('uncertain')
     })
 
     it('reports a failed attempted job as an uncertain Provider outcome', async () => {

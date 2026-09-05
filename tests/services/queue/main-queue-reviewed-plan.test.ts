@@ -313,6 +313,7 @@ describe('reviewed Main plan Queue bridge', () => {
                     compatibilityProfileId: job.compatibility.compatibilityProfileId,
                     semanticIntentHash: hashGenerationSemanticIntent(job.semantic),
                 },
+                { requirement: 'disabled', planned: null },
             )
         })
         expect(runtime.createBatchAndEnqueue).toHaveBeenCalledWith(expect.objectContaining({

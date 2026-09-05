@@ -232,7 +232,9 @@ function unsupportedDraftIssue(draft: Awaited<ReturnType<WorkflowDraftRepository
     }
     if (output.autoR2UploadProfileId || output.r2Bucket || output.r2Prefix
         || output.deleteOriginalAfterRelease) {
-        return issue('unsupported-r2-delivery', 'draft.payload.output', 'R2 delivery and original deletion are not supported in this phase.')
+        // The detached Main adapter captures an exact R2 destination. The Draft
+        // adapter has no such planning port yet, so its fields cannot authorize delivery.
+        return issue('unsupported-r2-delivery', 'draft.payload.output', 'This Workflow Draft adapter cannot plan an exact R2 delivery target or delete the original.')
     }
     return null
 }

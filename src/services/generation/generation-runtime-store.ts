@@ -71,7 +71,7 @@ import {
     isSelectableNaiImageModel,
 } from '@/services/nai/model-catalog'
 import { releaseGeneratedOutputToR2 } from '@/services/r2/generated-release'
-import { gateGenerationFolderAutoUpload, getDefaultR2Readiness } from '@/services/r2/readiness'
+import { getRuntimeR2UploadRepository } from '@/services/r2/runtime'
 
 export type { PreparedMainGeneration } from '@/services/generation/main-generation-plan'
 
@@ -1130,10 +1130,9 @@ export const useGenerationStore = create<GenerationState>()(
                         useAbsolutePath: outputSettingsSnapshot.useAbsolutePath,
                     },
                 )
-                const r2Readiness = preliminaryFolder?.r2.autoUpload
-                    ? await getDefaultR2Readiness(preliminaryFolder.r2.profileId ?? DEFAULT_R2_PROFILE_ID)
+                const baseR2Profile = preliminaryFolder?.r2.autoUpload
+                    ? await getRuntimeR2UploadRepository().getProfile(preliminaryFolder.r2.profileId ?? DEFAULT_R2_PROFILE_ID)
                     : null
-                const baseR2Profile = r2Readiness?.status === 'ready' ? r2Readiness.profile : null
                 const resolvedFolder = baseR2Profile === null
                     ? preliminaryFolder
                     : resolveGenerationFolderAuthority(
@@ -1148,10 +1147,9 @@ export const useGenerationStore = create<GenerationState>()(
                             r2Prefix: baseR2Profile.prefix,
                         },
                     )
-                const generationFolder = gateGenerationFolderAutoUpload(
-                    resolvedFolder,
-                    r2Readiness?.status === 'ready',
-                )
+                // Folder preference is request meaning. Credential readiness is
+                // checked by the delivery plan/dispatch, never used to erase it.
+                const generationFolder = resolvedFolder
                 const effectiveBasePrompt = [generationFolder?.commonPrompt.trim(), basePrompt]
                     .filter(Boolean)
                     .join(', ')
@@ -1569,6 +1567,7 @@ export const useGenerationStore = create<GenerationState>()(
                                     : null,
                                 r2Bucket: generationFolder?.r2.bucket ?? null,
                                 r2Prefix: generationFolder?.r2.prefix ?? null,
+                                ...(generationFolder?.r2.provenance ? { r2Provenance: generationFolder.r2.provenance } : {}),
                             },
                         })
                         const {
@@ -1761,7 +1760,7 @@ export const useGenerationStore = create<GenerationState>()(
                                                 bucket: preparedOutput.r2Bucket,
                                                 prefix: preparedOutput.r2Prefix,
                                             })
-                                            if (release.status !== 'uploaded') {
+                                            if (release.status !== 'uploaded' && release.status !== 'queued') {
                                                 reportDiagnostic(new Error(`Generated R2 release did not complete: ${release.status}`), {
                                                     operation: 'r2.generated-release',
                                                     stage: release.status,

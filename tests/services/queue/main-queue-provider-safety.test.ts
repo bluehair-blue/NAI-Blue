@@ -7,6 +7,7 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import { hashGenerationSemanticIntent } from '@/application/generation/plan-generation'
 import { projectMainGenerationSemantic } from '@/services/generation/main-generation-semantic'
 import { NovelAIHttpError } from '@/services/novelai-types'
+import { createR2ProfileV2, hashR2ProfileV2 } from '@/domain/r2/types'
 
 const mocks = vi.hoisted(() => ({
     transport: vi.fn(),
@@ -17,6 +18,8 @@ const mocks = vi.hoisted(() => ({
     read: vi.fn(),
     hash: vi.fn(),
     refreshAnlas: vi.fn(),
+    r2Readiness: vi.fn(),
+    r2Profile: vi.fn(),
 }))
 
 vi.mock('@/services/generation/novelai-image-transport', () => ({
@@ -64,7 +67,7 @@ vi.mock('@/services/queue/main-job-snapshot-codec', () => ({
         payloadBuilderRevision: 'nai-blue-payload-v1',
         queueExecution: { streaming: false, sourceEdit: false },
         mainWorkflow: {
-            imageFormat: 'png', metadataMode: 'embed', finalPrompt: 'prompt',
+            imageFormat: 'png', metadataMode: (snapshot.parameters as Record<string, unknown>)?.metadataMode ?? 'embedded', finalPrompt: 'prompt',
             sequenceCommitProposal: { changes: [] },
             r2Delivery: (snapshot.parameters as unknown as { r2Delivery?: unknown })?.r2Delivery
                 ?? { requirement: 'disabled', planned: null },
@@ -108,6 +111,7 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => {
     }
     return {
         getRuntimeMainQueueDependencies: () => ({
+            r2Planning: { getProfile: mocks.r2Profile, getReadiness: mocks.r2Readiness },
             presentation,
             providerResultSpool,
             outputReservations: {
@@ -152,10 +156,24 @@ const providerEnvelope: ProviderExecutionEnvelope = {
     queueResourceBindings: [],
 }
 
+const r2Profile = createR2ProfileV2({
+    id: 'r2-profile', name: 'R2', accountId: 'test', jurisdiction: null, endpoint: null,
+    bucket: 'release-bucket', prefix: '', credentialRef: 'stronghold:r2-original',
+    transport: 'native-s3', conflictPolicy: 'fail', publicMode: 'r2-dev', publicBaseUrl: null,
+}, '2026-09-05T00:00:00.000Z')
+const requiredDelivery = { requirement: 'required', planned: {
+    destination: {
+        requirement: 'required', profileId: r2Profile.id, profileHash: hashR2ProfileV2(r2Profile),
+        bucket: r2Profile.bucket, key: 'image.png', conflictPolicy: 'fail', verification: 'head-metadata-sha256',
+        provenance: { profileId: 'explicit-request', bucket: 'profile-snapshot', prefix: 'profile-snapshot', key: 'planned-output' },
+    }, profile: r2Profile, credentialBinding: { credentialRef: r2Profile.credentialRef },
+} }
+
 function job(options: {
     envelope?: Partial<typeof providerEnvelope>
     withReservation?: boolean
     currentR2Delivery?: boolean
+    metadataMode?: string
 } = {}): GenerationJob {
     const folderBinding = {
         resourceType: 'generation-folder-document' as const,
@@ -169,7 +187,7 @@ function job(options: {
             providerExecutionEnvelope: { ...providerEnvelope, ...options.envelope },
             resources: [],
             parameters: options.currentR2Delivery === true
-                ? { r2Delivery: { requirement: 'required', planned: {} } }
+                ? { r2Delivery: requiredDelivery, ...(options.metadataMode === undefined ? {} : { metadataMode: options.metadataMode }) }
                 : {},
             ...(options.withReservation === true
                 ? {
@@ -256,17 +274,43 @@ describe('Main Queue Provider result safety', () => {
         })
     })
 
-    it('fails a dormant current R2 snapshot before any Provider or output preflight call', async () => {
-        await expect(executeMainQueueJob(
-            job({ currentR2Delivery: true }),
-            context(prepared).value,
-        )).rejects.toMatchObject({
-            kind: 'fatal',
-            message: 'Current R2 delivery snapshot requires durable release enqueue',
-        })
+    it('keeps current durable R2 delivery separate from Provider execution', async () => {
+        mocks.r2Readiness.mockRejectedValue(new Error('R2 vault locked'))
+        await executeMainQueueJob(
+            job({ currentR2Delivery: true, metadataMode: 'strip-and-sidecar' }),
+            context({
+                dispatchState: 'result-spooled', providerOutcome: 'succeeded', billingRisk: 'confirmed',
+                responseDigest: receipt.sha256, spoolReceipt: receipt,
+            }, { executionMode: 'storage-only' }).value,
+        )
         expect(mocks.transport).not.toHaveBeenCalled()
-        expect(mocks.preflight).not.toHaveBeenCalled()
+        expect(mocks.read).toHaveBeenCalledTimes(1)
+        expect(mocks.write).toHaveBeenCalledTimes(1)
+        expect(mocks.r2Readiness).not.toHaveBeenCalled()
+        expect(mocks.write.mock.calls[0][0].preserveProviderOriginal).toBe(true)
+    })
+
+    it('blocks required R2 with revoked credentials immediately before fresh Provider dispatch', async () => {
+        mocks.r2Readiness.mockResolvedValue({ status: 'not-ready', reason: 'credential' })
+        const current = context(prepared)
+        await expect(executeMainQueueJob(job({ currentR2Delivery: true }), current.value))
+            .rejects.toMatchObject({ kind: 'r2-readiness' })
+        expect(mocks.r2Readiness).toHaveBeenCalledWith(r2Profile)
+        expect(mocks.r2Profile).not.toHaveBeenCalled()
+        expect(mocks.transport).not.toHaveBeenCalled()
         expect(mocks.write).not.toHaveBeenCalled()
+        expect(current.transitions).toEqual([])
+    })
+
+    it('dispatches with the immutable ready credential even when the current profile is unavailable', async () => {
+        mocks.r2Profile.mockRejectedValue(new Error('Current profile was removed'))
+        mocks.r2Readiness.mockResolvedValue({ status: 'ready', credentialRef: r2Profile.credentialRef })
+        mocks.transport.mockRejectedValue(new Error('after-readiness transport sentinel'))
+        await expect(executeMainQueueJob(job({ currentR2Delivery: true }), context(prepared).value))
+            .rejects.toMatchObject({ kind: 'transient' })
+        expect(mocks.r2Readiness.mock.invocationCallOrder[0]).toBeLessThan(mocks.transport.mock.invocationCallOrder[0])
+        expect(mocks.transport).toHaveBeenCalledOnce()
+        expect(mocks.r2Profile).not.toHaveBeenCalled()
     })
 
     it('resumes result-spooled storage with zero Provider calls', async () => {

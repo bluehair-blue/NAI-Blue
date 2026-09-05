@@ -467,7 +467,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                         ? 'not-requested'
                         : result.r2?.status === 'uploaded'
                             ? 'uploaded'
-                            : 'pending-or-failed'
+                            : result.r2?.status === 'queued' ? 'queued' : 'pending-or-failed'
                     if (r2Status === 'pending-or-failed') r2Warnings += 1
                     addItem({
                         id: result.operationId,
@@ -480,6 +480,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                         format: result.format,
                         sidecarPath: result.sidecarPath,
                         r2Status,
+                        ...(result.r2?.status === 'queued' ? { r2JobIds: result.r2.jobIds } : {}),
                     })
                     completed += 1
                     setBusyProgress({ current: completed, total: workflowSources.length })

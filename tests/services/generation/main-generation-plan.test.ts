@@ -91,6 +91,7 @@ describe('prepareMainGeneration', () => {
                 useAbsolutePath: false,
                 capabilityFallbackDirectory: 'Fallback',
                 collisionPolicy: 'error',
+                r2Requirement: { mode: 'required', profileId: 'private-profile' },
             },
         })
 
@@ -104,6 +105,7 @@ describe('prepareMainGeneration', () => {
                 directory: 'Custom/Output',
                 capabilityFallbackDirectory: 'Fallback',
                 collisionPolicy: 'error',
+                r2Requirement: { mode: 'required', profileId: 'private-profile' },
             },
         })
         expect(prepared.output).not.toHaveProperty('fileName')

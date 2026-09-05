@@ -122,6 +122,21 @@ export function SceneQueueReviewDialog({
                             </p>
                         </section>
                     ))}
+                    {prepared.review.r2Destinations.slice(0, 5).map((destination, index) => (
+                        <section key={`r2:${index}`} className="rounded-panel border border-border p-3 text-sm">
+                            <h3 className="font-semibold">R2 · {t(`queue.r2Requirement.${destination.requirement}`, destination.requirement)}</h3>
+                            <p className="break-all">{destination.bucket}/{destination.key}</p>
+                            {destination.provenance !== null && (
+                                <p className="text-xs text-muted-foreground">
+                                    {t('queue.r2DestinationSource', 'Bucket: {{bucket}} · prefix: {{prefix}}', {
+                                        bucket: t(`queue.r2Source.${destination.provenance.bucket}`, destination.provenance.bucket),
+                                        prefix: t(`queue.r2Source.${destination.provenance.prefix}`, destination.provenance.prefix),
+                                    })}
+                                </p>
+                            )}
+                        </section>
+                    ))}
+                    {prepared.review.r2Destinations.length > 5 && <p className="text-sm">{t('queue.r2MoreDestinations', '{{count}} more R2 destinations', { count: prepared.review.r2Destinations.length - 5 })}</p>}
                     {replanIssue !== null && (
                         <div className="rounded-panel border border-destructive/50 bg-destructive/10 p-3 text-sm" role="alert">
                             <p className="font-semibold">{t('queue.reviewStaleTitle', 'Review is out of date')}</p>

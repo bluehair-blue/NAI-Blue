@@ -11,6 +11,8 @@ import { CURRENT_NAI_MODEL_CATALOG_REVISION } from '@/services/nai/model-catalog
 import type { ProviderAttemptEvidence, ProviderExecutionEnvelope, SpoolReceipt } from '@/domain/queue/provider-result'
 import type { GenerationAttempt, GenerationJob } from '@/domain/queue/types'
 import type { QueueExecutorContext } from '@/services/queue/durable-queue-coordinator'
+import { planR2Release } from '@/application/r2/plan-r2-release'
+import { createR2ProfileV2 } from '@/domain/r2/types'
 
 const mocks = vi.hoisted(() => ({
     transport: vi.fn(),
@@ -26,6 +28,8 @@ const mocks = vi.hoisted(() => ({
     decode: vi.fn(),
     reportDiagnostic: vi.fn(() => ({ eventId: 'diagnostic:scene' })),
     reserveSequence: vi.fn(() => null),
+    r2Readiness: vi.fn(),
+    r2Profile: vi.fn(),
 }))
 
 vi.mock('@/services/generation/novelai-image-transport', () => ({
@@ -50,6 +54,7 @@ vi.mock('@/services/queue/scene-job-snapshot-codec', () => ({
 }))
 vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
     getRuntimeMainQueueDependencies: () => ({
+        r2Planning: { getProfile: mocks.r2Profile, getReadiness: mocks.r2Readiness },
         providerResultSpool: {
             commit: mocks.spoolCommit,
             verify: mocks.verify,
@@ -202,6 +207,39 @@ function job(withEnvelope = true): GenerationJob {
 }
 
 describe('Scene Queue Provider safety', () => {
+    it.each(['provider', 'storage-only'] as const)('rechecks required credentials only for fresh %s dispatch', async executionMode => {
+        const selected = createR2ProfileV2({
+            id: 'r2-profile', name: 'R2', accountId: 'test', jurisdiction: null, endpoint: null,
+            bucket: 'release-bucket', prefix: '', credentialRef: 'stronghold:r2-original',
+            transport: 'native-s3', conflictPolicy: 'fail', publicMode: 'r2-dev', publicBaseUrl: null,
+        }, '2026-09-05T00:00:00.000Z')
+        const release = await planR2Release({
+            requirement: { mode: 'required', profileId: selected.id }, objectName: 'image.png', planIdentity: digest,
+        }, { getProfile: async () => selected, getReadiness: async () => ({ status: 'ready', credentialRef: selected.credentialRef }) })
+        if (release.status !== 'ready' || release.internalSnapshot === null) throw new Error('Expected planned delivery')
+        mocks.decode.mockReturnValue({ ...payload, sceneWorkflow: {
+            ...payload.sceneWorkflow, r2Delivery: { requirement: 'required', planned: release.internalSnapshot },
+        } })
+        mocks.r2Readiness.mockResolvedValue({ status: 'not-ready', reason: 'credential' })
+        const evidence: ProviderAttemptEvidence = executionMode === 'storage-only'
+            ? { dispatchState: 'result-spooled', providerOutcome: 'succeeded', billingRisk: 'confirmed', responseDigest: digest, spoolReceipt: receipt }
+            : { dispatchState: 'prepared', providerOutcome: 'running', billingRisk: 'none', responseDigest: null, spoolReceipt: null }
+        const current = context(evidence, executionMode)
+        const execution = executeSceneQueueJob(job(), current.value, { presentation: {} as never })
+        if (executionMode === 'storage-only') {
+            await execution
+            expect(mocks.r2Readiness).not.toHaveBeenCalled()
+            expect(mocks.read).toHaveBeenCalledOnce()
+            expect(mocks.save).toHaveBeenCalledOnce()
+        } else {
+            await expect(execution).rejects.toMatchObject({ kind: 'r2-readiness' })
+            expect(mocks.r2Readiness).toHaveBeenCalledWith(selected)
+            expect(mocks.save).not.toHaveBeenCalled()
+            expect(current.transitions).toEqual([])
+        }
+        expect(mocks.transport).not.toHaveBeenCalled()
+        expect(mocks.r2Profile).not.toHaveBeenCalled()
+    })
     beforeEach(() => {
         vi.clearAllMocks()
         mocks.decode.mockReturnValue(payload)
@@ -224,27 +262,24 @@ describe('Scene Queue Provider safety', () => {
         })
     })
 
-    it('fails a dormant current R2 snapshot before any Scene Provider or save call', async () => {
+    it('keeps current durable R2 delivery separate from Scene Provider execution', async () => {
         mocks.decode.mockReturnValue({
             ...payload,
             sceneWorkflow: {
                 ...payload.sceneWorkflow,
-                r2Delivery: { requirement: 'best-effort', planned: {} },
+                r2Delivery: { requirement: 'best-effort', planned: { profile: { publicMode: 'r2-dev' } } },
             },
         })
-        await expect(executeSceneQueueJob(
+        await executeSceneQueueJob(
             job(),
             context({
                 dispatchState: 'prepared', providerOutcome: 'running', billingRisk: 'none',
                 responseDigest: null, spoolReceipt: null,
             }).value,
             { presentation: {} as never },
-        )).rejects.toMatchObject({
-            kind: 'fatal',
-            message: 'Current R2 delivery snapshot requires durable release enqueue',
-        })
-        expect(mocks.transport).not.toHaveBeenCalled()
-        expect(mocks.save).not.toHaveBeenCalled()
+        )
+        expect(mocks.transport).toHaveBeenCalledTimes(1)
+        expect(mocks.save).toHaveBeenCalledTimes(1)
     })
 
     it('dispatches new envelope jobs through evidence and the durable spool', async () => {

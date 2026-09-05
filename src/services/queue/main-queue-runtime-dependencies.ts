@@ -12,6 +12,8 @@ import type {
     GenerationOutputClaimPlan,
 } from '@/services/output/generation-output-commit-set'
 import type { PlannedOutputCollisionPolicy } from '@/services/output/filename-policy'
+import type { PlanR2ReleaseDependencies } from '@/application/r2/plan-r2-release'
+import type { EnqueueR2ReleasePort } from '@/application/r2/enqueue-r2-release'
 
 export interface OutputCommitSetPlanningRequest {
     readonly destination: OutputWriterDestination
@@ -41,6 +43,8 @@ export interface RuntimeMainQueueDependencies {
     readonly presentation: MainQueuePresentationPort
     readonly providerResultSpool: ProviderResultSpool
     readonly outputReservations: OutputReservationPlanningPort
+    readonly r2Planning: PlanR2ReleaseDependencies
+    readonly r2Release: EnqueueR2ReleasePort
     /** Transitional Phase 7A seam; 7C replaces blocking release with durable enqueue. */
     readonly legacyR2Release: typeof import('@/services/r2/generated-release')['releaseGeneratedOutputToR2']
     readonly legacyR2Cleanup: typeof import('@/services/r2/generated-release')['discardGeneratedProviderOriginal']

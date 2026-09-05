@@ -3,9 +3,10 @@ import type { DeepReadonly } from '@/domain/composition/provenance'
 import { ensureImageFileExtension } from '@/services/output/filename-policy'
 import type { GenerationParams } from '@/services/novelai-types'
 import { DEFAULT_RIGHTS_OWNER } from '@/domain/workflow/bluehair-rights-policy'
+import type { R2DeliveryRequirement, R2DestinationProvenance, R2QueueDeliverySnapshot } from '@/domain/r2/types'
 
 /**
- * Credential-free Main plan consumed by both the transitional direct runner
+ * Non-secret Main preparation consumed by both the transitional direct runner
  * and PlanMainBatch. Keeping it outside Zustand makes format, transport, CAS,
  * and output-policy decisions identical while the Draft repository is split.
  */
@@ -32,6 +33,10 @@ export interface PreparedMainGeneration {
         readonly autoR2UploadProfileId: string | null
         readonly r2Bucket: string | null
         readonly r2Prefix: string | null
+        readonly r2Provenance?: R2DestinationProvenance
+        readonly r2Requirement?: R2DeliveryRequirement
+        /** Internal reviewed delivery binding; public review exposes only its destination. */
+        readonly r2Delivery?: R2QueueDeliverySnapshot
         readonly deleteOriginalAfterRelease: boolean
         readonly rightsXmpEnabled: boolean
         readonly rightsOwner: string
@@ -58,6 +63,8 @@ export interface PrepareMainGenerationOptions {
         readonly autoR2UploadProfileId?: string | null
         readonly r2Bucket?: string | null
         readonly r2Prefix?: string | null
+        readonly r2Provenance?: R2DestinationProvenance
+        readonly r2Requirement?: R2DeliveryRequirement
         readonly deleteOriginalAfterRelease?: boolean
         readonly rightsXmpEnabled?: boolean
         readonly rightsOwner?: string
@@ -91,6 +98,8 @@ export function prepareMainGeneration(
         autoR2UploadProfileId: options.output.autoR2UploadProfileId ?? null,
         r2Bucket: options.output.r2Bucket ?? null,
         r2Prefix: options.output.r2Prefix ?? null,
+        ...(options.output.r2Provenance === undefined ? {} : { r2Provenance: options.output.r2Provenance }),
+        ...(options.output.r2Requirement === undefined ? {} : { r2Requirement: options.output.r2Requirement }),
         deleteOriginalAfterRelease: options.output.deleteOriginalAfterRelease ?? false,
         rightsXmpEnabled: options.output.rightsXmpEnabled ?? false,
         rightsOwner: options.output.rightsOwner ?? DEFAULT_RIGHTS_OWNER,

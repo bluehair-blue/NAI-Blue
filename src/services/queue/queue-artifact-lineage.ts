@@ -1,5 +1,5 @@
 import type { PortablePathRef } from '@/domain/composition/types'
-import type { ArtifactRecord, OrganizerSourceImageFormat } from '@/domain/organizer/types'
+import type { ArtifactRecord, ArtifactSidecarReference, OrganizerSourceImageFormat } from '@/domain/organizer/types'
 import type { GenerationJob, QueueArtifactReference } from '@/domain/queue/types'
 import type { OutputWriteResult } from '@/services/output/output-writer'
 import {
@@ -8,6 +8,8 @@ import {
 import type {
     RemoveOriginalIfUnmodifiedInput,
 } from '@/services/organizer/artifact-repository'
+import { createRuntimeOutputPlatformAdapter } from '@/services/output/tauri-output-adapter'
+import { sha256Bytes } from '@/lib/binary-digest'
 
 export interface QueueArtifactRepository {
     get(artifactId: string): Promise<ArtifactRecord | null>
@@ -20,6 +22,7 @@ export interface QueueArtifactRepository {
         format: OrganizerSourceImageFormat
         contentChecksum: string
         size: number
+        sidecar?: ArtifactSidecarReference | null
         createdAt?: string
     }): Promise<ArtifactRecord>
     removeOriginalIfUnmodified(input: RemoveOriginalIfUnmodifiedInput): Promise<boolean>
@@ -50,6 +53,7 @@ function matchesRegistration(
     job: GenerationJob,
     reference: QueueArtifactReference,
     output: OutputWriteResult,
+    sidecar: ArtifactSidecarReference | null,
 ): boolean {
     const facts = output.finalImage
     if (facts?.portableDirectory === undefined) return false
@@ -61,6 +65,7 @@ function matchesRegistration(
         && existing.original.format === outputFormat(reference, output)
         && existing.contentChecksum === facts.contentChecksum
         && existing.original.size === facts.byteSize
+        && JSON.stringify(existing.sidecar) === JSON.stringify(sidecar)
         && (existing.outputCommitSetHash ?? null) === (output.outputCommitSetHash ?? null)
 }
 
@@ -83,6 +88,7 @@ export async function registerQueueArtifact(
     reference: QueueArtifactReference,
     output: OutputWriteResult,
     repository: QueueArtifactRepository = getRuntimeArtifactRepository(),
+    bindPrivateSidecar = false,
 ): Promise<QueueArtifactRegistration | null> {
     const facts = output.finalImage
     // Legacy absolute output has no portable directory. Keep its successful
@@ -97,9 +103,24 @@ export async function registerQueueArtifact(
         throw new QueueArtifactLineageError('Queue output byte size is invalid.')
     }
     const outputCommitSetHash = assertQueueCommitSetLineage(job, output)
+    let sidecar: ArtifactSidecarReference | null = null
+    if (bindPrivateSidecar) {
+        if (output.sidecarFile === undefined) {
+            throw new QueueArtifactLineageError('Private Queue output is missing committed sidecar authority.')
+        }
+        const bytes = await createRuntimeOutputPlatformAdapter().readFile(output.sidecarFile)
+        sidecar = {
+            file: {
+                directory: facts.portableDirectory,
+                fileName: output.sidecarFile.displayPath.replace(/\\/gu, '/').split('/').pop() ?? '',
+            },
+            digest: await sha256Bytes(bytes),
+            size: bytes.byteLength,
+        }
+    }
     const existing = await repository.get(reference.artifactId)
     if (existing !== null) {
-        if (!matchesRegistration(existing, job, reference, output)) {
+        if (!matchesRegistration(existing, job, reference, output, sidecar)) {
             throw new QueueArtifactLineageError('Queue artifact identity is already bound to different output facts.')
         }
         return { record: existing, created: false }
@@ -113,8 +134,9 @@ export async function registerQueueArtifact(
         format: outputFormat(reference, output),
         contentChecksum: facts.contentChecksum,
         size: facts.byteSize,
+        sidecar,
     })
-    if (!matchesRegistration(record, job, reference, output)) {
+    if (!matchesRegistration(record, job, reference, output, sidecar)) {
         throw new QueueArtifactLineageError('Queue artifact registration did not preserve final output facts.')
     }
     return { record, created: true }

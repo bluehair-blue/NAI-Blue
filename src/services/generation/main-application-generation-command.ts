@@ -18,6 +18,9 @@ import {
     type AnlasPricingBasis,
 } from '@/domain/queue/anlas-cost-consent'
 import { CURRENT_MAIN_QUEUE_POLICY } from '@/domain/queue/types'
+import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+import type { R2QueueDeliverySnapshot } from '@/domain/r2/types'
+import { planR2Release } from '@/application/r2/plan-r2-release'
 import { calculateAnlasCost } from '@/lib/anlas-calculator'
 import {
     createDetachedMainGenerationCapture,
@@ -29,6 +32,8 @@ import {
 } from '@/services/nai/compatibility'
 import { enqueueReviewedMainPlan } from '@/services/queue/main-queue-adapter'
 import type { OutputReservationFolderBinding } from '@/domain/queue/types'
+import { getRuntimeMainQueueDependencies } from '@/services/queue/main-queue-runtime-dependencies'
+import { ensureImageFileExtension } from '@/services/output/filename-policy'
 
 export type MainApplicationGenerationCommandResult =
     | EnqueueGenerationResult<PreparedMainGeneration>
@@ -52,13 +57,8 @@ function unsupportedLocalOutput(prepared: readonly PreparedMainGeneration[]): Pl
     if (prepared.some(job => job.output.collisionPolicy === 'overwrite')) {
         return issue('unsupported-collision-policy', 'jobs.output.collisionPolicy', 'Overwrite plans are not supported.')
     }
-    if (prepared.some(job => (
-        job.output.autoR2UploadProfileId !== null
-        || job.output.r2Bucket !== null
-        || job.output.r2Prefix !== null
-        || job.output.deleteOriginalAfterRelease
-    ))) {
-        return issue('unsupported-r2-delivery', 'jobs.output', 'R2 delivery and original deletion are not supported in this phase.')
+    if (prepared.some(job => job.output.deleteOriginalAfterRelease)) {
+        return issue('r2-delete-original-unsupported', 'jobs.output.deleteOriginalAfterRelease', 'Deleting the local original is not supported.')
     }
     return null
 }
@@ -103,8 +103,7 @@ function dependencies(pricingBasis: AnlasPricingBasis): PlanGenerationDependenci
 export async function enqueuePreparedMainGeneration(
     input: EnqueuePreparedMainGenerationInput,
 ): Promise<MainApplicationGenerationCommandResult> {
-    const firstPrepared = input.prepared[0]
-    if (firstPrepared === undefined) {
+    if (input.prepared.length === 0) {
         return Object.freeze({
             status: 'invalid',
             issues: Object.freeze([issue('empty-main-capture', 'prepared', 'At least one prepared Main job is required.')]),
@@ -114,7 +113,59 @@ export async function enqueuePreparedMainGeneration(
     if (unsupported !== null) {
         return Object.freeze({ status: 'unsupported', capability: unsupported.code, issues: Object.freeze([unsupported]) })
     }
-    const metadataModes = new Set(input.prepared.map(job => job.metadataMode))
+    // Fix remote identity before capture so review/hash/replay all describe the
+    // same delivery. Runtime profile and credential readiness stay injected.
+    const preparedJobs: PreparedMainGeneration[] = []
+    for (const [ordinal, prepared] of input.prepared.entries()) {
+        const output = prepared.output
+        const requirement = output.r2Requirement ?? (output.autoR2UploadProfileId === null
+            ? { mode: 'disabled' as const }
+            : { mode: 'best-effort' as const, profileId: output.autoR2UploadProfileId })
+        const fileName = ensureImageFileExtension(output.fileName, prepared.imageFormat)
+            ?? `NAI_Blue_${prepared.params.seed}.${prepared.imageFormat}`
+        const release = await planR2Release({
+            requirement, objectName: fileName,
+            planIdentity: `sha256:${hashCanonicalValue({ captureId: input.captureId, ordinal, fileName, folderBinding: input.folderBinding })}`,
+            ...(output.r2Provenance === undefined && output.r2Bucket === null && output.r2Prefix === null
+                ? {}
+                : { resolvedDestination: {
+                    ...(output.r2Bucket === null && output.r2Provenance === undefined ? {} : { bucket: output.r2Bucket }),
+                    ...(output.r2Prefix === null && output.r2Provenance === undefined ? {} : { prefix: output.r2Prefix ?? '' }),
+                    provenance: output.r2Provenance ?? {
+                        profileId: 'legacy-output' as const, bucket: 'legacy-output' as const,
+                        prefix: 'legacy-output' as const, key: 'planned-output' as const,
+                    },
+                } }),
+            profileIdProvenance: output.r2Requirement?.mode !== undefined
+                ? 'explicit-request'
+                : output.generationFolderId === null ? 'legacy-output' : 'generation-folder',
+        }, {
+            getProfile: profileId => getRuntimeMainQueueDependencies().r2Planning.getProfile(profileId),
+            getReadiness: profile => getRuntimeMainQueueDependencies().r2Planning.getReadiness(profile),
+        })
+        if (release.status !== 'ready') {
+            const issues = Object.freeze([issue(release.code, `jobs[${ordinal}].output.r2Delivery`, release.message)])
+            return release.status === 'unsupported'
+                ? Object.freeze({ status: 'unsupported', capability: release.code, issues })
+                : Object.freeze({ status: 'invalid', issues })
+        }
+        const r2Delivery: R2QueueDeliverySnapshot = release.internalSnapshot === null
+            ? { requirement: 'disabled', planned: null }
+            : release.internalSnapshot.destination.requirement === 'required'
+                ? { requirement: 'required', planned: release.internalSnapshot }
+                : { requirement: 'best-effort', planned: release.internalSnapshot }
+        const metadataMode = release.internalSnapshot?.profile.publicMode === 'private'
+            ? 'strip-and-sidecar' as const : prepared.metadataMode
+        preparedJobs.push({
+            ...prepared, metadataMode, params: { ...prepared.params, metadataMode },
+            output: {
+                ...output, fileName, r2Requirement: requirement, r2Delivery,
+                autoR2UploadProfileId: requirement.mode === 'disabled' ? null : requirement.profileId,
+            },
+        })
+    }
+    const firstPrepared = preparedJobs[0]
+    const metadataModes = new Set(preparedJobs.map(job => job.metadataMode))
     if (metadataModes.size !== 1) {
         return Object.freeze({
             status: 'invalid',
@@ -123,7 +174,7 @@ export async function enqueuePreparedMainGeneration(
     }
 
     const replan = dependencies(input.pricingBasis)
-    const estimatedAnlas = input.prepared.reduce((sum, prepared) => sum + calculateAnlasCost({
+    const estimatedAnlas = preparedJobs.reduce((sum, prepared) => sum + calculateAnlasCost({
         model: prepared.params.model,
         width: prepared.params.width,
         height: prepared.params.height,
@@ -133,8 +184,8 @@ export async function enqueuePreparedMainGeneration(
     }), 0)
     const capture = createDetachedMainGenerationCapture({
         captureId: input.captureId,
-        prepared: input.prepared,
-        materializedSeeds: input.prepared.map(job => job.params.seed),
+        prepared: preparedJobs,
+        materializedSeeds: preparedJobs.map(job => job.params.seed),
         sourceBindings: [input.folderBinding],
         executionPolicy: {
             failurePolicy: 'continue',

@@ -14,6 +14,7 @@ import {
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
+import { recoverQueueR2Release } from './queue-r2-release-recovery'
 
 export interface QueueStartupRecoveryResult {
     linkedOutputs: OutputRecoveryResult[]
@@ -22,6 +23,7 @@ export interface QueueStartupRecoveryResult {
     providerSpool: SpoolReconcileResult
     styleLabReservations: { spent: number; released: number }
     sceneLinks: readonly LinkSceneArtifactResult[]
+    r2ReleaseJobs: number
 }
 
 let startupPromise: Promise<QueueStartupRecoveryResult> | null = null
@@ -98,6 +100,28 @@ async function reconcileProviderAttempts(
     } while (cursor !== null)
 }
 
+/** Recreates only missing durable delivery jobs from committed local authority; Provider is never consulted. */
+export async function reconcileR2ReleaseJobs(
+    repository: ReturnType<typeof getRuntimeQueueRepository>,
+): Promise<number> {
+    let enqueued = 0
+    let cursor: string | null = null
+    do {
+        const page = await repository.listJobs({ cursor, limit: 250 })
+        for (const job of page.items) {
+            if (job.artifactReference === null) continue
+            try {
+                const handle = await recoverQueueR2Release(job)
+                enqueued += handle?.jobIds.length ?? 0
+            } catch (error) {
+                reportDiagnostic(error, { operation: 'queue.startup', stage: 'r2-release-reconcile', jobId: job.id })
+            }
+        }
+        cursor = page.nextCursor
+    } while (cursor !== null)
+    return enqueued
+}
+
 export function initializeQueueAfterRestart(options: {
     providerResultSpool: ProviderResultSpool
 } = { providerResultSpool: getRuntimeMainQueueDependencies().providerResultSpool }): Promise<QueueStartupRecoveryResult> {
@@ -118,6 +142,7 @@ export function initializeQueueAfterRestart(options: {
             reportDiagnostic(error, { operation: 'queue.startup', stage: 'scene-artifact-reconcile' })
             return []
         })
+        const r2ReleaseJobs = await reconcileR2ReleaseJobs(repository)
         const leases = await recoverQueueAfterRestart(repository, {
             now: new Date().toISOString(),
             // This gate runs once before the process-local coordinator starts.
@@ -128,7 +153,7 @@ export function initializeQueueAfterRestart(options: {
         // Lease recovery determines terminal Queue truth before render costs are
         // reconciled; this releases failed/cancelled work after desktop restarts.
         const styleLabReservations = await reconcileStyleLabRenderReservations({ queueRepository: repository })
-        return { linkedOutputs, orphanOutputs, leases, providerSpool, styleLabReservations, sceneLinks }
+        return { linkedOutputs, orphanOutputs, leases, providerSpool, styleLabReservations, sceneLinks, r2ReleaseJobs }
     })()
     return startupPromise
 }

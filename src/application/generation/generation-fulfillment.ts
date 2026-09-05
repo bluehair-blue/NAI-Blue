@@ -23,6 +23,7 @@ export interface StageEvidence {
 export interface StageProjection {
     readonly state: TechnicalStageState
     readonly evidence: readonly StageEvidence[]
+    readonly jobIds?: readonly string[]
 }
 
 export interface AcceptanceProjection {
@@ -38,6 +39,7 @@ export interface RecoveryAction {
         | 'grant-directory-access'
         | 'retry-storage'
         | 'retry-scene-link'
+        | 'retry-r2-release'
         | 'abandon-reservation'
         | 'discard-result-and-abandon-reservation'
         | 'review-provider-unknown'
@@ -47,6 +49,8 @@ export interface RecoveryAction {
 export interface FulfillmentIssue {
     readonly code:
         | 'SCENE_LINK_PENDING'
+        | 'R2_DELIVERY_MISSING'
+        | 'R2_DELIVERY_FAILED'
         | 'OUTPUT_RESERVATION_CONFLICT'
         | 'DIRECTORY_AUTHORIZATION_REQUIRED'
     readonly jobId: string
@@ -106,6 +110,7 @@ export interface GenerationFulfillmentJobFacts {
     readonly release: {
         readonly policy: 'not-required' | 'best-effort' | 'required'
         readonly fact?: ObservedTechnicalFact
+        readonly jobIds?: readonly string[]
     }
     readonly acceptance: {
         readonly required: boolean
@@ -153,7 +158,7 @@ function projectProvider(job: GenerationFulfillmentJobFacts): StageProjection {
 }
 
 function projectRelease(job: GenerationFulfillmentJobFacts): StageProjection {
-    if (job.release.fact) return projectFact(job.release.fact)
+    if (job.release.fact) return { ...projectFact(job.release.fact), ...(job.release.jobIds ? { jobIds: job.release.jobIds } : {}) }
     return job.release.policy === 'not-required'
         ? { state: 'not-required', evidence: [] }
         : projectFact(undefined)

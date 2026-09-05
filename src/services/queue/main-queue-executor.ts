@@ -47,6 +47,8 @@ import {
     markReservedQueueOutputConflict,
     preflightReservedQueueOutput,
 } from './output-reservation-preflight'
+import { enqueueR2Release } from '@/application/r2/enqueue-r2-release'
+import { assertRequiredR2DispatchReady } from './required-r2-dispatch-readiness'
 
 function decodeImageBytes(imageData: string): Uint8Array {
     const encoded = imageData.replace(/^data:image\/[^;]+;base64,/, '')
@@ -83,10 +85,6 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
         legacyR2Cleanup,
     } = getRuntimeMainQueueDependencies()
     const payload = decodeMainJobSnapshot(job.snapshot)
-    // Phase 7C removes this guard when durable release enqueue consumes the immutable binding.
-    if (payload.mainWorkflow.r2Delivery.planned !== null) {
-        throw new QueueExecutionError('fatal', 'Current R2 delivery snapshot requires durable release enqueue')
-    }
     if (!isSupportedNaiPayloadBuilderRevision(payload.payloadBuilderRevision)) {
         throw new QueueExecutionError(
             'compatibility',
@@ -209,6 +207,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
                 if (context.executionMode === 'storage-only') {
                     throw new QueueExecutionError('fatal', 'Storage-only Main execution has no verified spool receipt')
                 }
+                await assertRequiredR2DispatchReady(payload.mainWorkflow.r2Delivery)
                 spooled = await dispatchAndSpool(
                     context,
                     params,
@@ -241,6 +240,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
             sentPayloadSummary = spooled.sentPayloadSummary
             encodedVibes = spooled.encodedVibes
         } else {
+            await assertRequiredR2DispatchReady(payload.mainWorkflow.r2Delivery)
             const result = await executeNovelAIImageTransport({
                 token: context.token,
                 params,
@@ -279,7 +279,9 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
         const historyId = `queue-history:${job.id}`
         let sequenceConflict = false
         let artifactRegistration: QueueArtifactRegistration | null = null
-        const hasPrivateRelease = payload.mainWorkflow.metadataMode === 'strip-and-sidecar'
+        const currentR2 = payload.mainWorkflow.r2Delivery.planned
+        const preserveProviderOriginal = payload.mainWorkflow.metadataMode === 'strip-and-sidecar'
+            || currentR2?.profile.publicMode === 'private'
         const rightsEffectiveDate = payload.mainWorkflow.output.rightsXmpEnabled === true
             && isRightsEffectiveDate(payload.mainWorkflow.output.rightsEffectiveDate)
             ? payload.mainWorkflow.output.rightsEffectiveDate
@@ -306,7 +308,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
             },
             imageBytes: bytes,
             imageDataUrl,
-            preserveProviderOriginal: hasPrivateRelease,
+            preserveProviderOriginal,
             terminalWorkflowCommit: true,
             metadata: {
                 params: { ...params, sentPayloadSummary, sourceJobId: job.id },
@@ -331,7 +333,13 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
                     sequenceConflict = true
                     throw new Error('Fragment sequence changed before durable Main output commit')
                 }
-                artifactRegistration = await registerQueueArtifact(job, artifactReference, outputResult)
+                artifactRegistration = await registerQueueArtifact(
+                    job,
+                    artifactReference,
+                    outputResult,
+                    undefined,
+                    currentR2?.profile.publicMode === 'private',
+                )
                 presentation.commitHistory({
                     id: historyId,
                     url: outputResult.thumbnailDataUrl ?? imageDataUrl,
@@ -391,7 +399,34 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
             throw error
         })
         if (output.status === 'cancelled') return
-        if (hasPrivateRelease) {
+        const registeredArtifact = artifactRegistration as unknown as QueueArtifactRegistration | null
+        if (currentR2 !== null && registeredArtifact !== null) {
+            try {
+                let sidecar: Parameters<typeof enqueueR2Release>[0]['sidecar']
+                if (currentR2.profile.publicMode === 'private') {
+                    if (!output.result.sidecarFile || registeredArtifact.record.sidecar === null) {
+                        throw new Error('Private R2 release output is missing committed sidecar authority')
+                    }
+                    sidecar = {
+                        file: registeredArtifact.record.sidecar.file,
+                        localPath: output.result.sidecarFile.displayPath,
+                        digest: registeredArtifact.record.sidecar.digest as `sha256:${string}`,
+                        size: registeredArtifact.record.sidecar.size!,
+                    }
+                }
+                await enqueueR2Release({
+                    snapshot: currentR2,
+                    readiness: 'ready',
+                    artifact: registeredArtifact.record,
+                    originalLocalPath: output.result.file.displayPath,
+                    ...(sidecar === undefined ? {} : { sidecar }),
+                }, getRuntimeMainQueueDependencies().r2Release)
+            } catch (error) {
+                reportDiagnostic(error, {
+                    operation: 'r2.durable-enqueue', stage: 'enqueue', jobId: job.id,
+                })
+            }
+        } else if (preserveProviderOriginal) {
             let releaseVerified = payload.mainWorkflow.output.autoR2UploadProfileId == null
             if (payload.mainWorkflow.output.autoR2UploadProfileId != null) {
                 try {
@@ -404,7 +439,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
                         prefix: payload.mainWorkflow.output.r2Prefix,
                     })
                     releaseVerified = release.status === 'uploaded'
-                    if (!releaseVerified) {
+                    if (!releaseVerified && release.status !== 'queued') {
                         reportDiagnostic(new Error(`Generated R2 release did not complete: ${release.status}`), {
                             operation: 'r2.generated-release',
                             stage: release.status,

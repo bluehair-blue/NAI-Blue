@@ -10,7 +10,15 @@ import {
 } from '@/application/generation/get-generation-run'
 import type { GenerationJob, OutputReservation } from '@/domain/queue/types'
 import type { PendingQueueOutputTransaction } from '@/services/output/output-writer'
-import type { R2ManifestV2, R2ProfileV2, UploadJob } from '@/domain/r2/types'
+import {
+    isR2QueueDeliverySnapshot,
+    hashR2ProfileV2,
+    type R2ManifestV2,
+    type R2ProfileV2,
+    type R2QueueDeliverySnapshot,
+    type UploadJob,
+} from '@/domain/r2/types'
+import type { ArtifactRecord } from '@/domain/organizer/types'
 import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 import { getRuntimeOutputWriter } from '@/services/output/output-writer'
 import {
@@ -47,7 +55,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function releaseProfileId(job: GenerationJob): string | null {
+function releaseSnapshot(job: GenerationJob): R2QueueDeliverySnapshot | null {
     const parameters = job.snapshot.parameters
     if (!isRecord(parameters)) return null
     const workflow = job.workflow === 'main'
@@ -55,6 +63,16 @@ function releaseProfileId(job: GenerationJob): string | null {
         : job.workflow === 'scene'
             ? parameters.sceneWorkflow
             : null
+    if (!isRecord(workflow)) return null
+    return isR2QueueDeliverySnapshot(workflow.r2Delivery) ? workflow.r2Delivery : null
+}
+
+function releaseProfileId(job: GenerationJob): string | null {
+    const current = releaseSnapshot(job)
+    if (current !== null) return current.planned?.destination.profileId ?? null
+    const parameters = job.snapshot.parameters
+    if (!isRecord(parameters)) return null
+    const workflow = job.workflow === 'main' ? parameters.mainWorkflow : parameters.sceneWorkflow
     if (!isRecord(workflow)) return null
     if (job.workflow === 'main' && workflow.metadataMode !== 'strip-and-sidecar') return null
     const output = job.workflow === 'main' ? workflow.output : workflow.outputContext
@@ -150,9 +168,78 @@ function manifestContains(job: UploadJob, manifest: R2ManifestV2): boolean {
 
 async function releaseFact(
     job: GenerationJob,
+    artifact: ArtifactRecord | null,
     linked: readonly UploadJob[] | null,
     r2: GenerationRunAuthorityReaders['r2'],
 ): Promise<GenerationFulfillmentJobFacts['release']> {
+    const snapshot = releaseSnapshot(job)
+    if (snapshot?.requirement === 'disabled') return { policy: 'not-required' }
+    if (snapshot?.planned) {
+        const policy = snapshot.requirement
+        if (linked === null) return { policy }
+        const expectedVariants = snapshot.planned.profile.publicMode === 'private'
+            ? ['original', 'sidecar'] as const
+            : ['original'] as const
+        const current = linked.filter(candidate => (
+            candidate.contractVersion === 'phase7-v1'
+            && candidate.profileSnapshot !== null
+            && candidate.profileId === snapshot.planned!.destination.profileId
+            && hashR2ProfileV2(candidate.profileSnapshot) === snapshot.planned!.destination.profileHash
+            && candidate.profileSnapshot.bucket === snapshot.planned!.destination.bucket
+            && candidate.artifactId === job.artifactReference?.artifactId
+            && candidate.remoteKey === (candidate.artifactBinding?.localVariant === 'sidecar'
+                ? snapshot.planned!.destination.key.replace(/\.[^./]+$/u, '.nai-blue.json')
+                : snapshot.planned!.destination.key)
+            && (candidate.artifactBinding?.localVariant === 'sidecar'
+                ? artifact?.sidecar?.digest === candidate.contentSha256 && artifact.sidecar.size === candidate.size
+                : artifact?.original.contentChecksum === candidate.contentSha256 && artifact.original.size === candidate.size)
+        ))
+        const newest = [...current].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+        if (current.some(candidate => candidate.state === 'failed' || candidate.state === 'cancelled')) {
+            return { policy, jobIds: current.map(candidate => candidate.id), fact: directFact('failed', 'r2-upload-job', `${job.id}:release`, newest?.updatedAt ?? job.updatedAt) }
+        }
+        if (!expectedVariants.every(variant => current.some(candidate => candidate.artifactBinding?.localVariant === variant))) {
+            return {
+                policy,
+                fact: ['queued', 'leased', 'running', 'recovering'].includes(job.state)
+                    ? derivedFact('pending', 'queue-job', `${job.id}:release`, job.updatedAt)
+                    : undefined,
+            }
+        }
+        if (current.some(candidate => candidate.state !== 'succeeded')) {
+            return { policy, jobIds: current.map(candidate => candidate.id), fact: directFact('pending', 'r2-upload-job', `${job.id}:release`, newest?.updatedAt ?? job.updatedAt) }
+        }
+        const linkedExactly = artifact !== null && expectedVariants.every(variant => {
+            const upload = current.find(candidate => candidate.artifactBinding?.localVariant === variant)
+            return upload?.remoteRef !== null && upload?.remoteRef !== undefined
+                && upload.remoteRef.profileHash === snapshot.planned!.destination.profileHash
+                && upload.remoteRef.profileId === snapshot.planned!.destination.profileId
+                && upload.remoteRef.artifactId === artifact.artifactId
+                && upload.remoteRef.uploadJobId === upload.id
+                && upload.remoteRef.variantId === variant
+                && upload.remoteRef.bucket === snapshot.planned!.destination.bucket
+                && upload.remoteRef.remoteKey === upload.remoteKey
+                && upload.remoteRef.contentSha256 === upload.contentSha256
+                && upload.remoteRef.size === upload.size
+                && artifact.remoteObjectRefs.some(reference => (
+                    reference.contractVersion === 'phase7-v1'
+                    && reference.profileId === snapshot.planned!.destination.profileId
+                    && reference.profileHash === snapshot.planned!.destination.profileHash
+                    && reference.bucket === snapshot.planned!.destination.bucket
+                    && reference.artifactId === artifact.artifactId
+                    && reference.verifiedAt === upload.remoteRef?.verifiedAt
+                    && reference.uploadJobId === upload.id
+                    && reference.variantId === variant
+                    && reference.remoteKey === upload.remoteKey
+                    && reference.contentSha256 === upload.contentSha256
+                    && reference.size === upload.size
+                    && reference.state === 'succeeded'
+                ))
+        })
+        return linkedExactly
+            ? { policy, jobIds: current.map(candidate => candidate.id), fact: directFact('succeeded', 'artifact-record', `${job.id}:release`, artifact.updatedAt) }
+            : { policy, fact: directFact('uncertain', 'artifact-record', `${job.id}:release`, artifact?.updatedAt ?? job.updatedAt) }
+    }
     if (releaseProfileId(job) === null) return { policy: 'not-required' }
     const policy = 'best-effort' as const
     if (linked === null) return { policy }
@@ -170,7 +257,7 @@ async function releaseFact(
         return { policy, fact: directFact('failed', 'r2-upload-job', `${job.id}:release`, newest.updatedAt) }
     }
     if (linked.some(candidate => candidate.state === 'queued' || candidate.state === 'running')) {
-        return { policy, fact: directFact('pending', 'r2-upload-job', `${job.id}:release`, newest.updatedAt) }
+        return { policy, jobIds: linked.map(candidate => candidate.id), fact: directFact('pending', 'r2-upload-job', `${job.id}:release`, newest.updatedAt) }
     }
 
     const profiles = await Promise.all([...new Set(linked.map(candidate => candidate.profileId))]
@@ -343,6 +430,26 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                 })
             }
 
+            const release = await releaseFact(job, artifact, r2Jobs === null
+                    ? null
+                    : [
+                        ...(job.artifactReference === null
+                            ? []
+                            : r2JobsByArtifactId.get(job.artifactReference.artifactId) ?? []),
+                        ...(r2JobsByArtifactId.get(`${job.id}:release-image`) ?? []),
+                        ...(r2JobsByArtifactId.get(`${job.id}:release-sidecar`) ?? []),
+                    ], this.authorities.r2)
+            if (storage?.state === 'succeeded' && releaseSnapshot(job)?.planned
+                && r2Jobs !== null && ['unavailable', 'failed'].includes(release.fact?.state ?? 'unavailable')
+                && !r2Jobs.some(upload => upload.artifactId === artifact?.artifactId && upload.state === 'cancelled')) {
+                issues.push({
+                    code: release.fact?.state === 'failed' ? 'R2_DELIVERY_FAILED' : 'R2_DELIVERY_MISSING',
+                    jobId: job.id,
+                    severity: release.policy === 'required' ? 'blocking' : 'warning',
+                    action: { kind: 'retry-r2-release', requiresHuman: false },
+                })
+            }
+
             return {
                 jobId: job.id,
                 queueState: job.state,
@@ -351,12 +458,7 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                     : undefined,
                 provider,
                 storage,
-                release: await releaseFact(job, r2Jobs === null
-                    ? null
-                    : [
-                        ...(r2JobsByArtifactId.get(`${job.id}:release-image`) ?? []),
-                        ...(r2JobsByArtifactId.get(`${job.id}:release-sidecar`) ?? []),
-                    ], this.authorities.r2),
+                release,
                 acceptance: { required: false },
                 ...(issues.length === 0 ? {} : { issues }),
             }

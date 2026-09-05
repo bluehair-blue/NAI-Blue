@@ -20,7 +20,7 @@ export function projectPreparedMainGenerationJob(
 ): PreparedGenerationJobDraft<PreparedMainGeneration> {
     const params = prepared.params
     const pathHash = (value: string | null): Sha256Digest | null => value ? digest(value) : null
-    // Phase 4 permits only fail-on-collision writes. The executable value must
+    // Reviewed Main capture permits only fail-on-collision writes. Its executable value must
     // match the logical destination reviewed by the application plan.
     const canonicalPrepared = prepared.output.collisionPolicy === 'error'
         ? prepared
@@ -50,6 +50,7 @@ export function projectPreparedMainGenerationJob(
             extension: prepared.imageFormat,
             collisionPolicy: 'fail' as const,
             deliveryRequired: prepared.output.autoSave,
+            ...(prepared.output.r2Delivery?.planned == null ? {} : { r2: prepared.output.r2Delivery.planned.destination }),
         },
         prepared: canonicalPrepared,
     })

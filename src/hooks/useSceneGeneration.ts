@@ -347,7 +347,7 @@ async function processSceneWithSlot(
                                 bucket: generationFolder.r2.bucket,
                                 prefix: generationFolder.r2.prefix,
                             })
-                            if (release.status !== 'uploaded') {
+                            if (release.status !== 'uploaded' && release.status !== 'queued') {
                                 reportDiagnostic(new Error(`Generated R2 release did not complete: ${release.status}`), {
                                     operation: 'r2.generated-release',
                                     stage: release.status,

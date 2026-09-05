@@ -127,7 +127,6 @@ describe('generated R2 release profile', () => {
         )
         releaseMocks.coordinator.plan.mockResolvedValue({ jobs: [] })
         releaseMocks.coordinator.enqueuePlan.mockResolvedValue([])
-        releaseMocks.coordinator.runUntilIdle.mockResolvedValue(undefined)
 
         await expect(releaseLocalImageToR2({
             profileId: base.id,
@@ -148,7 +147,8 @@ describe('generated R2 release profile', () => {
             },
             bucket: 'scene-bucket',
             prefix: 'prime/bluehair/01',
-        })).resolves.toEqual({ status: 'uploaded', artifactCount: 2, sidecarUploaded: true })
+        })).resolves.toEqual({ status: 'queued', artifactCount: 2, sidecarQueued: true, jobIds: [] })
+        expect(releaseMocks.coordinator.runUntilIdle).not.toHaveBeenCalled()
 
         expect(releaseMocks.coordinator.plan).toHaveBeenCalledWith(oldGenerated, expect.any(Array), 'current-session')
         expect(releaseMocks.coordinator.enqueuePlan).toHaveBeenCalledTimes(1)

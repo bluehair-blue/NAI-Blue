@@ -45,6 +45,8 @@ import {
     preflightReservedQueueOutput,
 } from './output-reservation-preflight'
 import { OutputWriterError, type OutputWriterDestination } from '@/services/output/output-writer'
+import { enqueueR2Release } from '@/application/r2/enqueue-r2-release'
+import { assertRequiredR2DispatchReady } from './required-r2-dispatch-readiness'
 
 function decodeImageBytes(imageData: string): Uint8Array {
     const encoded = imageData.replace(/^data:image\/[^;]+;base64,/, '')
@@ -95,10 +97,6 @@ export async function executeSceneQueueJob(
 ): Promise<void> {
     const { legacyR2Release } = getRuntimeMainQueueDependencies()
     const payload = decodeSceneJobSnapshot(job.snapshot)
-    // Phase 7C removes this guard when durable release enqueue consumes the immutable binding.
-    if (payload.sceneWorkflow.r2Delivery.planned !== null) {
-        throw new QueueExecutionError('fatal', 'Current R2 delivery snapshot requires durable release enqueue')
-    }
     const params = await hydrateGenerationParams(payload, job.snapshot.resources, getRuntimeQueueResourceMaterializer())
     params.sourceJobId = job.id
     const imageFormat = payload.sceneWorkflow.mimeType === 'image/webp' ? 'webp' : 'png'
@@ -218,6 +216,7 @@ export async function executeSceneQueueJob(
                 if (context.executionMode === 'storage-only') {
                     throw new QueueExecutionError('fatal', 'Storage-only Scene execution has no verified spool receipt')
                 }
+                await assertRequiredR2DispatchReady(payload.sceneWorkflow.r2Delivery)
                 spooled = await dispatchAndSpool(
                     context,
                     params,
@@ -251,6 +250,7 @@ export async function executeSceneQueueJob(
             encodedVibes = spooled.encodedVibes
             imageData = `data:image/${imageFormat};base64,${encodeImageBytes(bytes)}`
         } else {
+            await assertRequiredR2DispatchReady(payload.sceneWorkflow.r2Delivery)
             const result = await executeNovelAIImageTransport({
                 token: context.token,
                 params,
@@ -285,6 +285,7 @@ export async function executeSceneQueueJob(
         await context.bindOutput(transactionId, artifactReference)
         let artifactRegistration: QueueArtifactRegistration | null = null
         const autoR2UploadProfileId = payload.sceneWorkflow.outputContext.autoR2UploadProfileId
+        const currentR2 = payload.sceneWorkflow.r2Delivery.planned
         try {
             const saved = await saveSceneResult(
                 payload.sceneWorkflow.scene,
@@ -302,7 +303,32 @@ export async function executeSceneQueueJob(
                     outputTransactionId: transactionId,
                     outputContext: payload.sceneWorkflow.outputContext,
                     ...(outputReservation === null ? {} : { outputReservation }),
-                    ...(autoR2UploadProfileId == null
+                    ...(currentR2 !== null
+                        ? {
+                            afterSave: async output => {
+                                if (artifactRegistration === null) throw new Error('R2 release requires a committed ArtifactRecord')
+                                let sidecar: Parameters<typeof enqueueR2Release>[0]['sidecar']
+                                if (currentR2.profile.publicMode === 'private') {
+                                    if (!output.sidecarFile || artifactRegistration.record.sidecar === null) {
+                                        throw new Error('Private R2 release output is missing committed sidecar authority')
+                                    }
+                                    sidecar = {
+                                        file: artifactRegistration.record.sidecar.file,
+                                        localPath: output.sidecarFile.displayPath,
+                                        digest: artifactRegistration.record.sidecar.digest as `sha256:${string}`,
+                                        size: artifactRegistration.record.sidecar.size!,
+                                    }
+                                }
+                                await enqueueR2Release({
+                                    snapshot: currentR2,
+                                    readiness: 'ready',
+                                    artifact: artifactRegistration.record,
+                                    originalLocalPath: output.file.displayPath,
+                                    ...(sidecar === undefined ? {} : { sidecar }),
+                                }, getRuntimeMainQueueDependencies().r2Release)
+                            },
+                        }
+                        : autoR2UploadProfileId == null
                         ? {}
                         : {
                             afterSave: async output => {
@@ -315,7 +341,7 @@ export async function executeSceneQueueJob(
                                         bucket: payload.sceneWorkflow.outputContext.r2Bucket,
                                         prefix: payload.sceneWorkflow.outputContext.r2Prefix,
                                     })
-                                    if (release.status !== 'uploaded') {
+                                    if (release.status !== 'uploaded' && release.status !== 'queued') {
                                         reportDiagnostic(new Error(`Generated R2 release did not complete: ${release.status}`), {
                                             operation: 'r2.generated-release',
                                             stage: release.status,
@@ -333,7 +359,13 @@ export async function executeSceneQueueJob(
                         }),
                     ...(sequenceLease === null ? {} : { beforeFinalize: () => sequenceLease.commit() }),
                     registerArtifact: async output => {
-                        artifactRegistration = await registerQueueArtifact(job, artifactReference, output)
+                        artifactRegistration = await registerQueueArtifact(
+                            job,
+                            artifactReference,
+                            output,
+                            undefined,
+                            currentR2?.profile.publicMode === 'private',
+                        )
                         return artifactRegistration === null
                             ? null
                             : {

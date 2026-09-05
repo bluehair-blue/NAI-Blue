@@ -1,4 +1,5 @@
 import type { JsonValue } from '@/domain/composition/types'
+import type { PlannedR2Destination } from '@/domain/r2/types'
 import type { CredentialDispatchPolicy, WorkflowDraft } from '@/domain/workflow/single-image-draft'
 
 export type Sha256Digest = `sha256:${string}`
@@ -34,6 +35,8 @@ export interface LogicalOutputDestination {
     readonly extension: 'png' | 'webp'
     readonly collisionPolicy: 'fail'
     readonly deliveryRequired: boolean
+    /** Public immutable delivery target; credential/profile internals remain opaque. */
+    readonly r2?: PlannedR2Destination
 }
 
 /**

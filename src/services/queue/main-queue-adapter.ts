@@ -59,6 +59,8 @@ import {
 } from './queue-resource-materializer'
 import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
 import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
+import { planR2Release, revalidateR2Release, type PlanR2ReleaseInput, type PlanR2ReleaseResult } from '@/application/r2/plan-r2-release'
+import { isR2QueueDeliverySnapshot, type R2DeliveryRequirement, type R2QueueDeliverySnapshot } from '@/domain/r2/types'
 
 let mainEnqueueInFlight: Promise<CreateBatchAndEnqueueResult | null> | null = null
 
@@ -68,6 +70,8 @@ export interface EnqueuePlannedMainBatchOptions {
     /** Stable draft/revision scope makes a retried Guided submit idempotent. */
     readonly idempotencyScope?: string
     readonly folderBinding?: OutputReservationFolderBinding
+    /** Optional reviewed policy; absent callers retain the generation-folder best-effort contract. */
+    readonly r2Requirements?: readonly R2DeliveryRequirement[]
 }
 
 type ReviewedMainSubmissionPolicy = {
@@ -101,6 +105,7 @@ interface EnqueueMainBatchOptions {
     readonly providerExecutionContexts?: readonly MainProviderExecutionReviewContext[]
     readonly idempotencyScope?: string
     readonly folderBinding?: OutputReservationFolderBinding
+    readonly r2Requirements?: readonly R2DeliveryRequirement[]
 }
 
 function estimatePreparedBatchAnlas(
@@ -407,11 +412,63 @@ async function enqueueMainBatch(
         // The durable repository requires the exact requested count before its
         // atomic write; an invalid/incomplete planner result persists nothing.
         if (plan === null) return null
+        if (options.r2Requirements !== undefined && options.r2Requirements.length !== plan.items.length) {
+            throw new QueueExecutionError('fatal', 'Reviewed R2 requirement count does not match the prepared batch')
+        }
+
+        // Private delivery determines persistent local claims before allocation.
+        // Application-reviewed jobs already contain that exact immutable plan.
+        const items = await Promise.all(plan.items.map(async (item, ordinal) => {
+            const output = item.prepared.output
+            const reviewedDelivery = output.r2Delivery
+            const requirement = options.r2Requirements?.[ordinal] ?? output.r2Requirement
+                ?? (output.autoR2UploadProfileId == null ? { mode: 'disabled' as const }
+                    : { mode: 'best-effort' as const, profileId: output.autoR2UploadProfileId })
+            const releaseInput: PlanR2ReleaseInput = {
+                requirement,
+                objectName: ensureImageFileExtension(output.fileName ?? `NAI_Blue_${item.prepared.params.seed}`, item.prepared.imageFormat)!,
+                planIdentity: `sha256:${hashCanonicalValue({ idempotencyScope, ordinal })}`,
+                deleteOriginal: output.deleteOriginalAfterRelease,
+                ...(output.r2Provenance === undefined && output.r2Bucket === null && output.r2Prefix === null
+                    ? {} : { resolvedDestination: {
+                        ...(output.r2Bucket === null && output.r2Provenance === undefined ? {} : { bucket: output.r2Bucket }),
+                        ...(output.r2Prefix === null && output.r2Provenance === undefined ? {} : { prefix: output.r2Prefix ?? '' }),
+                        provenance: output.r2Provenance ?? {
+                            profileId: 'legacy-output', bucket: 'legacy-output', prefix: 'legacy-output', key: 'planned-output',
+                        },
+                    } }),
+                profileIdProvenance: output.generationFolderId == null ? 'legacy-output' : 'generation-folder',
+            }
+            let release: Extract<PlanR2ReleaseResult, { status: 'ready' }>
+            if (reviewedDelivery !== undefined) {
+                if (!isR2QueueDeliverySnapshot(reviewedDelivery)
+                    || reviewedDelivery.requirement !== requirement.mode
+                    || (requirement.mode !== 'disabled' && reviewedDelivery.planned?.destination.profileId !== requirement.profileId)
+                    || output.deleteOriginalAfterRelease) {
+                    throw new QueueExecutionError('fatal', 'Reviewed Main R2 delivery changed before allocation')
+                }
+                release = reviewedDelivery.planned === null
+                    ? await planR2Release({ ...releaseInput, requirement: { mode: 'disabled' } }, dependencies.r2Planning) as typeof release
+                    : { status: 'ready', destination: reviewedDelivery.planned.destination,
+                        internalSnapshot: reviewedDelivery.planned, readiness: 'ready' }
+            } else {
+                const planned = await planR2Release(releaseInput, dependencies.r2Planning)
+                if (planned.status !== 'ready') throw new QueueExecutionError('fatal', planned.message)
+                release = planned
+            }
+            const metadataMode = release.internalSnapshot?.profile.publicMode === 'private'
+                ? 'strip-and-sidecar' as const : item.prepared.metadataMode
+            if (reviewedDelivery !== undefined && metadataMode !== item.prepared.metadataMode) {
+                throw new QueueExecutionError('fatal', 'Reviewed private R2 output is missing its sidecar policy')
+            }
+            return { ...item, releaseInput, release, reviewedDelivery,
+                prepared: { ...item.prepared, metadataMode, params: { ...item.prepared.params, metadataMode } } }
+        }))
 
         const generationLimits = runtimeCapabilities.generationPublication.generationLimits
         assertGenerationAtomicBatchAvailable(
-            plan.items.length,
-            plan.items.reduce((total, item) => total + generationOutputClaimKinds({
+            items.length,
+            items.reduce((total, item) => total + generationOutputClaimKinds({
                 fileName: ensureImageFileExtension(
                     item.prepared.output.fileName ?? `NAI_Blue_${item.prepared.params.seed}`,
                     item.prepared.imageFormat,
@@ -427,7 +484,8 @@ async function enqueueMainBatch(
         const createdAt = new Date().toISOString()
         const jobs: EnqueueGenerationJobInput[] = []
         const reservations: OutputCommitSetReservation[] = []
-        const allocationRequests = plan.items.map((item, ordinal) => {
+        const r2Deliveries: R2QueueDeliverySnapshot[] = []
+        const allocationRequests = items.map((item, ordinal) => {
             const requestedFileName = ensureImageFileExtension(
                 item.prepared.output.fileName ?? `NAI_Blue_${item.prepared.params.seed}`,
                 item.prepared.imageFormat,
@@ -464,10 +522,10 @@ async function enqueueMainBatch(
             }
         })
         const allocations = await dependencies.outputReservations.planBatch(allocationRequests)
-        if (allocations.length !== plan.items.length) {
+        if (allocations.length !== items.length) {
             throw new QueueExecutionError('fatal', 'Main output allocation did not preserve the requested count')
         }
-        for (const [ordinal, item] of plan.items.entries()) {
+        for (const [ordinal, item] of items.entries()) {
             const jobId = `main-job-${idempotencyScope}-${ordinal}`
             const allocation = allocations[ordinal]
             const reservationCollisionPolicy = allocationRequests[ordinal].collisionPolicy
@@ -486,9 +544,6 @@ async function enqueueMainBatch(
                     reservationCollisionPolicy,
                 },
             }
-            const encoded = item.providerExecution === undefined
-                ? encodeMainJobSnapshot(exactPrepared, item.dehydrated, costConsent)
-                : encodeMainJobSnapshot(exactPrepared, item.dehydrated, costConsent, item.providerExecution)
             const reservationId = `output-reservation:${jobId}`
             const reservation: OutputCommitSetReservation = {
                 reservationSchemaVersion: 1,
@@ -514,12 +569,38 @@ async function enqueueMainBatch(
                 updatedAt: _updatedAt,
                 ...reservationSnapshot
             } = reservation
+            const compositionPlanHash = exactPrepared.params.compositionPlanHash === undefined
+                ? null
+                : `sha256:${exactPrepared.params.compositionPlanHash.digest}`
+            const destinationBoundPlanHash = `sha256:${hashCanonicalValue({
+                compositionPlanHash,
+                outputCommitSetHash: commitSetHash,
+            })}` as const
+            let release = item.release
+            if (item.reviewedDelivery !== undefined && allocation.fileName !== item.prepared.output.fileName) {
+                throw new QueueExecutionError('fatal', 'Reviewed Main filename changed before R2 delivery enqueue')
+            }
+            if (item.reviewedDelivery === undefined && allocation.fileName !== item.releaseInput.objectName && release.internalSnapshot !== null) {
+                const original = release.internalSnapshot
+                const renamed = await planR2Release({ ...item.releaseInput, objectName: allocation.fileName }, {
+                    ...dependencies.r2Planning, getProfile: async () => original.profile,
+                })
+                if (renamed.status !== 'ready' || renamed.internalSnapshot === null) throw new QueueExecutionError('fatal', 'Allocated R2 destination is invalid')
+                release = { ...renamed, internalSnapshot: { ...renamed.internalSnapshot,
+                    sourceProfileHash: original.sourceProfileHash ?? original.destination.profileHash } }
+            }
+            const r2Delivery: R2QueueDeliverySnapshot = release.internalSnapshot === null
+                ? { requirement: 'disabled', planned: null }
+                : release.internalSnapshot.destination.requirement === 'required'
+                    ? { requirement: 'required', planned: release.internalSnapshot }
+                    : { requirement: 'best-effort', planned: release.internalSnapshot }
+            r2Deliveries.push(r2Delivery)
+            const deliveryPrepared = r2Delivery.requirement === 'disabled'
+                ? { ...exactPrepared, output: { ...exactPrepared.output, autoR2UploadProfileId: null } }
+                : exactPrepared
+            const encoded = encodeMainJobSnapshot(deliveryPrepared, item.dehydrated, costConsent, item.providerExecution, r2Delivery)
             const snapshot = bindOutputReservationSnapshot(encoded.snapshot, reservationSnapshot)
             reservations.push(reservation)
-            const destinationBoundPlanHash = `sha256:${hashCanonicalValue({
-                compositionPlanHash: encoded.compositionPlanHash,
-                outputCommitSetHash: commitSetHash,
-            })}`
             jobs.push({
                 id: jobId,
                 batchId,
@@ -529,7 +610,7 @@ async function enqueueMainBatch(
                 priority: 0,
                 ordinal,
                 snapshot,
-                compositionPlanHash: destinationBoundPlanHash,
+                compositionPlanHash: `sha256:${hashCanonicalValue({ localPlanHash: destinationBoundPlanHash, r2Delivery })}`,
                 maxAttempts: options.queuePolicy?.maxAttempts ?? 3,
                 idempotencyKey: `main-enqueue-${idempotencyScope}-${ordinal}`,
             })
@@ -552,6 +633,13 @@ async function enqueueMainBatch(
                     ), 0),
                     generationLimits,
                 )
+                for (const delivery of r2Deliveries) {
+                    if (delivery.planned === null) continue
+                    const checked = await revalidateR2Release(delivery.planned, dependencies.r2Planning)
+                    if (checked.status === 'blocked') {
+                        throw new QueueExecutionError('fatal', checked.reason)
+                    }
+                }
                 return getRuntimeQueueRepository().createBatchAndEnqueue({
                     batch: {
                         id: batchId,

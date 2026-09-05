@@ -15,6 +15,7 @@ import { getRuntimeR2UploadCoordinator, getRuntimeR2UploadRepository } from './r
 
 export type GeneratedR2ReleaseResult =
     | { readonly status: 'uploaded'; readonly artifactCount: number; readonly sidecarUploaded: boolean }
+    | { readonly status: 'queued'; readonly artifactCount: number; readonly sidecarQueued: boolean; readonly jobIds: readonly string[] }
     | { readonly status: 'unavailable'; readonly reason: 'runtime' | 'profile' | 'credential' | 'output' }
     | { readonly status: 'pending-or-failed'; readonly failed: number; readonly pending: number }
 
@@ -83,7 +84,7 @@ export function deriveGeneratedReleaseProfile(
     }
 }
 
-/** Uploads one verified local image and, for private profiles, its audit sidecar. */
+/** Queues one verified local image and its private sidecar; handles acknowledge durable acceptance only. */
 export async function releaseLocalImageToR2(input: {
     readonly profileId: string
     readonly sourceId: string
@@ -152,21 +153,17 @@ export async function releaseLocalImageToR2(input: {
 
     const coordinator = getRuntimeR2UploadCoordinator()
     const plan = await coordinator.plan(profile, artifacts, 'current-session')
-    await coordinator.enqueuePlan(plan)
-    await coordinator.runUntilIdle(profile)
-    const settled = await Promise.all(plan.jobs.map(job => repository.getJob(job.id)))
-    const failed = settled.filter(job => job?.state === 'failed' || job?.state === 'cancelled').length
-    const pending = settled.filter(job => job?.state === 'queued' || job?.state === 'running' || job === null).length
-    if (failed > 0 || pending > 0) return { status: 'pending-or-failed', failed, pending }
+    const queued = await coordinator.enqueuePlan(plan)
     return {
-        status: 'uploaded',
+        status: 'queued',
         artifactCount: artifacts.length,
-        sidecarUploaded: profile.publicMode === 'private',
+        sidecarQueued: profile.publicMode === 'private',
+        jobIds: queued.map(job => job.id),
     }
 }
 
 /**
- * Uploads only the exact verified output set. Public profiles never receive the
+ * Queues only the exact verified output set. Public profiles never receive the
  * prompt-bearing sidecar; private profiles require and upload the pair.
  */
 export async function releaseGeneratedOutputToR2(input: {

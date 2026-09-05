@@ -67,6 +67,7 @@ function dependencies(options: {
     scenes?: SceneRepositoryPort
     verifiedReceipt?: SpoolReceipt
     projectSceneDocument?: (document: SceneDocument) => void
+    resumeR2Release?: (job: GenerationJob) => Promise<import('@/application/r2/enqueue-r2-release').DurableR2ReleaseHandle | null>
 } = {}) {
     const currentJob = options.currentJob === undefined ? job() : options.currentJob
     const currentReservation = options.currentReservation === undefined ? null : options.currentReservation
@@ -96,6 +97,7 @@ function dependencies(options: {
         } as unknown as QueueArtifactRepository),
         scenes: options.scenes ?? ({} as SceneRepositoryPort),
         projectSceneDocument: options.projectSceneDocument,
+        resumeR2Release: options.resumeR2Release,
         spool: {
             initialize: vi.fn(), spool: vi.fn(), listReceipts: vi.fn(), cleanup: vi.fn(),
             verify: vi.fn(async () => options.verifiedReceipt ?? receipt),
@@ -107,6 +109,16 @@ function dependencies(options: {
 }
 
 describe('Queue recovery command adapter', () => {
+    it('routes delivery recovery through the committed-job seam without touching storage or spool', async () => {
+        const resumeR2Release = vi.fn(async () => ({ artifactId: 'artifact:1', status: 'queued' as const, jobIds: ['upload:1'] }))
+        const { adapter, repository, discard } = dependencies({ resumeR2Release })
+        await expect(adapter.execute({ jobId: 'job:1', action: { kind: 'retry-r2-release', requiresHuman: false } }))
+            .resolves.toEqual({ status: 'recovered', action: 'retry-r2-release' })
+        expect(resumeR2Release).toHaveBeenCalledWith(await repository.getJob('job:1'))
+        expect(repository.getOutputReservation).not.toHaveBeenCalled()
+        expect(discard).not.toHaveBeenCalled()
+    })
+
     it('retries only the pre-bound files-committed workflow without Provider dispatch', async () => {
         const current = job({
             state: 'running', outputTransactionId: 'txn:1',

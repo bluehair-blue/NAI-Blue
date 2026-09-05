@@ -1672,6 +1672,11 @@
         }
     },
     "queue": {
+        "r2ReadinessPause": "필수 R2 전달 설정 또는 인증을 확인해야 합니다. R2 설정에서 연결을 복구한 뒤 이 작업 그룹을 재개해 주세요.",
+        "r2Requirement": { "required": "필수 전달", "best-effort": "가능하면 전달", "disabled": "전달 안 함" },
+        "r2Source": { "folder": "선택 폴더", "ancestor": "상위 폴더", "workspace": "기본 프로필", "cleared": "상속 해제", "profile-snapshot": "선택 프로필", "legacy-output": "기존 출력 설정" },
+        "r2DestinationSource": "버킷: {{bucket}} · 경로: {{prefix}}",
+        "r2MoreDestinations": "그 외 R2 목적지 {{count}}개",
         "title": "큐 센터",
         "enqueued": "내구성 대기열에 추가됨",
         "selectScenes": "폴더별 씬 선택",
@@ -1766,6 +1771,7 @@
         "title": "결과 이행 단계",
         "unavailable": "결과 이행 근거를 확인할 수 없습니다.",
         "refresh": "단계 새로고침",
+        "deliveryJobs": "R2 전달 작업",
         "interpretation": "해석",
         "provider": "제공자",
         "storage": "저장",
@@ -1773,6 +1779,8 @@
         "acceptance": "검수",
         "issue": {
             "title": "복구 작업",
+            "r2Missing": "내 기기 저장 완료 · R2 전달 작업 생성 필요",
+            "r2Failed": "내 기기 저장 완료 · R2 전달 조치 필요",
             "sceneLinkPending": "내 기기 저장 성공 · Scene 연결 재시도 필요",
             "outputReservationConflict": "출력 예약 충돌 · 다시 계획 필요",
             "directoryAuthorizationRequired": "출력 폴더 권한이 필요합니다"
@@ -1781,6 +1789,7 @@
             "replan": "다시 계획",
             "grantDirectoryAccess": "폴더 권한 부여",
             "retryStorage": "저장만 다시 시도",
+            "retryR2Release": "R2 전달 재개",
             "retrySceneLink": "Scene에 다시 연결",
             "abandonReservation": "예약 해제",
             "discardResult": "결과 폐기 및 예약 해제",
@@ -2527,6 +2536,7 @@
         "createStackDesc": "선택한 이미지를 하나의 스택으로 묶음",
         "unstack": "스택 해제",
         "unstackDesc": "선택한 스택을 개별 이미지로 분리",
+        "r2Queued": "R2에 전달 대기 중",
         "stackCount": "{{count}}개",
         "import": "이미지 가져오기",
         "importShort": "가져오기",

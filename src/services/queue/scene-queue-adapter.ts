@@ -68,7 +68,6 @@ import {
     getRuntimeQueueResourceMaterializer,
     type MaterializedQueueResource,
 } from './queue-resource-materializer'
-import { gateGenerationFolderAutoUpload, getDefaultR2Readiness } from '@/services/r2/readiness'
 import { ensureImageFileExtension, renderFilenameTemplate } from '@/services/output/filename-policy'
 import {
     getRuntimeMainQueueDependencies,
@@ -82,6 +81,8 @@ import {
     generationOutputClaimKinds,
     outputFilesystemSemantics,
 } from '@/services/output/generation-output-commit-set'
+import { planR2Release, revalidateR2Release } from '@/application/r2/plan-r2-release'
+import type { PlannedR2Destination, R2DeliveryRequirement, R2DestinationProvenance, R2ProfileV2, R2QueueDeliverySnapshot } from '@/domain/r2/types'
 
 // Queue Center passes explicit folder/scene/count tuples; this boundary keeps
 // selection UI concerns out of snapshot creation and makes each job retain the
@@ -93,6 +94,8 @@ export interface SceneQueueTarget {
     /** Optional caller-observed repository revision; stale callers fail the whole request. */
     readonly expectedRevision?: number
     readonly fileNames?: readonly string[]
+    /** Reviewed per-target policy, frozen into each generated job and review identity. */
+    readonly r2Requirement?: R2DeliveryRequirement
 }
 
 export interface SceneQueueFilenameSummary {
@@ -118,6 +121,7 @@ export interface SceneQueueReview {
     readonly maxAnlas: number
     readonly claimCount: number
     readonly destinations: readonly SceneQueueDestinationReview[]
+    readonly r2Destinations: readonly PlannedR2Destination[]
 }
 
 declare const sceneQueueSubmissionBrand: unique symbol
@@ -166,6 +170,8 @@ interface PreparedSceneQueueJob {
     readonly compositionResult: SceneCompositionRuntimeRecord
     readonly reviewDestinationKey: string
     readonly reviewDestinationLabel: string
+    readonly r2Requirement: R2DeliveryRequirement
+    readonly r2Provenance?: R2DestinationProvenance
 }
 
 interface SceneQueueSubmissionData {
@@ -183,6 +189,7 @@ interface SceneQueueSubmissionData {
     readonly plans: ReadonlyMap<string, ReturnType<typeof planSceneBatch<PreparedSceneQueueJob>>>
     readonly allocationRequests: readonly OutputCommitSetPlanningRequest[]
     readonly allocations: readonly PlannedOutputCommitSet[]
+    readonly r2Deliveries: readonly R2QueueDeliverySnapshot[]
     readonly batchId: string
     readonly requestIdentity: string
     readonly createdAt: string
@@ -262,6 +269,9 @@ function normalizeSceneQueueTargets(targets: readonly SceneQueueTarget[]): Scene
         const count = target.count
         const key = `${target.presetId}:${target.sceneId}`
         const previous = normalized.get(key)
+        if (previous !== undefined && canonicalSerialize(previous.r2Requirement ?? null) !== canonicalSerialize(target.r2Requirement ?? null)) {
+            throw new QueueExecutionError('fatal', `Scene target R2 requirements conflict for ${key}`)
+        }
         if (previous?.expectedRevision !== undefined
             && target.expectedRevision !== undefined
             && previous.expectedRevision !== target.expectedRevision) {
@@ -279,6 +289,7 @@ function normalizeSceneQueueTargets(targets: readonly SceneQueueTarget[]): Scene
                 ? {}
                 : { expectedRevision: target.expectedRevision ?? previous?.expectedRevision }),
             ...(fileNames.some(Boolean) ? { fileNames } : {}),
+            ...(target.r2Requirement === undefined ? {} : { r2Requirement: structuredClone(target.r2Requirement) }),
         })
     }
     return [...normalized.values()]
@@ -378,15 +389,16 @@ async function prepareSceneQueueReviewOnce(
                 count: target.count,
                 fileNames: target.fileNames ?? [],
                 repositoryRevision: document.revision,
+                r2Requirement: target.r2Requirement ?? null,
             })),
         })}`
         const planningNow = new Date(`${requestedDay}T00:00:00.000Z`)
         planningNow.setUTCMilliseconds(Number.parseInt(canonicalRequestHash.slice(7, 15), 16) % 86_400_000)
-        const r2ReadinessByProfile = new Map<string, ReturnType<typeof getDefaultR2Readiness>>()
+        const r2ReadinessByProfile = new Map<string, Promise<R2ProfileV2 | null>>()
         const readR2Profile = (profileId: string) => {
             let pending = r2ReadinessByProfile.get(profileId)
             if (pending === undefined) {
-                pending = getDefaultR2Readiness(profileId)
+                pending = getRuntimeMainQueueDependencies().r2Planning.getProfile(profileId)
                 r2ReadinessByProfile.set(profileId, pending)
             }
             return pending
@@ -417,11 +429,10 @@ async function prepareSceneQueueReviewOnce(
                     useAbsolutePath: settings.useAbsoluteScenePath,
                 },
             )
-            const requestedProfileId = preliminaryFolder?.r2.profileId ?? DEFAULT_R2_PROFILE_ID
-            const r2Readiness = preliminaryFolder?.r2.autoUpload
-                ? await readR2Profile(requestedProfileId)
-                : null
-            const baseR2Profile = r2Readiness?.status === 'ready' ? r2Readiness.profile : null
+            const r2Requirement = target.r2Requirement ?? (preliminaryFolder?.r2.autoUpload
+                ? { mode: 'best-effort' as const, profileId: preliminaryFolder.r2.profileId ?? DEFAULT_R2_PROFILE_ID }
+                : { mode: 'disabled' as const })
+            const baseR2Profile = r2Requirement.mode === 'disabled' ? null : await readR2Profile(r2Requirement.profileId)
             const resolvedFolder = resolveGenerationFolderAuthority(
                 folderDocument,
                 settings.generationFolders,
@@ -434,10 +445,7 @@ async function prepareSceneQueueReviewOnce(
                     r2Prefix: baseR2Profile?.prefix,
                 },
             )
-            const generationFolder = gateGenerationFolderAutoUpload(
-                resolvedFolder,
-                r2Readiness?.status === 'ready',
-            )
+            const generationFolder = resolvedFolder
             const reviewDestinationKey = generationFolder?.id ?? 'default-scene-output'
             const reviewDestinationLabel = generationFolder === null
                 ? 'Default Scene output'
@@ -461,7 +469,7 @@ async function prepareSceneQueueReviewOnce(
                 : generationFolder?.directory ?? settings.sceneSavePath
             const outputContextBase: SceneQueueWorkflowSnapshot['outputContext'] = {
                 useAbsoluteScenePath: generationFolder?.useAbsolutePath ?? settings.useAbsoluteScenePath,
-                metadataMode: generationFolder?.r2.autoUpload
+                metadataMode: r2Requirement.mode !== 'disabled'
                     ? 'strip-and-sidecar'
                     : scene.metadataMode ?? settings.metadataMode,
                 presetName: preset.name || 'Default',
@@ -470,14 +478,12 @@ async function prepareSceneQueueReviewOnce(
                 sceneSubfoldersEnabled: settings.sceneSubfoldersEnabled,
                 directory,
                 capabilityFallbackDirectory,
+                autoR2UploadProfileId: r2Requirement.mode === 'disabled' ? null : r2Requirement.profileId,
                 ...(generationFolder === null
                     ? {}
                     : {
                         generationFolderId: generationFolder.id,
                         generationFolderPath: generationFolder.path,
-                        autoR2UploadProfileId: generationFolder.r2.autoUpload
-                            ? generationFolder.r2.profileId ?? DEFAULT_R2_PROFILE_ID
-                            : null,
                         r2Bucket: generationFolder.r2.bucket,
                         r2Prefix: generationFolder.r2.prefix,
                     }),
@@ -564,6 +570,8 @@ async function prepareSceneQueueReviewOnce(
                         },
                         reviewDestinationKey,
                         reviewDestinationLabel,
+                        r2Requirement,
+                        ...(generationFolder?.r2.provenance === undefined ? {} : { r2Provenance: generationFolder.r2.provenance }),
                     },
                 })
             }
@@ -640,6 +648,31 @@ async function prepareSceneQueueReviewOnce(
         if (allocations.length !== prepared.length) {
             throw new QueueExecutionError('fatal', 'Scene output allocation did not preserve the requested count')
         }
+        const r2Deliveries = await Promise.all(prepared.map(async (item, ordinal): Promise<R2QueueDeliverySnapshot> => {
+            const planIdentity = `sha256:${hashCanonicalValue({
+                scenePlanHash: item.prepared.planHash,
+                outputCommitSetHash: allocations[ordinal].commitSetHash,
+            })}` as const
+            const release = await planR2Release({
+                requirement: item.prepared.r2Requirement,
+                objectName: allocations[ordinal].fileName,
+                planIdentity,
+                ...(item.prepared.r2Provenance === undefined ? {} : { resolvedDestination: {
+                    bucket: item.prepared.outputContext.r2Bucket ?? null,
+                    prefix: item.prepared.outputContext.r2Prefix ?? '',
+                    provenance: item.prepared.r2Provenance,
+                } }),
+                profileIdProvenance: item.prepared.outputContext.generationFolderId == null
+                    ? 'legacy-output'
+                    : 'generation-folder',
+            }, dependencies.r2Planning)
+            if (release.status !== 'ready') throw new QueueExecutionError('fatal', release.message)
+            return release.internalSnapshot === null
+                ? { requirement: 'disabled', planned: null }
+                : release.internalSnapshot.destination.requirement === 'required'
+                    ? { requirement: 'required', planned: release.internalSnapshot }
+                    : { requirement: 'best-effort', planned: release.internalSnapshot }
+        }))
         const destinations = new Map<string, { label: string; filenames: string[]; imageCount: number; claimCount: number }>()
         prepared.forEach((item, ordinal) => {
             const allocation = allocations[ordinal]
@@ -675,6 +708,7 @@ async function prepareSceneQueueReviewOnce(
                 claimCount: destination.claimCount,
                 filenameSummary: summarizeSceneFilenames(destination.filenames),
             }))),
+            r2Destinations: Object.freeze(r2Deliveries.flatMap(delivery => delivery.planned === null ? [] : [delivery.planned.destination])),
         })
         const submission = Object.freeze({ reviewId }) as SceneQueueSubmission
         sceneQueueSubmissions.set(submission, {
@@ -692,6 +726,7 @@ async function prepareSceneQueueReviewOnce(
             plans,
             allocationRequests,
             allocations,
+            r2Deliveries,
             batchId,
             requestIdentity,
             createdAt,
@@ -749,6 +784,11 @@ async function enqueueReviewedSceneQueueOnce(
                 }
 
                 const activeCredentialsAreOpus = selectActiveCredentialsAreOpus(useAuthStore.getState())
+                for (const delivery of data.r2Deliveries) {
+                    if (delivery.planned === null) continue
+                    const checked = await revalidateR2Release(delivery.planned, getRuntimeMainQueueDependencies().r2Planning)
+                    if (checked.status === 'blocked') replan('folder-changed', checked.reason)
+                }
                 if (data.prepared.some(item => {
                     const pricingBasis = resolveAnlasPricingBasis({
                         model: item.prepared.params.model,
@@ -836,6 +876,7 @@ async function enqueueReviewedSceneQueueOnce(
                     const destinationBoundPlanHash: `sha256:${string}` = `sha256:${hashCanonicalValue({
                         scenePlanHash: plan.planHash,
                         outputCommitSetHash: allocation.commitSetHash,
+                        r2Delivery: data.r2Deliveries[ordinal],
                     })}`
                     const encoded = encodeSceneJobSnapshot({
                         scene: item.prepared.scene,
@@ -855,6 +896,7 @@ async function enqueueReviewedSceneQueueOnce(
                             planHash: destinationBoundPlanHash,
                         },
                         costConsent: costConsents[ordinal],
+                        r2Delivery: data.r2Deliveries[ordinal],
                     }, dehydratedByOrdinal[ordinal])
                     jobs.push({
                         id: jobId,

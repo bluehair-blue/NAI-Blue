@@ -97,6 +97,11 @@ export function LibraryItem({ item, className, isOverlay, onRename, onAddRef, on
 
             <div className="absolute bottom-0 left-0 right-0 bg-scrim/70 p-2 opacity-100 transition-opacity lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100">
                 <p className="truncate px-1 text-xs text-primary-foreground">{item.name}</p>
+                {item.r2Status === 'queued' && (
+                    <p className="px-1 text-[11px] text-primary-foreground/70" title={item.r2JobIds?.join(', ')}>
+                        {t('library.r2Queued', 'R2 delivery queued')}
+                    </p>
+                )}
                 {folderLabel && (
                     <p className="mt-0.5 flex items-center gap-1 truncate px-1 text-[11px] text-primary-foreground/70">
                         {item.r2Status === 'uploaded' && <Cloud className="h-3 w-3 shrink-0" />}

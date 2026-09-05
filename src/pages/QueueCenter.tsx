@@ -518,6 +518,12 @@ export default function QueueCenter() {
         return labels[state] ?? t('queue.status.unknown', 'Status unavailable')
     }
     const fulfillmentIssueLabel = (issue: FulfillmentIssue): string => {
+        if (issue.code === 'R2_DELIVERY_MISSING') {
+            return t('queue.fulfillment.issue.r2Missing', 'Saved on this device · R2 delivery needs to be queued')
+        }
+        if (issue.code === 'R2_DELIVERY_FAILED') {
+            return t('queue.fulfillment.issue.r2Failed', 'Saved on this device · R2 delivery needs attention')
+        }
         if (issue.code === 'SCENE_LINK_PENDING') {
             return t('queue.fulfillment.issue.sceneLinkPending', 'Saved on this device · Scene link needs retry')
         }
@@ -544,6 +550,7 @@ export default function QueueCenter() {
             'grant-directory-access': t('queue.fulfillment.action.grantDirectoryAccess', 'Grant folder access'),
             'retry-storage': t('queue.fulfillment.action.retryStorage', 'Retry storage only'),
             'retry-scene-link': t('queue.fulfillment.action.retrySceneLink', 'Retry Scene link'),
+            'retry-r2-release': t('queue.fulfillment.action.retryR2Release', 'Resume R2 delivery'),
             'abandon-reservation': t('queue.fulfillment.action.abandonReservation', 'Release reservation'),
             'discard-result-and-abandon-reservation': t('queue.fulfillment.action.discardResult', 'Discard result and release reservation'),
             'review-provider-unknown': t('queue.fulfillment.action.reviewProviderUnknown', 'Review Provider status'),
@@ -648,6 +655,11 @@ export default function QueueCenter() {
                 </div>
             </header>
 
+            {selectedBatch?.pauseReason === 'r2-readiness' && (
+                <p role="status" className="border-b border-border bg-muted/30 px-3 py-2 text-sm sm:px-5">
+                    {t('queue.r2ReadinessPause', 'Required R2 delivery is waiting for its runtime or credential. Restore access in R2 settings, then resume this job group.')}
+                </p>
+            )}
             {legacyQueueCount > 0 && (
                 <section
                     className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2 sm:px-5"
@@ -776,6 +788,14 @@ export default function QueueCenter() {
                                         </div>
                                     ))}
                                 </dl>
+                                {fulfillment.jobs.some(job => (job.release.jobIds?.length ?? 0) > 0) && (
+                                    <details className="text-xs text-muted-foreground">
+                                        <summary>{t('queue.fulfillment.deliveryJobs', 'R2 delivery jobs')}</summary>
+                                        <ul className="mt-1 break-all">
+                                            {fulfillment.jobs.flatMap(job => job.release.jobIds ?? []).map(id => <li key={id}>{id}</li>)}
+                                        </ul>
+                                    </details>
+                                )}
                                 {fulfillment.issues.length > 0 && (
                                     <div className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2 text-xs" role="status">
                                         <p className="font-medium">{t('queue.fulfillment.issue.title', 'Recovery actions')}</p>

@@ -1,3 +1,5 @@
+import { recoverQueueR2Release } from './queue-r2-release-recovery'
+import type { DurableR2ReleaseHandle } from '@/application/r2/enqueue-r2-release'
 import type { ProviderResultSpool } from '@/application/generation/provider-result-spool'
 import type { RetryGenerationStoragePort } from '@/application/generation/generation-command-contract'
 import { retryGenerationStorage } from '@/application/generation/enqueue-generation-plan'
@@ -30,6 +32,7 @@ export interface QueueRecoveryCommandDependencies {
     readonly artifacts: QueueArtifactRepository
     readonly scenes: SceneRepositoryPort
     readonly spool: ProviderResultSpool | (() => ProviderResultSpool)
+    readonly resumeR2Release?: (job: GenerationJob) => Promise<DurableR2ReleaseHandle | null>
     readonly projectSceneDocument?: (document: SceneDocument) => void
     readonly now?: () => string
 }
@@ -80,6 +83,14 @@ export function createQueueRecoveryCommandAdapter(dependencies: QueueRecoveryCom
             await dependencies.repository.initialize()
             const job = await dependencies.repository.getJob(issue.jobId)
             if (job === null) throw new QueueRepositoryError('E_QUEUE_NOT_FOUND', 'Recovery job does not exist')
+
+            if (issue.action.kind === 'retry-r2-release') {
+                const result = await dependencies.resumeR2Release?.(job)
+                if (!result || result.status !== 'queued' || result.jobIds.length === 0) {
+                    throw new QueueRepositoryError('E_QUEUE_INVALID_TRANSITION', 'R2 delivery recovery is unavailable')
+                }
+                return { status: 'recovered', action: issue.action.kind }
+            }
 
             if (issue.action.kind === 'retry-storage') {
                 const result = await retryGenerationStorage({
@@ -174,6 +185,7 @@ export function getRuntimeQueueRecoveryCommandAdapter() {
         artifacts: getRuntimeArtifactRepository(),
         scenes: getRuntimeSceneRepository(),
         projectSceneDocument: applySceneDocumentProjection,
+        resumeR2Release: job => recoverQueueR2Release(job, true),
         spool: () => getRuntimeMainQueueDependencies().providerResultSpool,
     })
 }

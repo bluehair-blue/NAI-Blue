@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MainBatchPlannerPort } from '@/application/generation/plan-main-batch'
+import { createR2ProfileV2, hashR2ProfileV2, type R2DestinationProvenance } from '@/domain/r2/types'
 import { createAnlasCostConsentSnapshot } from '@/domain/queue/anlas-cost-consent'
 import type { PreparedMainGeneration } from '@/services/generation/main-generation-plan'
 import { createGenerationOutputCommitSet } from '@/services/output/generation-output-commit-set'
@@ -27,6 +28,8 @@ const runtime = vi.hoisted(() => ({
     authoritativeFolderBinding: vi.fn(),
     planBatch: vi.fn(),
     assertAtomic: vi.fn(),
+    getR2Profile: vi.fn(),
+    getR2Readiness: vi.fn(),
 }))
 
 vi.mock('@/platform/capabilities', () => ({
@@ -55,6 +58,10 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({
             getCurrentFolderBinding: runtime.currentFolderBinding,
             getAuthoritativeFolderBinding: runtime.authoritativeFolderBinding,
             planBatch: runtime.planBatch,
+        },
+        r2Planning: {
+            getProfile: runtime.getR2Profile,
+            getReadiness: runtime.getR2Readiness,
         },
     }),
 }))
@@ -87,6 +94,7 @@ const prepared = {
     output: {
         directory: 'output', useAbsolutePath: false, capabilityFallbackDirectory: 'output',
         fileName: 'planned.png', collisionPolicy: 'error',
+        r2Bucket: null, r2Prefix: null,
     },
 } as PreparedMainGeneration
 
@@ -115,6 +123,27 @@ function freeCostConsent() {
 }
 
 describe('planned Main queue adapter', () => {
+    it('reserves private sidecar and provider-original claims before enqueue from embedded input', async () => {
+        const selected = createR2ProfileV2({
+            id: 'private-profile', name: 'Private', accountId: 'account', jurisdiction: null, endpoint: null,
+            bucket: 'private-bucket', prefix: '', credentialRef: 'credential-fixture',
+            transport: 'native-s3', conflictPolicy: 'fail', publicMode: 'private', publicBaseUrl: null,
+        }, '2026-09-05T00:00:00.000Z')
+        runtime.getR2Profile.mockResolvedValue(selected)
+        runtime.getR2Readiness.mockResolvedValue({ status: 'ready', credentialRef: selected.credentialRef })
+        await enqueuePlannedMainBatch({
+            planner: { getRequestedCount: () => 1, prepareBatch: async () => [{ ...prepared, metadataMode: 'embedded' }] },
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+            r2Requirements: [{ mode: 'required', profileId: selected.id }],
+        })
+        expect(runtime.planBatch.mock.calls[0][0][0].claimPlan).toMatchObject({
+            metadataMode: 'strip-and-sidecar', preserveProviderOriginal: true,
+        })
+        expect(runtime.encode.mock.calls[0][0]).toMatchObject({
+            metadataMode: 'strip-and-sidecar', params: { metadataMode: 'strip-and-sidecar' },
+        })
+    })
+
     beforeEach(() => {
         vi.clearAllMocks()
         runtime.createBatchAndEnqueue.mockResolvedValue({ batch: {}, jobs: [] })
@@ -131,6 +160,8 @@ describe('planned Main queue adapter', () => {
                 }),
             }))
         ))
+        runtime.getR2Profile.mockResolvedValue(null)
+        runtime.getR2Readiness.mockResolvedValue({ status: 'not-ready', reason: 'credential' })
     })
 
     it('reuses the Main codec/materializer and assigns stable Guided identities', async () => {
@@ -167,6 +198,113 @@ describe('planned Main queue adapter', () => {
         })).rejects.toThrow('planner failed')
         expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
         expect(runtime.complete).toHaveBeenCalledWith('operation:1')
+    })
+
+    it('fails required R2 readiness before the atomic Queue reservation write', async () => {
+        runtime.getR2Profile.mockResolvedValue({
+            schemaVersion: 2, id: 'required-profile', name: 'Required', accountId: 'account',
+            jurisdiction: null, endpoint: null, bucket: 'required-bucket', prefix: 'images',
+            credentialRef: 'stronghold:r2', transport: 'native-s3', conflictPolicy: 'fail',
+            publicMode: 'r2-dev', publicBaseUrl: null,
+            createdAt: '2026-09-04T00:00:00.000Z', updatedAt: '2026-09-04T00:00:00.000Z',
+        })
+        await expect(enqueuePlannedMainBatch({
+            planner: planner(),
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+            r2Requirements: [{ mode: 'required', profileId: 'required-profile' }],
+        })).rejects.toThrow('required R2 profile and credential are not ready')
+
+        expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
+        expect(runtime.encode).not.toHaveBeenCalled()
+    })
+
+    it('binds the exact allocated key and immutable profile into the current Queue snapshot', async () => {
+        const selected = {
+            schemaVersion: 2 as const, id: 'profile-1', name: 'Selected', accountId: 'account',
+            jurisdiction: null, endpoint: null, bucket: 'selected-bucket', prefix: 'images',
+            credentialRef: 'stronghold:r2', transport: 'native-s3' as const, conflictPolicy: 'fail' as const,
+            publicMode: 'r2-dev' as const, publicBaseUrl: null,
+            createdAt: '2026-09-04T00:00:00.000Z', updatedAt: '2026-09-04T00:00:00.000Z',
+        }
+        runtime.getR2Profile.mockResolvedValue(selected)
+        runtime.getR2Readiness.mockResolvedValue({ status: 'ready', credentialRef: selected.credentialRef })
+        const r2Prepared = {
+            ...prepared,
+            output: { ...prepared.output, autoR2UploadProfileId: selected.id },
+        } as PreparedMainGeneration
+
+        await enqueuePlannedMainBatch({
+            planner: { getRequestedCount: () => 1, prepareBatch: async () => [r2Prepared] },
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+        })
+
+        expect(runtime.encode).toHaveBeenCalledWith(
+            expect.objectContaining({ output: expect.objectContaining({ fileName: 'planned.png' }) }),
+            expect.anything(), expect.anything(), undefined,
+            expect.objectContaining({
+                requirement: 'best-effort',
+                planned: expect.objectContaining({
+                    profile: selected,
+                    destination: expect.objectContaining({ bucket: 'selected-bucket', key: 'images/planned.png' }),
+                }),
+            }),
+        )
+    })
+
+    it.each([
+        { bucket: 'folder-bucket', prefix: 'characters', bucketSource: 'folder', prefixSource: 'folder' },
+        { bucket: 'ancestor-bucket', prefix: 'ancestor/child', bucketSource: 'ancestor', prefixSource: 'ancestor' },
+        { bucket: 'selected-bucket', prefix: '', bucketSource: 'workspace', prefixSource: 'cleared' },
+    ] as const)('preserves resolved Main Folder destination $bucket/$prefix and its provenance', async resolved => {
+        const selected = createR2ProfileV2({
+            id: 'profile-1', name: 'Selected', accountId: 'account', jurisdiction: null, endpoint: null,
+            bucket: 'selected-bucket', prefix: 'base', credentialRef: 'credential-fixture',
+            transport: 'native-s3', conflictPolicy: 'fail', publicMode: 'r2-dev', publicBaseUrl: null,
+        }, '2026-09-05T00:00:00.000Z')
+        const unchanged = structuredClone(selected)
+        const provenance: R2DestinationProvenance = {
+            profileId: 'generation-folder', bucket: resolved.bucketSource, prefix: resolved.prefixSource,
+            key: 'planned-output', folder: { id: 'child', profileId: 'parent', bucket: 'parent', prefix: 'child' },
+        }
+        runtime.getR2Profile.mockResolvedValue(selected)
+        runtime.getR2Readiness.mockResolvedValue({ status: 'ready', credentialRef: selected.credentialRef })
+        const item = { ...prepared, output: {
+            ...prepared.output, autoR2UploadProfileId: selected.id, generationFolderId: 'child',
+            r2Bucket: resolved.bucket, r2Prefix: resolved.prefix, r2Provenance: provenance,
+        } } as PreparedMainGeneration
+        await enqueuePlannedMainBatch({
+            planner: { getRequestedCount: () => 1, prepareBatch: async () => [item] },
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+            r2Requirements: [{ mode: 'required', profileId: selected.id }],
+        })
+        const delivery = runtime.encode.mock.calls[0][4]
+        expect(delivery).toMatchObject({ requirement: 'required', planned: {
+            destination: {
+                bucket: resolved.bucket, key: [resolved.prefix, 'planned.png'].filter(Boolean).join('/'), provenance,
+                profileHash: hashR2ProfileV2({ ...selected, bucket: resolved.bucket, prefix: resolved.prefix }),
+            },
+            profile: { ...selected, bucket: resolved.bucket, prefix: resolved.prefix },
+            sourceProfileHash: hashR2ProfileV2(selected),
+        } })
+        expect(selected).toEqual(unchanged)
+        expect(runtime.createBatchAndEnqueue).toHaveBeenCalledOnce()
+    })
+
+    it('rejects a cleared Main Folder bucket before writing Queue reservations', async () => {
+        runtime.getR2Profile.mockResolvedValue(createR2ProfileV2({
+            id: 'profile-1', name: 'Selected', accountId: 'account', jurisdiction: null, endpoint: null,
+            bucket: 'selected-bucket', prefix: 'base', credentialRef: 'credential-fixture',
+            transport: 'native-s3', conflictPolicy: 'fail', publicMode: 'r2-dev', publicBaseUrl: null,
+        }, '2026-09-05T00:00:00.000Z'))
+        const item = { ...prepared, output: { ...prepared.output,
+            autoR2UploadProfileId: 'profile-1', r2Bucket: null, r2Prefix: '',
+            r2Provenance: { profileId: 'generation-folder', bucket: 'cleared', prefix: 'folder', key: 'planned-output' },
+        } } as PreparedMainGeneration
+        await expect(enqueuePlannedMainBatch({
+            planner: { getRequestedCount: () => 1, prepareBatch: async () => [item] },
+            submissionPolicy: { kind: 'guided', costConsent: freeCostConsent() },
+        })).rejects.toThrow('bucket is cleared or invalid')
+        expect(runtime.createBatchAndEnqueue).not.toHaveBeenCalled()
     })
 
     it('preflights and atomically binds the exact output reservation', async () => {
@@ -242,6 +380,8 @@ describe('planned Main queue adapter', () => {
             }),
             expect.anything(),
             costConsent,
+            undefined,
+            { requirement: 'disabled', planned: null },
         )
         expect(runtime.createBatchAndEnqueue).toHaveBeenCalledOnce()
     })
@@ -265,6 +405,8 @@ describe('planned Main queue adapter', () => {
             expect.objectContaining({ output: expect.objectContaining({ fileName: 'planned.png' }) }),
             expect.anything(),
             costConsent,
+            undefined,
+            { requirement: 'disabled', planned: null },
         )
         expect(runtime.createBatchAndEnqueue).toHaveBeenCalledOnce()
     })

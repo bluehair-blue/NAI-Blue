@@ -39,6 +39,8 @@ import {
     discardGeneratedProviderOriginal,
     releaseGeneratedOutputToR2,
 } from '@/services/r2/generated-release'
+import { getR2ProfileReadiness } from '@/services/r2/readiness'
+import { getRuntimeR2UploadCoordinator, getRuntimeR2UploadRepository } from '@/services/r2/runtime'
 
 function planningPathSegments(
     value: string,
@@ -243,6 +245,36 @@ export function initializeCoreRuntime(): void {
             presentation: createZustandMainQueuePresentation(),
             legacyR2Release: releaseGeneratedOutputToR2,
             legacyR2Cleanup: discardGeneratedProviderOriginal,
+            r2Planning: {
+                getProfile: profileId => getRuntimeR2UploadRepository().getProfile(profileId),
+                getReadiness: async profile => {
+                    const readiness = await getR2ProfileReadiness(profile)
+                    return readiness.status === 'ready'
+                        ? { status: 'ready' as const, credentialRef: profile.credentialRef }
+                        : { status: 'not-ready' as const, reason: readiness.reason }
+                },
+            },
+            r2Release: {
+                enqueue: async (snapshot, artifacts) => {
+                    const repository = getRuntimeR2UploadRepository()
+                    const existing = await repository.listJobs(snapshot.profile.id)
+                    const matched = artifacts.map(artifact => existing.find(job => (
+                        job.contractVersion === 'phase7-v1'
+                        && JSON.stringify(job.profileSnapshot) === JSON.stringify(snapshot.profile)
+                        && job.artifactId === artifact.artifactId
+                        && job.artifactBinding?.localVariant === artifact.artifactBinding?.localVariant
+                        && job.remoteKey === artifact.remoteKey
+                        && job.contentSha256 === artifact.contentSha256
+                        && job.size === artifact.size
+                    )) ?? null)
+                    const missing = artifacts.filter((_artifact, index) => matched[index] === null)
+                    if (missing.length === 0) return matched.filter(job => job !== null)
+                    const coordinator = getRuntimeR2UploadCoordinator()
+                    const plan = await coordinator.plan(snapshot.profile, missing, 'current-session')
+                    const queued = await coordinator.enqueuePlan(plan)
+                    return [...matched.filter(job => job !== null), ...queued]
+                },
+            },
             outputReservations: {
                 getCurrentFolderBinding: () => {
                     const document = useSettingsStore.getState().generationFolderDocument
