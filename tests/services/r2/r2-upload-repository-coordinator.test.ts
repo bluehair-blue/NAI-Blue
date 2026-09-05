@@ -96,6 +96,25 @@ function adapter(overrides: Partial<NativeR2UploadAdapter> = {}): NativeR2Upload
 }
 
 describe('R2 upload repository and coordinator', () => {
+    it('keeps independent same-timestamp delivery plans distinct and deduplicates repeated artifacts', async () => {
+        const repo = repository('same-timestamp-plans')
+        const coordinator = new R2UploadCoordinator(repo, adapter(), () => new Date(NOW))
+        const scanned = [artifact(101), artifact(102)].map(item => ({
+            ...item,
+            artifactBinding: { artifactId: item.artifactId, artifactVersion: 1, localVariant: 'original' as const },
+        }))
+        const [first, second] = await Promise.all(scanned.map(item => coordinator.plan(profile(), [item], 'current-session')))
+        expect(first.jobs[0]!.id).not.toBe(second.jobs[0]!.id)
+        const [firstJobs, secondJobs] = await Promise.all([
+            coordinator.enqueuePlan(first), coordinator.enqueuePlan(second),
+        ])
+        expect(await repo.listJobs(profile().id)).toHaveLength(2)
+        const repeated = await coordinator.enqueuePlan(await coordinator.plan(profile(), [scanned[0]!], 'current-session'))
+        expect(repeated[0]!.id).toBe(firstJobs[0]!.id)
+        expect(secondJobs[0]!.artifactId).toBe(scanned[1]!.artifactId)
+        expect(await repo.listJobs(profile().id)).toHaveLength(2)
+    })
+
     it('migrates v1 jobs losslessly as historical legacy contracts', async () => {
         const factory = new IDBFactory()
         const databaseName = `r2-v1-migration-${++databaseCounter}`

@@ -6,6 +6,7 @@ import type {
     UploadJob,
 } from '@/domain/r2/types'
 import { deterministicR2Suffix, hashR2ProfileV2 } from '@/domain/r2/types'
+import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { ArtifactRemoteObjectRef, Phase7ArtifactRemoteObjectRef } from '@/domain/organizer/types'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { ArtifactRepositoryError, type IndexedDBArtifactRepository } from '@/services/organizer/artifact-repository'
@@ -107,7 +108,9 @@ export class R2UploadCoordinator {
         const alreadyCompleted = artifacts.length - candidates.length
         const timestamp = this.now().toISOString()
         const jobs = candidates.map((artifact, index) => createUploadJob(profile.id, artifact, {
-            id: `${profile.id}:${timestamp}:${String(index).padStart(6, '0')}`,
+            // Independent Main/Scene plans can share a timestamp and ordinal;
+            // bind their IDs to the exact target while repository dedupe owns replay.
+            id: `${profile.id}:${timestamp}:${String(index).padStart(6, '0')}:${hashCanonicalValue({ profileHash: hashR2ProfileV2(profile), artifact })}`,
             now: timestamp,
             ...(artifact.artifactBinding === undefined ? {} : {
                 profileSnapshot: profile,

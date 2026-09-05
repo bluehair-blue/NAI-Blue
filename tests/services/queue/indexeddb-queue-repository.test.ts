@@ -2259,7 +2259,11 @@ describe('normalized IndexedDB durable queue repository', () => {
         })
     })
 
-    it('rejects generic requeue once Provider dispatch evidence exists', async () => {
+    it.each([
+        { failureKind: 'transient', outcome: 'running' },
+        { failureKind: 'r2-readiness', outcome: 'running' },
+        { failureKind: 'r2-readiness', outcome: 'unknown' },
+    ] as const)('rejects $failureKind requeue after Provider dispatch with $outcome outcome', async ({ failureKind, outcome }) => {
         const factory = new IDBFactory()
         const queue = repository(factory, databaseName('provider-generic-retry-guard'))
         await queue.createBatch({ id: 'batch:1', workflow: 'main', createdAt: NOW })
@@ -2282,20 +2286,40 @@ describe('normalized IndexedDB durable queue repository', () => {
             expectedEvidence: prepared, nextEvidence: possiblyDispatched,
         })
 
+        const currentEvidence: ProviderAttemptEvidence = { ...possiblyDispatched, providerOutcome: outcome }
+        if (outcome === 'unknown') await queue.recordProviderAttemptTransition({
+            jobId: 'job:1', attemptNumber: 1,
+            leaseOwner: 'worker:provider', leaseToken: lease?.leaseToken ?? '', now: LATER,
+            expectedEvidence: possiblyDispatched, nextEvidence: currentEvidence,
+            blockReason: 'provider-outcome-unknown',
+        })
+
         await expect(queue.requeueAfterFailure({
             jobId: 'job:1', leaseOwner: 'worker:provider', leaseToken: lease?.leaseToken ?? '',
             now: '2026-07-14T04:00:03.000Z', readyAt: '2026-07-14T04:00:03.000Z',
-            failureKind: 'transient',
+            failureKind,
         })).rejects.toMatchObject({
-            code: 'E_QUEUE_INVALID_TRANSITION',
+            code: outcome === 'unknown' ? 'E_QUEUE_LEASE_LOST' : 'E_QUEUE_INVALID_TRANSITION',
         })
-        expect(await queue.getJob('job:1')).toMatchObject({ state: 'running', attemptCount: 1 })
+        expect(await queue.getJob('job:1')).toMatchObject({ state: outcome === 'unknown' ? 'blocked' : 'running', attemptCount: 1 })
         expect(await queue.listAttempts('job:1')).toEqual([
-            expect.objectContaining({ outcome: 'running', providerEvidence: possiblyDispatched }),
+            expect.objectContaining({ outcome: outcome === 'unknown' ? 'interrupted' : 'running', providerEvidence: currentEvidence }),
         ])
         expect(await queue.getJob('job:1')).toMatchObject({
-            leaseOwner: 'worker:provider', leaseToken: lease?.leaseToken,
+            leaseOwner: outcome === 'unknown' ? null : 'worker:provider', leaseToken: outcome === 'unknown' ? null : lease?.leaseToken,
         })
+    })
+
+    it.each(['legacy-readiness', 'provider-transient'] as const)('does not grant readiness attempt reuse to %s', async mode => {
+        const queue = repository(new IDBFactory(), databaseName(mode))
+        await queue.createBatch({ id: 'batch:1', workflow: 'main', createdAt: NOW })
+        await queue.enqueue(jobInput({ maxAttempts: 1, snapshot: mode === 'provider-transient' ? providerSnapshot() : snapshot() }))
+        const lease = await queue.acquireLease({ jobId: 'job:1', owner: 'worker', now: NOW, ttlMs: 5_000 })
+        await queue.transitionJob({ jobId: 'job:1', to: 'running', now: NOW, leaseOwner: 'worker', leaseToken: lease!.leaseToken! })
+        await queue.requeueAfterFailure({ jobId: 'job:1', leaseOwner: 'worker', leaseToken: lease!.leaseToken!,
+            now: LATER, readyAt: LATER, failureKind: mode === 'provider-transient' ? 'transient' : 'r2-readiness' })
+        expect(await queue.getJob('job:1')).toMatchObject({ state: 'failed', attemptCount: 1 })
+        expect(await queue.listAttempts('job:1')).toHaveLength(1)
     })
 
     it('requeues and resumes a spooled result without closing or incrementing its Provider attempt', async () => {

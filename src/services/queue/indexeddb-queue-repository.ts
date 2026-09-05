@@ -365,7 +365,7 @@ const PROVIDER_OUTCOMES = new Set<ProviderOutcome>(['running', 'known-failure', 
 const PROVIDER_BILLING_RISKS = new Set<ProviderBillingRisk>(['none', 'possible', 'confirmed'])
 const PROVIDER_ATTEMPT_OUTCOMES = new Set(['running', 'succeeded', 'failed', 'cancelled', 'interrupted'])
 const QUEUE_FAILURE_KINDS = new Set<QueueFailureKind>([
-    'transient', 'rate-limited', 'timeout', 'authentication', 'decode', 'local-io', 'compatibility', 'fatal',
+    'transient', 'rate-limited', 'timeout', 'authentication', 'r2-readiness', 'decode', 'local-io', 'compatibility', 'fatal',
 ])
 const PROVIDER_STATE_ORDER: Readonly<Record<ProviderDispatchState, number>> = Object.freeze({
     prepared: 0,
@@ -567,6 +567,17 @@ function providerEvidenceForbidsGenericRetry(evidence: ProviderAttemptEvidence |
         || (evidence.dispatchState === 'response-complete' && evidence.providerOutcome === 'succeeded')
 }
 
+/** Only a pristine Provider journal proves readiness waiting has spent no dispatch attempt. */
+function isUndispatchedProviderAttempt(attempt: GenerationAttempt): boolean {
+    const evidence = attempt.providerEvidence
+    return evidence?.dispatchState === 'prepared'
+        && evidence.providerOutcome === 'running'
+        && evidence.billingRisk === 'none'
+        && evidence.responseDigest === null
+        && evidence.spoolReceipt === null
+        && attempt.providerTransitions.length === 0
+}
+
 function parseGenerationAttempt(value: unknown): StoredAttemptRecord {
     if (!isRecord(value)
         || value.recordSchemaVersion !== 2
@@ -704,6 +715,7 @@ function parseBatch(value: unknown): GenerationBatch {
     if (value.pauseReason !== null
         && value.pauseReason !== 'user'
         && value.pauseReason !== 'authentication'
+        && value.pauseReason !== 'r2-readiness'
         && value.pauseReason !== 'local-io'
         && value.pauseReason !== 'compatibility'
         && value.pauseReason !== 'fatal'
@@ -2904,37 +2916,49 @@ export class IndexedDBQueueRepository {
 
             let next = updateJobState(stored, input.to, input.now)
             if (stored.state === 'leased' && input.to === 'running') {
-                if (stored.attemptCount >= stored.maxAttempts) {
+                const previous = stored.attemptCount === 0 ? null : parseGenerationAttempt(
+                    await requestResult(attempts.get(`${stored.id}:${stored.attemptCount}`)),
+                )
+                const resumeReadiness = previous?.outcome === 'interrupted'
+                    && previous.failureKind === 'r2-readiness' && isUndispatchedProviderAttempt(previous)
+                if (!resumeReadiness && stored.attemptCount >= stored.maxAttempts) {
                     throw new QueueRepositoryError('E_QUEUE_INVALID_TRANSITION', 'Queue attempt budget is exhausted')
                 }
-                const attemptNumber = stored.attemptCount + 1
-                next = { ...next, attemptCount: attemptNumber }
-                const providerEvidence: ProviderAttemptEvidence | null = stored.snapshot.providerExecutionEnvelope === undefined
-                    ? null
-                    : {
-                        dispatchState: 'prepared',
-                        providerOutcome: 'running',
-                        billingRisk: 'none',
-                        responseDigest: null,
-                        spoolReceipt: null,
-                    }
-                const attempt: GenerationAttempt & { jobAttemptKey: IDBValidKey } = {
-                    recordSchemaVersion: 2,
-                    id: `${stored.id}:${attemptNumber}`,
-                    jobId: stored.id,
-                    attemptNumber,
-                    startedAt: input.now,
-                    finishedAt: null,
-                    outcome: 'running',
-                    diagnosticEventId: null,
-                    providerEvidence,
-                    providerTransitions: [],
-                    executionEnvelopeHash: stored.snapshot.providerExecutionEnvelope === undefined
+                if (resumeReadiness) {
+                    // Resume the same immutable attempt; unknown/dispatched journals never reach this branch.
+                    await requestResult(attempts.put({ ...previous, finishedAt: null, outcome: 'running',
+                        diagnosticEventId: null, failureKind: null }))
+                    next = { ...next, lastDiagnosticEventId: null }
+                } else {
+                    const attemptNumber = stored.attemptCount + 1
+                    next = { ...next, attemptCount: attemptNumber }
+                    const providerEvidence: ProviderAttemptEvidence | null = stored.snapshot.providerExecutionEnvelope === undefined
                         ? null
-                        : `sha256:${hashCanonicalValue(stored.snapshot.providerExecutionEnvelope)}`,
-                    jobAttemptKey: [stored.id, attemptNumber],
+                        : {
+                            dispatchState: 'prepared',
+                            providerOutcome: 'running',
+                            billingRisk: 'none',
+                            responseDigest: null,
+                            spoolReceipt: null,
+                        }
+                    const attempt: GenerationAttempt & { jobAttemptKey: IDBValidKey } = {
+                        recordSchemaVersion: 2,
+                        id: `${stored.id}:${attemptNumber}`,
+                        jobId: stored.id,
+                        attemptNumber,
+                        startedAt: input.now,
+                        finishedAt: null,
+                        outcome: 'running',
+                        diagnosticEventId: null,
+                        providerEvidence,
+                        providerTransitions: [],
+                        executionEnvelopeHash: stored.snapshot.providerExecutionEnvelope === undefined
+                            ? null
+                            : `sha256:${hashCanonicalValue(stored.snapshot.providerExecutionEnvelope)}`,
+                        jobAttemptKey: [stored.id, attemptNumber],
+                    }
+                    await requestResult(attempts.add(attempt))
                 }
-                await requestResult(attempts.add(attempt))
             }
 
             const finishesAttempt = stored.state === 'running'
@@ -3487,7 +3511,8 @@ export class IndexedDBQueueRepository {
                 diagnosticEventId: input.lastDiagnosticEventId ?? null,
                 failureKind: input.failureKind,
             }))
-            const terminal = stored.attemptCount >= stored.maxAttempts
+            const awaitingR2Readiness = input.failureKind === 'r2-readiness' && isUndispatchedProviderAttempt(attempt)
+            const terminal = !awaitingR2Readiness && stored.attemptCount >= stored.maxAttempts
             let next = updateJobState(stored, terminal ? 'failed' : 'recovering', input.now)
             if (!terminal) next = updateJobState(next, 'queued', input.now)
             next = {

@@ -111,13 +111,14 @@ export const CURRENT_MAIN_QUEUE_POLICY = Object.freeze({
 })
 
 export type GenerationBatchState = 'active' | 'paused' | 'stopped'
-export type QueuePauseReason = 'user' | 'authentication' | 'local-io' | 'compatibility' | 'fatal' | 'first-error'
+export type QueuePauseReason = 'user' | 'authentication' | 'r2-readiness' | 'local-io' | 'compatibility' | 'fatal' | 'first-error'
 export type QueueBatchOrigin = 'fresh' | 'legacy-conversion' | 'retry'
 export type QueueFailureKind =
     | 'transient'
     | 'rate-limited'
     | 'timeout'
     | 'authentication'
+    | 'r2-readiness'
     | 'decode'
     | 'local-io'
     | 'compatibility'

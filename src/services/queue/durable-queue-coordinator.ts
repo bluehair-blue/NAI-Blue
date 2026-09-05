@@ -692,6 +692,7 @@ export class DurableQueueCoordinator {
         const now = this.now()
         const diagnostic = failure.options.diagnosticEventId
         if (failure.kind === 'authentication'
+            || failure.kind === 'r2-readiness'
             || failure.kind === 'local-io'
             || failure.kind === 'compatibility') {
             await this.repository.requeueAfterFailure({

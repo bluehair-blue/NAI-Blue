@@ -406,6 +406,32 @@ export class IndexedDBR2UploadRepository {
         return values.map(cloneJob).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
     }
 
+    /** Explicit user retry preserves the immutable target and any verified remote proof. */
+    async resumeFailedJob(id: string, expectedVersion: number, now = new Date().toISOString()): Promise<UploadJob> {
+        const db = await this.open()
+        const transaction = db.transaction('jobs', 'readwrite')
+        const store = transaction.objectStore('jobs')
+        const current = await requestValue(store.get(id)) as StoredUploadJob | undefined
+        if (!current || current.version !== expectedVersion || current.state !== 'failed'
+            || current.contractVersion !== 'phase7-v1') {
+            transaction.abort()
+            throw new R2UploadRepositoryError('E_R2_VERSION_CONFLICT', 'R2 delivery retry authority changed')
+        }
+        const next: StoredUploadJob = {
+            ...current,
+            state: current.remoteRef === null ? 'queued' : 'linking',
+            attempt: 0,
+            nextAttemptAt: now,
+            diagnosticEventId: null,
+            updatedAt: now,
+            version: current.version + 1,
+        }
+        validateUploadJob(next)
+        store.put(next)
+        await transactionDone(transaction)
+        return cloneJob(next)
+    }
+
     async updateJob(
         id: string,
         expectedVersion: number,

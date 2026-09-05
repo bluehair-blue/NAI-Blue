@@ -475,6 +475,63 @@ describe('durable queue coordinator', () => {
         expect(await queue.getJob('job:0')).toMatchObject({ state: 'queued', attemptCount: 1 })
     })
 
+    it.each([1, 3])('keeps an R2 readiness pause resumable with a %s-attempt budget before any Provider dispatch', async maxAttempts => {
+        const queue = repository(`r2-readiness-${maxAttempts}`)
+        await enqueue(queue, [{ ...providerWorkflowJob(), maxAttempts }])
+        let ready = false
+        const providerCall = vi.fn()
+        const execute = vi.fn(async (context: QueueExecutorContext, jobId: string) => {
+            expect(context.executionMode).toBe('provider')
+            expect(context.providerAttempt.providerEvidence).toMatchObject({ dispatchState: 'prepared', billingRisk: 'none' })
+            expect(context.providerAttempt.diagnosticEventId).toBeNull()
+            expect(context.providerAttempt.failureKind ?? null).toBeNull()
+            if (!ready) throw new QueueExecutionError('r2-readiness', 'Required R2 credential is locked')
+            providerCall()
+            const prepared = context.providerAttempt.providerEvidence!
+            const dispatched: ProviderAttemptEvidence = { ...prepared, dispatchState: 'possibly-dispatched', billingRisk: 'possible' }
+            const started: ProviderAttemptEvidence = { ...dispatched, dispatchState: 'response-started' }
+            const complete: ProviderAttemptEvidence = { ...started, dispatchState: 'response-complete',
+                providerOutcome: 'succeeded', billingRisk: 'confirmed', responseDigest: `sha256:${'c'.repeat(64)}` }
+            await context.recordProviderTransition(dispatched)
+            await context.recordProviderTransition(started)
+            await context.recordProviderTransition(complete)
+            await context.recordProviderTransition({ ...complete, dispatchState: 'result-spooled', spoolReceipt: {
+                schemaVersion: 1, spoolId: `ready-${maxAttempts}`, attemptId: context.providerAttempt.id,
+                contentType: 'image/png', byteLength: 3, sha256: complete.responseDigest!, committedAt: NOW,
+            } })
+            await commit(context, jobId)
+        })
+        const runtime = coordinator(queue, execute)
+        await runtime.drain()
+        expect(providerCall).not.toHaveBeenCalled()
+        expect(await queue.getBatch('batch:1')).toMatchObject({ state: 'paused', pauseReason: 'r2-readiness' })
+        expect(await queue.getJob('job:provider')).toMatchObject({ state: 'queued', attemptCount: 1, leaseOwner: null })
+        const pausedAttempts = await queue.listAttempts('job:provider')
+        expect(pausedAttempts).toHaveLength(1)
+        expect(pausedAttempts[0]).toMatchObject({ attemptNumber: 1,
+            providerEvidence: { dispatchState: 'prepared', providerOutcome: 'running', billingRisk: 'none', spoolReceipt: null },
+            providerTransitions: [],
+        })
+        await runtime.drain()
+        expect(execute).toHaveBeenCalledOnce()
+        for (let retry = 0; retry < 4; retry += 1) {
+            await runtime.resumeBatch('batch:1')
+            await runtime.drain()
+            expect(await queue.getJob('job:provider')).toMatchObject({ state: 'queued', attemptCount: 1 })
+            expect(await queue.listAttempts('job:provider')).toHaveLength(1)
+        }
+        expect(providerCall).not.toHaveBeenCalled()
+        ready = true
+        await runtime.resumeBatch('batch:1')
+        await runtime.drain()
+        expect(providerCall).toHaveBeenCalledOnce()
+        expect(await queue.getJob('job:provider')).toMatchObject({ state: 'succeeded', attemptCount: 1, lastDiagnosticEventId: null })
+        const completedAttempts = await queue.listAttempts('job:provider')
+        expect(completedAttempts).toHaveLength(1)
+        expect(completedAttempts[0]?.id).toBe(pausedAttempts[0]?.id)
+        expect(completedAttempts.filter(attempt => attempt.providerEvidence?.billingRisk === 'confirmed')).toHaveLength(1)
+    })
+
     it('does not generic-retry after Provider evidence becomes uncertain', async () => {
         const queue = repository('provider-unknown-generic-guard')
         await enqueue(queue, [providerWorkflowJob()])
@@ -593,7 +650,7 @@ describe('durable queue coordinator', () => {
         ])
     })
 
-    it('leases a verified spool without Provider credentials and preserves its attempt', async () => {
+    it('leases a verified spool while R2 readiness is unavailable without Provider credentials or a new attempt', async () => {
         const queue = repository('credential-free-spool-resume')
         await enqueue(queue, [providerWorkflowJob()])
         const prepare = coordinator(queue, async context => {
@@ -630,16 +687,19 @@ describe('durable queue coordinator', () => {
         await prepare.drain()
         await queue.setBatchControl({ batchId: 'batch:1', state: 'active', now: NOW })
 
+        const r2DispatchReadiness = vi.fn(async () => { throw new QueueExecutionError('r2-readiness', 'R2 credential unavailable') })
         const execute = vi.fn(async (context: QueueExecutorContext, jobId: string) => {
             expect(context.executionMode).toBe('storage-only')
             expect(context.token).toBe('')
             expect(context.providerAttempt.attemptNumber).toBe(1)
+            if (context.executionMode === 'provider') await r2DispatchReadiness()
             await commit(context, jobId)
         })
         const resume = coordinator(queue, execute, () => NOW, [])
         await resume.drain()
 
         expect(execute).toHaveBeenCalledOnce()
+        expect(r2DispatchReadiness).not.toHaveBeenCalled()
         expect(await queue.getJob('job:provider')).toMatchObject({ state: 'succeeded', attemptCount: 1 })
         expect(await queue.listAttempts('job:provider')).toEqual([
             expect.objectContaining({ attemptNumber: 1, outcome: 'succeeded' }),
