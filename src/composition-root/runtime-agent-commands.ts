@@ -13,6 +13,12 @@ import { useFragmentStore } from '@/stores/fragment-store'
 import { resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import type { JsonObject } from '@/domain/composition/types'
+import { createAgentExecutionCoordinator } from '@/application/agent/agent-execution-coordinator'
+import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
+import { createAgentGenerationExecutionPort } from './agent-generation-execution'
+import { isAgentExecutionPolicyUpdatePending, useSettingsStore } from '@/stores/settings-store'
+
+const receipts = new IndexedDbCommandReceiptRepository()
 
 async function createHandlers(workspaceId: string): Promise<readonly AgentCommandHandler[]> {
     const drafts = getWorkflowDraftRepository()
@@ -57,7 +63,21 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
 
 /** Singleton is shared by Data Hub and post-recovery startup; no second Queue or credential authority. */
 export const runtimeAgentCommands = new ForegroundAgentCommandRuntime({
-    native: createNativeAgentCommands(), receipts: new IndexedDbCommandReceiptRepository(), createHandlers,
+    native: createNativeAgentCommands(), receipts, createHandlers,
+    policy: {
+        get: () => useSettingsStore.getState().agentExecutionPolicy,
+        set: (revision, next) => useSettingsStore.getState().setAgentExecutionPolicy(revision, next),
+        subscribe: listener => useSettingsStore.subscribe((state, previous) => {
+            if (state.agentExecutionPolicy !== previous.agentExecutionPolicy) listener()
+        }),
+        isSaving: isAgentExecutionPolicyUpdatePending,
+    },
+    createExecution: async (workspaceId, isClientAuthorized) => createAgentExecutionCoordinator({
+        workspaceId, receipts, isClientAuthorized,
+        repository: new IndexedDbAgentExecutionRepository(), plans: new IndexedDbGenerationPlanRepository(),
+        getPolicy: () => useSettingsStore.getState().agentExecutionPolicy,
+        ports: createAgentGenerationExecutionPort(),
+    }),
 })
 
 export function startRuntimeAgentCommands(recovery: Promise<{ inboxReady: boolean }>): Promise<void> {

@@ -50,8 +50,12 @@ export class IndexedDbCommandReceiptRepository implements CommandReceiptReposito
         const expected = parseAgentCommandReceipt(expectedInput)
         const next = parseAgentCommandReceipt(nextInput)
         const { state: _state, result: _result, resultDigest: _digest, ...binding } = next
-        if (expected.state !== 'accepted' || next.state === 'accepted'
-            || canonicalSerialize({ ...binding, state: 'accepted', result: null, resultDigest: null }) !== canonicalSerialize(expected)) {
+        const resumable = expected.command === 'generation.enqueue' && expected.state === 'needs-input'
+            && (['AGENT_APPROVAL_REQUIRED', 'AGENT_EXECUTION_UNKNOWN'].includes(String(expected.result?.code))
+                || (expected.result?.code === 'COMMAND_OUTCOME_UNKNOWN' && next.state === 'completed'))
+        const { state: _expectedState, result: _expectedResult, resultDigest: _expectedDigest, ...expectedBinding } = expected
+        if ((expected.state !== 'accepted' && !resumable) || next.state === 'accepted'
+            || canonicalSerialize(binding) !== canonicalSerialize(expectedBinding)) {
             throw new AgentCommandError('INVALID_RECEIPT_TRANSITION')
         }
         const key = agentCommandReceiptKey(expected.requestId)

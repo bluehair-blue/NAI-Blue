@@ -7,6 +7,11 @@ import { WebCryptoAgentAuthentication } from '@/adapters/agent/webcrypto-agent-a
 import { IndexedDbCommandReceiptRepository } from '@/adapters/agent/indexeddb-command-receipt-repository'
 import { AgentCommandError, agentRequestHash, canonicalAgentSigningPayload, type AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
 import { resetIndexedDBConnectionForRetry } from '@/lib/indexed-db'
+import { createAgentExecutionCoordinator } from '@/application/agent/agent-execution-coordinator'
+import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
+import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execution-policy'
+import type { GenerationPlan } from '@/application/generation/generation-plan-contract'
+import type { JsonObject } from '@/domain/composition/types'
 
 const runtimes: ForegroundAgentCommandRuntime[] = []
 const subtle = webcrypto.subtle as unknown as SubtleCrypto
@@ -36,16 +41,16 @@ async function fixture() {
     }
     const execute = vi.fn(async () => ({ totalDrafts: 0 }))
     const createHandlers = vi.fn(async () => [{ command: 'workspace.get_snapshot' as const, effect: 'read' as const, validate: (input: {}) => input, execute }])
-    const createRuntime = () => {
-        const runtime = new ForegroundAgentCommandRuntime({ native, receipts: new IndexedDbCommandReceiptRepository(), createHandlers })
+    const createRuntime = (overrides: Partial<ConstructorParameters<typeof ForegroundAgentCommandRuntime>[0]> = {}) => {
+        const runtime = new ForegroundAgentCommandRuntime({ native, receipts: new IndexedDbCommandReceiptRepository(), createHandlers, ...overrides })
         runtimes.push(runtime)
         return runtime
     }
-    const submit = async (id: string) => {
+    const submit = async (id: string, command: AgentCommandEnvelope['command'] = { name: 'workspace.get_snapshot', input: {} }) => {
         const request: AgentCommandEnvelope = { schemaVersion: 1, requestId: id, requestHash: `sha256:${'0'.repeat(64)}`,
             submittedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600_000).toISOString(),
             context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'workspace-1', clientId: 'client-1', actor: { kind: 'agent' }, idempotencyKey: id },
-            command: { name: 'workspace.get_snapshot', input: {} },
+            command,
             authentication: { scheme: 'hmac-sha256', keyId: 'key-1', signature: `hmac-sha256:${'0'.repeat(64)}` } }
         const hashed = { ...request, requestHash: agentRequestHash(request) }
         const signature = await subtle.sign('HMAC', key, new TextEncoder().encode(canonicalAgentSigningPayload(hashed)))
@@ -54,6 +59,44 @@ async function fixture() {
     }
     return { native, execute, createHandlers, createRuntime, submit, ready, results }
 }
+
+async function executionFixture() {
+    const f = await fixture()
+    const digest = `sha256:${'a'.repeat(64)}` as const
+    const plan = { planId: digest, planHash: digest, jobs: [{ compatibility: { status: 'captured-pass' },
+        destination: { collisionPolicy: 'fail' } }], estimatedAnlas: 7, requiredApprovals: [],
+        sourceBindings: [{ resourceId: 'draft-1' }], budget: { maxImages: 1, maxAnlas: 7 },
+        executionPolicy: { maxConcurrency: 1 } } as unknown as GenerationPlan
+    let policy = structuredClone(DEFAULT_AGENT_EXECUTION_POLICY)
+    let saving = false
+    const listeners = new Set<() => void>()
+    const receipts = new IndexedDbCommandReceiptRepository()
+    const facts = new Map<string, JsonObject>()
+    const enqueue = vi.fn(async (_plan: GenerationPlan, grant: { scopeId: string }) => {
+        const batchId = `main-batch-${grant.scopeId}`
+        const result = { status: 'ready', batchId, runId: batchId, jobIds: [`main-job-${grant.scopeId}-0`] }
+        facts.set(grant.scopeId, result)
+        return result
+    })
+    const persistPolicy = vi.fn(async (expected: number, next: typeof policy) => {
+        if (expected !== policy.revision) throw new Error('stale policy')
+        policy = { ...next, revision: expected + 1 }
+        for (const listener of listeners) listener()
+        return policy
+    })
+    const createRuntime = () => f.createRuntime({ receipts, policy: {
+        get: () => policy, set: persistPolicy, isSaving: () => saving,
+        subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    }, createExecution: async (workspaceId, isClientAuthorized) => createAgentExecutionCoordinator({
+        workspaceId, isClientAuthorized, receipts, repository: new IndexedDbAgentExecutionRepository(),
+        plans: { get: async () => plan, putIfAbsent: async () => 'same' }, getPolicy: () => policy,
+        ports: { enqueue, validate: async () => true, reconcile: async grant => facts.get(grant.scopeId) ?? null,
+            isOutstanding: async () => false },
+    }) })
+    return { ...f, createRuntime, receipts, enqueue, persistPolicy,
+        getPolicy: () => policy, setSaving: (value: boolean) => { saving = value },
+        submitEnqueue: (id: string) => f.submit(id, { name: 'generation.enqueue', input: { planId: digest, planHash: digest } }) }
+}
 beforeEach(() => { resetIndexedDBConnectionForRetry(); vi.stubGlobal('indexedDB', new IDBFactory()) })
 afterEach(async () => {
     await Promise.all(runtimes.splice(0).map(runtime => runtime.stop().catch(() => undefined)))
@@ -61,6 +104,108 @@ afterEach(async () => {
 })
 
 describe('foreground native inbox composition', () => {
+    it('rechecks pending policy persistence after asynchronous native authentication', async () => {
+        const f = await executionFixture()
+        const original = f.native.authentication(() => 'owner-1')
+        let blocked = false
+        let release!: () => void
+        let entered!: () => void
+        const waiting = new Promise<void>(resolve => { entered = resolve })
+        f.native.authentication = () => ({ authenticate: async (...args) => {
+            const identity = await original.authenticate(...args)
+            if (blocked) {
+                entered()
+                await new Promise<void>(resolve => { release = resolve })
+            }
+            return identity
+        } })
+        const runtime = f.createRuntime()
+        await f.submitEnqueue('policy-save-during-auth')
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        const [review] = runtime.getSnapshot().pendingApprovals
+        blocked = true
+        const approving = runtime.decideApproval(review.requestId, 'approve', review)
+        await waiting
+        f.setSaving(true); release()
+        await approving
+        f.setSaving(false)
+        expect(f.enqueue).not.toHaveBeenCalled()
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'rejected' })
+    })
+
+    it('restores retired approval requests, publishes the same receipt on approval, and exposes its Queue batch', async () => {
+        const f = await executionFixture()
+        await f.submitEnqueue('review-after-restart')
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        expect(f.ready.size).toBe(0)
+        expect(f.results.get('review-after-restart')).toMatchObject({ state: 'needs-input' })
+        expect(runtime.getSnapshot().pendingApprovals).toHaveLength(1)
+        await runtime.stop()
+        resetIndexedDBConnectionForRetry()
+        const reopened = f.createRuntime()
+        await reopened.start(Promise.resolve({ inboxReady: true }))
+        const [review] = reopened.getSnapshot().pendingApprovals
+        await reopened.decideApproval(review.requestId, 'approve', review)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'completed', result: { status: 'ready' } })
+        expect(reopened.getSnapshot().recent[0].batchId).toMatch(/^main-batch-agent-/)
+        expect(reopened.getSnapshot().pendingApprovals).toEqual([])
+        await reopened.decideApproval(review.requestId, 'approve', review)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+    })
+
+    it('recovers a failed approval projection without another Queue write', async () => {
+        const f = await executionFixture(); const runtime = f.createRuntime()
+        await f.submitEnqueue('approval-projection')
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        const [review] = runtime.getSnapshot().pendingApprovals
+        vi.mocked(f.native.publish).mockRejectedValueOnce(new Error('projection failed'))
+        await expect(runtime.decideApproval(review.requestId, 'approve', review)).rejects.toThrow('projection failed')
+        expect(runtime.getSnapshot().status).toBe('app-unavailable')
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        await runtime.start()
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'completed' })
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+    })
+
+    it('gates dispatch while policy persistence is pending and refreshes capabilities when policy changes', async () => {
+        const f = await executionFixture(); const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        let finish!: () => void
+        f.persistPolicy.mockImplementationOnce(async (revision, next) => {
+            f.setSaving(true)
+            await new Promise<void>(resolve => { finish = resolve })
+            f.setSaving(false)
+            return { ...next, revision: revision + 1 }
+        })
+        const changing = runtime.changePolicy(0, f.getPolicy())
+        await vi.waitFor(() => expect(f.persistPolicy).toHaveBeenCalled())
+        await f.submitEnqueue('during-policy-save'); await runtime.poll()
+        expect(f.ready.has('during-policy-save')).toBe(true)
+        expect(runtime.getSnapshot().changingExecution).toBe(true)
+        await expect(runtime.changeClient('rotate', 'client-1')).rejects.toThrow()
+        finish(); await changing
+        await runtime.changePolicy(0, { ...f.getPolicy(), mode: 'observe' })
+        expect(runtime.getSnapshot().capabilities.find(item => item.command === 'generation.enqueue')?.available).toBe(false)
+        expect(runtime.getSnapshot().capabilities.find(item => item.command === 'workspace.get_snapshot')?.available).toBe(true)
+        await runtime.poll()
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+
+    it('stop waits for a local decision and prevents an enqueue whose final authentication crossed stop', async () => {
+        const f = await executionFixture(); const runtime = f.createRuntime()
+        await f.submitEnqueue('stop-before-approval')
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        const [review] = runtime.getSnapshot().pendingApprovals
+        const deciding = runtime.decideApproval(review.requestId, 'approve', review)
+        const stopped = runtime.stop()
+        await expect(deciding).rejects.toThrow('Agent inbox stopped')
+        await stopped
+        expect(f.enqueue).not.toHaveBeenCalled()
+        expect(runtime.getSnapshot().status).toBe('stopped')
+    })
+
     it('retires rejected oversized and invalid-encoding files and continues with a valid request', async () => {
         const f = await fixture()
         f.ready.set('oversized', 'native bounded read fixture')

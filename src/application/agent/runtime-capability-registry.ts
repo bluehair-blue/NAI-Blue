@@ -21,6 +21,9 @@ export const AGENT_COMMAND_EFFECTS: Readonly<Record<AgentCommandName, 'read' | '
 export interface AgentCommandHandler {
     readonly command: AgentCommandName
     readonly effect: 'read' | 'plan' | 'mutation'
+    /** Only the durable approval coordinator registers this execution gate. */
+    readonly executionGate?: 'durable-approval'
+    readonly receiptState?: (result: JsonObject) => 'completed' | 'needs-input' | 'rejected'
     /** Validation is local and pure; it must finish before durable acceptance. */
     readonly validate: (input: JsonObject) => JsonObject
     readonly execute: (input: JsonObject, context: {
@@ -51,19 +54,22 @@ export function describeAgentCommandCapabilities(
     return AGENT_COMMAND_NAMES.map(command => {
         const handler = handlers.find(candidate => candidate.command === command)
         const effect = AGENT_COMMAND_EFFECTS[command]
-        // Phase 9A never opens a mutation path. Approval and rolling reservations
-        // must be wired before bounded-auto can have execution authority.
+        const managedEnqueue = command === 'generation.enqueue' && handler?.effect === effect
+            && handler.executionGate === 'durable-approval'
+        // Effective runtime policy controls the general approval requirement;
+        // the coordinator still checks each plan and its durable budget reservation.
         const reason = !state.ready ? 'app-unavailable'
             : handler === undefined ? 'handler-not-registered'
                 : handler.effect !== effect ? 'invalid-command-registration'
-                    : effect === 'mutation' ? 'human-approval-unavailable'
+                    : effect === 'mutation' && !managedEnqueue ? 'human-approval-unavailable'
                     : state.mode === 'observe' && effect !== 'read' ? 'observe-only'
                         : undefined
         return {
             command, available: reason === undefined,
             ...(reason === undefined ? {} : { reason }),
             requiresAppProcess: true, canExecuteWhileAppClosed: false,
-            requiresHumanApproval: effect === 'mutation',
+            requiresHumanApproval: effect === 'mutation'
+                && !(managedEnqueue && state.mode === 'bounded-auto' && !state.globalPause),
         }
     })
 }

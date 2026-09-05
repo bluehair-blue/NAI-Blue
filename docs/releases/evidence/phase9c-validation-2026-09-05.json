@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 1,
+  "phase": "9C",
+  "implementationSlice": "durable-generation-enqueue-approval-policy",
+  "recordedAt": "2026-09-05T13:01:41.239Z",
+  "baseCommit": "999b983be403cd3abf3117a3612d97ff017d958f",
+  "sourceScope": "Source and tests in the commit containing this evidence; source text hashes normalize CRLF to LF.",
+  "implementation": "windows-foreground-generation-enqueue-with-durable-approval-and-budget",
+  "phase9Complete": false,
+  "runtimeActivation": "windows-foreground-read-plan-and-policy-gated-enqueue",
+  "addedCommands": [
+    "generation.enqueue"
+  ],
+  "supportedInput": "Authenticated unexpired envelope; command input contains only planId and planHash of a stored immutable Workflow Draft plan.",
+  "safetyContracts": [
+    "Default suggest requires a fresh human approval bound to request hash, plan hash, authenticated actor, policy revision and expiry.",
+    "Policy is human-owned, versioned and persisted; invalid authority hydrates as observe plus global pause.",
+    "Global pause blocks every new enqueue including local human approval. Bounded-auto expiry alone downgrades to suggest.",
+    "Unsettled estimated exposure never ages away. Hour/day aging starts at first durable exact Queue settlement observation.",
+    "One workspace CAS covers approval claims, rolling limits, outstanding client requests and operation-key admission.",
+    "Same client operation idempotency key cannot create a new batch by changing request ID.",
+    "Immutable grant binding is part of each atomic Queue job snapshot; runId equals deterministic batchId.",
+    "After grant consumption, recovery only reads exact Queue facts; absent or unknown outcomes never authorize another enqueue.",
+    "Approval cannot rewrite a plan or increase its original budget. Stale source or inadequate plan budget requires explicit replanning.",
+    "Current selected Folder cannot replace the reviewed direct output path; selected-folder plans require immutable Folder binding.",
+    "Per-job paid consent is narrowed after aggregate batch validation, with the original pricing and approval times."
+  ],
+  "automatedTests": {
+    "node": "v24.19.0",
+    "command": "npx vitest run --exclude 'tests/live/**' --reporter=json --outputFile=docs/local/evidence/phase-09c/regression-final.json",
+    "success": true,
+    "files": 316,
+    "passed": 2265,
+    "failed": 0,
+    "skipped": 0,
+    "liveSuitesExcluded": true,
+    "report": {
+      "path": "docs/local/evidence/phase-09c/regression-final.json",
+      "sha256": "8332f5a02de75bff34d9a0ff2eecf7474a9971d96e8b035b10a158d398eea9ef"
+    },
+    "boundaries": "Actual IndexedDB adapters and real Queue transaction tests; Provider executor requests use mocked transport. No live Provider tests ran.",
+    "keyCoverage": [
+      "Concurrent approve once, restart restoration, rejection and exact receipt replay.",
+      "Client revocation, expiry, stale plan, policy rebinding and service actor preservation.",
+      "Per-run, hourly/day, outstanding and concurrency limits across clients and CAS races.",
+      "25-hour blocked Queue exposure, persisted settlement time, uncertain outcomes and operation-key duplication.",
+      "Queue commit before receipt failure, failed result projection, exact snapshot/grant reconciliation without a second enqueue.",
+      "Policy persistence failure, same-version corrupt hydration, native authentication crossing policy save and foreground stop.",
+      "Real paid two-job Queue enqueue/reopen and executor consent validation with mocked transport."
+    ]
+  },
+  "browserQA": {
+    "command": "npm run qa:agent-execution",
+    "status": "passed",
+    "checks": [
+      "Suggest enqueue is durably pending after ready-file retirement; zero Queue-port calls and reviewed source/cost/output are visible",
+      "Actual policy form save increments and durably stores revision; fresh single-use approval enqueues exactly once and publishes exact persisted receipt with existing batch link",
+      "Exact envelope replay preserves the completed receipt and makes no second Queue-port call",
+      "Human reject finalizes durable rejected receipt without enqueue",
+      "New foreground/coordinator instance and settings rehydration restore retired pending approval and policy revision from actual IndexedDB",
+      "Explicit mode selection plus future expiry saved through the human form permits an in-budget fixture enqueue",
+      "Saved global pause produces pending review and disables approval without enqueue",
+      "Advancing only the coordinator clock beyond the persisted auto expiry downgrades new enqueue to pending without a timer or additional Queue call",
+      "390px panel and document have no horizontal overflow"
+    ],
+    "environment": "Actual AgentCommandPanel, AgentPolicyForm, ForegroundAgentCommandRuntime, AgentExecutionCoordinator, settings persistence/hydration and IndexedDB approval/receipt repositories. Native ownership/client/authentication, immutable plan lookup and Queue enqueue/reconcile are fixtures. The expiry scenario advances only the coordinator clock. No Windows keyring, HMAC cryptography, native filesystem inbox, real Queue execution, Provider request, Anlas spending or production profile.",
+    "pageErrors": 0,
+    "consoleErrors": 0,
+    "dimensions": {
+      "viewport": 390,
+      "documentWidth": 390,
+      "scrollWidth": 358,
+      "clientWidth": 358
+    },
+    "report": {
+      "path": "docs/local/evidence/phase-09c/browser-qa-report.json",
+      "sha256": "86bc5b4fcffae1e4850234476326c106833ea46422e66d0cb57ca31f7f5882b2"
+    },
+    "screenshots": [
+      {
+        "path": "docs/local/evidence/phase-09c/01-suggest-review.png",
+        "sha256": "214e3fb362e7aa166f5fec5f6ae9f222fd8373678208a8ba17c7a54b4f21b4fe"
+      },
+      {
+        "path": "docs/local/evidence/phase-09c/02-policy-and-pending.png",
+        "sha256": "87056e0320f41630ef4c60cc090c236cc68e984428d89596fdbb20ba1da8fc41"
+      },
+      {
+        "path": "docs/local/evidence/phase-09c/03-mobile-policy-and-pending.png",
+        "sha256": "2eefa02d895d130d34bb8dc48fc51cb84940a93d5da7ac90201879e017b85504"
+      }
+    ],
+    "visualReview": "QA worker inspected the desktop and 390px screenshots; no horizontal overflow.",
+    "cleanup": "Owned Chromium closed and Vite stopped after final QA; the QA worker verified zero listeners on loopback port 9191."
+  },
+  "checks": {
+    "lint": {
+      "exitCode": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09c/lint-final.log",
+        "sha256": "17400807ef893029da2eb5ef47a6c8ee15513dcfb6ad203973c6990500adfd36"
+      }
+    },
+    "architecture": {
+      "exitCode": 0,
+      "modules": 614,
+      "dependencies": 3382,
+      "violations": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09c/architecture-final.log",
+        "sha256": "2466ce2f570e680205b5d3cbe8b56d5506ff3b4c80b7beb772139a3465c7e7c6"
+      }
+    },
+    "redaction": {
+      "exitCode": 0,
+      "tests": 17,
+      "log": {
+        "path": "docs/local/evidence/phase-09c/redaction-final.log",
+        "sha256": "8ff7b1ffdb5bbcc6c764feb102d22612a6dd435976aee8ccb5838829cbc6edd1"
+      }
+    },
+    "frontendBuild": {
+      "exitCode": 0,
+      "includesTypecheck": true,
+      "log": {
+        "path": "docs/local/evidence/phase-09c/frontend-build-final.log",
+        "sha256": "d3cc721c96f9eb5197f30739710625e2dade6ca99caa78f4bc1f453f08a24f63"
+      }
+    },
+    "runner": {
+      "path": "docs/local/evidence/phase-09c/validation-final.json",
+      "sha256": "b826553f95d8cd7a453151b8d164f3498885bb5a795688fb442e5cfb63b8347a"
+    }
+  },
+  "review": {
+    "method": "Independent Queue/application boundary review and root integration; action items fixed before final regression.",
+    "resolved": [
+      "Unsettled grants previously aged out of rolling windows; now require persisted exact settlement evidence.",
+      "Operation key was not unique across request IDs; now enforced in admission CAS.",
+      "Service actor identity was lost at Queue bridge; now preserved in grant and application actor.",
+      "Policy-save pending state was checked only before native authentication; now checked afterward too.",
+      "UI global pause disabled approval but core allowed local approval; core now enforces the same pause.",
+      "Batch consent was incorrectly applied as single-job consent; aggregate validation plus narrowed per-job consent now passes execution checks."
+    ],
+    "outstandingActionableFindings": []
+  },
+  "validationFailures": [
+    {
+      "failure": "One old source-contract assertion expected costConsent at the codec call.",
+      "resolution": "Updated to the intended narrowed jobConsent; final full nonlive suite passes."
+    },
+    {
+      "failure": "Initial isolated browser harness imported a different Vite router module and later raced optimizer reload.",
+      "resolution": "Harness imports the production router URL and waits for actual Data Hub readiness; final browser QA passes."
+    }
+  ],
+  "limitations": [
+    "No Phase 9C native Tauri build, actual Windows approval/enqueue GUI QA, installer QA or forced native process crash in this pass.",
+    "Phase 9B desktop-native evidence does not prove the new Phase 9C execution path.",
+    "Browser native/auth/immutable-plan/Queue ports are fixtures; browser expiry advances the coordinator clock only.",
+    "No live Provider, image generation/output, Anlas spending, R2 request or production-profile change.",
+    "Counters represent reserved estimated exposure, not actual billed Anlas.",
+    "The workspace execution ledger admits at most 1000 records; history is not pruned or silently reset.",
+    "Simultaneous failure of policy readback and compensating disabled-policy persistence is not proven by native crash testing.",
+    "Folder targets without immutable authority, R2 delivery and pinned credentials remain unsupported where existing planner/Queue gates reject them.",
+    "Cancellation, storage/Scene retry, reservation abandonment and other Scene/Folder/R2 mutations remain unavailable.",
+    "Phase 10 MCP and Phase 11 background/headless remain unimplemented."
+  ],
+  "sourceFiles": [
+    {
+      "path": "package.json",
+      "lfNormalizedSha256": "3174a7833fbead6ec27c60e7e17585dadc79ea74f5cf615477772074381a1bca"
+    },
+    {
+      "path": "src/adapters/agent/indexeddb-command-receipt-repository.ts",
+      "lfNormalizedSha256": "36443489cd907fb18be5d2da3f9660ffd665f4e2150a82859d529c03a167105f"
+    },
+    {
+      "path": "src/application/agent/agent-command-dispatcher.ts",
+      "lfNormalizedSha256": "abe5a76862f428e6389cc480f31349c18f19b0572db8f0a4b7f7aeb53e07e633"
+    },
+    {
+      "path": "src/application/agent/runtime-capability-registry.ts",
+      "lfNormalizedSha256": "d73b41fe107448d0f44e29fc0cda3591664143e6f0205a7ea6e42d3ed44598e1"
+    },
+    {
+      "path": "src/composition-root/foreground-agent-command-runtime.ts",
+      "lfNormalizedSha256": "c81fa74daa555626c4e68c70073506782716b103e8f766733fd9b14c9236c73c"
+    },
+    {
+      "path": "src/composition-root/runtime-agent-commands.ts",
+      "lfNormalizedSha256": "bf46021c5402a5bdced051808ddb38f2b4fe38a8c34e0dd7404f88b0894551bf"
+    },
+    {
+      "path": "src/domain/queue/types.ts",
+      "lfNormalizedSha256": "00181409d7ad90030a5c2723a3115b694c15a452fe116d5b160e2bebeb5723e7"
+    },
+    {
+      "path": "src/domain/sync/payload-safety.ts",
+      "lfNormalizedSha256": "0341a3a172ce60ba3f26519558b3a2421431e76d5904a8e117461383309cec7a"
+    },
+    {
+      "path": "src/i18n/locales/en.json",
+      "lfNormalizedSha256": "e18c97b2308ee59a193dc91811aab0f63323a859dc783a0c0a7769011811c85a"
+    },
+    {
+      "path": "src/i18n/locales/ja.json",
+      "lfNormalizedSha256": "9a1be331cd78bb84b79a82ad5c9087cfe60e5556a1722aacc7b4182709817ec3"
+    },
+    {
+      "path": "src/i18n/locales/ko.json",
+      "lfNormalizedSha256": "4457ef2d6cbde4001bf59b85f277877aaeb21614daf8b347e4e46a12099ad168"
+    },
+    {
+      "path": "src/presentation/agent/AgentCommandPanel.tsx",
+      "lfNormalizedSha256": "8b57d57a3f1b8b10fd0248a726e59adeeb9bb9b75a72a86010785348e0c0e744"
+    },
+    {
+      "path": "src/services/queue/indexeddb-queue-repository.ts",
+      "lfNormalizedSha256": "d55eabe2a0e96a1c0191e237d6c80697be81dfc06c1b6a6c8b83756128342d8a"
+    },
+    {
+      "path": "src/services/queue/job-snapshot.ts",
+      "lfNormalizedSha256": "e48295bf80f83c68a3b99f1f2f367adbf52245129028fe50a36af2d5de22fe83"
+    },
+    {
+      "path": "src/services/queue/main-queue-adapter.ts",
+      "lfNormalizedSha256": "6422a8069007117082b7ea136fdfb7f2da1ab7c4a7d1bdec2e60f23f0692e4e5"
+    },
+    {
+      "path": "src/stores/settings-store.ts",
+      "lfNormalizedSha256": "2e3501b5266d0f1f9cdabfd27e06d3892211c160abc8ce2996dcdc48373d8239"
+    },
+    {
+      "path": "tests/persistence/foreground-agent-command-runtime.test.ts",
+      "lfNormalizedSha256": "386751a54b7e90e1a05f34d119159048c0bfc77ca35c85b13ca39e04c732f207"
+    },
+    {
+      "path": "tests/services/queue/main-queue-adapter.contract.test.ts",
+      "lfNormalizedSha256": "b8e8227cbb55c3e7a48c8d208dea3e4f74d510fb1530ad06d26a398a91feb2da"
+    },
+    {
+      "path": "tests/services/queue/main-queue-planned-adapter.test.ts",
+      "lfNormalizedSha256": "012cd89dfc21ef81d325d57e1a38dff8d2b4c794b109545e1c3c64052c513ce7"
+    },
+    {
+      "path": "tests/services/queue/main-queue-provider-safety.test.ts",
+      "lfNormalizedSha256": "d7a7cbcc5179a1b2d18418737e65a5ed975d9be9ad7aba62d6d569f15d7269b4"
+    },
+    {
+      "path": "scripts/qa-phase9c-agent-execution.mjs",
+      "lfNormalizedSha256": "e625a3e44c611be219a4398cc57f632e8f2b58af957b25e70199e9bcd5747506"
+    },
+    {
+      "path": "src/adapters/agent/indexeddb-agent-execution-repository.ts",
+      "lfNormalizedSha256": "c184e36b24063fe27ad6c64e51101dd83f5f13092047a7152903a6454a742408"
+    },
+    {
+      "path": "src/application/agent/agent-execution-coordinator.ts",
+      "lfNormalizedSha256": "ca0a24ea6011abdb339e785590f08661ed5afca797c15a55457c97526d55ce0e"
+    },
+    {
+      "path": "src/application/agent/agent-execution-policy.ts",
+      "lfNormalizedSha256": "f40399e98b5370bf68155e847ae0f7b5551f613db07f0c7c5694143cffa49b0f"
+    },
+    {
+      "path": "src/application/agent/agent-execution-repository.ts",
+      "lfNormalizedSha256": "6471c0b9e335535acdf389e6bf56addda2f284034b45c62e6949377e29f1361d"
+    },
+    {
+      "path": "src/composition-root/agent-generation-execution.ts",
+      "lfNormalizedSha256": "a44528f1e288b5c8b7c96638c6e2b675095565487f0b10cc384947d4436fa877"
+    },
+    {
+      "path": "src/presentation/agent/AgentPolicyForm.tsx",
+      "lfNormalizedSha256": "51bdf6994f7ee45a5716a36239d5af5e98fe440c64530dba52f6fafa368b2b0b"
+    },
+    {
+      "path": "tests/application/agent/agent-execution-policy.test.ts",
+      "lfNormalizedSha256": "0af08f4a13130e1f89dd51623aca6ea1b808cc6809eae523a0063fd67a2be2ef"
+    },
+    {
+      "path": "tests/helpers/agent-policy-settings.test.ts",
+      "lfNormalizedSha256": "ff3a538080b78dbb757977b396d02fb095b166d1e7fd4ddea6bebea48d1818c8"
+    },
+    {
+      "path": "tests/persistence/agent-execution-coordinator.test.ts",
+      "lfNormalizedSha256": "251eb5db57335c4a7602cd1158164991e1f0749e24a79a68136cf4c44306fe01"
+    },
+    {
+      "path": "tests/persistence/agent-generation-execution.test.ts",
+      "lfNormalizedSha256": "95be220572ab29e3e11679d0e1efabff83ea6db9c04a1c7612b8173fdb14f15d"
+    },
+    {
+      "path": "tests/presentation/agent-command-panel.test.ts",
+      "lfNormalizedSha256": "10a24c8a9e4f67cce63a0ed501e8d406c4dd5456a05cc7fcd50cefdc58f4409f"
+    }
+  ]
+}

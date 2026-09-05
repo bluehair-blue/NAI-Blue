@@ -8,6 +8,7 @@ import { hashGenerationSemanticIntent } from '@/application/generation/plan-gene
 import { projectMainGenerationSemantic } from '@/services/generation/main-generation-semantic'
 import { NovelAIHttpError } from '@/services/novelai-types'
 import { createR2ProfileV2, hashR2ProfileV2 } from '@/domain/r2/types'
+import { createAnlasCostConsentSnapshot } from '@/domain/queue/anlas-cost-consent'
 
 const mocks = vi.hoisted(() => ({
     transport: vi.fn(),
@@ -74,7 +75,7 @@ vi.mock('@/services/queue/main-job-snapshot-codec', () => ({
             ...(snapshot.outputReservation === undefined
                 ? {}
                 : {
-                    costConsent: {
+                    costConsent: (snapshot.parameters as Record<string, unknown>)?.costConsent ?? {
                         schemaVersion: 1,
                         unit: 'anlas',
                         estimatorVersion: 'nai-blue-anlas-v3',
@@ -272,6 +273,28 @@ describe('Main Queue Provider result safety', () => {
             await request.commitWorkflow({ path: 'output/image.png' })
             return { status: 'committed', result: { path: 'output/image.png' } }
         })
+    })
+
+    it('dispatches two paid one-image jobs with narrowed consent and rejects a batch estimate on one job', async () => {
+        const consent = createAnlasCostConsentSnapshot({ pricingBasis: 'paid', estimatedAnlas: 20, maxAnlas: 20,
+            estimatedAt: '2026-09-05T00:00:00.000Z', approvedAt: '2026-09-05T00:00:00.000Z' })
+        mocks.transport.mockImplementation(async request => {
+            await request.executionHooks.observer({ stage: 'possibly-dispatched' })
+            await request.executionHooks.observer({ stage: 'response-started', status: 200, retryAfter: null })
+            await request.executionHooks.observer({ stage: 'response-complete', status: 200, retryAfter: null })
+            return { success: true, imageData: 'data:image/png;base64,AQID' }
+        })
+        for (let ordinal = 0; ordinal < 2; ordinal++) {
+            const queued = job({ withReservation: true })
+            await executeMainQueueJob({ ...queued, snapshot: { ...queued.snapshot,
+                parameters: { costConsent: consent } } }, context(prepared, { activeCredentialsAreOpus: false }).value)
+        }
+        expect(mocks.transport).toHaveBeenCalledTimes(2)
+        const queued = job({ withReservation: true })
+        await expect(executeMainQueueJob({ ...queued, snapshot: { ...queued.snapshot,
+            parameters: { costConsent: { ...consent, estimatedAnlas: 40, maxAnlas: 40 } } } },
+        context(prepared, { activeCredentialsAreOpus: false }).value)).rejects.toThrow('Anlas cost consent')
+        expect(mocks.transport).toHaveBeenCalledTimes(2)
     })
 
     it('keeps current durable R2 delivery separate from Provider execution', async () => {

@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { indexedDBStorage } from '@/lib/indexed-db'
+import { indexedDBStorage, flushIndexedDBKey, getIndexedDBItemStrict } from '@/lib/indexed-db'
+import {
+    DEFAULT_AGENT_EXECUTION_POLICY, normalizeAgentExecutionPolicy, updateAgentExecutionPolicy,
+    type AgentExecutionPolicy,
+} from '@/application/agent/agent-execution-policy'
 import { DEFAULT_METADATA_MODE, type MetadataMode } from '@/lib/generation-metadata'
 import {
     DEFAULT_GENERATION_FOLDER_ID,
@@ -87,6 +91,7 @@ export interface SettingsState {
     metadataMode: MetadataMode
     productGuidanceVersion: number
     remoteImageProcessingConsentVersion: number
+    agentExecutionPolicy: AgentExecutionPolicy
 
     // Output folders shared by Guided, Main, and Scene workflows.
     /** Compatibility projection only; GenerationFolderDocument is durable authority. */
@@ -116,6 +121,8 @@ export interface SettingsState {
     setMetadataMode: (mode: MetadataMode) => void
     setProductGuidanceVersion: (version: number) => void
     setRemoteImageProcessingConsentVersion: (version: number) => void
+    /** Human UI only. Runtime must suspend intake until the durable commit resolves. */
+    setAgentExecutionPolicy: (expectedRevision: number, next: AgentExecutionPolicy) => Promise<AgentExecutionPolicy>
     addGenerationFolder: (input: AddGenerationFolderInput) => Promise<string>
     updateGenerationFolder: (id: string, patch: GenerationFolderPatch) => Promise<void>
     saveGenerationFolder: (id: string, parentId: string | null, patch: GenerationFolderPatch) => Promise<void>
@@ -237,7 +244,11 @@ function v2Patch(
     }
 }
 
-const SETTINGS_PERSIST_VERSION = 1
+const SETTINGS_PERSIST_VERSION = 2
+let agentPolicyUpdatePending = false
+
+/** The execution coordinator also checks this while Zustand's candidate write is in flight. */
+export function isAgentExecutionPolicyUpdatePending(): boolean { return agentPolicyUpdatePending }
 
 /**
  * Reconciles the legacy savePath authority with the shared folder model before
@@ -257,6 +268,7 @@ export function normalizePersistedSettingsState(persistedState: unknown): Partia
     return {
         ...persisted,
         ...folderProjection,
+        agentExecutionPolicy: normalizeAgentExecutionPolicy(persisted.agentExecutionPolicy),
         activeGenerationFolderId,
         sceneSubfoldersEnabled: typeof persisted.sceneSubfoldersEnabled === 'boolean'
             ? persisted.sceneSubfoldersEnabled
@@ -304,6 +316,7 @@ export const useSettingsStore = create<SettingsState>()(
             metadataMode: DEFAULT_METADATA_MODE,
             productGuidanceVersion: 0,
             remoteImageProcessingConsentVersion: 0,
+            agentExecutionPolicy: structuredClone(DEFAULT_AGENT_EXECUTION_POLICY),
             generationFolders: [createDefaultGenerationFolder()],
             generationFolderDocument: null,
             activeGenerationFolderId: DEFAULT_GENERATION_FOLDER_ID,
@@ -359,6 +372,27 @@ export const useSettingsStore = create<SettingsState>()(
             setRemoteImageProcessingConsentVersion: (remoteImageProcessingConsentVersion) => set({
                 remoteImageProcessingConsentVersion: Math.max(0, Math.trunc(remoteImageProcessingConsentVersion)),
             }),
+            setAgentExecutionPolicy: async (expectedRevision, next) => {
+                if (agentPolicyUpdatePending) throw new Error('An agent policy change is already being saved')
+                const candidate = updateAgentExecutionPolicy(useSettingsStore.getState().agentExecutionPolicy, expectedRevision, next)
+                agentPolicyUpdatePending = true
+                try {
+                    set({ agentExecutionPolicy: candidate })
+                    // Settings normally debounce writes. Flush and strict readback make permission grants durable.
+                    await flushIndexedDBKey('nai-blue-settings')
+                    const raw = await getIndexedDBItemStrict('nai-blue-settings')
+                    const saved = raw === null ? undefined : JSON.parse(raw).state?.agentExecutionPolicy
+                    if (JSON.stringify(saved) !== JSON.stringify(candidate)) throw new Error('Agent policy persistence could not be verified')
+                    return candidate
+                } catch (error) {
+                    // A failed/unknown write never leaves an enabled in-memory execution policy.
+                    set({ agentExecutionPolicy: { ...candidate, mode: 'observe', globalPause: true } })
+                    // Try to persist the disabled replacement before releasing the runtime gate.
+                    // A second failure is still reported by storage; the caller receives the original failure.
+                    await flushIndexedDBKey('nai-blue-settings').catch(() => undefined)
+                    throw error
+                } finally { agentPolicyUpdatePending = false }
+            },
             addGenerationFolder: async input => {
                 const name = input.name.trim()
                 if (!isGenerationFolderName(name)) throw new TypeError('Generation folder name is invalid')

@@ -140,6 +140,13 @@ export interface GenerationSnapshotResource {
 
 export interface GenerationJobSnapshot {
     readonly schemaVersion: 1
+    /** Atomic command-to-Queue association; its digest covers the full approved grant. */
+    readonly agentExecutionBinding?: {
+        readonly scopeId: string
+        readonly planId: string
+        readonly planHash: string
+        readonly grantHash: `sha256:${string}`
+    }
     /** Copied on manual retry so acceptance remains attached to its original run. */
     readonly intentAssessment?: import('@/domain/assessment/intent-assessment').IntentAssessmentRunBinding
     /** Absent only on legacy snapshots that retain the pre-Phase-3 executor contract. */

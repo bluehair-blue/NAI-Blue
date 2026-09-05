@@ -5,6 +5,10 @@ import { describeAgentCommandCapabilities, type AgentCommandHandler, type Runtim
 import { processAgentInboxFile } from '@/adapters/agent/inbox/process-agent-inbox-file'
 import type { AgentClientRegistration, NativeAgentCommands } from '@/adapters/agent/native-agent-commands'
 import { initializeAgentCommandRuntime } from './agent-command-runtime'
+import { DEFAULT_AGENT_EXECUTION_POLICY, effectiveAgentExecutionPolicy, type AgentExecutionPolicy } from '@/application/agent/agent-execution-policy'
+import type { AgentApprovalExpectation, AgentExecutionCoordinator, AgentPendingApproval } from '@/application/agent/agent-execution-coordinator'
+import type { AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
+import type { AgentCommandReceipt } from '@/application/agent/command-receipt-repository'
 
 export interface ForegroundAgentSnapshot {
     readonly status: 'unsupported' | 'starting' | 'ready' | 'busy' | 'app-unavailable' | 'stopping' | 'stopped'
@@ -12,13 +16,17 @@ export interface ForegroundAgentSnapshot {
     readonly clients: readonly AgentClientRegistration[]
     readonly capabilities: readonly RuntimeCapabilityDescriptor[]
     readonly changingClient: boolean
-    readonly recent: readonly { requestId: string; state: string }[]
+    readonly changingExecution: boolean
+    readonly policy: AgentExecutionPolicy
+    readonly pendingApprovals: readonly AgentPendingApproval[]
+    readonly recent: readonly { requestId: string; state: string; batchId?: string }[]
 }
 
 /** One foreground owner uses the same dispatcher for processing and UI capability snapshots. */
 export class ForegroundAgentCommandRuntime {
     private snapshot: ForegroundAgentSnapshot = { status: 'unsupported', workspaceId: null, clients: [],
-        capabilities: describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false }), changingClient: false, recent: [] }
+        capabilities: describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false }),
+        changingClient: false, changingExecution: false, policy: structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), pendingApprovals: [], recent: [] }
     private listeners = new Set<() => void>()
     private dispatcher: AgentCommandDispatcher | null = null
     private owner: string | null = null
@@ -29,21 +37,59 @@ export class ForegroundAgentCommandRuntime {
     private stopRequested = false
     private recovery: Promise<{ inboxReady: boolean }> | null = null
     private running = false
+    private execution: AgentExecutionCoordinator | null = null
+    private humanWork: Promise<void> | null = null
+    private unsubscribePolicy: (() => void) | null = null
 
     constructor(private readonly dependencies: {
         readonly native: NativeAgentCommands
         readonly receipts: CommandReceiptRepository
         readonly createHandlers: (workspaceId: string) => Promise<readonly AgentCommandHandler[]>
+        readonly createExecution?: (workspaceId: string, isClientAuthorized: (envelope: AgentCommandEnvelope) => Promise<boolean>) => Promise<AgentExecutionCoordinator>
+        readonly policy?: {
+            get(): AgentExecutionPolicy
+            set(expectedRevision: number, next: AgentExecutionPolicy): Promise<AgentExecutionPolicy>
+            subscribe(listener: () => void): () => void
+            isSaving(): boolean
+        }
     }) {}
 
     getSnapshot = (): ForegroundAgentSnapshot => this.snapshot
     subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
     private update(patch: Partial<ForegroundAgentSnapshot>): void {
-        this.snapshot = { ...this.snapshot, ...patch }
+        this.snapshot = { ...this.snapshot, ...patch, policy: this.dependencies.policy?.get() ?? this.snapshot.policy }
         this.snapshot = { ...this.snapshot, capabilities: this.dispatcher?.capabilities()
             ?? describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false }) }
         for (const listener of this.listeners) listener()
+    }
+
+    private runtimeState() {
+        const policy = effectiveAgentExecutionPolicy(this.dependencies.policy?.get() ?? DEFAULT_AGENT_EXECUTION_POLICY)
+        return { ready: this.running && !this.snapshot.changingClient && !this.snapshot.changingExecution
+            && !this.dependencies.policy?.isSaving(), mode: policy.mode, globalPause: policy.globalPause }
+    }
+
+    private async refreshApprovals(): Promise<void> {
+        this.update({ pendingApprovals: await this.execution?.pending() ?? [] })
+    }
+
+    /** Publication is a projection of the durable receipt, including after a local approval. */
+    private async publishReceipt(receipt: AgentCommandReceipt): Promise<void> {
+        if (this.owner === null) throw new Error('Agent inbox has no owner')
+        try { await this.dependencies.native.publish(this.owner, receipt.requestId, canonicalSerialize(receipt)) }
+        catch (error) {
+            this.running = false
+            this.update({ status: 'app-unavailable' })
+            throw error
+        }
+        this.recordActivity(receipt.requestId, receipt.state, receipt)
+    }
+
+    private recordActivity(requestId: string, state: string, receipt?: AgentCommandReceipt): void {
+        const batchId = receipt?.result?.batchId
+        this.update({ recent: [{ requestId, state, ...(typeof batchId === 'string' ? { batchId } : {}) },
+            ...this.snapshot.recent.filter(item => item.requestId !== requestId)].slice(0, 20) })
     }
 
     start(recovery = this.recovery): Promise<void> {
@@ -67,14 +113,26 @@ export class ForegroundAgentCommandRuntime {
                 hydrate: async () => {
                     const workspaceId = this.snapshot.workspaceId!
                     const handlers = await this.dependencies.createHandlers(workspaceId)
-                    this.dispatcher = new AgentCommandDispatcher({ workspaceId, handlers,
-                        authentication: native.authentication(() => {
-                            if (this.owner === null) throw new Error('Agent inbox has no owner')
-                            return this.owner
-                        }), receipts: this.dependencies.receipts,
-                        runtime: () => ({ ready: this.running && !this.snapshot.changingClient,
-                            mode: 'suggest', globalPause: false }),
+                    const authentication = native.authentication(() => {
+                        if (this.owner === null) throw new Error('Agent inbox has no owner')
+                        return this.owner
                     })
+                    this.execution = await this.dependencies.createExecution?.(workspaceId, async envelope => {
+                        // Stop/revoke cannot open a new execution after the final asynchronous authorization check.
+                        if (!this.running || this.stopRequested || this.dependencies.policy?.isSaving()) return false
+                        try {
+                            const identity = await authentication.authenticate(envelope, new Date().toISOString(), { allowExpiredReplay: true })
+                            return this.running && !this.stopRequested && !this.dependencies.policy?.isSaving()
+                                && identity.clientId === envelope.context.clientId
+                                && identity.actor.kind === envelope.context.actor.kind && identity.actor.id === `client:${identity.clientId}`
+                        } catch { return false }
+                    }) ?? null
+                    this.dispatcher = new AgentCommandDispatcher({ workspaceId,
+                        handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler])],
+                        authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
+                    })
+                    this.unsubscribePolicy?.()
+                    this.unsubscribePolicy = this.dependencies.policy?.subscribe(() => this.update({})) ?? null
                 },
                 acquireOwner: async () => {
                     this.owner = await native.acquire()
@@ -84,7 +142,13 @@ export class ForegroundAgentCommandRuntime {
                 },
                 processReadyRequests: async () => {
                     if (this.stopRequested) return
-                    this.running = true; this.update({ status: 'ready' }); await this.poll()
+                    this.running = true
+                    // Queue recovery already completed. Execution recovery reads its committed facts;
+                    // it never treats an unresolved request as permission to enqueue again.
+                    for (const receipt of await this.execution?.recover() ?? []) await this.publishReceipt(receipt)
+                    await this.refreshApprovals()
+                    if (this.stopRequested) return
+                    this.update({ status: 'ready' }); await this.poll()
                 },
             })
             if (result.status !== 'ready') {
@@ -96,7 +160,7 @@ export class ForegroundAgentCommandRuntime {
     }
 
     private schedule(): void {
-        if (!this.running || this.snapshot.changingClient) return
+        if (!this.running || this.snapshot.changingClient || this.snapshot.changingExecution) return
         this.timer = setTimeout(() => {
             void this.poll().catch(async () => {
                 this.running = false
@@ -109,23 +173,21 @@ export class ForegroundAgentCommandRuntime {
     /** Serial polling matches the existing Main planner and avoids concurrent preparation. */
     poll(): Promise<void> {
         if (this.polling !== null) return this.polling
-        if (!this.running || this.snapshot.changingClient || this.dispatcher === null || this.owner === null) return Promise.resolve()
+        if (!this.runtimeState().ready || this.dispatcher === null || this.owner === null) return Promise.resolve()
         const token = this.owner
         const native = this.dependencies.native
         const dispatcher = this.dispatcher
-        const activity = (requestId: string, state: string) => this.update({
-            recent: [{ requestId, state }, ...this.snapshot.recent.filter(item => item.requestId !== requestId)].slice(0, 20),
-        })
         this.polling = (async () => {
             for (const file of await native.list(token)) {
-                if (!this.running || this.snapshot.changingClient) break
+                if (!this.runtimeState().ready) break
                 const outcome = await processAgentInboxFile(file, {
                     readReady: (id, max) => native.read(token, id, max),
-                    publishResult: async (id, receipt) => { await native.publish(token, id, canonicalSerialize(receipt)); activity(id, receipt.state) },
-                    publishRejection: async (id, rejection) => { await native.reject(token, id, canonicalSerialize(rejection)); activity(id, 'rejected') },
+                    publishResult: async (id, receipt) => { await native.publish(token, id, canonicalSerialize(receipt)); this.recordActivity(id, receipt.state, receipt) },
+                    publishRejection: async (id, rejection) => { await native.reject(token, id, canonicalSerialize(rejection)); this.recordActivity(id, 'rejected') },
                 }, dispatcher)
                 if (outcome !== 'ignored') await native.retire(token, file.slice(0, -'.ready.json'.length))
             }
+            await this.refreshApprovals()
         })().finally(() => { this.polling = null })
         return this.polling
     }
@@ -146,7 +208,8 @@ export class ForegroundAgentCommandRuntime {
         this.stopping = (async () => {
             try {
                 await this.starting
-                try { await this.polling } finally { await this.releaseOwner() }
+                try { await this.polling; await this.humanWork } finally { await this.releaseOwner() }
+                this.unsubscribePolicy?.(); this.unsubscribePolicy = null
                 this.update({ status: 'stopped' })
             } catch (error) {
                 this.update({ status: 'app-unavailable' })
@@ -156,9 +219,46 @@ export class ForegroundAgentCommandRuntime {
         return this.stopping
     }
 
+    /** Human decisions and policy writes share the foreground drain with client changes and stop. */
+    private runHumanExecution(action: () => Promise<void>): Promise<void> {
+        if (!this.running || this.snapshot.changingClient || this.humanWork !== null) return Promise.reject(new Error('Agent inbox is not ready'))
+        clearTimeout(this.timer)
+        this.update({ changingExecution: true })
+        this.humanWork = (async () => {
+            await this.polling
+            if (!this.running || this.stopRequested) throw new Error('Agent inbox stopped')
+            await action()
+            await this.refreshApprovals()
+        })().finally(async () => {
+            this.humanWork = null
+            this.update({ changingExecution: false })
+            if (!this.running) await this.releaseOwner()
+            this.schedule()
+        })
+        return this.humanWork
+    }
+
+    changePolicy(expectedRevision: number, next: AgentExecutionPolicy): Promise<void> {
+        return this.runHumanExecution(async () => {
+            if (this.dependencies.policy === undefined) throw new Error('Agent policy is unavailable')
+            await this.dependencies.policy.set(expectedRevision, next)
+        })
+    }
+
+    decideApproval(requestId: string, decision: 'approve' | 'reject', expected: AgentApprovalExpectation): Promise<void> {
+        return this.runHumanExecution(async () => {
+            if (this.execution === null) throw new Error('Agent approval is unavailable')
+            if (decision === 'approve') await this.execution.approve(requestId, expected)
+            else await this.execution.reject(requestId, expected)
+            const receipt = await this.dependencies.receipts.get(requestId)
+            if (receipt === null) throw new Error('Agent receipt is unavailable')
+            await this.publishReceipt(receipt)
+        })
+    }
+
     /** Human UI changes wait for in-flight work; no command can race a key rotation. */
     async changeClient(action: 'register' | 'rotate' | 'revoke', value: string, actorKind: 'agent' | 'service' = 'agent'): Promise<void> {
-        if (!this.running || this.snapshot.changingClient) throw new Error('Agent inbox is not ready')
+        if (!this.running || this.snapshot.changingClient || this.snapshot.changingExecution) throw new Error('Agent inbox is not ready')
         clearTimeout(this.timer)
         this.update({ changingClient: true })
         try {

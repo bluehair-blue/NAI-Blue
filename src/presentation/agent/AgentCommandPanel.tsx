@@ -1,11 +1,15 @@
 import { useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { runtimeAgentCommands } from '@/composition-root/runtime-agent-commands'
 import type { ForegroundAgentCommandRuntime } from '@/composition-root/foreground-agent-command-runtime'
+import type { AgentExecutionReview } from '@/application/agent/agent-execution-coordinator'
+import { useQueueStore } from '@/stores/queue-store'
+import { AgentPolicyForm } from './AgentPolicyForm'
 
 /** Human registration controls share the live dispatcher's capabilities, never its secret keys. */
 export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?: ForegroundAgentCommandRuntime }) {
@@ -13,7 +17,14 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
     const state = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot, runtime.getSnapshot)
     const [label, setLabel] = useState('')
     const [message, setMessage] = useState<string | null>(null)
-    const ready = state.status === 'ready' && !state.changingClient
+    const ready = state.status === 'ready' && !state.changingClient && !state.changingExecution
+    const decide = async (item: AgentExecutionReview, decision: 'approve' | 'reject') => {
+        setMessage(null)
+        try {
+            await runtime.decideApproval(item.requestId, decision, { requestHash: item.requestHash, planHash: item.planHash, policyRevision: item.policyRevision })
+            setMessage(t('agentInbox.approvalChanged'))
+        } catch { setMessage(t('agentInbox.approvalFailed')) }
+    }
     const change = async (action: 'register' | 'rotate' | 'revoke', value: string) => {
         setMessage(null)
         try {
@@ -42,20 +53,21 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                 <CardTitle>{t('agentInbox.title', '인증된 AI 요청')}</CardTitle>
                 <Badge variant={state.status === 'app-unavailable' ? 'destructive' : 'secondary'}>{statusLabels[state.status]}</Badge>
             </div>
-            <CardDescription>{t('agentInbox.description', '등록한 AI가 저장된 작업을 조회하고 생성 계획을 검토할 수 있습니다. 이미지 생성과 변경 작업은 아직 지원하지 않으며, 요청 처리는 앱이 실행 중일 때만 가능합니다.')}</CardDescription>
+            <CardDescription>{t('agentInbox.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
             {state.workspaceId && <div className="flex flex-wrap items-center gap-3">
                 <span className="break-all text-xs text-muted-foreground">{t('agentInbox.workspace', '작업공간 ID')}: {state.workspaceId}</span>
-                <Button variant="outline" size="sm" disabled={state.changingClient || !['ready', 'stopped'].includes(state.status)} onClick={() => void toggle()}>
+                <Button variant="outline" size="sm" disabled={state.changingClient || state.changingExecution || !['ready', 'stopped'].includes(state.status)} onClick={() => void toggle()}>
                     {state.status === 'stopped' ? t('agentInbox.resume', '수신 재개') : t('agentInbox.pause', '수신 중지')}
                 </Button>
             </div>}
             <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); if (ready && label.trim()) void change('register', label.trim()) }}>
                 <Input aria-label={t('agentInbox.clientLabel', 'AI 접속 이름')} placeholder={t('agentInbox.clientPlaceholder', '예: 로컬 작업 도우미')}
                     className="min-w-0 flex-1" value={label} maxLength={100} disabled={!ready} onChange={event => setLabel(event.target.value)} />
-                <Button disabled={!ready || !label.trim()} type="submit">{t('agentInbox.register', '조회·계획 권한 등록')}</Button>
+                <Button disabled={!ready || !label.trim()} type="submit">{t('agentInbox.register', 'AI 접속 등록')}</Button>
             </form>
+            <p className="text-xs leading-5 text-muted-foreground">{t('agentInbox.registrationScope')}</p>
             <p className="text-xs leading-5 text-muted-foreground">{t('agentInbox.keyStorage', '비밀키는 Windows 자격 증명 저장소에 보관됩니다. 접속 정보를 복사해 외부 제출 도구에 전달할 수 있으며, 키 교체 후에는 새 접속 정보를 사용해야 합니다.')}</p>
             {message && <p role="status" className="text-sm">{message}</p>}
             <ul className="space-y-3" aria-label={t('agentInbox.clients', '등록된 AI 접속')}>
@@ -75,13 +87,40 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                     </div>
                 </li>)}
             </ul>
+            <AgentPolicyForm key={`${state.policy.revision}:${state.policy.mode}:${state.policy.globalPause}`} policy={state.policy}
+                disabled={!ready}
+                onSave={async (revision, next) => {
+                    setMessage(null)
+                    try { await runtime.changePolicy(revision, next); setMessage(t('agentInbox.policySaved')) }
+                    catch (error) { setMessage(t('agentInbox.policySaveFailed')); throw error }
+                }} />
+            <div className="space-y-2"><p className="text-sm font-medium">{t('agentInbox.pendingApprovals')}</p>
+                {state.pendingApprovals.length === 0 && <p className="text-xs text-muted-foreground">{t('agentInbox.noPendingApprovals')}</p>}
+                <ul className="space-y-3">{state.pendingApprovals.map(item => <li key={item.requestId} className="space-y-2 rounded-panel border p-3 text-xs">
+                    <p className="break-all font-medium">{state.clients.find(client => client.clientId === item.clientId)?.label ?? item.clientId} · {item.clientId}</p>
+                    <p className="break-all">{t('agentInbox.request')}: {item.requestId}</p>
+                    <p className="break-all">{t('agentInbox.reviewedSource')}: {item.sourceIds.join(', ')}</p>
+                    <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
+                    <p>{t('agentInbox.outputEffect')}: {t(item.outputEffect === 'local-output-and-r2' ? 'agentInbox.outputLocalR2' : 'agentInbox.outputLocal')}</p>
+                    <p>{t('agentInbox.allowedCompatibility')}: {item.compatibilityStatuses.join(', ')}</p>
+                    <p>{t('agentInbox.approvalExpiry')}: <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p>
+                    <p>{t('agentInbox.approvalReasons')}: {item.reasons.map(reason => t(`agentInbox.reason_${reason}`, { defaultValue: reason })).join(', ')}</p>
+                    <div className="flex flex-wrap gap-2">
+                        <Button size="sm" disabled={!ready || state.policy.globalPause || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
+                            onClick={() => void decide(item, 'approve')}>{t('agentInbox.approveOnce')}</Button>
+                        <Button size="sm" variant="outline" disabled={!ready} onClick={() => void decide(item, 'reject')}>{t('agentInbox.rejectApproval')}</Button>
+                    </div>
+                </li>)}</ul>
+            </div>
             <details><summary className="cursor-pointer text-sm font-medium">{t('agentInbox.capabilities', '요청별 지원 상태')}</summary>
                 <ul className="mt-3 space-y-2">{state.capabilities.map(capability => <li key={capability.command} className="flex flex-wrap justify-between gap-2 text-xs">
                     <code>{capability.command}</code><span>{capability.available ? t('agentInbox.available', '사용 가능') : t('agentInbox.notAvailable', '현재 사용 불가')}</span>
                 </li>)}</ul>
             </details>
             {state.recent.length > 0 && <div><p className="mb-2 text-sm font-medium">{t('agentInbox.recent', '이번 실행의 최근 요청')}</p>
-                <ul className="space-y-1">{state.recent.map(item => <li key={item.requestId} className="flex flex-wrap justify-between gap-2 text-xs"><span className="break-all">{item.requestId}</span><span>{item.state}</span></li>)}</ul>
+                <ul className="space-y-1">{state.recent.map(item => <li key={item.requestId} className="flex flex-wrap justify-between gap-2 text-xs"><span className="break-all">{item.requestId}</span><span>{item.state}</span>
+                    {item.batchId && <Link className="break-all underline" to="/queue" onClick={() => useQueueStore.getState().setSelectedBatchId(item.batchId!)}>{t('agentInbox.openBatch')}: {item.batchId}</Link>}
+                </li>)}</ul>
             </div>}
         </CardContent>
     </Card>

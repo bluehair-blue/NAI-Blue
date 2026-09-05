@@ -3,6 +3,7 @@
 - 결정일: 2026-09-05
 - 구현 상태: Windows foreground의 인증된 조회·계획 수신과 사람의 client 관리 구현. 승인·변경 실행은 Phase 9C로 남긴다.
 - 선행 계약: [ADR-004: 인증·영속 코어](ADR-004-phase9-authenticated-inbox-core.md)
+- 후속 구현: [ADR-006: Phase 9C 생성 승인·정책](ADR-006-phase9c-generation-approval-policy.md). 아래 활성화 설명은 9B 당시 범위이며 현재 enqueue 경로는 후속 ADR을 따른다.
 - 검증 기록: [Phase 9B validation](../releases/evidence/phase9b-validation-2026-09-05.json)
 - 실제 데스크톱 QA: [Phase 9B desktop QA](../releases/evidence/phase9b-desktop-qa-2026-09-05.json) — 독립 실행 Windows Tauri 앱의 등록·제출·계획·재시작 replay 검증 완료
 

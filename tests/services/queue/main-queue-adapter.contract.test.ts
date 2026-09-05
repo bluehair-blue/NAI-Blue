@@ -75,7 +75,7 @@ describe('durable Main sequential-fragment execution contract', () => {
         expect(adapter).toContain('const plan = await planMainBatch({')
         expect(adapter).toContain('export async function enqueuePlannedMainBatch(')
         expect(adapter).toContain('planner: options.planner')
-        expect(adapter).toContain('encodeMainJobSnapshot(deliveryPrepared, item.dehydrated, costConsent, item.providerExecution, r2Delivery)')
+        expect(adapter).toContain('encodeMainJobSnapshot(deliveryPrepared, item.dehydrated, jobConsent, item.providerExecution, r2Delivery)')
         expect(executor).toContain('decodeMainJobSnapshot(job.snapshot)')
         expect(adapter).not.toContain('createGenerationJobSnapshot(')
         expect(adapter).not.toContain('parseMainQueueParameters')

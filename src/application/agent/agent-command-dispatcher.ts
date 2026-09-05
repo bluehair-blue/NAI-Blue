@@ -109,6 +109,6 @@ export class AgentCommandDispatcher {
         } catch {
             return finish('needs-input', { code: 'RESULT_NOT_PUBLIC' })
         }
-        return finish('completed', result)
+        return finish(handler.receiptState?.(result) ?? 'completed', result)
     }
 }

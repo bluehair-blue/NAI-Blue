@@ -99,6 +99,14 @@ function deepFreeze<T>(value: T): T {
 
 export function assertGenerationJobSnapshotSafe(snapshot: unknown): void {
     assertSafeValue(snapshot, [], new Set())
+    if (snapshot !== null && typeof snapshot === 'object' && 'agentExecutionBinding' in snapshot) {
+        const binding = snapshot.agentExecutionBinding as GenerationJobSnapshot['agentExecutionBinding']
+        if (!binding || Object.keys(binding).sort().join() !== 'grantHash,planHash,planId,scopeId'
+            || typeof binding.scopeId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(binding.scopeId)
+            || ![binding.planId, binding.planHash, binding.grantHash].every(value => /^sha256:[a-f0-9]{64}$/.test(value))) {
+            throw new QueueSnapshotError('Snapshot has an invalid agent execution binding')
+        }
+    }
     if (snapshot !== null && typeof snapshot === 'object' && 'intentAssessment' in snapshot) {
         parseIntentAssessmentRunBinding(snapshot.intentAssessment)
     }

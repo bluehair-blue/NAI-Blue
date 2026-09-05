@@ -1181,9 +1181,13 @@ function snapshotFromRecord(value: unknown, expectedHash: unknown): GenerationJo
             ...providerSnapshot,
             outputReservation: parseOutputReservationSnapshot(value.outputReservation),
         }
-    const snapshot: GenerationJobSnapshot = value.intentAssessment === undefined ? destinationSnapshot : {
+    const assessedSnapshot: GenerationJobSnapshot = value.intentAssessment === undefined ? destinationSnapshot : {
         ...destinationSnapshot,
         intentAssessment: structuredClone(value.intentAssessment) as GenerationJobSnapshot['intentAssessment'],
+    }
+    const snapshot: GenerationJobSnapshot = value.agentExecutionBinding === undefined ? assessedSnapshot : {
+        ...assessedSnapshot,
+        agentExecutionBinding: structuredClone(value.agentExecutionBinding) as GenerationJobSnapshot['agentExecutionBinding'],
     }
     assertGenerationJobSnapshotSafe(snapshot)
     if (typeof expectedHash !== 'string' || hashGenerationJobSnapshot(snapshot) !== expectedHash) {

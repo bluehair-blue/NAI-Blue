@@ -23,6 +23,7 @@ import {
     type OutputReservationFolderBinding,
     type QueueFailurePolicy,
     type QueueResourceRecord,
+    type GenerationJobSnapshot,
 } from '@/domain/queue/types'
 import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import { calculateAnlasCost } from '@/lib/anlas-calculator'
@@ -58,6 +59,7 @@ import {
     type MaterializedQueueResource,
 } from './queue-resource-materializer'
 import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
+import { projectPreparedMainGenerationJob } from '@/services/generation/main-prepared-job-projection'
 import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 import { planR2Release, revalidateR2Release, type PlanR2ReleaseInput, type PlanR2ReleaseResult } from '@/application/r2/plan-r2-release'
 import { isR2QueueDeliverySnapshot, type R2DeliveryRequirement, type R2QueueDeliverySnapshot } from '@/domain/r2/types'
@@ -86,6 +88,9 @@ export interface EnqueueReviewedMainPlanOptions {
     readonly submissionPolicy: ReviewedMainSubmissionPolicy
     /** Defaults to the stable reviewed plan identity for retry-safe Queue writes. */
     readonly idempotencyScope?: string
+    /** External commands require exact reviewed destinations and durable grant association. */
+    readonly strictReviewedDestination?: boolean
+    readonly agentExecutionBinding?: GenerationJobSnapshot['agentExecutionBinding']
 }
 
 export type EnqueueReviewedMainPlanResult =
@@ -93,7 +98,22 @@ export type EnqueueReviewedMainPlanResult =
     | { readonly status: 'conflict'; readonly issues: readonly PlanIssue[] }
     | Exclude<PlanGenerationResult<PreparedMainGeneration>, { readonly status: 'ready' }>
 
+/** Direct paths are self-contained; folder targets additionally need a reviewed document revision. */
+export function hasStrictReviewedMainDestination(plan: GenerationPlan<PreparedMainGeneration>): boolean {
+    const bindings = plan.sourceBindings.filter(binding => binding.resourceType === 'generation-folder-document')
+    return bindings.length <= 1 && bindings.every(binding => binding.revision !== null)
+        && plan.jobs.every(job => (
+            (job.destination.generationFolderId === null || bindings.length === 1)
+            && canonicalSerialize(projectPreparedMainGenerationJob(job.prepared).destination)
+                === canonicalSerialize(job.destination)
+            && job.prepared.output.collisionPolicy === 'error'
+            && (job.prepared.output.reservationCollisionPolicy === undefined
+                || job.prepared.output.reservationCollisionPolicy === 'fail')
+        ))
+}
+
 interface EnqueueMainBatchOptions {
+    readonly agentExecutionBinding?: GenerationJobSnapshot['agentExecutionBinding']
     readonly assessment?: { readonly planHash: GenerationPlan['planHash']; readonly requirement: NonNullable<GenerationPlan['assessment']> }
     readonly planner: MainBatchPlannerPort<PreparedMainGeneration>
     readonly submissionPolicy:
@@ -198,6 +218,19 @@ export async function enqueueReviewedMainPlan(
         return Object.freeze({ status: 'invalid', issues: Object.freeze([issue]) })
     }
     const folderBinding = folderBindings[0]
+    if (options.strictReviewedDestination === true && !hasStrictReviewedMainDestination(replayed.plan)) {
+        return { status: 'invalid', issues: [{ code: 'unbound-reviewed-destination', severity: 'blocking',
+            fieldPath: 'jobs.destination', message: 'The exact reviewed destination has no immutable authority.' }] }
+    }
+    if (options.agentExecutionBinding !== undefined && (
+        options.agentExecutionBinding.planId !== replayed.plan.planId
+        || options.agentExecutionBinding.planHash !== replayed.plan.planHash
+        || options.agentExecutionBinding.scopeId !== options.idempotencyScope
+        || !/^sha256:[a-f0-9]{64}$/.test(options.agentExecutionBinding.grantHash)
+    )) {
+        return { status: 'invalid', issues: [{ code: 'invalid-agent-execution-binding', severity: 'blocking',
+            fieldPath: 'agentExecutionBinding', message: 'The command binding does not match this reviewed plan.' }] }
+    }
     if (folderBinding !== undefined) {
         const current = getRuntimeMainQueueDependencies().outputReservations.getCurrentFolderBinding()
         if (current === null || canonicalSerialize(current) !== canonicalSerialize(folderBinding)) {
@@ -286,6 +319,7 @@ export async function enqueueReviewedMainPlan(
     let queue: CreateBatchAndEnqueueResult | null
     try {
         queue = await enqueueMainBatch({
+            agentExecutionBinding: options.agentExecutionBinding,
             planner: {
                 getRequestedCount: () => prepared.length,
                 prepareBatch: async () => prepared,
@@ -357,6 +391,8 @@ async function enqueueMainBatch(
     }
 
     try {
+        // Direct paths retain their reviewed directory. The current document is only
+        // their reservation owner; it never selects or replaces an output directory.
         const folderBinding = options.folderBinding
             ?? dependencies.outputReservations.getCurrentFolderBinding()
         if (folderBinding === null || folderBinding === undefined) {
@@ -602,9 +638,19 @@ async function enqueueMainBatch(
             const deliveryPrepared = r2Delivery.requirement === 'disabled'
                 ? { ...exactPrepared, output: { ...exactPrepared.output, autoR2UploadProfileId: null } }
                 : exactPrepared
-            const encoded = encodeMainJobSnapshot(deliveryPrepared, item.dehydrated, costConsent, item.providerExecution, r2Delivery)
+            // Queue dispatches one image per job. Aggregate consent was checked before
+            // materialization; narrow each immutable consent to this job's exact cost.
+            const jobEstimate = costConsent === undefined ? 0
+                : estimatePreparedBatchAnlas([deliveryPrepared], costConsent.pricingBasis)
+            const jobConsent = costConsent === undefined ? undefined : {
+                ...costConsent,
+                estimatedAnlas: jobEstimate,
+                maxAnlas: Math.min(costConsent.maxAnlas, jobEstimate),
+            }
+            const encoded = encodeMainJobSnapshot(deliveryPrepared, item.dehydrated, jobConsent, item.providerExecution, r2Delivery)
             const snapshot = bindOutputReservationSnapshot({
                 ...encoded.snapshot,
+                ...(options.agentExecutionBinding === undefined ? {} : { agentExecutionBinding: options.agentExecutionBinding }),
                 ...(options.assessment === undefined ? {} : { intentAssessment: {
                     runId: batchId, ...options.assessment,
                 } }),

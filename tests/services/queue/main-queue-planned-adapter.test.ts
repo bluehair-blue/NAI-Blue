@@ -430,6 +430,24 @@ describe('planned Main queue adapter', () => {
         expect(runtime.createBatchAndEnqueue).toHaveBeenCalledOnce()
     })
 
+    it('checks the whole paid batch before narrowing each job consent', async () => {
+        const twoRequests: MainBatchPlannerPort<PreparedMainGeneration> = {
+            getRequestedCount: () => 2,
+            prepareBatch: async () => [prepared, { ...prepared, output: { ...prepared.output, fileName: 'second.png' } }],
+        }
+        const consent = createAnlasCostConsentSnapshot({ pricingBasis: 'paid', estimatedAnlas: 40, maxAnlas: 40,
+            estimatedAt: '2026-09-05T00:00:00.000Z', approvedAt: '2026-09-05T00:00:00.000Z' })
+        await expect(enqueuePlannedMainBatch({ planner: twoRequests, submissionPolicy: { kind: 'guided',
+            costConsent: { ...consent, estimatedAnlas: 20, maxAnlas: 20 } } })).rejects.toMatchObject({
+            code: 'E_ANLAS_ESTIMATE_CHANGED',
+        })
+        expect(runtime.dehydrate).not.toHaveBeenCalled()
+        await enqueuePlannedMainBatch({ planner: twoRequests, submissionPolicy: { kind: 'guided', costConsent: consent } })
+        expect(runtime.encode.mock.calls.map(call => call[2])).toEqual([
+            { ...consent, estimatedAnlas: 20, maxAnlas: 20 }, { ...consent, estimatedAnlas: 20, maxAnlas: 20 },
+        ])
+    })
+
     it('performs no output planning I/O when the runtime limit guard rejects the batch', async () => {
         runtime.assertAtomic.mockImplementationOnce(() => { throw new Error('limit exceeded') })
 
