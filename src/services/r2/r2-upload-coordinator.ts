@@ -458,6 +458,8 @@ export class R2UploadCoordinator {
             const length = Math.min(job.multipart.partSize, job.size - offset)
             const part = await this.adapter.uploadPart(profile, {
                 localVariant: job.localVariant,
+                size: job.size,
+                contentSha256: job.contentSha256,
                 remoteKey: job.remoteKey,
                 uploadId,
                 partNumber,

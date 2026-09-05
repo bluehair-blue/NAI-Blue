@@ -125,17 +125,22 @@ export interface NativeR2UploadAdapter {
     headObject(profile: R2ProfileV2, remoteKey: string): Promise<NativeR2HeadResult>
     putObject(profile: R2ProfileV2, job: {
         localVariant: string
+        size: number
         remoteKey: string
         contentSha256: string
         contentType: string
     }): Promise<NativeR2PutResult>
     createMultipart(profile: R2ProfileV2, job: {
+        localVariant: string
+        size: number
         remoteKey: string
         contentSha256: string
         contentType: string
     }): Promise<NativeR2MultipartStartResult>
     uploadPart(profile: R2ProfileV2, input: {
         localVariant: string
+        size: number
+        contentSha256: string
         remoteKey: string
         uploadId: string
         partNumber: number
@@ -159,6 +164,7 @@ export const nativeR2UploadAdapter: NativeR2UploadAdapter = {
         return invokeNative('r2_put_object', {
             profile: nativeProfile(profile),
             localPath: job.localVariant,
+            contentSize: job.size,
             remoteKey: job.remoteKey,
             contentSha256: job.contentSha256,
             contentType: job.contentType,
@@ -167,6 +173,8 @@ export const nativeR2UploadAdapter: NativeR2UploadAdapter = {
     createMultipart(profile, job) {
         return invokeNative('r2_create_multipart', {
             profile: nativeProfile(profile),
+            localPath: job.localVariant,
+            contentSize: job.size,
             remoteKey: job.remoteKey,
             contentSha256: job.contentSha256,
             contentType: job.contentType,
@@ -176,6 +184,8 @@ export const nativeR2UploadAdapter: NativeR2UploadAdapter = {
         return invokeNative('r2_upload_part', {
             profile: nativeProfile(profile),
             localPath: input.localVariant,
+            contentSize: input.size,
+            contentSha256: input.contentSha256,
             remoteKey: input.remoteKey,
             uploadId: input.uploadId,
             partNumber: input.partNumber,

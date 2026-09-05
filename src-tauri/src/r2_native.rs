@@ -193,7 +193,10 @@ fn deterministic_suffix_key(remote_key: &str, content_sha256: &str) -> String {
     }
 }
 
-fn sha256_file(path: &Path) -> Result<String, NativeR2Error> {
+fn read_and_hash_file(
+    path: &Path,
+    capture: Option<(u64, u64)>,
+) -> Result<(u64, String, Vec<u8>), NativeR2Error> {
     let file = File::open(path).map_err(|_| {
         NativeR2Error::new(
             "E_R2_LOCAL_FILE",
@@ -204,6 +207,8 @@ fn sha256_file(path: &Path) -> Result<String, NativeR2Error> {
     })?;
     let mut reader = BufReader::new(file);
     let mut hasher = Sha256::new();
+    let mut size = 0_u64;
+    let mut captured = Vec::new();
     let mut buffer = [0_u8; 1024 * 1024];
     loop {
         let read = reader.read(&mut buffer).map_err(|_| {
@@ -217,9 +222,89 @@ fn sha256_file(path: &Path) -> Result<String, NativeR2Error> {
         if read == 0 {
             break;
         }
+        let next_size = size.checked_add(read as u64).ok_or_else(|| {
+            NativeR2Error::new(
+                "E_R2_LOCAL_FILE",
+                "Local upload file size could not be measured safely.",
+                false,
+                None,
+            )
+        })?;
+        if let Some((start, end)) = capture {
+            let overlap_start = start.max(size);
+            let overlap_end = end.min(next_size);
+            if overlap_start < overlap_end {
+                captured.extend_from_slice(
+                    &buffer[(overlap_start - size) as usize..(overlap_end - size) as usize],
+                );
+            }
+        }
+        size = next_size;
         hasher.update(&buffer[..read]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok((size, format!("{:x}", hasher.finalize()), captured))
+}
+
+fn measure_and_sha256_file(path: &Path) -> Result<(u64, String), NativeR2Error> {
+    read_and_hash_file(path, None).map(|(size, hash, _)| (size, hash))
+}
+
+fn sha256_file(path: &Path) -> Result<String, NativeR2Error> {
+    measure_and_sha256_file(path).map(|(_, hash)| hash)
+}
+
+/// Validates the durable artifact identity before any R2 request can observe
+/// caller-supplied metadata. The streaming read keeps memory bounded for large files.
+fn validate_upload_file(
+    path: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<(), NativeR2Error> {
+    let (actual_size, actual_sha256) = measure_and_sha256_file(path)?;
+    if actual_size != expected_size || format!("sha256:{actual_sha256}") != expected_sha256 {
+        return Err(NativeR2Error::new(
+            "E_R2_LOCAL_INTEGRITY",
+            "Local upload file no longer matches the queued artifact identity.",
+            false,
+            None,
+        ));
+    }
+    Ok(())
+}
+
+/// Captures the outgoing range from the same read that validates the full file.
+/// SDK retries reuse these bytes even if the source changes after validation.
+/// ponytail: each multipart part rehashes the file; add a private immutable spool
+/// only if measured large-file throughput warrants the extra lifecycle owner.
+fn verified_upload_bytes(
+    path: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+    offset: u64,
+    length: u64,
+) -> Result<Vec<u8>, NativeR2Error> {
+    let end = offset
+        .checked_add(length)
+        .filter(|end| *end <= expected_size);
+    // Current jobs use 8 MiB parts; bound renderer-controlled allocation requests.
+    if end.is_none() || length > 64 * 1024 * 1024 {
+        return Err(NativeR2Error::new(
+            "E_R2_LOCAL_INTEGRITY",
+            "Upload range exceeds the artifact or the 64 MiB native body limit.",
+            false,
+            None,
+        ));
+    }
+    let (size, hash, bytes) = read_and_hash_file(path, Some((offset, end.unwrap())))?;
+    if size != expected_size || format!("sha256:{hash}") != expected_sha256 {
+        return Err(NativeR2Error::new(
+            "E_R2_LOCAL_INTEGRITY",
+            "Local upload file no longer matches the queued artifact identity.",
+            false,
+            None,
+        ));
+    }
+    Ok(bytes)
 }
 
 fn content_type(path: &Path) -> &'static str {
@@ -353,7 +438,7 @@ mod desktop {
     use aws_sdk_s3::{
         config::{BehaviorVersion, Credentials, Region},
         error::ProvideErrorMetadata,
-        primitives::{ByteStream, Length},
+        primitives::ByteStream,
         types::{CompletedMultipartUpload, CompletedPart},
         Client,
     };
@@ -686,9 +771,13 @@ mod desktop {
         profile: NativeR2Profile,
         local_path: String,
         remote_key: String,
+        content_size: u64,
         content_sha256: String,
         content_type: String,
     ) -> Result<NativeR2PutResult, NativeR2Error> {
+        let local_path = PathBuf::from(local_path);
+        let bytes =
+            verified_upload_bytes(&local_path, content_size, &content_sha256, 0, content_size)?;
         let client = client(&profile)?;
         let original_key = normalize_key(&remote_key)?;
         let mut effective_key = original_key.clone();
@@ -738,16 +827,7 @@ mod desktop {
             }
         }
 
-        let body = ByteStream::from_path(PathBuf::from(local_path))
-            .await
-            .map_err(|_| {
-                NativeR2Error::new(
-                    "E_R2_LOCAL_FILE",
-                    "Local upload file could not be streamed.",
-                    false,
-                    None,
-                )
-            })?;
+        let body = ByteStream::from(bytes);
         let mut request = client
             .put_object()
             .bucket(&profile.bucket)
@@ -772,10 +852,13 @@ mod desktop {
 
     pub async fn create_multipart(
         profile: NativeR2Profile,
+        local_path: String,
         remote_key: String,
+        content_size: u64,
         content_sha256: String,
         content_type: String,
     ) -> Result<NativeR2MultipartStartResult, NativeR2Error> {
+        validate_upload_file(Path::new(&local_path), content_size, &content_sha256)?;
         let client = client(&profile)?;
         let mut effective_key = normalize_key(&remote_key)?;
         if profile.conflict_policy != NativeR2ConflictPolicy::Overwrite {
@@ -837,9 +920,12 @@ mod desktop {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn upload_part(
         profile: NativeR2Profile,
         local_path: String,
+        content_size: u64,
+        content_sha256: String,
         remote_key: String,
         upload_id: String,
         part_number: i32,
@@ -854,21 +940,15 @@ mod desktop {
                 None,
             ));
         }
+        let bytes = verified_upload_bytes(
+            Path::new(&local_path),
+            content_size,
+            &content_sha256,
+            offset,
+            length,
+        )?;
         let client = client(&profile)?;
-        let body = ByteStream::read_from()
-            .path(PathBuf::from(local_path))
-            .offset(offset)
-            .length(Length::Exact(length))
-            .build()
-            .await
-            .map_err(|_| {
-                NativeR2Error::new(
-                    "E_R2_LOCAL_FILE",
-                    "Multipart file range could not be streamed.",
-                    false,
-                    None,
-                )
-            })?;
+        let body = ByteStream::from(bytes);
         let output = client
             .upload_part()
             .bucket(&profile.bucket)
@@ -1145,6 +1225,71 @@ mod desktop {
         }
 
         #[tokio::test]
+        async fn integrity_mismatch_stops_put_and_multipart_before_r2() {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let path = std::env::temp_dir().join(format!(
+                "nai-blue-r2-integrity-network-{}",
+                std::process::id()
+            ));
+            std::fs::write(&path, b"tampered bytes").unwrap();
+            let profile = NativeR2Profile {
+                account_id: "fixture".to_string(),
+                jurisdiction: None,
+                endpoint: Some(endpoint),
+                bucket: "fixture-bucket".to_string(),
+                prefix: String::new(),
+                credential_ref: "fixture".to_string(),
+                conflict_policy: NativeR2ConflictPolicy::Fail,
+            };
+            let expected_sha256 = format!("sha256:{:x}", Sha256::digest(b"original bytes"));
+
+            let put_error = put_object(
+                profile.clone(),
+                path.to_string_lossy().into_owned(),
+                "artifact.bin".to_string(),
+                b"original bytes".len() as u64,
+                expected_sha256.clone(),
+                "application/octet-stream".to_string(),
+            )
+            .await
+            .unwrap_err();
+            let multipart_error = create_multipart(
+                profile.clone(),
+                path.to_string_lossy().into_owned(),
+                "artifact.bin".to_string(),
+                b"original bytes".len() as u64,
+                expected_sha256.clone(),
+                "application/octet-stream".to_string(),
+            )
+            .await
+            .unwrap_err();
+            let resumed_part_error = upload_part(
+                profile,
+                path.to_string_lossy().into_owned(),
+                b"original bytes".len() as u64,
+                expected_sha256,
+                "artifact.bin".to_string(),
+                "existing-upload".to_string(),
+                1,
+                0,
+                5,
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(put_error.code, "E_R2_LOCAL_INTEGRITY");
+            assert_eq!(multipart_error.code, "E_R2_LOCAL_INTEGRITY");
+            assert_eq!(resumed_part_error.code, "E_R2_LOCAL_INTEGRITY");
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+                    .await
+                    .is_err()
+            );
+            std::fs::remove_file(path).unwrap();
+        }
+
+        #[tokio::test]
         async fn multipart_resume_reuses_upload_id_and_completed_part() {
             let create = "<InitiateMultipartUploadResult><Bucket>fixture-bucket</Bucket><Key>large.bin</Key><UploadId>upload-1</UploadId></InitiateMultipartUploadResult>";
             let complete = "<CompleteMultipartUploadResult><Bucket>fixture-bucket</Bucket><Key>large.bin</Key><ETag>complete</ETag></CompleteMultipartUploadResult>";
@@ -1337,6 +1482,7 @@ pub async fn r2_put_object(
     profile: NativeR2Profile,
     local_path: String,
     remote_key: String,
+    content_size: u64,
     content_sha256: String,
     content_type: String,
 ) -> Result<NativeR2PutResult, NativeR2Error> {
@@ -1346,6 +1492,7 @@ pub async fn r2_put_object(
             profile,
             local_path,
             remote_key,
+            content_size,
             content_sha256,
             content_type,
         )
@@ -1357,6 +1504,7 @@ pub async fn r2_put_object(
             profile,
             local_path,
             remote_key,
+            content_size,
             content_sha256,
             content_type,
         );
@@ -1367,17 +1515,34 @@ pub async fn r2_put_object(
 #[tauri::command]
 pub async fn r2_create_multipart(
     profile: NativeR2Profile,
+    local_path: String,
     remote_key: String,
+    content_size: u64,
     content_sha256: String,
     content_type: String,
 ) -> Result<NativeR2MultipartStartResult, NativeR2Error> {
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     {
-        return desktop::create_multipart(profile, remote_key, content_sha256, content_type).await;
+        return desktop::create_multipart(
+            profile,
+            local_path,
+            remote_key,
+            content_size,
+            content_sha256,
+            content_type,
+        )
+        .await;
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
-        let _ = (profile, remote_key, content_sha256, content_type);
+        let _ = (
+            profile,
+            local_path,
+            remote_key,
+            content_size,
+            content_sha256,
+            content_type,
+        );
         Err(NativeR2Error::unsupported())
     }
 }
@@ -1387,6 +1552,8 @@ pub async fn r2_create_multipart(
 pub async fn r2_upload_part(
     profile: NativeR2Profile,
     local_path: String,
+    content_size: u64,
+    content_sha256: String,
     remote_key: String,
     upload_id: String,
     part_number: i32,
@@ -1398,6 +1565,8 @@ pub async fn r2_upload_part(
         return desktop::upload_part(
             profile,
             local_path,
+            content_size,
+            content_sha256,
             remote_key,
             upload_id,
             part_number,
@@ -1411,6 +1580,8 @@ pub async fn r2_upload_part(
         let _ = (
             profile,
             local_path,
+            content_size,
+            content_sha256,
             remote_key,
             upload_id,
             part_number,
@@ -1473,6 +1644,20 @@ pub async fn r2_abort_multipart(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn temporary_file(name: &str, bytes: &[u8]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "nai-blue-r2-integrity-{}-{name}",
+            std::process::id()
+        ));
+        fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    fn sha256_identity(bytes: &[u8]) -> String {
+        format!("sha256:{:x}", Sha256::digest(bytes))
+    }
 
     #[test]
     fn deterministic_suffix_keeps_extension() {
@@ -1489,5 +1674,102 @@ mod tests {
             prefixed_key("exports/", "session/image.png").unwrap(),
             "exports/session/image.png"
         );
+    }
+
+    #[test]
+    fn upload_integrity_accepts_the_queued_file_identity() {
+        let bytes = b"queued artifact";
+        let path = temporary_file("valid", bytes);
+        assert!(validate_upload_file(&path, bytes.len() as u64, &sha256_identity(bytes)).is_ok());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn upload_integrity_rejects_same_size_mutation() {
+        let queued = b"original bytes";
+        let mutated = b"tampered bytes";
+        assert_eq!(queued.len(), mutated.len());
+        let path = temporary_file("same-size", mutated);
+        let error =
+            validate_upload_file(&path, queued.len() as u64, &sha256_identity(queued)).unwrap_err();
+        assert_eq!(error.code, "E_R2_LOCAL_INTEGRITY");
+        assert!(!error.retryable);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn upload_integrity_rejects_size_mismatch() {
+        let bytes = b"short";
+        let path = temporary_file("wrong-size", bytes);
+        let error = validate_upload_file(&path, (bytes.len() + 1) as u64, &sha256_identity(bytes))
+            .unwrap_err();
+        assert_eq!(error.code, "E_R2_LOCAL_INTEGRITY");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn verified_body_keeps_validated_bytes_after_source_changes() {
+        let original = b"queued artifact";
+        let path = temporary_file("captured-body", original);
+        let bytes = verified_upload_bytes(
+            &path,
+            original.len() as u64,
+            &sha256_identity(original),
+            0,
+            original.len() as u64,
+        )
+        .unwrap();
+        fs::write(&path, b"changed artifact").unwrap();
+        assert_eq!(bytes, original);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn multipart_range_checks_the_entire_file_and_captures_exact_range() {
+        let original = b"first-part|second-part";
+        let path = temporary_file("captured-part", original);
+        assert_eq!(
+            verified_upload_bytes(
+                &path,
+                original.len() as u64,
+                &sha256_identity(original),
+                11,
+                11,
+            )
+            .unwrap(),
+            b"second-part"
+        );
+        // A change outside this part still invalidates the full queued identity.
+        fs::write(&path, b"other-part|second-part").unwrap();
+        assert_eq!(
+            verified_upload_bytes(
+                &path,
+                original.len() as u64,
+                &sha256_identity(original),
+                11,
+                11,
+            )
+            .unwrap_err()
+            .code,
+            "E_R2_LOCAL_INTEGRITY"
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn verified_body_rejects_invalid_ranges_before_opening_file() {
+        let path = Path::new("nonexistent-upload-range-fixture");
+        for (size, offset, length) in [
+            (10, 9, 2),
+            (u64::MAX, u64::MAX, 1),
+            (u64::MAX, 0, 64 * 1024 * 1024 + 1),
+        ] {
+            assert_eq!(
+                verified_upload_bytes(path, size, "invalid", offset, length)
+                    .unwrap_err()
+                    .code,
+                "E_R2_LOCAL_INTEGRITY"
+            );
+        }
     }
 }
