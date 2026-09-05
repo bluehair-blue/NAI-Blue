@@ -75,6 +75,44 @@ async function putOriginal(
 }
 
 describe('Organizer artifact repository', () => {
+    it('commits an exact sidecar with the original and rejects incomplete new authority', async () => {
+        const repo = repository('initial-sidecar')
+        const input = {
+            artifactId: 'artifact-with-sidecar',
+            file: { directory: policy().destination, fileName: 'original.png' },
+            format: 'png' as const, contentChecksum: HASH_A, size: 123,
+            sidecar: { file: { directory: policy().destination, fileName: 'original.nai-blue.json' }, digest: HASH_B, size: 42 },
+            createdAt: NOW,
+        }
+        const committed = await repo.putOriginal(input)
+        expect(committed.version).toBe(1)
+        expect((await repo.get(input.artifactId))?.sidecar).toEqual(input.sidecar)
+        expect(() => createArtifactRecord({ ...input, sidecar: { ...input.sidecar, size: undefined } }))
+            .toThrow(/sidecar authority/i)
+        input.sidecar.file.fileName = 'changed.json'
+        expect(committed.sidecar?.file.fileName).toBe('original.nai-blue.json')
+    })
+
+    it.each([true, false])('keeps Queue sidecar authority unchanged by distribution (present=%s)', async hasSidecar => {
+        const repo = repository(`queue-sidecar-${hasSidecar}`)
+        const sidecar = hasSidecar ? {
+            file: { directory: policy().destination, fileName: 'original.nai-blue.json' },
+            digest: HASH_A, size: 42,
+        } : null
+        const original = await repo.putOriginal({
+            artifactId: 'queue-artifact', outputCommitSetHash: HASH_A as `sha256:${string}`,
+            file: { directory: policy().destination, fileName: 'original.png' },
+            format: 'png', contentChecksum: HASH_A, size: 123, sidecar, createdAt: NOW,
+        })
+        await repo.addDistribution(original.artifactId, variant(), NOW)
+        const updated = await repo.updateDistribution(original.artifactId, 'distribution-1', undefined, current => ({
+            ...current,
+            sidecar: { file: { directory: policy().destination, fileName: 'distribution.json' }, digest: HASH_B, size: 84 },
+        }), NOW)
+        expect(updated.sidecar).toEqual(sidecar)
+        expect(updated.distributionVariants[0].sidecar?.file.fileName).toBe('distribution.json')
+    })
+
     it('CAS-links exact Phase 7 remote facts and makes stale retries idempotent', async () => {
         const repo = repository('phase7-cas')
         const original = await putOriginal(repo)

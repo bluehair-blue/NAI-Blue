@@ -131,7 +131,7 @@ export interface ArtifactRecord {
     readonly original: ArtifactOriginalVariant
     readonly distributionVariants: readonly DistributionVariant[]
     readonly thumbnail: ArtifactThumbnailReference
-    /** The newest committed distribution sidecar, if one exists. */
+    /** Queue publication's original sidecar; legacy rows project the newest distribution sidecar. */
     readonly sidecar: ArtifactSidecarReference | null
     /** Checksum of the immutable original variant. */
     readonly contentChecksum: string
@@ -151,6 +151,8 @@ export interface CreateArtifactRecordInput {
     readonly format: OrganizerSourceImageFormat
     readonly contentChecksum: string
     readonly size: number
+    /** Current private releases bind the committed sidecar in the initial Artifact CAS. */
+    readonly sidecar?: ArtifactSidecarReference | null
     readonly createdAt?: string
 }
 
@@ -206,6 +208,18 @@ export function createArtifactRecord(input: CreateArtifactRecordInput): Artifact
         throw new ArtifactRecordError('E_ARTIFACT_RECORD_INVALID', 'Artifact record identity or checksum is invalid.')
     }
     const file = projectArtifactPortableFile(input.file)
+    const sidecar = input.sidecar == null ? null : {
+        file: projectArtifactPortableFile(input.sidecar.file),
+        digest: input.sidecar.digest,
+        size: input.sidecar.size,
+    }
+    if (sidecar !== null) {
+        if (!CHECKSUM_PATTERN.test(sidecar.digest)
+            || !Number.isSafeInteger(sidecar.size)
+            || (sidecar.size ?? -1) < 0) {
+            throw new ArtifactRecordError('E_ARTIFACT_RECORD_INVALID', 'Artifact sidecar authority is invalid.')
+        }
+    }
     return {
         schemaVersion: ORGANIZER_ARTIFACT_SCHEMA_VERSION,
         artifactId: input.artifactId,
@@ -226,7 +240,7 @@ export function createArtifactRecord(input: CreateArtifactRecordInput): Artifact
             sourceChecksum: input.contentChecksum,
             variantId: 'original',
         },
-        sidecar: null,
+        sidecar,
         contentChecksum: input.contentChecksum,
         sanitizationPolicyVersion: ORGANIZER_SANITIZATION_POLICY_VERSION,
         remoteObjectRefs: [],

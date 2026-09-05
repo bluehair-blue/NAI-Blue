@@ -459,7 +459,11 @@ export class IndexedDBArtifactRepository {
                 return update(variant, record)
             })
             if (!found) throw new ArtifactRepositoryError('E_ARTIFACT_VARIANT_NOT_FOUND', 'Artifact distribution variant was not found.')
-            const latestSidecar = [...distributionVariants].reverse().find(variant => variant.sidecar !== null)?.sidecar ?? record.sidecar
+            // Queue publication owns the original sidecar (including its absence).
+            // Legacy Organizer rows retain the newest-distribution projection.
+            const latestSidecar = record.outputCommitSetHash != null
+                ? record.sidecar
+                : [...distributionVariants].reverse().find(variant => variant.sidecar !== null)?.sidecar ?? record.sidecar
             return {
                 ...record,
                 distributionVariants,
