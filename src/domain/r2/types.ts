@@ -69,9 +69,16 @@ export type R2DeliveryRequirement =
 
 export interface R2DestinationProvenance {
     readonly profileId: 'explicit-request' | 'generation-folder' | 'legacy-output'
-    readonly bucket: 'profile-snapshot'
-    readonly prefix: 'profile-snapshot'
+    readonly bucket: 'profile-snapshot' | 'folder' | 'ancestor' | 'workspace' | 'cleared' | 'legacy-output'
+    readonly prefix: 'profile-snapshot' | 'folder' | 'ancestor' | 'workspace' | 'cleared' | 'legacy-output'
     readonly key: 'planned-output'
+    /** Exact Folder resolver sources; null means the workspace/profile default. */
+    readonly folder?: {
+        readonly id: string
+        readonly profileId: string | null
+        readonly bucket: string | null
+        readonly prefix: string | null
+    }
 }
 
 /** Agent-visible release identity. Credential references remain internal. */
@@ -102,6 +109,8 @@ export interface PlannedR2DestinationSnapshot {
     readonly destination: Exclude<PlannedR2Destination, { readonly requirement: 'disabled' }>
     readonly profile: R2ProfileV2
     readonly credentialBinding: { readonly credentialRef: string }
+    /** Reviewed shared-profile CAS authority, before Folder bucket/prefix overrides. */
+    readonly sourceProfileHash?: R2ProfileHash
 }
 
 export type R2QueueDeliverySnapshot =
@@ -167,7 +176,10 @@ export function isR2QueueDeliverySnapshot(value: unknown): value is R2QueueDeliv
     if (candidate.planned === null) return candidate.requirement === 'best-effort'
     if (typeof candidate.planned !== 'object' || candidate.planned === null || Array.isArray(candidate.planned)) return false
     const planned = candidate.planned as Record<string, unknown>
-    if (!hasExactKeys(planned, ['destination', 'profile', 'credentialBinding'])) return false
+    if (!hasExactKeys(planned, ['destination', 'profile', 'credentialBinding',
+        ...(planned.sourceProfileHash === undefined ? [] : ['sourceProfileHash'])])) return false
+    if (planned.sourceProfileHash !== undefined
+        && (typeof planned.sourceProfileHash !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(planned.sourceProfileHash))) return false
     if (typeof planned.destination !== 'object' || planned.destination === null
         || Array.isArray(planned.destination)
         || !isStrictPlannedR2Profile(planned.profile)
@@ -182,7 +194,14 @@ export function isR2QueueDeliverySnapshot(value: unknown): value is R2QueueDeliv
         || typeof destination.provenance !== 'object' || destination.provenance === null
         || Array.isArray(destination.provenance)) return false
     const provenance = destination.provenance as Record<string, unknown>
-    if (!hasExactKeys(provenance, ['profileId', 'bucket', 'prefix', 'key'])) return false
+    if (!hasExactKeys(provenance, ['profileId', 'bucket', 'prefix', 'key',
+        ...(provenance.folder === undefined ? [] : ['folder'])])) return false
+    if (provenance.folder !== undefined) {
+        if (typeof provenance.folder !== 'object' || provenance.folder === null || Array.isArray(provenance.folder)) return false
+        const folder = provenance.folder as Record<string, unknown>
+        if (!hasExactKeys(folder, ['id', 'profileId', 'bucket', 'prefix']) || !isNonEmptyString(folder.id)
+            || ![folder.profileId, folder.bucket, folder.prefix].every(value => value === null || isNonEmptyString(value))) return false
+    }
     try {
         return destination.requirement === candidate.requirement
             && destination.profileId === profile.id
@@ -197,8 +216,8 @@ export function isR2QueueDeliverySnapshot(value: unknown): value is R2QueueDeliv
             && (provenance.profileId === 'explicit-request'
                 || provenance.profileId === 'generation-folder'
                 || provenance.profileId === 'legacy-output')
-            && provenance.bucket === 'profile-snapshot'
-            && provenance.prefix === 'profile-snapshot'
+            && ['profile-snapshot', 'folder', 'ancestor', 'workspace', 'cleared', 'legacy-output'].includes(provenance.bucket as string)
+            && ['profile-snapshot', 'folder', 'ancestor', 'workspace', 'cleared', 'legacy-output'].includes(provenance.prefix as string)
             && provenance.key === 'planned-output'
             && credential.credentialRef === profile.credentialRef
     } catch {

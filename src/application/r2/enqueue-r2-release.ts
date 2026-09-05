@@ -4,6 +4,7 @@ import type {
     PlannedR2DestinationSnapshot,
     UploadJob,
 } from '@/domain/r2/types'
+import { isR2QueueDeliverySnapshot } from '@/domain/r2/types'
 
 export interface DurableR2ReleaseHandle {
     readonly artifactId: string
@@ -48,6 +49,9 @@ export async function enqueueR2Release(
         return { artifactId: input.artifact.artifactId, jobIds: [], status: 'not-required' }
     }
     const destination = input.snapshot.destination
+    if (!isR2QueueDeliverySnapshot({ requirement: destination.requirement, planned: input.snapshot })) {
+        throw new TypeError('R2 release destination differs from its immutable profile binding')
+    }
     const artifact = input.artifact
     if (input.snapshot.profile.publicMode === 'private') {
         if (input.sidecar === undefined) throw new TypeError('Private R2 release requires an exact sidecar binding')

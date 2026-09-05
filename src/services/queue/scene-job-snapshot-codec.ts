@@ -58,6 +58,8 @@ export interface SceneQueueWorkflowSnapshot {
     /** Absent only on pre-cost-consent Scene snapshots. */
     readonly costConsent?: AnlasCostConsentSnapshot
     readonly r2Delivery: R2QueueDeliverySnapshot
+    /** Absent only on snapshots written before the Phase 7 application path. */
+    readonly r2DeliveryVersion?: 1
 }
 
 export interface SceneQueueSnapshotParameters extends DehydratedGenerationParameters {
@@ -177,6 +179,7 @@ export function encodeSceneJobSnapshot(
             sceneBinding: input.sceneBinding,
             batch: input.batch,
             costConsent: input.costConsent,
+            ...(input.r2Delivery === undefined ? {} : { r2DeliveryVersion: 1 as const }),
             r2Delivery: input.r2Delivery ?? (input.outputContext.autoR2UploadProfileId == null
                 ? { requirement: 'disabled', planned: null }
                 : { requirement: 'best-effort', planned: null }),
@@ -251,6 +254,11 @@ export function decodeSceneJobSnapshot(snapshot: GenerationJobSnapshot): SceneQu
             && !isAnlasCostConsentSnapshot(candidate.sceneWorkflow.costConsent))
         || (candidate.sceneWorkflow.r2Delivery !== undefined
             && !isR2QueueDeliverySnapshot(candidate.sceneWorkflow.r2Delivery))
+        || (candidate.sceneWorkflow.r2DeliveryVersion !== undefined
+            && (candidate.sceneWorkflow.r2DeliveryVersion !== 1
+                || !isR2QueueDeliverySnapshot(candidate.sceneWorkflow.r2Delivery)
+                || (candidate.sceneWorkflow.r2Delivery.requirement !== 'disabled'
+                    && candidate.sceneWorkflow.r2Delivery.planned === null)))
         || !isR2DeliveryCoherent(candidate.sceneWorkflow.r2Delivery, candidate.sceneWorkflow.outputContext)
         || !isRecord(candidate.sceneWorkflow.saveContext)
         || typeof candidate.sceneWorkflow.saveContext.activePresetId !== 'string'

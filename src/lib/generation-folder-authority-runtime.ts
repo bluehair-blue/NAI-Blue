@@ -68,6 +68,18 @@ export function resolveGenerationFolderAuthority(
             profileId: resolved.r2.profileId,
             bucket: resolved.r2.bucket,
             prefix: resolved.r2.prefix,
+            provenance: {
+                profileId: 'generation-folder',
+                bucket: resolved.provenance.r2Bucket,
+                prefix: resolved.provenance.r2Prefix,
+                key: 'planned-output',
+                folder: {
+                    id: resolved.id,
+                    profileId: resolved.sources.r2Profile,
+                    bucket: resolved.sources.r2Bucket,
+                    prefix: resolved.sources.r2Prefix,
+                },
+            },
             prefixSource: prefixSourceId === resolved.id
                 ? 'folder'
                 : prefixSourceId === null

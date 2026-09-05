@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
     planR2Release,
     revalidateR2Release,
+    checkR2ReleaseReadiness,
     type PlanR2ReleaseDependencies,
 } from '@/application/r2/plan-r2-release'
 import {
@@ -65,6 +66,50 @@ async function readySnapshot(
 }
 
 describe('planR2Release', () => {
+    it('binds resolved Folder targets and checks the original shared profile hash only before enqueue', async () => {
+        const deps = dependencies()
+        const resolvedDestination = {
+            bucket: 'folder-bucket', prefix: 'characters/blue',
+            provenance: {
+                profileId: 'generation-folder' as const, bucket: 'ancestor' as const,
+                prefix: 'folder' as const, key: 'planned-output' as const,
+                folder: { id: 'blue', profileId: null, bucket: 'parent', prefix: 'blue' },
+            },
+        }
+        const planned = await planR2Release({
+            requirement: { mode: 'required', profileId: 'profile-1' }, objectName: 'image.png',
+            planIdentity: PLAN_IDENTITY, resolvedDestination,
+        }, deps)
+        if (planned.status !== 'ready' || planned.internalSnapshot === null) throw new Error('Expected ready')
+        expect(planned.destination).toMatchObject({
+            bucket: 'folder-bucket', key: 'characters/blue/image.png', provenance: resolvedDestination.provenance,
+            profileHash: hashR2ProfileV2({ ...profile(), bucket: 'folder-bucket', prefix: 'characters/blue' }),
+        })
+        expect(planned.internalSnapshot.profile).toMatchObject({ bucket: 'folder-bucket', prefix: 'characters/blue' })
+        expect(planned.internalSnapshot.sourceProfileHash).toBe(hashR2ProfileV2(profile()))
+        expect((await revalidateR2Release(planned.internalSnapshot, deps)).status).toBe('ready')
+        const rotated = dependencies(profile({ credentialRef: 'stronghold:new-unavailable' }))
+        expect((await revalidateR2Release(planned.internalSnapshot, rotated)).status).toBe('blocked')
+        deps.getProfile.mockRejectedValue(new Error('Dispatch must not read mutable profile'))
+        expect((await checkR2ReleaseReadiness(planned.internalSnapshot, deps)).status).toBe('ready')
+        deps.getReadiness.mockResolvedValue({ status: 'not-ready', reason: 'credential' })
+        expect((await checkR2ReleaseReadiness(planned.internalSnapshot, deps)).status).toBe('blocked')
+    })
+
+    it('preserves prefix clear while rejecting an explicitly cleared bucket', async () => {
+        const deps = dependencies()
+        const input = {
+            requirement: { mode: 'best-effort' as const, profileId: 'profile-1' },
+            objectName: 'image.png', planIdentity: PLAN_IDENTITY,
+            resolvedDestination: {
+                bucket: 'folder-bucket', prefix: '',
+                provenance: { profileId: 'generation-folder' as const, bucket: 'folder' as const, prefix: 'cleared' as const, key: 'planned-output' as const },
+            },
+        }
+        expect(await planR2Release(input, deps)).toMatchObject({ status: 'ready', destination: { key: 'image.png' } })
+        expect(await planR2Release({ ...input, resolvedDestination: { ...input.resolvedDestination, bucket: null } }, deps))
+            .toMatchObject({ status: 'invalid', code: 'r2-destination-unavailable' })
+    })
     it('plans disabled delivery without reading profile or readiness state', async () => {
         const deps = dependencies()
 

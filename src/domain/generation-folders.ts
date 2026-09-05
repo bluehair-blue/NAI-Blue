@@ -1,4 +1,4 @@
-import { isR2BucketName, normalizeR2Prefix } from '@/domain/r2/types'
+import { isR2BucketName, normalizeR2Prefix, type R2DestinationProvenance } from '@/domain/r2/types'
 
 export const DEFAULT_GENERATION_FOLDER_ID = 'generation-folder-default'
 export const MAX_GENERATION_FOLDER_NAME_LENGTH = 96
@@ -39,6 +39,7 @@ export interface ResolvedGenerationFolder {
         readonly bucket: string | null
         readonly prefix: string
         readonly prefixSource: 'folder' | 'ancestor' | 'profile'
+        readonly provenance?: R2DestinationProvenance
     }
 }
 

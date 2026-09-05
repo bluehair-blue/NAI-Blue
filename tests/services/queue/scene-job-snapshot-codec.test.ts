@@ -227,6 +227,9 @@ describe('Scene Job Snapshot codec', () => {
         const delivery = currentR2Delivery()
         const snapshot = encodeSceneJobSnapshot(input({ r2Delivery: delivery }), dehydrated).snapshot
         expect(decodeSceneJobSnapshot(snapshot).sceneWorkflow.r2Delivery).toEqual(delivery)
+        const missing = structuredClone(snapshot)
+        delete (missing.parameters as unknown as { sceneWorkflow: { r2Delivery?: unknown } }).sceneWorkflow.r2Delivery
+        expect(() => decodeSceneJobSnapshot(missing)).toThrowError(QueueExecutionError)
 
         const contradictory = JSON.parse(JSON.stringify(encodeSceneJobSnapshot(input({
             outputContext: {

@@ -58,6 +58,8 @@ export interface MainQueueWorkflowSnapshot {
     readonly sequenceCommitProposal: FragmentSequenceCommitProposal | null
     readonly costConsent?: AnlasCostConsentSnapshot
     readonly r2Delivery: R2QueueDeliverySnapshot
+    /** Absent only on snapshots written before the Phase 7 application path. */
+    readonly r2DeliveryVersion?: 1
     readonly output: MainQueueOutputSnapshot
 }
 
@@ -138,6 +140,7 @@ export function encodeMainJobSnapshot(
             metadataMode: prepared.metadataMode,
             sequenceCommitProposal: prepared.sequenceCommitProposal as FragmentSequenceCommitProposal | null,
             ...(costConsent === undefined ? {} : { costConsent }),
+            ...(r2Delivery === undefined ? {} : { r2DeliveryVersion: 1 as const }),
             r2Delivery: r2Delivery ?? (prepared.output.autoR2UploadProfileId == null
                 ? { requirement: 'disabled', planned: null }
                 : { requirement: 'best-effort', planned: null }),
@@ -247,6 +250,11 @@ export function decodeMainJobSnapshot(snapshot: GenerationJobSnapshot): MainQueu
             && !isAnlasCostConsentSnapshot(candidate.mainWorkflow.costConsent))
         || (candidate.mainWorkflow.r2Delivery !== undefined
             && !isR2QueueDeliverySnapshot(candidate.mainWorkflow.r2Delivery))
+        || (candidate.mainWorkflow.r2DeliveryVersion !== undefined
+            && (candidate.mainWorkflow.r2DeliveryVersion !== 1
+                || !isR2QueueDeliverySnapshot(candidate.mainWorkflow.r2Delivery)
+                || (candidate.mainWorkflow.r2Delivery.requirement !== 'disabled'
+                    && candidate.mainWorkflow.r2Delivery.planned === null)))
         || !isR2DeliveryCoherent(candidate.mainWorkflow.r2Delivery, candidate.mainWorkflow.output)
         || !isRecord(candidate.mainWorkflow.output)
         || typeof candidate.mainWorkflow.output.directory !== 'string'

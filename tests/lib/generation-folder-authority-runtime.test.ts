@@ -79,7 +79,13 @@ describe('generation folder authority runtime', () => {
         })
         expect(resolveGenerationFolderAuthority(planned.document, projectGenerationFolderDocument(planned.document), 'child', {
             directory: 'fallback', useAbsolutePath: false, r2Bucket: 'bucket', r2Prefix: 'profile',
-        })?.r2).toEqual({ autoUpload: false, profileId: null, bucket: null, prefix: '', prefixSource: 'folder' })
+        })?.r2).toEqual({
+            autoUpload: false, profileId: null, bucket: null, prefix: '', prefixSource: 'folder',
+            provenance: {
+                profileId: 'generation-folder', bucket: 'cleared', prefix: 'cleared', key: 'planned-output',
+                folder: { id: 'child', profileId: 'child', bucket: 'child', prefix: 'child' },
+            },
+        })
     })
 
     it('resolves an explicit R2 profile instead of silently falling back to the workspace profile', () => {

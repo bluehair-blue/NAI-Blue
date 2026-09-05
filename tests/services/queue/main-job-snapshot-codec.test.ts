@@ -298,6 +298,9 @@ describe('Main Job Snapshot codec', () => {
         const delivery = currentR2Delivery()
         const snapshot = encodeMainJobSnapshot(prepared(), dehydrated, undefined, undefined, delivery).snapshot
         expect(decodeMainJobSnapshot(snapshot).mainWorkflow.r2Delivery).toEqual(delivery)
+        const missing = structuredClone(snapshot)
+        delete (missing.parameters as unknown as { mainWorkflow: { r2Delivery?: unknown } }).mainWorkflow.r2Delivery
+        expect(() => decodeMainJobSnapshot(missing)).toThrowError(QueueExecutionError)
 
         const overwrite = JSON.parse(JSON.stringify(snapshot)) as GenerationJobSnapshot
         const overwriteDelivery = (overwrite.parameters as unknown as {

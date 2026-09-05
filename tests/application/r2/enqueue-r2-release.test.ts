@@ -30,6 +30,15 @@ function artifact() {
 }
 
 describe('enqueueR2Release', () => {
+    it('rejects a destination that differs from its profile snapshot before enqueue', async () => {
+        const port = { enqueue: vi.fn() }
+        await expect(enqueueR2Release({
+            snapshot: { ...snapshot, destination: { ...snapshot.destination, bucket: 'different-bucket' } },
+            readiness: 'ready', artifact: artifact(), originalLocalPath: 'C:/output.png',
+        }, port)).rejects.toThrow('immutable profile binding')
+        expect(port.enqueue).not.toHaveBeenCalled()
+    })
+
     it('creates zero jobs when delivery is disabled', async () => {
         const port = { enqueue: vi.fn() }
         const handle = await enqueueR2Release({

@@ -3,6 +3,7 @@ import {
     deterministicR2Suffix,
     hashR2ProfileV2,
     isR2BucketName,
+    isR2QueueDeliverySnapshot,
     normalizeR2Prefix,
     type PlannedR2Destination,
     type PlannedR2DestinationSnapshot,
@@ -29,6 +30,12 @@ export interface PlanR2ReleaseInput {
     readonly planIdentity: `sha256:${string}`
     readonly deleteOriginal?: boolean
     readonly profileIdProvenance?: R2DestinationProvenance['profileId']
+    /** Already resolved by Folder authority: null bucket is an intentional clear. */
+    readonly resolvedDestination?: {
+        readonly bucket?: string | null
+        readonly prefix?: string
+        readonly provenance: R2DestinationProvenance
+    }
 }
 
 export type PlanR2ReleaseResult =
@@ -104,10 +111,18 @@ export async function planR2Release(
         return failure('invalid', 'invalid-r2-plan-identity', 'A canonical plan identity is required.')
     }
 
-    const profile = await dependencies.getProfile(input.requirement.profileId)
-    if (profile === null || profile.id !== input.requirement.profileId || !isR2BucketName(profile.bucket)) {
+    const sourceProfile = await dependencies.getProfile(input.requirement.profileId)
+    if (sourceProfile === null || sourceProfile.id !== input.requirement.profileId) {
         return failure('invalid', 'r2-profile-unavailable', 'The selected R2 profile is unavailable or invalid.')
     }
+    const resolved = input.resolvedDestination
+    if (resolved?.bucket !== undefined && !isR2BucketName(resolved.bucket)) {
+        return failure('invalid', 'r2-destination-unavailable', 'The resolved R2 bucket is cleared or invalid.')
+    }
+    const profile: R2ProfileV2 = resolved === undefined ? sourceProfile : {
+        ...sourceProfile, bucket: resolved.bucket ?? sourceProfile.bucket, prefix: resolved.prefix ?? sourceProfile.prefix,
+    }
+    if (!isR2BucketName(profile.bucket)) return failure('invalid', 'r2-profile-unavailable', 'The selected R2 bucket is invalid.')
     if (profile.conflictPolicy === 'overwrite' || profile.conflictPolicy === 'skip-same') {
         return failure('unsupported', 'r2-conflict-policy-unsupported', 'New releases support only fail or suffix conflict policy.')
     }
@@ -127,7 +142,7 @@ export async function planR2Release(
         key,
         conflictPolicy,
         verification: 'head-metadata-sha256' as const,
-        provenance: {
+        provenance: resolved?.provenance ?? {
             profileId: input.profileIdProvenance ?? 'explicit-request',
             bucket: 'profile-snapshot',
             prefix: 'profile-snapshot',
@@ -138,7 +153,11 @@ export async function planR2Release(
         destination,
         profile: structuredClone(profile),
         credentialBinding: { credentialRef: profile.credentialRef },
+        sourceProfileHash: hashR2ProfileV2(sourceProfile),
     })
+    if (!isR2QueueDeliverySnapshot({ requirement: destination.requirement, planned: snapshot })) {
+        return failure('invalid', 'invalid-r2-snapshot', 'The resolved R2 destination and profile binding are inconsistent.')
+    }
     const readiness = await dependencies.getReadiness(profile)
     const ready = readiness.status === 'ready' && readiness.credentialRef === profile.credentialRef
     if (!ready && input.requirement.mode === 'required') {
@@ -158,13 +177,24 @@ export async function revalidateR2Release(
     dependencies: PlanR2ReleaseDependencies,
 ): Promise<RevalidateR2ReleaseResult> {
     const current = await dependencies.getProfile(snapshot.destination.profileId)
-    const stale = current === null || hashR2ProfileV2(current) !== snapshot.destination.profileHash
+    const stale = current === null || hashR2ProfileV2(current) !== (snapshot.sourceProfileHash ?? snapshot.destination.profileHash)
     if (stale) {
         return snapshot.destination.requirement === 'required'
             ? immutable({ status: 'blocked', code: 'r2-profile-stale', reason: 'The required R2 profile changed after review.' })
             : immutable({ status: 'needs-attention', snapshot, reason: 'The best-effort R2 profile changed after review.' })
     }
-    const readiness = await dependencies.getReadiness(current)
+    return checkR2ReleaseReadiness(snapshot, dependencies)
+}
+
+/** Dispatch/recovery checks the accepted credential binding without consulting mutable profiles. */
+export async function checkR2ReleaseReadiness(
+    snapshot: PlannedR2DestinationSnapshot,
+    dependencies: Pick<PlanR2ReleaseDependencies, 'getReadiness'>,
+): Promise<RevalidateR2ReleaseResult> {
+    if (!isR2QueueDeliverySnapshot({ requirement: snapshot.destination.requirement, planned: snapshot })) {
+        return immutable({ status: 'blocked', code: 'invalid-r2-snapshot', reason: 'The accepted R2 snapshot is invalid.' })
+    }
+    const readiness = await dependencies.getReadiness(snapshot.profile)
     const ready = readiness.status === 'ready'
         && readiness.credentialRef === snapshot.credentialBinding.credentialRef
     if (ready) return immutable({ status: 'ready', snapshot })
