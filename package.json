@@ -25,6 +25,8 @@
     "test:persistence": "vitest run tests/persistence && node scripts/verify-rescue-mode.mjs",
     "test:queue": "vitest run tests/domain/queue tests/services/queue",
     "test:agent-inbox": "vitest run tests/application/agent tests/persistence/agent-command-runtime.test.ts tests/persistence/foreground-agent-command-runtime.test.ts tests/persistence/agent-execution-coordinator.test.ts tests/persistence/agent-generation-execution.test.ts tests/persistence/generation-plan-repository.test.ts tests/persistence/indexed-db-corruption.test.ts",
+    "test:agent-mcp-prerequisites": "vitest run tests/application/agent/mcp-inbox-result-projection.test.ts tests/application/agent/agent-result-inspector.test.ts",
+    "agent:inspect": "node scripts/inspect-agent-command.mjs",
     "qa:agent-inbox": "node scripts/qa-phase9b-agent-inbox.mjs",
     "qa:agent-execution": "node scripts/qa-phase9c-agent-execution.mjs",
     "test:assessment": "vitest run tests/domain/assessment tests/application/assessment tests/adapters/assessment tests/persistence/intent-assessment-repository.test.ts tests/application/generation/plan-generation.test.ts tests/application/generation/generation-fulfillment.test.ts tests/services/queue/main-queue-reviewed-plan.test.ts tests/services/queue/scene-queue-r2-planning.test.ts tests/services/agent/agent-workspace-contract.test.ts",

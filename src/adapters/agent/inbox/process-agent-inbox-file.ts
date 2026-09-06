@@ -31,6 +31,11 @@ const REJECTION_CODES = new Set([
     'REQUEST_TOO_LARGE', 'REQUEST_ID_MISMATCH',
 ])
 
+/** Ingress and result readers share the same fixed pre-acceptance error vocabulary. */
+export function isAgentInboxRejectionCode(value: unknown): value is string {
+    return typeof value === 'string' && REJECTION_CODES.has(value)
+}
+
 /** Only validated basenames reach I/O; native path/ACL ownership stays in the port. */
 export async function processAgentInboxFile(
     fileName: string, files: AgentInboxFilePort, dispatcher: AgentCommandDispatcher,
@@ -50,7 +55,7 @@ export async function processAgentInboxFile(
         receipt = await dispatcher.dispatch(value)
     } catch (error) {
         // Storage/transport faults stay retryable; no false rejection replaces an accepted record.
-        if (!(error instanceof AgentCommandError) || !REJECTION_CODES.has(error.code)) throw error
+        if (!(error instanceof AgentCommandError) || !isAgentInboxRejectionCode(error.code)) throw error
         await files.publishRejection(requestId, { accepted: false, code: error.code })
         return 'rejected'
     }

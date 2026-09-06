@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "phase": "10A",
+  "implementationSlice": "read-only-inbox-result-observation-prerequisite",
+  "recordedAt": "2026-09-06T02:51:04.5210332Z",
+  "baseCommit": "23d9e6c79aabc9e4a434118ce87f608e20fc9e18",
+  "status": "validated-prerequisite",
+  "phase10Complete": false,
+  "mcpStdioSpike": "not-run-pending-installation-consent",
+  "spikeGoNoGo": "not-decided",
+  "sdkInstalled": false,
+  "sidecarInstalled": false,
+  "nativeClientRegistered": false,
+  "externalMcpConfigChanged": false,
+  "phase11Decision": "A-foreground-retained; B/C-no-go",
+  "runtime": "Node v24.19.0 / Windows",
+  "sourceHashEncoding": "UTF-8 with CRLF normalized to LF",
+  "testEnvironment": "Fixture files and actual Node CLI with shared TS parsers; WebCrypto HMAC dispatcher and IndexedDB adapter using fake-indexeddb. No native Tauri, Windows ACL/keyring, installed app, MCP transport, Provider, output or R2 execution.",
+  "checks": [
+    {
+      "command": "npm run test:agent-mcp-prerequisites",
+      "files": 2,
+      "tests": 21,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:persistence",
+      "files": 14,
+      "tests": 199,
+      "rescueMode": "passed",
+      "exitCode": 0,
+      "environment": {
+        "RESCUE_MODE_PORT": "10316"
+      }
+    },
+    {
+      "command": "npm run test:queue",
+      "files": 33,
+      "tests": 302,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:agent-inbox",
+      "files": 13,
+      "tests": 173,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:secret-redaction",
+      "files": 2,
+      "tests": 17,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:architecture",
+      "modules": 619,
+      "dependencies": 3424,
+      "violations": 0,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "npx eslint tests/application/agent/agent-result-inspector.test.ts",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0
+    }
+  ],
+  "resolvedEnvironmentFailure": "Initial test:persistence passed 199 tests, then rescue Vite failed EACCES at 127.0.0.1:5178. Reran using existing RESCUE_MODE_PORT override with an available ephemeral loopback port; entire command passed. Initial failure log retained.",
+  "review": {
+    "scope": "Independent read-only inspector/fixture test review with shared parser and native size/publication contracts. No native adversarial filesystem race testing.",
+    "status": "no-actionable-findings"
+  },
+  "sdkResearch": {
+    "nodeEngine": ">=20",
+    "clientVersion": "2.0.0",
+    "officialDocs": "https://ts.sdk.modelcontextprotocol.io/v2/",
+    "installation": "not-performed",
+    "checkedAt": "2026-09-06",
+    "source": "npm view @modelcontextprotocol/server version engines --json; npm view @modelcontextprotocol/client version engines --json",
+    "serverVersion": "2.0.0",
+    "proposedCommand": "npm install --save-dev --save-exact @modelcontextprotocol/server@2.0.0 @modelcontextprotocol/client@2.0.0"
+  },
+  "remaining": [
+    "Separate SDK installation consent and installed schema dialect verification",
+    "Shared schemas derived from current command validators",
+    "Fresh app lifecycle and capability advertisement contract",
+    "Real stdio/app spike including parallel calls, crash/restart, cancellation and run polling",
+    "Native MCP client registration and revoked identity acceptance checks",
+    "Windows sidecar installer/update path verification",
+    "Python safe-integer command input versus decimal application input parity",
+    "Phase 9/10 operational evidence; Phase 11 background gates"
+  ],
+  "sources": [
+    {
+      "path": "package.json",
+      "sha256": "f867f13a0f996031f086d7423aa6c8e18126c42b5f9165e90bbca9fee3b0ccd7"
+    },
+    {
+      "path": "src/adapters/agent/inbox/process-agent-inbox-file.ts",
+      "sha256": "364cd245d3890f205565a006faa340e6027fb663605700d6af2e3a8eb5fa1d4a"
+    },
+    {
+      "path": "src/adapters/agent/mcp/inbox-result-projection.ts",
+      "sha256": "3a9da24bef59f5b72e353c01aa58cd85b0e5db5f34e72e2e3febada4ae597199"
+    },
+    {
+      "path": "scripts/inspect-agent-command.mjs",
+      "sha256": "f0b69bf49b0f217c1f7386366394020a43a9dfaecaa919b3bc2ec4665d21cbee"
+    },
+    {
+      "path": "tests/application/agent/agent-result-inspector.test.ts",
+      "sha256": "20c094fb1081ac6b3b6d76d6e3f73807589d5bc5882f6b48dab729b09a0a144f"
+    },
+    {
+      "path": "tests/application/agent/mcp-inbox-result-projection.test.ts",
+      "sha256": "637f52387dc8f587339d117cf84fdd7e55e9eb03d4f1cc403864653f943cea67"
+    },
+    {
+      "path": "docs/architecture/ADR-009-phase10a-inbox-result-observation.md",
+      "sha256": "9084762c5ef7e4db8abd65de04281a6ac0a1aae8538a6a4f7eac914a27b5a421"
+    },
+    {
+      "path": "docs/architecture/ADR-010-phase11-foreground-retention.md",
+      "sha256": "614344e6cd1f2ba8f61480a5b7c0f0ca7e9cd85f9846733c66e6fec4d7932a3c"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-10a/prerequisites.log",
+      "sha256": "5b74ee5340bd34f60eb2b772701555321d1fe92aad9a5c79cc636982473c29f1"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/persistence-initial.log",
+      "sha256": "0aad02a9f6c1700f7a624b22ad6565abdde8412bb0ad8f5ba2f2482f12718953"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/persistence.log",
+      "sha256": "dde82a5096f0099e54ad4bab3e5669ab73259f92fb831be96fcaa3c6be8037b5"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/queue.log",
+      "sha256": "c6806c3c39d7900cb041f034b4464f3e39826f210bbf6a16e38a9e3ea67f9527"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/agent-inbox.log",
+      "sha256": "1f09fb4a09c618845af7d56c77f672681008cd077324c843370316fb9a1b5ee4"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/redaction.log",
+      "sha256": "365caa3820461a7f301376829f68576eb49b62fb19b87d7001c0a3a6f91e407e"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/architecture.log",
+      "sha256": "2e8f712be955785fe310db87f6dc5ad3b6eabd2eee1050804e59ac096efef44a"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/lint.log",
+      "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/inspector-test-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/build.log",
+      "sha256": "444cc9b2b9b8e5467da57eba74353f6c7225de83a69b6db02f47407c8304ced2"
+    },
+    {
+      "path": "docs/local/evidence/phase-10a/rescue-port.txt",
+      "sha256": "b4d29a221e81a20c4bb4a717488ef5b7656bd8090e5367b94e098ec1a39b640b"
+    }
+  ]
+}
