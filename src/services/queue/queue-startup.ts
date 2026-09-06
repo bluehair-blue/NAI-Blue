@@ -1,6 +1,7 @@
 import { getRuntimeOutputWriter, type OutputRecoveryResult } from '@/services/output/output-writer'
-import { getRuntimeQueueRepository } from './indexeddb-queue-repository'
-import { recoverQueueLinkedOutputs } from './queue-output-recovery'
+import { assertFilesCommittedRecoveryEligibility, getRuntimeQueueRepository } from './indexeddb-queue-repository'
+import { recoverQueueLinkedOutputs, verifyRecoveryReservation } from './queue-output-recovery'
+import { hashGenerationJobSnapshot } from './job-snapshot'
 import { recoverQueueAfterRestart, type QueueRecoveryResult } from './recovery'
 import { reconcileStyleLabRenderReservations } from '@/services/style-lab/style-lab-queue-adapter'
 import type { ProviderResultSpool, SpoolReconcileResult } from '@/application/generation/provider-result-spool'
@@ -41,6 +42,7 @@ let startupPromise: Promise<QueueStartupRecoveryResult> | null = null
 /** Queue-linked journals must reconcile before generic rollback and lease expiry. */
 async function reconcileProviderAttempts(
     repository: ReturnType<typeof getRuntimeQueueRepository>,
+    writer: ReturnType<typeof getRuntimeOutputWriter>,
     receipts: readonly SpoolReceipt[],
     now: string,
 ): Promise<void> {
@@ -95,6 +97,23 @@ async function reconcileProviderAttempts(
                 }
             }
             if (next !== null && disposition !== null) {
+                // A verified Provider spool can already own committed files. Keep that exact journal
+                // with output recovery instead of requeueing it into the spool executor's path.
+                if (disposition === 'queued-spooled' && next.providerOutcome === 'succeeded'
+                    && attempt.outcome === 'running' && job.snapshot?.outputReservation?.reservationSchemaVersion === 1
+                    && job.snapshotHash === hashGenerationJobSnapshot(job.snapshot)
+                    && job.outputTransactionId !== null && job.artifactReference !== null) {
+                    try {
+                        assertFilesCommittedRecoveryEligibility(job, attempt, now)
+                        const journal = await writer.inspectQueueTransaction(job.outputTransactionId)
+                        if (!writer.isTransactionActive(job.outputTransactionId)
+                            && journal?.phase === 'files-committed' && journal.sourceJobId === job.id
+                            && journal.transactionId === job.outputTransactionId) {
+                            await verifyRecoveryReservation(repository, job, { inspected: true, reservation: journal.outputReservation })
+                            continue
+                        }
+                    } catch { /* Existing Provider reconciliation and the output readiness gate own changed evidence. */ }
+                }
                 await repository.reconcileProviderAttemptAfterRestart({
                     jobId: job.id,
                     attemptNumber: attempt.attemptNumber,
@@ -146,11 +165,14 @@ export function initializeQueueAfterRestart(options: {
         if ((providerSpool.unresolvedCorruptSpoolIds ?? providerSpool.corruptSpoolIds).length > 0) {
             recoveryIssues.add('provider-spool-reconcile')
         }
-        await reconcileProviderAttempts(repository, providerSpool.receipts, new Date().toISOString())
+        await reconcileProviderAttempts(repository, writer, providerSpool.receipts, new Date().toISOString())
         const linkedOutputs = await recoverQueueLinkedOutputs(repository, writer, {
             now: new Date().toISOString(),
         })
-        const orphanOutputs = await writer.recoverPending()
+        // Queue-owned journals that failed eligibility remain evidence; only the remaining orphans roll back.
+        const orphanOutputs = await writer.recoverPending({
+            excludeTransactionIds: linkedOutputs.map(output => output.transactionId),
+        })
         // These resolved outcomes leave recovery unproven. A blocked Provider
         // attempt or terminal lease disposition, by contrast, is reconciled truth.
         const incompleteOutput = (output: OutputRecoveryResult) =>

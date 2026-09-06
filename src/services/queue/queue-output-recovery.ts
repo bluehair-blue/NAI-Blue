@@ -6,7 +6,7 @@ import type {
 } from '@/services/output/output-writer'
 import type { GenerationJob } from '@/domain/queue/types'
 import { publishGeneratedArtifact } from '@/stores/artifact-lifecycle-store'
-import type { IndexedDBQueueRepository } from './indexeddb-queue-repository'
+import { assertFilesCommittedRecoveryEligibility, type IndexedDBQueueRepository } from './indexeddb-queue-repository'
 import {
     registerQueueArtifact,
     rollbackQueueArtifactRegistration,
@@ -23,12 +23,12 @@ export type TargetedQueueOutputRetryResult =
 
 type QueueOutputRecoveryRepository = Pick<
     IndexedDBQueueRepository,
-    'initialize' | 'getJob' | 'getOutputReservation' | 'recoverFilesCommittedSuccess'
+    'initialize' | 'getJob' | 'getOutputReservation' | 'recoverFilesCommittedSuccess' | 'listAttempts'
 >
 
 /** Queue snapshot, reservation row, and journal must name one exact owner and destination. */
-async function verifyRecoveryReservation(
-    repository: QueueOutputRecoveryRepository,
+export async function verifyRecoveryReservation(
+    repository: Pick<QueueOutputRecoveryRepository, 'getOutputReservation'>,
     job: GenerationJob,
     journal?: { inspected: true; reservation?: ExactOutputReservationIdentity },
 ): Promise<ExactOutputReservationIdentity | undefined> {
@@ -92,6 +92,10 @@ export async function retryQueueLinkedOutput(
     const artifactReference = job.artifactReference
     let reservation: ExactOutputReservationIdentity | undefined
     try {
+        const attempts = await repository.listAttempts(job.id)
+        assertFilesCommittedRecoveryEligibility(
+            job, attempts.find(attempt => attempt.attemptNumber === job.attemptCount) ?? null, options.now, true,
+        )
         reservation = await verifyRecoveryReservation(repository, job)
     } catch (error) {
         return { status: 'failed', message: error instanceof Error ? error.message : 'Output reservation validation failed' }
@@ -109,6 +113,8 @@ export async function retryQueueLinkedOutput(
                 now: options.now,
                 outputTransactionId,
                 artifactReference,
+                expectedAttemptCount: job.attemptCount,
+                rejectActiveLease: true,
             })
         } catch (error) {
             await rollbackQueueArtifactRegistration(registration, options.artifactRepository)
@@ -155,16 +161,14 @@ export async function recoverQueueLinkedOutputs(
         const ownsTransaction = job !== null
             && job.outputTransactionId === link.transactionId
             && job.artifactReference !== null
-        const mayCommit = ownsTransaction
-            && job.cancelRequestedAt === null
-            && (job.state === 'running'
-                || job.state === 'leased'
-                || job.state === 'recovering'
-                || job.state === 'succeeded')
-        if (link.phase === 'files-committed' && mayCommit) {
+        if (link.phase === 'files-committed' && ownsTransaction) {
             const artifactReference = job.artifactReference
             let reservation: ExactOutputReservationIdentity | undefined
             try {
+                const attempts = await repository.listAttempts(job.id)
+                assertFilesCommittedRecoveryEligibility(
+                    job, attempts.find(attempt => attempt.attemptNumber === job.attemptCount) ?? null, options.now,
+                )
                 reservation = await verifyRecoveryReservation(repository, job, {
                     inspected: true,
                     ...(link.outputReservation === undefined ? {} : { reservation: link.outputReservation }),
@@ -193,6 +197,7 @@ export async function recoverQueueLinkedOutputs(
                             now: options.now,
                             outputTransactionId: link.transactionId,
                             artifactReference,
+                            expectedAttemptCount: job.attemptCount,
                         })
                     } catch (error) {
                         await rollbackQueueArtifactRegistration(registration, options.artifactRepository)

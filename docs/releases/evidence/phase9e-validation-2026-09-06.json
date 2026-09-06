@@ -1,0 +1,808 @@
+{
+  "schemaVersion": 1,
+  "phase": "9E",
+  "implementationSlice": "human-approved-files-committed-registration-recovery",
+  "recordedAt": "2026-09-06T02:29:33.1707565Z",
+  "baseCommit": "71a2e8b4205c1a8d3e2676ba97f367226d0f3030",
+  "priorSliceEvidence": "docs/releases/evidence/phase9d-validation-2026-09-06.json",
+  "status": "validated-scoped",
+  "commitStatus": "ready-for-local-checkpoint",
+  "sourceScope": "Source and tests are identified by the implementation commit containing this evidence. Current src/tests/scripts SHA-256 hashes normalize CRLF to LF; artifact SHA-256 hashes use original bytes. history preserves the pre-startup-fix candidate; prior Phase 9D remains in its existing evidence record.",
+  "phase9Complete": false,
+  "addedCommands": [
+    "generation.retry_storage"
+  ],
+  "supportedInput": "Exact authenticated unexpired {runId, jobId}; runId equals batchId; one commit-set reservationSchemaVersion 1 job with exact prebound output transaction and artifact reference, supported files-committed journal and immutable Queue/reservation/destination/commit-set binding.",
+  "safetyContracts": [
+    "Suggest and bounded-auto require fresh human approval; observe rejects. Global pause permits only this existing-result registration scope while new enqueue remains blocked.",
+    "The existing workspace ledger holds typed storage records and grants. Operation-key uniqueness spans enqueue/cancel/storage; generation exposure, images and concurrency exclude storage records.",
+    "Consent binds original request hash, run/job IDs, immutable target hash, authenticated client, policy revision and expiry. No caller paths, journal contents, force options, Provider retry or output rewriting authority.",
+    "The existing retryGenerationStorage adapter, retryQueueLinkedOutput and OutputWriter.retryFilesCommittedWorkflow register the existing Artifact and finish the same Queue job; no new generation, Provider call, image rewrite, R2 upload or Scene result retry.",
+    "Inspection and execution reject cancellation, unknown/lost Provider facts, unsupported state, live lease and active writer. Queue success transaction rechecks current job/lease/attempt/output/reservation and attempt CAS.",
+    "If Queue finalization refuses after Artifact registration, existing compensation removes only the newly created registration, preserving result files and other jobs. Startup recovery retains its existing authority to recover prior-process leases.",
+    "Queue-owned deferred files-committed journals are excluded from later generic orphan rollback; shared writer transaction ownership covers write/retry/recovery.",
+    "Consumed grants never rerun the mutation after unknown outcome. Reconciliation reads exact Queue success plus Artifact lineage; partial or mismatched facts remain unknown. Success acknowledges the goal state, not proof that this command caused it.",
+    "Startup preserves only verified Provider-success attempts with exact v1 files-committed snapshot, journal, reservation and inactive writer binding for subsequent output recovery. Generic queued jobs remain unsupported; missing spool, changed reservation and cancelled evidence stay protected."
+  ],
+  "automatedTests": {
+    "node": "v24.19.0",
+    "exitCode": 0,
+    "success": true,
+    "files": 323,
+    "passed": 2396,
+    "failed": 0,
+    "pending": 0,
+    "liveSuitesExcluded": true,
+    "report": {
+      "path": "docs/local/evidence/phase-09e/regression-startup-fix.json",
+      "sha256": "0d7f1de9f0dd37daf5ef8c4e5f51da1410e2546a47d11f5ebb572fda8ba1df68"
+    },
+    "boundaries": "Positive files-committed registration uses actual IndexedDB, actual OutputWriter and a memory filesystem/platform. No actual native filesystem positive registration, live Provider, R2 or physical process crash.",
+    "focusedChecks": [
+      {
+        "passed": 93,
+        "files": 4,
+        "scope": "core"
+      },
+      {
+        "passed": 137,
+        "files": 6,
+        "scope": "Queue/Writer"
+      },
+      {
+        "passed": 25,
+        "files": 1,
+        "scope": "Agent bridge"
+      },
+      {
+        "passed": 19,
+        "files": 2,
+        "scope": "foreground/panel"
+      },
+      {
+        "scope": "Full startup and adjacent paths after P1 fix",
+        "files": 4,
+        "passed": 67
+      }
+    ],
+    "focusedCountRule": "Focused tests overlap final regression and must not be added to its total."
+  },
+  "browserQA": {
+    "status": "passed",
+    "checkCount": 15,
+    "checks": [
+      "Suggest enqueue is durably pending after ready-file retirement; zero Queue-port calls and reviewed source/cost/output are visible",
+      "Actual policy form save increments and durably stores revision; fresh single-use approval enqueues exactly once and publishes exact persisted receipt with existing batch link",
+      "Exact envelope replay preserves the completed receipt and makes no second Queue-port call",
+      "Human reject finalizes durable rejected receipt without enqueue",
+      "New foreground/coordinator instance and settings rehydration restore retired pending approval and policy revision from actual IndexedDB",
+      "Explicit mode selection plus future expiry saved through the human form permits an in-budget fixture enqueue",
+      "Saved global pause produces pending review and disables approval without enqueue",
+      "Advancing only the coordinator clock beyond the persisted auto expiry downgrades new enqueue to pending without a timer or additional Queue call",
+      "390px panel and document have no horizontal overflow",
+      "Cancellation in bounded-auto still requires human approval, shows exact run/jobs without generation cost, and remains approvable during global pause while enqueue stays blocked",
+      "Retired cancellation review survives runtime/settings rehydration and human approval publishes the durable cancel-requested acknowledgement once with a target batch link",
+      "Exact cancel replay and a separately rejected cancellation add no cancellation or enqueue calls",
+      "Storage retry requires human approval during global pause, shows the exact existing job/result without generation cost, and fits 390px",
+      "Storage review survives runtime/settings rehydration and one approval publishes exact durable completion with the existing batch link",
+      "Exact storage replay and separate rejection perform no additional storage retry, cancellation or enqueue"
+    ],
+    "pageErrors": 0,
+    "consoleErrors": 0,
+    "boundaries": "Actual AgentCommandPanel, AgentPolicyForm, ForegroundAgentCommandRuntime, AgentExecutionCoordinator, settings persistence/hydration and IndexedDB approval/receipt repositories. Native ownership/client/authentication, immutable plan lookup and Queue enqueue/reconcile, cancellation and storage retry ports are fixtures. The expiry scenario advances only the coordinator clock. No Windows keyring, HMAC cryptography, native filesystem inbox, real Queue execution, output journal, Provider request, Anlas spending or production profile.",
+    "mobileDimensions": {
+      "viewport": 390,
+      "documentWidth": 390,
+      "scrollWidth": 358,
+      "clientWidth": 358
+    },
+    "visualReview": "Root inspected the 390px mobile screenshots at the frozen source snapshot.",
+    "report": {
+      "path": "docs/local/evidence/phase-09e/browser/browser-qa-report.json",
+      "sha256": "5b1333730e24117bb4c7d37171176456e0d25474c966fd190c0cd64e8bb03090"
+    },
+    "screenshots": [
+      {
+        "path": "docs/local/evidence/phase-09e/browser/03-mobile-policy-and-pending.png",
+        "sha256": "dd246585b925a9b4beea2419c57d450a06d4207805911c0d0de7da710ed107e5"
+      },
+      {
+        "path": "docs/local/evidence/phase-09e/browser/06-storage-review-mobile.png",
+        "sha256": "7099be541b54c3072570116bf57d7d7a44eceb7c73085aeb2b6c47a76d48d51b"
+      },
+      {
+        "path": "docs/local/evidence/phase-09e/browser/07-storage-registered.png",
+        "sha256": "84474da76c343e1ee2fe3cf45794f6db909f4a8b10bc3bdbc8a8a4fd1067407e"
+      }
+    ],
+    "sourceBoundary": "Browser QA ran before the subsequent Queue startup-only fix; its source context is retained by history, and no rerun after that fix is claimed."
+  },
+  "checks": {
+    "lint": {
+      "exitCode": 0,
+      "log": {
+        "path": "docs/local/evidence/phase-09e/lint-startup-fix.log",
+        "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+      }
+    },
+    "architecture": {
+      "modules": 618,
+      "dependencies": 3419,
+      "log": {
+        "path": "docs/local/evidence/phase-09e/architecture-startup-fix.log",
+        "sha256": "26c9ff07abb07a3bdaab7d6fbb4c276d83d88200648fec88c2d2087373a9bf65"
+      },
+      "exitCode": 0,
+      "violations": 0
+    },
+    "redaction": {
+      "log": {
+        "path": "docs/local/evidence/phase-09e/redaction-startup-fix.log",
+        "sha256": "a4effd0dc5974a9890667636b61b098707f0df5208aaa830030933c1faa66969"
+      },
+      "tests": 17,
+      "exitCode": 0
+    },
+    "frontendBuild": {
+      "log": {
+        "path": "docs/local/evidence/phase-09e/frontend-build-startup-fix.log",
+        "sha256": "71d5da007edf20cae849123cfd4908c964c642400e3af617b45ef29e45df5fe0"
+      },
+      "includesTypecheck": true,
+      "exitCode": 0
+    },
+    "nativeBuild": {
+      "log": {
+        "path": "docs/local/evidence/phase-09e/native-build-startup-fix.log",
+        "sha256": "4d3fd9c90219077222b15ddb1d8d2fee6fe2764b27017c7a748589d1df3fc6cf"
+      },
+      "durationSeconds": 13.38,
+      "binarySha256": "D79AB66047CC3CBD4AFC5A045C9D6B10AB87458D7F62257D2FC57D918416D6DE",
+      "exitCode": 0,
+      "profile": "dev-unoptimized-debuginfo"
+    }
+  },
+  "review": {
+    "status": "resolved",
+    "outstandingActionableFindings": [],
+    "resolved": [
+      "P1 startup Provider reconciliation requeued exact files-committed jobs before output recovery. Preserve only verified Provider success with exact v1 snapshot/journal/reservation binding for subsequent output recovery; do not admit generic queued jobs. Full startup regression covers both positive cases plus missing-spool, reservation mismatch and cancellation preservation."
+    ]
+  },
+  "validationFailures": [
+    {
+      "classification": "reproduced-contract-defect",
+      "description": "One of ten contract tests failed because actual hash-shaped Queue outputTransactionId was rejected by the generic binary scanner. Added only exact opaque field outputtransactionid; arbitrary fields and credential/image/absolute-path rejection remain guarded. GREEN core run passed 93 tests across four files.",
+      "artifact": "core-native-identifiers-red.log"
+    },
+    {
+      "artifact": "queue-startup-fix-red.log",
+      "classification": "independent-review-p1-reproduced",
+      "description": "Two full startup cases failed before correction. GREEN passed both with 25 unrelated cases filtered out; full focused verification passed 67 tests across four files. No blanket queued-state whitelist relaxation."
+    }
+  ],
+  "nativeDesktopQA": {
+    "status": "passed-safe-rejection-only",
+    "checkCount": 5,
+    "checks": [
+      {
+        "id": "authenticated-ineligible-rejection",
+        "passed": true,
+        "description": "Production Python signed request authenticated in the actual Windows app; cancelled attempt-zero job is rejected without Queue, approval ledger or reservation mutation."
+      },
+      {
+        "id": "native-receipt-projection",
+        "passed": true,
+        "description": "Native public result file exactly matches the IndexedDB durable receipt."
+      },
+      {
+        "id": "same-envelope-replay",
+        "passed": true,
+        "description": "Replay preserves the exact rejection receipt, Queue jobs, approval ledger and reservation facts."
+      },
+      {
+        "id": "client-revocation",
+        "passed": true,
+        "description": "Human UI revoked the isolated QA client; signer with a new request ID cannot retrieve the credential and does not submit."
+      },
+      {
+        "id": "normal-close-cleanup",
+        "passed": true,
+        "description": "Normal QA-window close and owned Vite shutdown leave no owned executable or listeners on 9331/9192; retained final Queue, ledger and reservation facts are unchanged."
+      }
+    ],
+    "binarySha256": "D79AB66047CC3CBD4AFC5A045C9D6B10AB87458D7F62257D2FC57D918416D6DE",
+    "scope": "Actual Windows signed generation.retry_storage safe rejection for a retained cancelled attempt-zero job, exact durable/native receipt projection, unchanged replay, GUI client revocation and normal-close cleanup.",
+    "resultCode": "AGENT_STORAGE_TARGET_UNAVAILABLE",
+    "jobsLedgerReservationsUnchanged": true,
+    "nativeReceiptEqualsIndexedDb": true,
+    "sameReplayUnchanged": true,
+    "providerAttemptsBefore": 0,
+    "providerAttemptsAfter": 0,
+    "globalPause": true,
+    "positiveRegistration": "UNVERIFIED-on-native-filesystem",
+    "boundaries": [
+      "Positive files-committed Artifact registration was not exercised on the native filesystem. Its automated evidence uses actual IndexedDB and OutputWriter with a memory platform.",
+      "No live Provider, image generation, R2 upload, installer/update, production profile or forced native crash was exercised.",
+      "The retained job was cancelled in the prior Phase 9D QA; this run tested safe rejection and did not inject or manufacture a files-committed journal.",
+      "The initial pre-startup-fix candidate binary was closed before client registration or command submission; binary-final.json identifies the final tested executable."
+    ],
+    "cleanup": {
+      "recordedAt": "2026-09-06T02:27:38.5738395Z",
+      "closedQaPid": 37016,
+      "ownedExecutablePath": "E:\\AI_Project_Library\\projects\\nais\\NAI-Blue\\src-tauri\\target\\debug\\NAI-Blue.exe",
+      "remainingOwnedProcesses": [],
+      "checkedPorts": [
+        9331,
+        9192
+      ],
+      "remainingListeners": [],
+      "qaClientRevoked": true,
+      "signerAfterRevocation": "CREDENTIAL_UNAVAILABLE",
+      "profileRetained": true,
+      "normalWindowClose": true
+    },
+    "report": {
+      "path": "docs/local/evidence/phase-09e/native/native-qa-report.json",
+      "sha256": "7619f27a8d47abb9803900fc524753d5b78f0f6bcbff17ec996239e7690f7fae"
+    }
+  },
+  "notVerified": [
+    "Actual native positive files-committed Artifact registration and Queue completion; automated evidence uses actual IndexedDB and OutputWriter with a memory platform",
+    "Live Provider, image generation or R2",
+    "Installer/upgrade, production profile or forced native process crash",
+    "Phase 9 complete operational gate",
+    "Phase 10 MCP spike; not started",
+    "Phase 11 background/headless; remains No-Go"
+  ],
+  "sourceFiles": [
+    {
+      "path": "scripts/qa-phase9c-agent-execution.mjs",
+      "sha256": "2cdbfe1f5913b3815c7a1187a7a78fefba452d43788d1b2be5657ca11742a898"
+    },
+    {
+      "path": "src/adapters/agent/indexeddb-command-receipt-repository.ts",
+      "sha256": "82fc6ca2dd950dff34cdb82d9f8ce8d2bf7e15790c8407e1823115816987303a"
+    },
+    {
+      "path": "src/application/agent/agent-execution-coordinator.ts",
+      "sha256": "d385326cfc4db51be795b4db510c5b73bf2f5218db99a682da191afa8ed97a9a"
+    },
+    {
+      "path": "src/application/agent/agent-execution-repository.ts",
+      "sha256": "96986f1b928f8128aab0bdf21002cf42674c36e25625646aaf5191945cd56a9c"
+    },
+    {
+      "path": "src/application/agent/agent-storage-retry-contract.ts",
+      "sha256": "35da33771f421d4efa4646e843b26cb7d6c9b581fb233fd19e86693380b73d25"
+    },
+    {
+      "path": "src/application/agent/runtime-capability-registry.ts",
+      "sha256": "8306d7742a642ad0cc49ec70624a88f79deb487fc7586f3db513f6b682754f18"
+    },
+    {
+      "path": "src/composition-root/agent-generation-storage-retry.ts",
+      "sha256": "c4112f3b890a0ff4b19b93320654d23e75c4c1299cc16360d5b73feb4a057d40"
+    },
+    {
+      "path": "src/composition-root/foreground-agent-command-runtime.ts",
+      "sha256": "f089f3ddc708bee63112a2739077f7e6deb20a5c50c15b2860d26b42b75e7f8b"
+    },
+    {
+      "path": "src/composition-root/runtime-agent-commands.ts",
+      "sha256": "d7a26b144ea01139efb498e8ccbbbf2a1e8b76de7cc9bac6a33b3c72a556be4f"
+    },
+    {
+      "path": "src/domain/sync/payload-safety.ts",
+      "sha256": "17e88adde16e6c57ab6266f33d42cb139bda8362fab5de8ac4af52157dd6da70"
+    },
+    {
+      "path": "src/i18n/locales/en.json",
+      "sha256": "83d25e6b9fc8d7ef3f24e4ee165729eb8f057fc9824422b43a5caedf72eaa6f4"
+    },
+    {
+      "path": "src/i18n/locales/ja.json",
+      "sha256": "a5dc381e9eacd0baa35d248b8501db2a77064984637027507d30767cbbf126c2"
+    },
+    {
+      "path": "src/i18n/locales/ko.json",
+      "sha256": "389a41730b12a13c5974a90f582993ab68a3a6cac7e7fad42b5e436b1d595719"
+    },
+    {
+      "path": "src/presentation/agent/AgentCommandPanel.tsx",
+      "sha256": "48bfbdd9783a4bec2a27806649245c8d5b21b3d68f2f92661345325a01d3cc9c"
+    },
+    {
+      "path": "src/services/output/output-writer.ts",
+      "sha256": "3fa126f8ec36e0e8b1ef6d0cbf2b7093fe6a177074f0d9b6048481873e40dbb9"
+    },
+    {
+      "path": "src/services/queue/generation-command-adapter.ts",
+      "sha256": "b1e3a19ccd7d99703f3bf2bbfad90b8d4117e11d572ee3a1bb90af4d8cdd9454"
+    },
+    {
+      "path": "src/services/queue/indexeddb-queue-repository.ts",
+      "sha256": "4fe34ee2111b00463b04a66d6ead9d25751294fab78a33ccc2c2d1e902432924"
+    },
+    {
+      "path": "src/services/queue/queue-output-recovery.ts",
+      "sha256": "7502811e431cc58d7756bb3af3af5d7bf339ffa0275dbbd8c79fb46cfb0092ca"
+    },
+    {
+      "path": "src/services/queue/queue-startup.ts",
+      "sha256": "6155d0458b25ae15b0d91d9bb57806e74cc3402aea31d586e1d5833727409b6d"
+    },
+    {
+      "path": "tests/application/agent/agent-storage-retry-contract.test.ts",
+      "sha256": "84a7e152685fe6312fb2f2e920571d64081ed96d9afef901ab4a7ad2111be3f9"
+    },
+    {
+      "path": "tests/persistence/agent-execution-coordinator.test.ts",
+      "sha256": "1550d06ebcf4cc7dabc7129989cdb57756990a58f59062a28ec393c3743aa65f"
+    },
+    {
+      "path": "tests/persistence/agent-generation-storage-retry.test.ts",
+      "sha256": "5bf2a2c83d6b375a5762c15868e111a535ec9311f3739252aa80ec7182714479"
+    },
+    {
+      "path": "tests/persistence/agent-storage-retry-coordinator.test.ts",
+      "sha256": "23d788d86536fa7bda4c2d3c9dd9f2f663bb36f50c06197859ada9711e9f766a"
+    },
+    {
+      "path": "tests/persistence/foreground-agent-command-runtime.test.ts",
+      "sha256": "f88cd502fea1fe15c559c76272938d597e07d11e662b56217d52fdbf19f6f52f"
+    },
+    {
+      "path": "tests/presentation/agent-command-panel.test.ts",
+      "sha256": "964b26183b5be247a576420c77bfb82c53039906d6e486e4b1185583c468bfb1"
+    },
+    {
+      "path": "tests/services/queue/queue-startup-provider-recovery.test.ts",
+      "sha256": "4347d1da0ea57931442b97590c96644dfd96a01e8104388dc4a6ad06f0aed447"
+    },
+    {
+      "path": "tests/services/queue/queue-storage-retry-fixture.ts",
+      "sha256": "f5e2a9e85107812b6109a68da202009dfc32adedb0515fa9f5f3384b8420ed5a"
+    },
+    {
+      "path": "tests/services/queue/queue-storage-retry-safety.test.ts",
+      "sha256": "57a95d5bfce76120970b7ef9b1261601839f10dd3ec79c38e8d0638664fcb21b"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-09e/regression-startup-fix.json",
+      "sha256": "0d7f1de9f0dd37daf5ef8c4e5f51da1410e2546a47d11f5ebb572fda8ba1df68"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/lint-startup-fix.log",
+      "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/architecture-startup-fix.log",
+      "sha256": "26c9ff07abb07a3bdaab7d6fbb4c276d83d88200648fec88c2d2087373a9bf65"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/redaction-startup-fix.log",
+      "sha256": "a4effd0dc5974a9890667636b61b098707f0df5208aaa830030933c1faa66969"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/frontend-build-startup-fix.log",
+      "sha256": "71d5da007edf20cae849123cfd4908c964c642400e3af617b45ef29e45df5fe0"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native-build-startup-fix.log",
+      "sha256": "4d3fd9c90219077222b15ddb1d8d2fee6fe2764b27017c7a748589d1df3fc6cf"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/queue-startup-fix-red.log",
+      "sha256": "e9983caf19e93d5ea4c5ebbc620192a57b7cfc8242b8728f56bef070b73b170d"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/queue-startup-fix-green.log",
+      "sha256": "113c8d40398afeeeb64896c183e30392054cce26dd2ea21a670b30e50b26d4cf"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/queue-startup-fix-focused.log",
+      "sha256": "a1e16c7de479e8f4dcf6f637364f900aa0f23714128dba7d1c83b5130e098959"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/queue-startup-fix-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/queue-startup-fix-types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/core-native-identifiers-red.log",
+      "sha256": "c481808f5ac17d139f5b15ec82491438793f3c63f1fc78687addbadd42ae5ee6"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/core-tests.log",
+      "sha256": "9504fc2f361d21f5e530087392e61d805d60e9d80579e9299f4abdfcf7f41553"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/queue-verification.md",
+      "sha256": "e0cc04fedd5a5e6eb846e62c82dde0fc30960683e4352343c5170fe873bd5150"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/browser/browser-qa-report.json",
+      "sha256": "5b1333730e24117bb4c7d37171176456e0d25474c966fd190c0cd64e8bb03090"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/browser/03-mobile-policy-and-pending.png",
+      "sha256": "dd246585b925a9b4beea2419c57d450a06d4207805911c0d0de7da710ed107e5"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/browser/06-storage-review-mobile.png",
+      "sha256": "7099be541b54c3072570116bf57d7d7a44eceb7c73085aeb2b6c47a76d48d51b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/browser/07-storage-registered.png",
+      "sha256": "84474da76c343e1ee2fe3cf45794f6db909f4a8b10bc3bdbc8a8a4fd1067407e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/binary-final.json",
+      "sha256": "7297842dfda0b48f19f1a3f6a7dce6e90fba9f123c6ced935f53a5f6fa985cc2"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/native-qa-report.json",
+      "sha256": "7619f27a8d47abb9803900fc524753d5b78f0f6bcbff17ec996239e7690f7fae"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/before.json",
+      "sha256": "76190d5a8ac60439a57871dcbf193866d64f6c5070791f803d4caf70a02e5ec9"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/connection.json",
+      "sha256": "1cc9efed8fd3f363e7afe49b8b9ba51c15bc631c2b03e16aeb0d73caab5699d3"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/ineligible-command.json",
+      "sha256": "e2eb2906213958dad1cbfbb8d77fad92bdc006ace1ea5f89434b9beba279b5e2"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/submit.log",
+      "sha256": "34d10d09b177409ffa64d46f646b62fc8724ed727f22410161b0e49cc0816d8f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/after.json",
+      "sha256": "85177a38722ad71e86a4be0bf33f8f5311a9568651edf348d9c0f39f30f872b1"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/ineligible.receipt.json",
+      "sha256": "c7f39ddd7f84590f2fb27ec69cd05ee84cdc3f08d2e1f71586caaeb9abeb28aa"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/ineligible-native.receipt.json",
+      "sha256": "cf949c5d7e9ce0fceacc6bf4241e5559ff5f8fe3cbea0dfd09cf004b0e0fb68d"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/01-ineligible-rejected.png",
+      "sha256": "d78453dba2145192723649657a58b5e62ec87891e8f1650cf111cc9aa6326c9b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/replay-submit.log",
+      "sha256": "34d10d09b177409ffa64d46f646b62fc8724ed727f22410161b0e49cc0816d8f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/replay.json",
+      "sha256": "b4ba3ed09090236d812ffe65836e42e6a09f8501ee862452de5eb389225628bf"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/02-client-revoked.png",
+      "sha256": "3a2698fe496cf8fc054dd2a49dc665f6363061c666a4c240bfa75e179cbacdec"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/client-revoked-ui.txt",
+      "sha256": "2bb7fcdedcea9cc63b18f3f8bf3dc8f55737fa596cea156c9cacd468b9452e10"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/revoked-submit.log",
+      "sha256": "6681cd0926be342ff4806c8d5379e77a06081dd0b0d819212ec70f487feb0065"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/revoked-submit-result.json",
+      "sha256": "ad06a2cc60c36eb91259e016f61c70a9d2f993428dc57b397496d3bb15ed18d3"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/final-facts.json",
+      "sha256": "43e5db2278638c68674ea10367088867723390517286fa81e15ca1806060bdb9"
+    },
+    {
+      "path": "docs/local/evidence/phase-09e/native/cleanup.json",
+      "sha256": "d008ac6d44f657ac56a05716df2a6e65274727b5bf37119a9fd58af2441e330b"
+    }
+  ],
+  "history": [
+    {
+      "stage": "pre-startup-fix-candidate",
+      "recordedAt": "2026-09-06T02:14:08.9551342Z",
+      "status": "candidate-blocked-by-independent-review",
+      "candidateBoundary": "The 323-file/2391-test regression, source hashes and builds describe the pre-startup-fix candidate. Independent review found a P1 blocker afterward. They do not prove completed implementation; final corrected logs and hashes will be recorded separately.",
+      "automatedTests": {
+        "node": "v24.19.0",
+        "exitCode": 0,
+        "success": true,
+        "files": 323,
+        "passed": 2391,
+        "failed": 0,
+        "pending": 0,
+        "liveSuitesExcluded": true,
+        "report": {
+          "path": "docs/local/evidence/phase-09e/regression-final.json",
+          "sha256": "24e10a0704135ef48f461cfa2155ceb500e30dac9eee8e33f30352cfa14423cb"
+        },
+        "boundaries": "Positive files-committed registration uses actual IndexedDB, actual OutputWriter and a memory filesystem/platform. No actual native filesystem positive registration, live Provider, R2 or physical process crash.",
+        "focusedChecks": [
+          {
+            "passed": 93,
+            "files": 4,
+            "scope": "core"
+          },
+          {
+            "passed": 137,
+            "files": 6,
+            "scope": "Queue/Writer"
+          },
+          {
+            "passed": 25,
+            "files": 1,
+            "scope": "Agent bridge"
+          },
+          {
+            "passed": 19,
+            "files": 2,
+            "scope": "foreground/panel"
+          }
+        ],
+        "focusedCountRule": "Focused tests overlap final regression and must not be added to its total."
+      },
+      "checks": {
+        "lint": {
+          "exitCode": 0,
+          "log": {
+            "path": "docs/local/evidence/phase-09e/lint-final.log",
+            "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+          }
+        },
+        "architecture": {
+          "exitCode": 0,
+          "log": {
+            "path": "docs/local/evidence/phase-09e/architecture-final.log",
+            "sha256": "1bdb7f3b537d80ebc6b94a83870143366218430f70ea0813d006d707893def76"
+          },
+          "violations": 0,
+          "dependencies": 3418,
+          "modules": 618
+        },
+        "redaction": {
+          "exitCode": 0,
+          "log": {
+            "path": "docs/local/evidence/phase-09e/redaction-final.log",
+            "sha256": "d75acaf052213ea9da89f61b1830b3dfcb6547189fd05e843cf9cc079a7e871f"
+          },
+          "tests": 17
+        },
+        "frontendBuild": {
+          "exitCode": 0,
+          "log": {
+            "path": "docs/local/evidence/phase-09e/frontend-build-final.log",
+            "sha256": "8589d2cfa95b4aca20bf4736285a7e4c365f536339c2f35feec30523aa3e7f43"
+          },
+          "includesTypecheck": true
+        },
+        "nativeBuild": {
+          "exitCode": 0,
+          "binarySha256": "65E24C9C33DFB91932F33292257FFE7FA391F090BD263D38A0A7DFBFA1BFB9F6",
+          "durationSeconds": 33.12,
+          "profile": "dev-unoptimized-debuginfo",
+          "log": {
+            "path": "docs/local/evidence/phase-09e/native-build-final.log",
+            "sha256": "8ceb549d1a26cdda47d7e053c38412dcabcce439c479136854cf4346fd220549"
+          }
+        }
+      },
+      "sourceFiles": [
+        {
+          "path": "scripts/qa-phase9c-agent-execution.mjs",
+          "sha256": "2cdbfe1f5913b3815c7a1187a7a78fefba452d43788d1b2be5657ca11742a898"
+        },
+        {
+          "path": "src/adapters/agent/indexeddb-command-receipt-repository.ts",
+          "sha256": "82fc6ca2dd950dff34cdb82d9f8ce8d2bf7e15790c8407e1823115816987303a"
+        },
+        {
+          "path": "src/application/agent/agent-execution-coordinator.ts",
+          "sha256": "d385326cfc4db51be795b4db510c5b73bf2f5218db99a682da191afa8ed97a9a"
+        },
+        {
+          "path": "src/application/agent/agent-execution-repository.ts",
+          "sha256": "96986f1b928f8128aab0bdf21002cf42674c36e25625646aaf5191945cd56a9c"
+        },
+        {
+          "path": "src/application/agent/agent-storage-retry-contract.ts",
+          "sha256": "35da33771f421d4efa4646e843b26cb7d6c9b581fb233fd19e86693380b73d25"
+        },
+        {
+          "path": "src/application/agent/runtime-capability-registry.ts",
+          "sha256": "8306d7742a642ad0cc49ec70624a88f79deb487fc7586f3db513f6b682754f18"
+        },
+        {
+          "path": "src/composition-root/agent-generation-storage-retry.ts",
+          "sha256": "c4112f3b890a0ff4b19b93320654d23e75c4c1299cc16360d5b73feb4a057d40"
+        },
+        {
+          "path": "src/composition-root/foreground-agent-command-runtime.ts",
+          "sha256": "f089f3ddc708bee63112a2739077f7e6deb20a5c50c15b2860d26b42b75e7f8b"
+        },
+        {
+          "path": "src/composition-root/runtime-agent-commands.ts",
+          "sha256": "d7a26b144ea01139efb498e8ccbbbf2a1e8b76de7cc9bac6a33b3c72a556be4f"
+        },
+        {
+          "path": "src/domain/sync/payload-safety.ts",
+          "sha256": "17e88adde16e6c57ab6266f33d42cb139bda8362fab5de8ac4af52157dd6da70"
+        },
+        {
+          "path": "src/i18n/locales/en.json",
+          "sha256": "83d25e6b9fc8d7ef3f24e4ee165729eb8f057fc9824422b43a5caedf72eaa6f4"
+        },
+        {
+          "path": "src/i18n/locales/ja.json",
+          "sha256": "a5dc381e9eacd0baa35d248b8501db2a77064984637027507d30767cbbf126c2"
+        },
+        {
+          "path": "src/i18n/locales/ko.json",
+          "sha256": "389a41730b12a13c5974a90f582993ab68a3a6cac7e7fad42b5e436b1d595719"
+        },
+        {
+          "path": "src/presentation/agent/AgentCommandPanel.tsx",
+          "sha256": "48bfbdd9783a4bec2a27806649245c8d5b21b3d68f2f92661345325a01d3cc9c"
+        },
+        {
+          "path": "src/services/output/output-writer.ts",
+          "sha256": "3fa126f8ec36e0e8b1ef6d0cbf2b7093fe6a177074f0d9b6048481873e40dbb9"
+        },
+        {
+          "path": "src/services/queue/generation-command-adapter.ts",
+          "sha256": "b1e3a19ccd7d99703f3bf2bbfad90b8d4117e11d572ee3a1bb90af4d8cdd9454"
+        },
+        {
+          "path": "src/services/queue/indexeddb-queue-repository.ts",
+          "sha256": "4fe34ee2111b00463b04a66d6ead9d25751294fab78a33ccc2c2d1e902432924"
+        },
+        {
+          "path": "src/services/queue/queue-output-recovery.ts",
+          "sha256": "7502811e431cc58d7756bb3af3af5d7bf339ffa0275dbbd8c79fb46cfb0092ca"
+        },
+        {
+          "path": "src/services/queue/queue-startup.ts",
+          "sha256": "69c33878aeda57dad188d3de2efa72b8c3d88ae1e705c8e30d7052bce6936ede"
+        },
+        {
+          "path": "tests/application/agent/agent-storage-retry-contract.test.ts",
+          "sha256": "84a7e152685fe6312fb2f2e920571d64081ed96d9afef901ab4a7ad2111be3f9"
+        },
+        {
+          "path": "tests/persistence/agent-execution-coordinator.test.ts",
+          "sha256": "1550d06ebcf4cc7dabc7129989cdb57756990a58f59062a28ec393c3743aa65f"
+        },
+        {
+          "path": "tests/persistence/agent-generation-storage-retry.test.ts",
+          "sha256": "d41996c656dbd9e523576dd97239d2e66d75fd8f1368b4a2d350ec7e7e41fc88"
+        },
+        {
+          "path": "tests/persistence/agent-storage-retry-coordinator.test.ts",
+          "sha256": "23d788d86536fa7bda4c2d3c9dd9f2f663bb36f50c06197859ada9711e9f766a"
+        },
+        {
+          "path": "tests/persistence/foreground-agent-command-runtime.test.ts",
+          "sha256": "f88cd502fea1fe15c559c76272938d597e07d11e662b56217d52fdbf19f6f52f"
+        },
+        {
+          "path": "tests/presentation/agent-command-panel.test.ts",
+          "sha256": "964b26183b5be247a576420c77bfb82c53039906d6e486e4b1185583c468bfb1"
+        },
+        {
+          "path": "tests/services/queue/queue-startup-provider-recovery.test.ts",
+          "sha256": "4347d1da0ea57931442b97590c96644dfd96a01e8104388dc4a6ad06f0aed447"
+        },
+        {
+          "path": "tests/services/queue/queue-storage-retry-fixture.ts",
+          "sha256": "f5e2a9e85107812b6109a68da202009dfc32adedb0515fa9f5f3384b8420ed5a"
+        },
+        {
+          "path": "tests/services/queue/queue-storage-retry-safety.test.ts",
+          "sha256": "57a95d5bfce76120970b7ef9b1261601839f10dd3ec79c38e8d0638664fcb21b"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "docs/local/evidence/phase-09e/regression-final.json",
+          "sha256": "24e10a0704135ef48f461cfa2155ceb500e30dac9eee8e33f30352cfa14423cb"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/lint-final.log",
+          "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/architecture-final.log",
+          "sha256": "1bdb7f3b537d80ebc6b94a83870143366218430f70ea0813d006d707893def76"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/redaction-final.log",
+          "sha256": "d75acaf052213ea9da89f61b1830b3dfcb6547189fd05e843cf9cc079a7e871f"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/frontend-build-final.log",
+          "sha256": "8589d2cfa95b4aca20bf4736285a7e4c365f536339c2f35feec30523aa3e7f43"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/native-build-final.log",
+          "sha256": "8ceb549d1a26cdda47d7e053c38412dcabcce439c479136854cf4346fd220549"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/core-native-identifiers-red.log",
+          "sha256": "c481808f5ac17d139f5b15ec82491438793f3c63f1fc78687addbadd42ae5ee6"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/core-tests.log",
+          "sha256": "9504fc2f361d21f5e530087392e61d805d60e9d80579e9299f4abdfcf7f41553"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/queue-focused-final.log",
+          "sha256": "3f31e954fd12ad4401b5a9f0a54373b7033cb6ad69249b2c3b436b5deecb3975"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/queue-verification.md",
+          "sha256": "e0cc04fedd5a5e6eb846e62c82dde0fc30960683e4352343c5170fe873bd5150"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/bridge-tests.log",
+          "sha256": "f42352a6d58da11d9f377ebdec9027aae66255116a195151e7a25ccce3ce97c0"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/foreground-panel-tests.log",
+          "sha256": "895b021db3f801784a825b8bed4d7c7126e88384b3630af3983caf418fa845a1"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/browser/browser-qa-report.json",
+          "sha256": "5b1333730e24117bb4c7d37171176456e0d25474c966fd190c0cd64e8bb03090"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/browser/03-mobile-policy-and-pending.png",
+          "sha256": "dd246585b925a9b4beea2419c57d450a06d4207805911c0d0de7da710ed107e5"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/browser/06-storage-review-mobile.png",
+          "sha256": "7099be541b54c3072570116bf57d7d7a44eceb7c73085aeb2b6c47a76d48d51b"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/browser/07-storage-registered.png",
+          "sha256": "84474da76c343e1ee2fe3cf45794f6db909f4a8b10bc3bdbc8a8a4fd1067407e"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/native/binary.json",
+          "sha256": "bc33296eadf42aeee35cc07b0918982e80e9fc861c0049bab0faf64dabf09868"
+        },
+        {
+          "path": "docs/local/evidence/phase-09e/native/initial-candidate.json",
+          "sha256": "bbac2bd9196c2076a6665a3b99da3494486b1a3ee5e61dfbea1587508cf4bae8"
+        }
+      ],
+      "review": {
+        "outstandingActionableFindings": [
+          "P1: startup Provider reconciliation transitions a files-committed job to queued-spooled; the new supported-state whitelist then rejects it. Full startup RED/GREEN and minimum correction are in progress."
+        ],
+        "status": "blocked-p1-startup-recovery-order"
+      },
+      "nativeDesktopQA": {
+        "plannedScope": "Initial candidate application launched and was closed before client registration or command submission. No actual native retry command QA was performed.",
+        "status": "not-performed",
+        "positiveRegistration": "not-verified-on-native"
+      }
+    }
+  ]
+}

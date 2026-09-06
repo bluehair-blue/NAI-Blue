@@ -19,7 +19,7 @@ export interface ForegroundAgentSnapshot {
     readonly changingExecution: boolean
     readonly policy: AgentExecutionPolicy
     readonly pendingApprovals: readonly AgentPendingApproval[]
-    readonly recent: readonly { requestId: string; state: string; batchId?: string; cancelRequested?: boolean }[]
+    readonly recent: readonly { requestId: string; state: string; batchId?: string; cancelRequested?: boolean; storageRegistered?: boolean }[]
 }
 
 /** One foreground owner uses the same dispatcher for processing and UI capability snapshots. */
@@ -89,7 +89,8 @@ export class ForegroundAgentCommandRuntime {
     private recordActivity(requestId: string, state: string, receipt?: AgentCommandReceipt): void {
         const batchId = receipt?.result?.batchId
         this.update({ recent: [{ requestId, state, ...(typeof batchId === 'string' ? { batchId } : {}),
-            ...(receipt?.result?.status === 'cancel-requested' ? { cancelRequested: true } : {}) },
+            ...(receipt?.result?.status === 'cancel-requested' ? { cancelRequested: true } : {}),
+            ...(receipt?.result?.status === 'storage-registered' ? { storageRegistered: true } : {}) },
             ...this.snapshot.recent.filter(item => item.requestId !== requestId)].slice(0, 20) })
     }
 
@@ -130,7 +131,8 @@ export class ForegroundAgentCommandRuntime {
                     }) ?? null
                     this.dispatcher = new AgentCommandDispatcher({ workspaceId,
                         handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler]),
-                            ...(this.execution?.cancelHandler === undefined ? [] : [this.execution.cancelHandler])],
+                            ...(this.execution?.cancelHandler === undefined ? [] : [this.execution.cancelHandler]),
+                            ...(this.execution?.storageRetryHandler === undefined ? [] : [this.execution.storageRetryHandler])],
                         authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
                     })
                     this.unsubscribePolicy?.()

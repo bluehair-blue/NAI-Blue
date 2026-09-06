@@ -2,6 +2,7 @@
 
 - 결정일: 2026-09-06
 - 선행 계약: [ADR-006](ADR-006-phase9c-generation-approval-policy.md)
+- 후속 저장 결과 등록 복구: [ADR-008 — Phase 9E](ADR-008-phase9e-storage-registration-recovery.md)
 - 구현 범위: Windows foreground의 `generation.cancel`, 같은 workspace 승인 원장과 기존 Queue 취소 경로
 - 검증 기록: [Phase 9D 검증](../releases/evidence/phase9d-validation-2026-09-06.json). 실제 Windows 취소 QA의 첫 승인 오류를 수정한 binary에서 동일 grant 복구·replay를 확인했으며 완료 후 정상 재시작·native receipt 동일성·client 폐기·프로세스 정리를 포함한 native 7개 검사를 통과했다. 자동 검증과 실제 native 검증의 범위를 구분하며 Phase 9 전체는 진행 중이다.
 - Phase 9 전체 상태: 진행 중. 저장 재시도, 추가 명령, 운영 QA, MCP와 background/headless는 별도 범위다.
@@ -58,4 +59,4 @@ scanner의 exact opaque identifier field 집합에 `previouslystoppedjobids`만 
 
 수정 후 Node 24.19.0에서 비실시간 회귀 319파일·2,320테스트(실패·pending 0), 전체 lint, architecture 616모듈·3,399의존성·위반 0, secret-redaction 17테스트, TypeScript와 Vite build가 통과했다. 수정 native dev build는 13.45초에 성공했다. 앞선 소스 시점의 브라우저 QA 12개 검사와 390px 레이아웃 검사를 통과했고 page/console error는 0개다. 실제 panel/runtime/settings/IndexedDB를 사용했으며 native 인증·계획 조회·Queue 취소 포트는 fixture다. scanner 수정 후 브라우저 QA를 재실행한 것으로 기록하지 않는다. 소스 LF 정규화 해시와 원본 검증 artifact 해시는 위 기록에 둔다. 실제 native QA는 위 두 binary의 명시된 범위에서 완료했으며 이 결과를 실제 Provider 중단이나 미실행 native 시나리오의 증거로 확대하지 않는다.
 
-`generation.retry_storage`, Scene 결과 연결 재시도, 명시적 예약 포기와 다른 조건부 명령은 별도 구현 단위다. 실제 native 취소, 강제 process crash, 실제 Provider·파일 저장·R2, installer/upgrade 증거는 수행한 검사만 별도 기록한다. Phase 10·11을 이 구현으로 활성화하지 않는다.
+후속 `generation.retry_storage`의 저장 결과 등록 복구는 [ADR-008](ADR-008-phase9e-storage-registration-recovery.md)에 구현·검증 범위를 둔다. 실제 IndexedDB/OutputWriter와 메모리 platform의 성공 자동 검증 및 실제 native 안전 거절을 구분하며 native 성공 등록은 미검증이다. Scene 결과 연결 재시도, 명시적 예약 포기와 다른 조건부 명령은 별도 구현 단위다. 실제 native 취소, 강제 process crash, 실제 Provider·파일 저장·R2, installer/upgrade 증거는 수행한 검사만 별도 기록한다. Phase 10·11을 이 구현으로 활성화하지 않는다.

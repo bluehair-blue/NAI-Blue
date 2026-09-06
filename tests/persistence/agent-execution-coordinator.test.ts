@@ -40,7 +40,8 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
         ports: { validate, enqueue, reconcile: async grant => facts.get(grant.scopeId) ?? null, isOutstanding } }
     function reopen() {
         const coordinator = createAgentExecutionCoordinator({ ...opts, repository: new IndexedDbAgentExecutionRepository() })
-        const dispatcher = new AgentCommandDispatcher({ workspaceId: opts.workspaceId, receipts, handlers: [coordinator.handler, ...(coordinator.cancelHandler ? [coordinator.cancelHandler] : [])],
+        const dispatcher = new AgentCommandDispatcher({ workspaceId: opts.workspaceId, receipts,
+            handlers: [coordinator.handler, ...(coordinator.cancelHandler ? [coordinator.cancelHandler] : []), ...(coordinator.storageRetryHandler ? [coordinator.storageRetryHandler] : [])],
             authentication: { authenticate: async envelope => ({ clientId: envelope.context.clientId, actor: { kind: envelope.context.actor.kind, id: `client:${envelope.context.clientId}` } }) },
             runtime: () => ({ ready: true, mode: policy.mode, globalPause: policy.globalPause }), now: () => time })
         return { coordinator, dispatcher }
@@ -358,6 +359,33 @@ describe('durable agent execution authority', () => {
         expect(cancel).toHaveBeenCalledTimes(1)
         expect((await f.opts.repository.get('workspace-1'))!.records[0]).toEqual(originalRecord)
         expect(await active.dispatcher.dispatch(f.request('after-stop'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+    })
+    it('keeps legacy enqueue exposure and cross-command operation identity intact after storage registration', async () => {
+        const f = fixture('bounded-auto')
+        f.setPolicy({ ...f.getPolicy(), rollingLimits: { ...f.getPolicy().rollingLimits, maxOutstandingRequestsPerClient: 1 } })
+        f.isOutstanding.mockResolvedValue(true)
+        const generated = await f.dispatcher.dispatch(f.request('generation-operation'))
+        const originalRecord = (await f.opts.repository.get('workspace-1'))!.records[0]
+        const target = { runId: String(generated.result!.runId), batchId: String(generated.result!.batchId),
+            jobId: (generated.result!.jobIds as string[])[0], outputTransactionId: 'queue-native-transaction', artifactId: 'artifact-native', targetHash: digest }
+        const retry = vi.fn(async () => ({ status: 'storage-registered' as const, runId: target.runId, batchId: target.batchId, jobId: target.jobId, artifactId: target.artifactId }))
+        Object.assign(f.opts, { storageRetry: { inspect: async () => target, retry, reconcile: async () => null } })
+        const active = f.reopen()
+        const makeRetry = (requestId: string, operation: string) => {
+            const envelope = f.request(requestId)
+            envelope.command = { name: 'generation.retry_storage', input: { runId: target.runId, jobId: target.jobId } }
+            envelope.context.idempotencyKey = operation
+            return { ...envelope, requestHash: agentRequestHash(envelope) }
+        }
+        expect(await active.dispatcher.dispatch(makeRetry('duplicate-storage', 'generation-operation')))
+            .toMatchObject({ state: 'rejected', result: { code: 'AGENT_IDEMPOTENCY_CONFLICT' } })
+        expect(await active.dispatcher.dispatch(makeRetry('register-storage', 'register-storage'))).toMatchObject({ state: 'needs-input' })
+        await active.coordinator.approve('register-storage', (await active.coordinator.pending())[0])
+        await active.coordinator.recover()
+        expect(retry).toHaveBeenCalledTimes(1)
+        expect((await f.opts.repository.get('workspace-1'))!.records[0]).toEqual(originalRecord)
+        expect(await active.dispatcher.dispatch(f.request('after-registration'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
         expect(f.enqueue).toHaveBeenCalledTimes(1)
     })
 })

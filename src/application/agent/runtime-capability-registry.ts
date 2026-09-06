@@ -58,12 +58,14 @@ export function describeAgentCommandCapabilities(
             && handler.executionGate === 'durable-approval'
         const managedCancellation = command === 'generation.cancel' && handler?.effect === effect
             && handler.executionGate === 'durable-approval'
+        const managedStorageRetry = command === 'generation.retry_storage' && handler?.effect === effect
+            && handler.executionGate === 'durable-approval'
         // Effective runtime policy controls the general approval requirement;
         // the coordinator still checks each plan and its durable budget reservation.
         const reason = !state.ready ? 'app-unavailable'
             : handler === undefined ? 'handler-not-registered'
                 : handler.effect !== effect ? 'invalid-command-registration'
-                    : effect === 'mutation' && !managedEnqueue && !managedCancellation ? 'human-approval-unavailable'
+                    : effect === 'mutation' && !managedEnqueue && !managedCancellation && !managedStorageRetry ? 'human-approval-unavailable'
                     : state.mode === 'observe' && effect !== 'read' ? 'observe-only'
                         : undefined
         return {

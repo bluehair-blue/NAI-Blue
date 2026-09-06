@@ -5,8 +5,9 @@ import type { GenerationPlanRepository } from '@/application/generation/generati
 import { AgentCommandError, assertAgentPublicValue, type AgentCommandEnvelope } from './agent-command-contract'
 import { agentResultDigest, type AgentCommandReceipt, type CommandReceiptRepository } from './command-receipt-repository'
 import { effectiveAgentExecutionPolicy, normalizeAgentExecutionPolicy, type AgentExecutionPolicy } from './agent-execution-policy'
-import { agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentCancellationRecord, type AgentExecutionRepository } from './agent-execution-repository'
-import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationGrant, type AgentCancellationPorts } from './agent-cancellation-contract'
+import { agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentStorageRetryRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentQueueRepairRecord, type AgentExecutionRepository } from './agent-execution-repository'
+import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationPorts } from './agent-cancellation-contract'
+import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, sameAgentStorageRetryTarget, type AgentStorageRetryPorts } from './agent-storage-retry-contract'
 import type { AgentCommandHandler } from './runtime-capability-registry'
 
 export interface AgentGenerationApprovalBinding {
@@ -42,8 +43,19 @@ export interface AgentCancellationReview extends AgentCancellationApprovalBindin
     readonly jobCount: number
     readonly reasons: readonly string[]
 }
-export type AgentExecutionApprovalBinding = AgentGenerationApprovalBinding | AgentCancellationApprovalBinding
-export type AgentExecutionReview = AgentGenerationExecutionReview | AgentCancellationReview
+export interface AgentStorageRetryApprovalBinding extends AgentCancellationApprovalBinding {
+    readonly jobId: string
+}
+export interface AgentStorageRetryReview extends AgentStorageRetryApprovalBinding {
+    readonly command: 'generation.retry_storage'
+    readonly requestId: string
+    readonly clientId: string
+    readonly expiresAt: string
+    readonly artifactId: string
+    readonly reasons: readonly string[]
+}
+export type AgentExecutionApprovalBinding = AgentGenerationApprovalBinding | AgentCancellationApprovalBinding | AgentStorageRetryApprovalBinding
+export type AgentExecutionReview = AgentGenerationExecutionReview | AgentCancellationReview | AgentStorageRetryReview
 export type AgentPendingApproval = AgentExecutionReview
 export type AgentApprovalExpectation = AgentExecutionApprovalBinding
 export interface AgentExecutionCoordinatorOptions {
@@ -55,6 +67,7 @@ export interface AgentExecutionCoordinatorOptions {
     readonly now?: () => string
     readonly isClientAuthorized: (envelope: AgentCommandEnvelope) => Promise<boolean>
     readonly cancellation?: AgentCancellationPorts
+    readonly storageRetry?: AgentStorageRetryPorts
     readonly ports: {
         /** Replay source/output authority and current readiness without enqueueing. */
         readonly validate: (plan: GenerationPlan) => Promise<boolean>
@@ -79,7 +92,7 @@ function validateInput(input: JsonObject): JsonObject {
 }
 function receiptState(result: JsonObject): 'completed' | 'needs-input' | 'rejected' {
     return result.code === 'AGENT_APPROVAL_REQUIRED' || result.code === 'AGENT_EXECUTION_UNKNOWN' ? 'needs-input'
-        : result.status === 'ready' || result.status === 'cancel-requested' ? 'completed' : 'rejected'
+        : ['ready', 'cancel-requested', 'storage-registered'].includes(String(result.status)) ? 'completed' : 'rejected'
 }
 
 /** One durable reservation precedes the only enqueue call. Recovery reads Queue facts and never re-enters enqueue. */
@@ -188,8 +201,15 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         return created ? null : code
     }
 
-    /** Consent reserves an exact cancellation grant before touching Queue; no generation authority is spent or released. */
-    async function executeCancellation(record: AgentCancellationRecord): Promise<JsonObject> {
+    function queueRepairResult(record: AgentQueueRepairRecord, result: unknown): JsonObject | null {
+        if (!record.grant) return null
+        if (record.command === 'generation.cancel') {
+            return isAgentCancellationResult(result, record.grant) ? { ...result, jobIds: [...result.jobIds] } : null
+        }
+        return isAgentStorageRetryResult(result, record.grant) ? { ...result } : null
+    }
+    /** Both explicit human Queue operations reserve before mutation; neither consumes or refunds generation authority. */
+    async function executeQueueRepair(record: AgentQueueRepairRecord): Promise<JsonObject> {
         const current = policy()
         if (record.policyRevision !== current.revision) {
             const refreshed = { ...record, policyRevision: current.revision, result: approval() }
@@ -199,14 +219,24 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         if (current.mode === 'observe') return settle(record, failure('AGENT_OBSERVE_ONLY'), 'rejected')
         if (Date.parse(record.expiresAt) <= Date.parse(now())) return settle(record, failure('REQUEST_EXPIRED'), 'rejected')
         if (!await options.isClientAuthorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
-        const target = await options.cancellation?.inspect(record.target.runId)
-        if (target) assertAgentCancellationTarget(target)
-        if (!target || !sameAgentCancellationTarget(record.target, target)) return settle(record, failure('AGENT_CANCEL_TARGET_CHANGED'), 'rejected')
-        const grant: AgentCancellationGrant = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
+        const authority = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
             workspaceId: options.workspaceId, clientId: record.envelope.context.clientId, actorKind: record.envelope.context.actor.kind,
-            policyRevision: current.revision, consentedAt: now(), expiresAt: record.expiresAt, authorization: 'human', target: structuredClone(target) }
-        const reserved: AgentCancellationRecord = { ...record, target: grant.target, grant, state: 'reserved', result: unknown() }
-        // Global pause stops new generation, but this explicit human action may stop existing work.
+            policyRevision: current.revision, expiresAt: record.expiresAt, authorization: 'human' as const }
+        let reserved: AgentQueueRepairRecord
+        if (record.command === 'generation.cancel') {
+            const target = await options.cancellation?.inspect(record.target.runId)
+            if (target) assertAgentCancellationTarget(target)
+            if (!target || !sameAgentCancellationTarget(record.target, target)) return settle(record, failure('AGENT_CANCEL_TARGET_CHANGED'), 'rejected')
+            const grant = { ...authority, consentedAt: now(), target: structuredClone(target) }
+            reserved = { ...record, target: grant.target, grant, state: 'reserved', result: unknown() }
+        } else {
+            const target = await options.storageRetry?.inspect({ runId: record.target.runId, jobId: record.target.jobId })
+            if (target) assertAgentStorageRetryTarget(target)
+            if (!target || !sameAgentStorageRetryTarget(record.target, target)) return settle(record, failure('AGENT_STORAGE_TARGET_CHANGED'), 'rejected')
+            const grant = { ...authority, consentedAt: now(), target: structuredClone(target) }
+            reserved = { ...record, target: grant.target, grant, state: 'reserved', result: unknown() }
+        }
+        // Global pause blocks new generation; approved stopping and files-committed registration may continue locally.
         const didReserve = await change(records => {
             const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
             if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)
@@ -220,11 +250,13 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         }
         let result: unknown
         try {
-            result = await options.cancellation!.cancel(structuredClone(grant.target), structuredClone(grant))
+            result = reserved.command === 'generation.cancel'
+                ? await options.cancellation!.cancel(structuredClone(reserved.target), structuredClone(reserved.grant!))
+                : await options.storageRetry!.retry(structuredClone(reserved.target), structuredClone(reserved.grant!))
             assertAgentPublicValue(result)
         } catch { return settle(reserved, unknown(), 'unknown') }
-        if (!isAgentCancellationResult(result, grant)) return settle(reserved, unknown(), 'unknown')
-        return settle(reserved, { ...result, jobIds: [...result.jobIds] }, 'completed')
+        const completed = queueRepairResult(reserved, result)
+        return completed ? settle(reserved, completed, 'completed') : settle(reserved, unknown(), 'unknown')
     }
     async function execute(record: AgentGenerationExecutionRecord, human: boolean): Promise<JsonObject> {
         const current = policy()
@@ -308,11 +340,13 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             return current.mode === 'bounded-auto' && !checked.code ? execute(record, false) : record.result
         },
     }
-    const cancelHandler: AgentCommandHandler | undefined = options.cancellation ? {
-        command: 'generation.cancel', effect: 'mutation', executionGate: 'durable-approval', receiptState,
+    /** Only these two concrete Queue actions share admission; future commands remain unregistered. */
+    const queueRepairHandler = (command: AgentQueueRepairRecord['command']): AgentCommandHandler => ({
+        command, effect: 'mutation', executionGate: 'durable-approval', receiptState,
         validate: input => {
-            if (Object.keys(input).join() !== 'runId' || typeof input.runId !== 'string'
-                || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(input.runId)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+            const fields = command === 'generation.cancel' ? ['runId'] : ['jobId', 'runId']
+            if (Object.keys(input).sort().join() !== fields.join() || fields.some(key => typeof input[key] !== 'string'
+                || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(input[key] as string))) throw new AgentCommandError('INVALID_COMMAND_INPUT')
             return input
         },
         execute: async (_input, { envelope }) => {
@@ -321,24 +355,39 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
             if (Date.parse(envelope.expiresAt) <= Date.parse(now())) return failure('REQUEST_EXPIRED')
             if (!await options.isClientAuthorized(envelope)) return failure('AUTHENTICATION_FAILED')
-            const target = await options.cancellation!.inspect(String(envelope.command.input.runId))
-            if (!target) return failure('AGENT_CANCEL_TARGET_UNAVAILABLE')
-            assertAgentCancellationTarget(target)
-            if (target.runId !== envelope.command.input.runId) return failure('AGENT_CANCEL_TARGET_CHANGED')
-            const record: AgentCancellationRecord = { command: 'generation.cancel', envelope: structuredClone(envelope),
+            const authority = { envelope: structuredClone(envelope),
                 originalPolicyRevision: current.revision, policyRevision: current.revision, expiresAt: envelope.expiresAt,
-                target: structuredClone(target), state: 'pending', grant: null, result: approval() }
+                state: 'pending' as const, grant: null, result: approval() }
+            let record: AgentQueueRepairRecord
+            if (command === 'generation.cancel') {
+                const target = await options.cancellation!.inspect(String(envelope.command.input.runId))
+                if (!target) return failure('AGENT_CANCEL_TARGET_UNAVAILABLE')
+                assertAgentCancellationTarget(target)
+                if (target.runId !== envelope.command.input.runId) return failure('AGENT_CANCEL_TARGET_CHANGED')
+                record = { ...authority, command, target: structuredClone(target) }
+            } else {
+                const input = { runId: String(envelope.command.input.runId), jobId: String(envelope.command.input.jobId) }
+                const target = await options.storageRetry!.inspect(input)
+                if (!target) return failure('AGENT_STORAGE_TARGET_UNAVAILABLE')
+                assertAgentStorageRetryTarget(target)
+                if (target.runId !== input.runId || target.jobId !== input.jobId) return failure('AGENT_STORAGE_TARGET_CHANGED')
+                record = { ...authority, command, target: structuredClone(target) }
+            }
             const createIssue = await storePending(record, current)
-            // Bounded automatic generation is never cancellation consent.
+            // Bounded automatic generation is never consent for these local human actions.
             return createIssue ? failure(createIssue) : record.result
         },
-    } : undefined
+    })
+    const cancelHandler = options.cancellation ? queueRepairHandler('generation.cancel') : undefined
+    const storageRetryHandler = options.storageRetry ? queueRepairHandler('generation.retry_storage') : undefined
     async function decisionRecord(requestId: string, expected: AgentExecutionApprovalBinding): Promise<AgentExecutionRecord | null> {
         const record = (await ledger())?.records.find(item => item.envelope.requestId === requestId)
         if (!record || record.state !== 'pending') return null
         const targetMatches = isAgentCancellationRecord(record)
             ? 'runId' in expected && expected.runId === record.target.runId && expected.targetHash === record.target.targetHash
-            : 'planHash' in expected && record.envelope.command.input.planHash === expected.planHash
+            : isAgentStorageRetryRecord(record)
+                ? 'jobId' in expected && expected.runId === record.target.runId && expected.jobId === record.target.jobId && expected.targetHash === record.target.targetHash
+                : 'planHash' in expected && record.envelope.command.input.planHash === expected.planHash
         if (record.envelope.requestHash !== expected.requestHash || !targetMatches
             || record.policyRevision !== expected.policyRevision) throw new AgentCommandError('AGENT_APPROVAL_BINDING_CHANGED')
         const receipt = await options.receipts.get(requestId)
@@ -346,11 +395,11 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         return record
     }
     return {
-        handler, cancelHandler,
+        handler, cancelHandler, storageRetryHandler,
         async pending(): Promise<readonly AgentExecutionReview[]> {
             const reviews: AgentExecutionReview[] = []
             for (const stored of (await ledger())?.records ?? []) {
-                if (isAgentCancellationRecord(stored)) {
+                if (!isAgentGenerationRecord(stored)) {
                     if (stored.state !== 'pending') continue
                     let record = stored
                     const current = policy()
@@ -361,11 +410,14 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                         record = refreshed
                         await publish(record)
                     }
-                    reviews.push({ command: 'generation.cancel', requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
+                    const common = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
                         clientId: record.envelope.context.clientId, policyRevision: record.policyRevision, expiresAt: record.expiresAt,
-                        runId: record.target.runId, targetHash: record.target.targetHash, jobIds: [...record.target.jobIds], jobCount: record.target.jobIds.length,
+                        runId: record.target.runId, targetHash: record.target.targetHash,
                         reasons: Date.parse(record.expiresAt) <= Date.parse(now()) ? ['REQUEST_EXPIRED']
-                            : current.mode === 'observe' ? ['AGENT_OBSERVE_ONLY'] : ['AGENT_APPROVAL_REQUIRED'] })
+                            : current.mode === 'observe' ? ['AGENT_OBSERVE_ONLY'] : ['AGENT_APPROVAL_REQUIRED'] }
+                    reviews.push(record.command === 'generation.cancel'
+                        ? { ...common, command: record.command, jobIds: [...record.target.jobIds], jobCount: record.target.jobIds.length }
+                        : { ...common, command: record.command, jobId: record.target.jobId, artifactId: record.target.artifactId })
                     continue
                 }
                 let record = stored
@@ -395,7 +447,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         },
         async approve(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)
-            return record ? isAgentCancellationRecord(record) ? executeCancellation(record) : execute(record, true) : failure('AGENT_APPROVAL_UNAVAILABLE')
+            return record ? isAgentGenerationRecord(record) ? execute(record, true) : executeQueueRepair(record) : failure('AGENT_APPROVAL_UNAVAILABLE')
         },
         async reject(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)
@@ -403,10 +455,16 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         },
         async recover(): Promise<readonly AgentCommandReceipt[]> {
             for (const record of (await ledger())?.records ?? []) {
-                if (isAgentCancellationRecord(record) && (record.state === 'reserved' || record.state === 'unknown') && record.grant) {
+                if (!isAgentGenerationRecord(record) && (record.state === 'reserved' || record.state === 'unknown') && record.grant) {
                     let result: unknown = null
-                    try { result = await options.cancellation?.reconcile(structuredClone(record.grant)); if (result) assertAgentPublicValue(result) } catch { result = null }
-                    if (isAgentCancellationResult(result, record.grant)) await settle(record, { ...result, jobIds: [...result.jobIds] }, 'completed')
+                    try {
+                        result = record.command === 'generation.cancel'
+                            ? await options.cancellation?.reconcile(structuredClone(record.grant))
+                            : await options.storageRetry?.reconcile(structuredClone(record.grant))
+                        if (result) assertAgentPublicValue(result)
+                    } catch { result = null }
+                    const completed = queueRepairResult(record, result)
+                    if (completed) await settle(record, completed, 'completed')
                     else await settle(record, unknown(), 'unknown')
                     continue
                 }

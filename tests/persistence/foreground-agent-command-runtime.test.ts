@@ -13,6 +13,7 @@ import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execut
 import type { GenerationPlan } from '@/application/generation/generation-plan-contract'
 import type { JsonObject } from '@/domain/composition/types'
 import type { AgentCancellationGrant, AgentCancellationTarget } from '@/application/agent/agent-cancellation-contract'
+import type { AgentStorageRetryGrant, AgentStorageRetryTarget, AgentStorageRetryResult } from '@/application/agent/agent-storage-retry-contract'
 
 const runtimes: ForegroundAgentCommandRuntime[] = []
 const subtle = webcrypto.subtle as unknown as SubtleCrypto
@@ -61,7 +62,7 @@ async function fixture() {
     return { native, execute, createHandlers, createRuntime, submit, ready, results }
 }
 
-async function executionFixture(withCancellation = false) {
+async function executionFixture(command?: 'generation.cancel' | 'generation.retry_storage') {
     const f = await fixture()
     const digest = `sha256:${'a'.repeat(64)}` as const
     const plan = { planId: digest, planHash: digest, jobs: [{ compatibility: { status: 'captured-pass' },
@@ -75,6 +76,15 @@ async function executionFixture(withCancellation = false) {
     const cancellationTarget: AgentCancellationTarget = { runId: 'batch-cancel', batchId: 'batch-cancel',
         jobIds: ['job-cancel'], targetHash: digest, previouslyStoppedJobIds: [] }
     const cancellations = new Map<string, { status: 'cancel-requested'; runId: string; batchId: string; jobIds: string[] }>()
+    const storageTarget: AgentStorageRetryTarget = { runId: 'batch-storage', batchId: 'batch-storage', jobId: 'job-storage',
+        outputTransactionId: 'output-storage', artifactId: 'artifact-storage', targetHash: digest }
+    const storageFacts = new Map<string, AgentStorageRetryResult>()
+    const retryStorage = vi.fn(async (target: AgentStorageRetryTarget, grant: AgentStorageRetryGrant) => {
+        const result: AgentStorageRetryResult = { status: 'storage-registered', runId: target.runId,
+            batchId: target.batchId, jobId: target.jobId, artifactId: target.artifactId }
+        storageFacts.set(grant.requestId, result)
+        return result
+    })
     const cancel = vi.fn(async (target: AgentCancellationTarget, grant: AgentCancellationGrant) => {
         const result = { status: 'cancel-requested' as const, runId: target.runId, batchId: target.batchId, jobIds: [...target.jobIds] }
         cancellations.set(grant.requestId, result)
@@ -101,10 +111,12 @@ async function executionFixture(withCancellation = false) {
         plans: { get: async () => plan, putIfAbsent: async () => 'same' }, getPolicy: () => policy,
         ports: { enqueue, validate: async () => true, reconcile: async grant => facts.get(grant.scopeId) ?? null,
             isOutstanding: async () => false },
-        ...(withCancellation ? { cancellation: { inspect: async () => cancellationTarget, cancel,
+        ...(command === 'generation.cancel' ? { cancellation: { inspect: async () => cancellationTarget, cancel,
             reconcile: async (grant: AgentCancellationGrant) => cancellations.get(grant.requestId) ?? null } } : {}),
+        ...(command === 'generation.retry_storage' ? { storageRetry: { inspect: async () => storageTarget, retry: retryStorage,
+            reconcile: async (grant: AgentStorageRetryGrant) => storageFacts.get(grant.requestId) ?? null } } : {}),
     }) })
-    return { ...f, createRuntime, receipts, enqueue, cancel, persistPolicy,
+    return { ...f, createRuntime, receipts, enqueue, cancel, retryStorage, persistPolicy,
         getPolicy: () => policy, setSaving: (value: boolean) => { saving = value },
         submitEnqueue: (id: string) => f.submit(id, { name: 'generation.enqueue', input: { planId: digest, planHash: digest } }) }
 }
@@ -115,8 +127,34 @@ afterEach(async () => {
 })
 
 describe('foreground native inbox composition', () => {
+    it('restores signed storage review and publishes its exact completion without generating work', async () => {
+        const f = await executionFixture('generation.retry_storage')
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await runtime.changePolicy(0, { ...f.getPolicy(), globalPause: true })
+        await f.submit('storage-after-restart', { name: 'generation.retry_storage', input: { runId: 'batch-storage', jobId: 'job-storage' } })
+        await runtime.poll()
+        expect(f.results.get('storage-after-restart')).toMatchObject({ state: 'needs-input' })
+        expect(f.retryStorage).not.toHaveBeenCalled()
+        await runtime.stop()
+        resetIndexedDBConnectionForRetry()
+        const reopened = f.createRuntime()
+        await reopened.start(Promise.resolve({ inboxReady: true }))
+        const [review] = reopened.getSnapshot().pendingApprovals
+        expect(review).toMatchObject({ command: 'generation.retry_storage', runId: 'batch-storage', jobId: 'job-storage', artifactId: 'artifact-storage' })
+        await reopened.decideApproval(review.requestId, 'approve', review)
+        expect(f.retryStorage).toHaveBeenCalledTimes(1)
+        expect(f.enqueue).not.toHaveBeenCalled()
+        expect(f.cancel).not.toHaveBeenCalled()
+        expect(f.results.get(review.requestId)).toEqual(await f.receipts.get(review.requestId))
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'completed', result: { status: 'storage-registered' } })
+        expect(reopened.getSnapshot().recent[0]).toMatchObject({ batchId: 'batch-storage', storageRegistered: true })
+        await reopened.decideApproval(review.requestId, 'approve', review)
+        expect(f.retryStorage).toHaveBeenCalledTimes(1)
+    })
+
     it('restores authenticated cancellation review and publishes its durable acknowledgement during global pause', async () => {
-        const f = await executionFixture(true)
+        const f = await executionFixture('generation.cancel')
         const runtime = f.createRuntime()
         await runtime.start(Promise.resolve({ inboxReady: true }))
         await runtime.changePolicy(0, { ...f.getPolicy(), globalPause: true })
@@ -141,7 +179,7 @@ describe('foreground native inbox composition', () => {
     })
 
     it('rechecks the registered client before a pending cancellation can execute', async () => {
-        const f = await executionFixture(true)
+        const f = await executionFixture('generation.cancel')
         await f.submit('cancel-revoked', { name: 'generation.cancel', input: { runId: 'batch-cancel' } })
         const runtime = f.createRuntime()
         await runtime.start(Promise.resolve({ inboxReady: true }))

@@ -3,6 +3,7 @@ import type { JsonObject } from '@/domain/composition/types'
 import type { Sha256Digest } from '@/application/generation/generation-plan-contract'
 import { AgentCommandError, agentRequestHash, assertAgentPublicValue, parseAgentCommandEnvelope, type AgentCommandEnvelope } from './agent-command-contract'
 import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationGrant, type AgentCancellationTarget } from './agent-cancellation-contract'
+import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, type AgentStorageRetryGrant, type AgentStorageRetryTarget } from './agent-storage-retry-contract'
 
 /** Durable authority is local: public inbox results contain only a projection of these records. */
 export interface AgentExecutionGrant {
@@ -45,12 +46,21 @@ export interface AgentCancellationRecord {
     readonly grant: AgentCancellationGrant | null
     readonly result: JsonObject
 }
-export type AgentExecutionRecord = AgentGenerationExecutionRecord | AgentCancellationRecord
+export interface AgentStorageRetryRecord extends Omit<AgentCancellationRecord, 'command' | 'target' | 'grant'> {
+    readonly command: 'generation.retry_storage'
+    readonly target: AgentStorageRetryTarget
+    readonly grant: AgentStorageRetryGrant | null
+}
+export type AgentQueueRepairRecord = AgentCancellationRecord | AgentStorageRetryRecord
+export type AgentExecutionRecord = AgentGenerationExecutionRecord | AgentQueueRepairRecord
 export function isAgentCancellationRecord(record: AgentExecutionRecord): record is AgentCancellationRecord {
     return 'command' in record && record.command === 'generation.cancel'
 }
 export function isAgentGenerationRecord(record: AgentExecutionRecord): record is AgentGenerationExecutionRecord {
-    return !isAgentCancellationRecord(record)
+    return !isAgentCancellationRecord(record) && !isAgentStorageRetryRecord(record)
+}
+export function isAgentStorageRetryRecord(record: AgentExecutionRecord): record is AgentStorageRetryRecord {
+    return 'command' in record && record.command === 'generation.retry_storage'
 }
 export interface AgentExecutionLedger {
     readonly schemaVersion: 1
@@ -85,8 +95,8 @@ export function parseAgentExecutionLedger(value: unknown, workspaceId: string): 
         const ids = new Set<string>()
         for (const record of ledger.records) {
             const envelope = parseAgentCommandEnvelope(record.envelope)
-            if (isAgentCancellationRecord(record)) {
-                validateCancellationRecord(record, envelope, workspaceId)
+            if (!isAgentGenerationRecord(record)) {
+                validateQueueRepairRecord(record, envelope, workspaceId)
                 if (ids.has(envelope.requestId)) throw new Error()
                 ids.add(envelope.requestId)
                 continue
@@ -133,17 +143,24 @@ export function parseAgentExecutionLedger(value: unknown, workspaceId: string): 
     } catch { throw new AgentCommandError('INVALID_EXECUTION_STORE') }
 }
 
-/** Keep the legacy enqueue parser intact: cancellation has its own exact durable shape. */
-function validateCancellationRecord(record: AgentCancellationRecord, envelope: AgentCommandEnvelope, workspaceId: string): void {
+/** The two human Queue operations share authority fields while retaining exact command-specific target validators. */
+function validateQueueRepairRecord(record: AgentQueueRepairRecord, envelope: AgentCommandEnvelope, workspaceId: string): void {
     if (Object.keys(record).sort().join() !== 'command,envelope,expiresAt,grant,originalPolicyRevision,policyRevision,result,state,target'
-        || envelope.command.name !== 'generation.cancel' || envelope.context.workspaceId !== workspaceId
-        || agentRequestHash(envelope) !== envelope.requestHash || Object.keys(envelope.command.input).join() !== 'runId'
+        || envelope.command.name !== record.command || envelope.context.workspaceId !== workspaceId
+        || agentRequestHash(envelope) !== envelope.requestHash
         || !Number.isSafeInteger(record.policyRevision) || record.policyRevision < 0
         || !Number.isSafeInteger(record.originalPolicyRevision) || record.originalPolicyRevision < 0
         || record.originalPolicyRevision > record.policyRevision || record.expiresAt !== envelope.expiresAt
         || !Number.isFinite(Date.parse(record.expiresAt)) || new Date(record.expiresAt).toISOString() !== record.expiresAt
         || !['pending', 'reserved', 'unknown', 'completed', 'rejected'].includes(record.state)) throw new Error()
-    assertAgentCancellationTarget(record.target)
+    if (record.command === 'generation.cancel') {
+        if (Object.keys(envelope.command.input).join() !== 'runId') throw new Error()
+        assertAgentCancellationTarget(record.target)
+    } else {
+        if (Object.keys(envelope.command.input).sort().join() !== 'jobId,runId') throw new Error()
+        assertAgentStorageRetryTarget(record.target)
+        if (record.target.jobId !== envelope.command.input.jobId) throw new Error()
+    }
     if (record.target.runId !== envelope.command.input.runId) throw new Error()
     assertAgentPublicValue(record.result)
     if (record.state === 'pending' && (record.grant !== null || record.result.code !== 'AGENT_APPROVAL_REQUIRED')) throw new Error()
@@ -151,15 +168,20 @@ function validateCancellationRecord(record: AgentCancellationRecord, envelope: A
     if (['reserved', 'unknown', 'completed'].includes(record.state) && !record.grant) throw new Error()
     if (!record.grant) return
     const grant = record.grant
-    assertAgentCancellationTarget(grant.target)
+    if (record.command === 'generation.cancel') {
+        assertAgentCancellationTarget(record.grant.target)
+        if (!sameAgentCancellationTarget(record.target, record.grant.target)
+            || (record.state === 'completed' && !isAgentCancellationResult(record.result, record.grant))) throw new Error()
+    } else {
+        assertAgentStorageRetryTarget(record.grant.target)
+        if (record.state === 'completed' && !isAgentStorageRetryResult(record.result, record.grant)) throw new Error()
+    }
     if (Object.keys(grant).sort().join() !== 'actorKind,authorization,clientId,consentedAt,expiresAt,policyRevision,requestHash,requestId,target,workspaceId'
         || grant.requestId !== envelope.requestId || grant.requestHash !== envelope.requestHash
         || grant.workspaceId !== workspaceId || grant.clientId !== envelope.context.clientId
         || grant.actorKind !== envelope.context.actor.kind || grant.authorization !== 'human'
         || grant.policyRevision !== record.policyRevision || grant.expiresAt !== record.expiresAt
-        || !sameAgentCancellationTarget(record.target, grant.target)
         || canonicalSerialize(record.target) !== canonicalSerialize(grant.target)
         || !Number.isFinite(Date.parse(grant.consentedAt)) || new Date(grant.consentedAt).toISOString() !== grant.consentedAt
-        || grant.consentedAt < envelope.submittedAt || grant.consentedAt >= record.expiresAt
-        || (record.state === 'completed' && !isAgentCancellationResult(record.result, grant))) throw new Error()
+        || grant.consentedAt < envelope.submittedAt || grant.consentedAt >= record.expiresAt) throw new Error()
 }

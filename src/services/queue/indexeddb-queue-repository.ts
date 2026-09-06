@@ -67,6 +67,29 @@ const STORE_NAMES = [
 ] as const
 type QueueStoreName = typeof STORE_NAMES[number]
 
+/** Shared eligibility only; the repository repeats it with current rows in the commit transaction. */
+export function assertFilesCommittedRecoveryEligibility(
+    job: Pick<GenerationJob, 'state' | 'cancelRequestedAt' | 'blockReason' | 'leaseExpiresAt'>,
+    attempt: GenerationAttempt | null,
+    now: string,
+    rejectActiveLease = false,
+): void {
+    if (job.cancelRequestedAt !== null) {
+        throw new QueueRepositoryError('E_QUEUE_CANCEL_REQUESTED', 'Queue job was cancelled before recovery')
+    }
+    if (!['running', 'leased', 'recovering', 'succeeded'].includes(job.state)
+        || job.blockReason === 'provider-outcome-unknown'
+        || job.blockReason === 'provider-result-lost'
+        || attempt?.providerEvidence?.providerOutcome === 'unknown'
+        || attempt?.providerEvidence?.dispatchState === 'result-lost') {
+        throw new QueueRepositoryError('E_QUEUE_INVALID_TRANSITION', 'Queue state or Provider evidence prevents output recovery')
+    }
+    if (rejectActiveLease && job.leaseExpiresAt !== null
+        && Date.parse(job.leaseExpiresAt) >= Date.parse(now)) {
+        throw new QueueRepositoryError('E_QUEUE_LEASE_LOST', 'An active Queue executor owns this output')
+    }
+}
+
 export type QueueRepositoryErrorCode =
     | 'GENERATION_ATOMIC_BATCH_UNAVAILABLE'
     | 'GENERATION_ATOMIC_BATCH_LIMIT_EXCEEDED'
@@ -3179,6 +3202,9 @@ export class IndexedDBQueueRepository {
         now: string
         outputTransactionId: string
         artifactReference: QueueArtifactReference
+        expectedAttemptCount?: number
+        /** Startup owns prior-process leases; targeted retries must exclude live executors. */
+        rejectActiveLease?: boolean
     }): Promise<GenerationJob> {
         assertTimestamp(input.now, 'output recovery time')
         const version = await this.runTransaction(
@@ -3192,6 +3218,17 @@ export class IndexedDBQueueRepository {
             const value = await requestResult(jobs.get(input.jobId))
             if (value === undefined) throw new QueueRepositoryError('E_QUEUE_NOT_FOUND', 'Queue job does not exist')
             const stored = parseStoredJob(value)
+            const [leaseValue, attemptValue] = await Promise.all([
+                requestResult(transaction.objectStore('leases').get(stored.id)),
+                requestResult(transaction.objectStore('attempts').get(`${stored.id}:${stored.attemptCount}`)),
+            ])
+            const currentAttempt = attemptValue === undefined ? null : parseGenerationAttempt(attemptValue)
+            if (input.expectedAttemptCount !== undefined && stored.attemptCount !== input.expectedAttemptCount) {
+                throw new QueueRepositoryError('E_QUEUE_IDEMPOTENCY_CONFLICT', 'Output recovery attempt changed')
+            }
+            assertFilesCommittedRecoveryEligibility(
+                aggregateJob(stored, parseLease(leaseValue)), currentAttempt, input.now, input.rejectActiveLease,
+            )
             if (stored.state === 'succeeded') {
                 if (stored.outputTransactionId !== input.outputTransactionId
                     || canonicalSerialize(stored.artifactReference) !== canonicalSerialize(input.artifactReference)) {

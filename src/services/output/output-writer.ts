@@ -196,7 +196,7 @@ interface OutputRecoveryJournal {
 export interface OutputRecoveryResult {
     transactionId: string
     action: 'rolled-back' | 'retried' | 'cleaned' | 'missing' | 'ineligible' | 'failed'
-    ineligibility?: 'source-job-mismatch' | 'phase-not-files-committed' | 'reservation-mismatch'
+    ineligibility?: 'source-job-mismatch' | 'phase-not-files-committed' | 'reservation-mismatch' | 'transaction-active'
     error?: string
 }
 
@@ -579,6 +579,8 @@ function resultFromJournal(journal: OutputRecoveryJournal): OutputWriteResult {
 }
 
 export class OutputWriter {
+    /** Shared writer ownership remains authoritative when a Queue lease expires in this process. */
+    private readonly activeTransactions = new Set<string>()
     private readonly outputNameReservations = new Map<string, Promise<void>>()
 
     constructor(
@@ -763,6 +765,11 @@ export class OutputWriter {
         const outputReservation = request.outputReservation === undefined
             ? undefined
             : parseReservationIdentity(request.outputReservation)
+        const transactionId = request.transactionId ?? this.createTransactionId()
+        if (this.activeTransactions.has(transactionId)) {
+            throw new OutputWriterError('resolve-destination', 'Output transaction is already active')
+        }
+        this.activeTransactions.add(transactionId)
 
         let phase: OutputWriterPhase = 'resolve-destination'
         let journal: OutputRecoveryJournal | null = null
@@ -863,7 +870,6 @@ export class OutputWriter {
                     releaseReservation()
                 }
             }
-            const transactionId = request.transactionId ?? this.createTransactionId()
             if (!/^[A-Za-z0-9-]{1,128}$/.test(transactionId)) {
                 throw new OutputWriterError(
                     'resolve-destination',
@@ -1179,6 +1185,7 @@ export class OutputWriter {
             throw diagnosticError
         } finally {
             releaseOutputName?.()
+            this.activeTransactions.delete(transactionId)
         }
     }
 
@@ -1186,11 +1193,16 @@ export class OutputWriter {
         transactionId: string,
         options: RetryRecoveryOptions = {},
     ): Promise<OutputRecoveryResult> {
+        if (this.activeTransactions.has(transactionId)) {
+            return { transactionId, action: 'ineligible', ineligibility: 'transaction-active' }
+        }
+        this.activeTransactions.add(transactionId)
         try {
             const bytes = await this.platform.readJournal(transactionId)
             if (bytes === null) return { transactionId, action: 'missing' }
             const journal = parseJournal(bytes)
 
+            if (journal.transactionId !== transactionId) throw new Error('Output journal transaction identity differs')
             if (journal.phase === 'workflow-committed') {
                 await this.cleanupCompleted(journal)
                 return { transactionId, action: 'cleaned' }
@@ -1219,6 +1231,8 @@ export class OutputWriter {
                 action: 'failed',
                 error: diagnostic.userSummary,
             }
+        } finally {
+            this.activeTransactions.delete(transactionId)
         }
     }
 
@@ -1233,10 +1247,15 @@ export class OutputWriter {
         commitWorkflow: (result: OutputWriteResult) => void | Promise<void>,
         expectedReservation?: ExactOutputReservationIdentity,
     ): Promise<OutputRecoveryResult> {
+        if (this.activeTransactions.has(transactionId)) {
+            return { transactionId, action: 'ineligible', ineligibility: 'transaction-active' }
+        }
+        this.activeTransactions.add(transactionId)
         try {
             const bytes = await this.platform.readJournal(transactionId)
             if (bytes === null) return { transactionId, action: 'missing' }
             const journal = parseJournal(bytes)
+            if (journal.transactionId !== transactionId) throw new Error('Output journal transaction identity differs')
             if (journal.sourceJobId !== expectedSourceJobId) {
                 return { transactionId, action: 'ineligible', ineligibility: 'source-job-mismatch' }
             }
@@ -1262,16 +1281,41 @@ export class OutputWriter {
                 stage: 'retry-files-committed-workflow',
             })
             return { transactionId, action: 'failed', error: diagnostic.userSummary }
+        } finally {
+            this.activeTransactions.delete(transactionId)
         }
     }
 
-    async recoverPending(options: RetryRecoveryOptions = {}): Promise<OutputRecoveryResult[]> {
+    async recoverPending(
+        options: RetryRecoveryOptions & { excludeTransactionIds?: readonly string[] } = {},
+    ): Promise<OutputRecoveryResult[]> {
         const transactionIds = await this.platform.listJournalIds()
+        const excluded = new Set(options.excludeTransactionIds)
         const results: OutputRecoveryResult[] = []
         for (const transactionId of transactionIds) {
+            if (excluded.has(transactionId)) continue
             results.push(await this.recoverTransaction(transactionId, options))
         }
         return results
+    }
+
+    isTransactionActive(transactionId: string): boolean {
+        return this.activeTransactions.has(transactionId)
+    }
+
+    /** Reads one journal for consent inspection; malformed evidence fails closed. */
+    async inspectQueueTransaction(transactionId: string): Promise<PendingQueueOutputTransaction | null> {
+        const bytes = await this.platform.readJournal(transactionId)
+        if (bytes === null) return null
+        const journal = parseJournal(bytes)
+        if (journal.transactionId !== transactionId) throw new Error('Output journal transaction identity differs')
+        if (journal.sourceJobId === undefined) return null
+        return {
+            transactionId: journal.transactionId,
+            sourceJobId: journal.sourceJobId,
+            phase: journal.phase,
+            ...(journal.outputReservation === undefined ? {} : { outputReservation: journal.outputReservation }),
+        }
     }
 
     async inspectPendingQueueTransactions(): Promise<PendingQueueOutputTransaction[]> {

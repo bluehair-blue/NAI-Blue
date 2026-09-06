@@ -35,7 +35,7 @@ describe('human execution controls in the existing inbox panel', () => {
         expect(Object.keys(ko.agentInbox).sort()).toEqual(Object.keys(en.agentInbox).sort())
         expect(Object.keys(ja.agentInbox).sort()).toEqual(Object.keys(en.agentInbox).sort())
         for (const locale of [ko, en, ja]) {
-            for (const key of ['approveOnce', 'rejectApproval', 'autoExpiry', 'policySaveFailed', 'maxAnlasPerDay', 'unavailableChanges', 'cancelAction', 'cancelEffect', 'cancelRequested'] as const) {
+            for (const key of ['approveOnce', 'rejectApproval', 'autoExpiry', 'policySaveFailed', 'maxAnlasPerDay', 'unavailableChanges', 'cancelAction', 'cancelEffect', 'cancelRequested', 'storageAction', 'storageEffect', 'storageRegistered'] as const) {
                 expect(locale.agentInbox[key].length).toBeGreaterThan(0)
             }
         }
@@ -66,5 +66,24 @@ describe('human execution controls in the existing inbox panel', () => {
         expect(approvalButton).not.toContain(' disabled=""')
         observing = true
         expect(render().match(/<button[^>]*>agentInbox.approveOnce<\/button>/)?.[0]).toContain(' disabled=""')
+    })
+
+    it('shows the one-job storage registration scope and acknowledgement while generation is paused', () => {
+        const snapshot: ForegroundAgentSnapshot = { status: 'ready', workspaceId: 'workspace', clients: [], capabilities: [],
+            changingClient: false, changingExecution: false, policy: { ...DEFAULT_AGENT_EXECUTION_POLICY, globalPause: true },
+            recent: [{ requestId: 'storage-done', state: 'completed', batchId: 'existing-batch', storageRegistered: true }],
+            pendingApprovals: [{ command: 'generation.retry_storage', requestId: 'storage-review', clientId: 'client-reviewer',
+                requestHash: `sha256:${'1'.repeat(64)}`, targetHash: `sha256:${'2'.repeat(64)}`, runId: 'existing-batch',
+                jobId: 'existing-job', artifactId: 'existing-artifact', policyRevision: 0,
+                expiresAt: '2099-01-01T00:00:00.000Z', reasons: ['AGENT_APPROVAL_REQUIRED'] }],
+        }
+        const runtime = { subscribe: () => () => undefined, getSnapshot: () => snapshot } as unknown as ForegroundAgentCommandRuntime
+        const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(AgentCommandPanel, { runtime })))
+        for (const fact of ['existing-batch', 'existing-job', 'existing-artifact', 'agentInbox.storageAction',
+            'agentInbox.storageEffect', 'agentInbox.storageRegistered', 'agentInbox.openTargetBatch']) expect(html).toContain(fact)
+        const review = html.slice(html.indexOf('agentInbox.request: storage-review')).split('</li>')[0]
+        expect(review).not.toContain('agentInbox.reviewCost')
+        expect(review).not.toContain('agentInbox.cancelAction')
+        expect(review.match(/<button[^>]*>agentInbox.approveOnce<\/button>/)?.[0]).not.toContain(' disabled=""')
     })
 })

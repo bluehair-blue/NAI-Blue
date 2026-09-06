@@ -154,6 +154,7 @@ describe('Queue startup Provider reconciliation', () => {
             expect(result.inboxReady).toBe(false)
             expect(result.recoveryIssues).toEqual(['linked-output-recovery', 'orphan-output-recovery'])
             expect(result.linkedOutputs).toEqual(incomplete)
+            expect(mocks.recoverPending).toHaveBeenCalledWith({ excludeTransactionIds: ['private-path'] })
             expect(mocks.reconcileStyleLab).toHaveBeenCalledOnce()
         },
     )

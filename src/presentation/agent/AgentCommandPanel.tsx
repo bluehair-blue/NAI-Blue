@@ -21,8 +21,10 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
     const decide = async (item: AgentExecutionReview, decision: 'approve' | 'reject') => {
         setMessage(null)
         try {
-            // The same human action binds either the reviewed generation plan or exact cancel target.
-            const expected = item.command === 'generation.cancel'
+            // Each human decision binds the reviewed plan or exact existing Queue result.
+            const expected = item.command === 'generation.retry_storage'
+                ? { requestHash: item.requestHash, runId: item.runId, jobId: item.jobId, targetHash: item.targetHash, policyRevision: item.policyRevision }
+                : item.command === 'generation.cancel'
                 ? { requestHash: item.requestHash, runId: item.runId, targetHash: item.targetHash, policyRevision: item.policyRevision }
                 : { requestHash: item.requestHash, planHash: item.planHash, policyRevision: item.policyRevision }
             await runtime.decideApproval(item.requestId, decision, expected)
@@ -109,6 +111,12 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                         <p>{t('agentInbox.cancelJobCount', { count: item.jobCount })}</p>
                         <p className="break-all">{item.jobIds.join(', ')}</p>
                         <p>{t('agentInbox.cancelEffect')}</p>
+                    </> : item.command === 'generation.retry_storage' ? <>
+                        <p className="font-medium">{t('agentInbox.storageAction')}</p>
+                        <p className="break-all">{t('agentInbox.storageRun')}: {item.runId}</p>
+                        <p className="break-all">{t('agentInbox.storageJob')}: {item.jobId}</p>
+                        <p className="break-all">{t('agentInbox.storageArtifact')}: {item.artifactId}</p>
+                        <p>{t('agentInbox.storageEffect')}</p>
                     </> : <>
                         <p className="break-all">{t('agentInbox.reviewedSource')}: {item.sourceIds.join(', ')}</p>
                         <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
@@ -118,7 +126,7 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                     <p>{t('agentInbox.approvalExpiry')}: <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p>
                     <p>{t('agentInbox.approvalReasons')}: {item.reasons.map(reason => t(`agentInbox.reason_${reason}`, { defaultValue: reason })).join(', ')}</p>
                     <div className="flex flex-wrap gap-2">
-                        <Button size="sm" disabled={!ready || (item.command !== 'generation.cancel' && state.policy.globalPause) || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
+                        <Button size="sm" disabled={!ready || ((item.command ?? 'generation.enqueue') === 'generation.enqueue' && state.policy.globalPause) || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
                             onClick={() => void decide(item, 'approve')}>{t('agentInbox.approveOnce')}</Button>
                         <Button size="sm" variant="outline" disabled={!ready} onClick={() => void decide(item, 'reject')}>{t('agentInbox.rejectApproval')}</Button>
                     </div>
@@ -130,8 +138,8 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                 </li>)}</ul>
             </details>
             {state.recent.length > 0 && <div><p className="mb-2 text-sm font-medium">{t('agentInbox.recent', '이번 실행의 최근 요청')}</p>
-                <ul className="space-y-1">{state.recent.map(item => <li key={item.requestId} className="flex flex-wrap justify-between gap-2 text-xs"><span className="break-all">{item.requestId}</span><span>{item.cancelRequested ? t('agentInbox.cancelRequested') : item.state}</span>
-                    {item.batchId && <Link className="break-all underline" to="/queue" onClick={() => useQueueStore.getState().setSelectedBatchId(item.batchId!)}>{t(item.cancelRequested ? 'agentInbox.openTargetBatch' : 'agentInbox.openBatch')}: {item.batchId}</Link>}
+                <ul className="space-y-1">{state.recent.map(item => <li key={item.requestId} className="flex flex-wrap justify-between gap-2 text-xs"><span className="break-all">{item.requestId}</span><span>{item.cancelRequested ? t('agentInbox.cancelRequested') : item.storageRegistered ? t('agentInbox.storageRegistered') : item.state}</span>
+                    {item.batchId && <Link className="break-all underline" to="/queue" onClick={() => useQueueStore.getState().setSelectedBatchId(item.batchId!)}>{t(item.cancelRequested || item.storageRegistered ? 'agentInbox.openTargetBatch' : 'agentInbox.openBatch')}: {item.batchId}</Link>}
                 </li>)}</ul>
             </div>}
         </CardContent>
