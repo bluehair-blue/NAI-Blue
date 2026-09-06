@@ -186,6 +186,21 @@ describe('generation application commands', () => {
         expect(enqueue).not.toHaveBeenCalled()
     })
 
+    it('carries only an exact cancellation digest while preserving legacy callers', async () => {
+        const cancelBatch = vi.fn(async () => ({ status: 'ready' as const, targetId: 'batch-1' }))
+        const operationId = 'a'.repeat(64)
+        await expect(cancelGeneration({ batchId: 'batch-1', actor, operationId }, { cancelBatch }))
+            .resolves.toEqual({ status: 'ready', targetId: 'batch-1' })
+        expect(cancelBatch).toHaveBeenLastCalledWith({ batchId: 'batch-1', actor, operationId })
+        await cancelGeneration({ batchId: 'batch-1', actor }, { cancelBatch })
+        expect(cancelBatch).toHaveBeenLastCalledWith({ batchId: 'batch-1', actor })
+        for (const invalid of ['', 'A'.repeat(64), 'a'.repeat(63), `${operationId}\n`, `sha256:${operationId}`, null, 10]) {
+            await expect(cancelGeneration({ batchId: 'batch-1', actor, operationId: invalid as string }, { cancelBatch }))
+                .resolves.toMatchObject({ status: 'invalid', issues: [{ code: 'invalid-cancel-operation-id' }] })
+        }
+        expect(cancelBatch).toHaveBeenCalledTimes(2)
+    })
+
     it('validates actors and strips adapter details from cancel and storage retry', async () => {
         const cancelBatch = vi.fn(async () => ({ status: 'ready' as const, targetId: 'private-batch' }))
         const retryStorage = vi.fn(async () => ({ status: 'ready' as const, targetId: 'private-job' }))

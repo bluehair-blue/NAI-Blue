@@ -5,6 +5,7 @@
 - 선행 계약: [ADR-004](ADR-004-phase9-authenticated-inbox-core.md), [ADR-005](ADR-005-phase9-windows-foreground-inbox.md)
 - 검증 기록: [Phase 9C validation](../releases/evidence/phase9c-validation-2026-09-05.json)
 - 실제 Windows 검증: [Phase 9C desktop QA](../releases/evidence/phase9c-desktop-qa-2026-09-06.json)
+- 후속 취소 계약: [ADR-007 — Phase 9D](ADR-007-phase9d-generation-cancellation.md), [9D 소프트웨어 검증](../releases/evidence/phase9d-validation-2026-09-06.json)
 - Phase 9 전체 상태: 진행 중. 생성 enqueue의 실제 Windows 승인·거절·정상 재시작 경로를 검증했으며, 다른 mutation과 최종 운영 gate는 남아 있다.
 
 ## 실행 경로와 지원 입력
@@ -86,4 +87,4 @@ Queue 사실이 없거나 일치하지 않으면 `AGENT_EXECUTION_UNKNOWN`으로
 
 첫 실패 프로필의 `globalPause` 승인 비활성·job 0개 증거는 최종 EXE 이전 기록으로 구분한다. 최종 EXE SHA-256은 `F330FE8172F59361BFCDC45C88EE33E72B587538323591F8D09F377B4110DB1C`이며 두 QA 프로필의 client를 GUI에서 폐기하고 signer의 `CREDENTIAL_UNAVAILABLE`, 소유 프로세스와 진단 포트 9330·9331 종료를 확인했다. installer, 강제 native process crash, 실제 native bounded-auto, Provider·생성 파일·R2 결과는 아직 검증하지 않았다.
 
-`generation.cancel`, storage/Scene retry, reservation 포기, Scene/Folder/R2 mutation은 계속 unavailable이다. MCP stdio, background/headless도 이 변경으로 활성화하지 않는다. 취소/저장 재시도에 이 승인 계약을 확대하는 후속 구현과 Phase 9의 최종 운영 gate를 통과한 뒤 다음 Phase 완료 여부를 판단한다.
+후속 Phase 9D는 `generation.cancel`을 같은 원장과 기존 Queue에 연결했으며 자동·브라우저 검증을 통과했다. 취소는 `suggest`와 `bounded-auto` 모두 사람 승인 전용이며 `globalPause`에서도 허용한다. 정확한 대상·grant 결합과 재취소 없는 복구 계약은 ADR-007을 따른다. 이 기록 시점의 9D 실제 Windows 첫 승인 receipt 오탐은 수정 binary에서 동일 grant 복구·replay와 완료 후 정상 재시작·client 폐기·프로세스 정리를 확인했다. storage/Scene retry, reservation 포기, Scene/Folder/R2 mutation은 계속 unavailable이다. MCP stdio, background/headless도 이 변경으로 활성화하지 않으며 Phase 9의 최종 운영 gate는 남아 있다.

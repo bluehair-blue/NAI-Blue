@@ -5,10 +5,10 @@ import { chromium } from 'playwright'
 
 // Real browser UI, execution coordinator and IndexedDB; fixtures never reach native keys or a Provider.
 const baseUrl = process.env.PHASE9C_QA_URL ?? 'http://127.0.0.1:9191'
-const output = path.resolve('docs/local/evidence/phase-09c')
+const output = path.resolve(process.env.AGENT_EXECUTION_QA_OUTPUT ?? 'docs/local/evidence/phase-09c')
 await mkdir(output, { recursive: true })
 const report = { startedAt: new Date().toISOString(), environment: 'isolated Chromium + loopback Vite',
-    bounds: 'Actual AgentCommandPanel, AgentPolicyForm, ForegroundAgentCommandRuntime, AgentExecutionCoordinator, settings persistence/hydration and IndexedDB approval/receipt repositories. Native ownership/client/authentication, immutable plan lookup and Queue enqueue/reconcile are fixtures. The expiry scenario advances only the coordinator clock. No Windows keyring, HMAC cryptography, native filesystem inbox, real Queue execution, Provider request, Anlas spending or production profile.',
+    bounds: 'Actual AgentCommandPanel, AgentPolicyForm, ForegroundAgentCommandRuntime, AgentExecutionCoordinator, settings persistence/hydration and IndexedDB approval/receipt repositories. Native ownership/client/authentication, immutable plan lookup and Queue enqueue/reconcile and cancellation ports are fixtures. The expiry scenario advances only the coordinator clock. No Windows keyring, HMAC cryptography, native filesystem inbox, real Queue execution, Provider request, Anlas spending or production profile.',
     pageErrors: [], consoleErrors: [], blockedExternalRequests: [], checks: [] }
 const browser = await chromium.launch({ headless: true })
 const context = await browser.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR' })
@@ -49,9 +49,12 @@ try {
             jobs: [{ ordinal: 0, estimatedAnlas: 7, compatibility: { status: 'captured-pass', compatibilityProfileId: 'qa-captured' },
                 destination: { collisionPolicy: 'fail' }, prepared: { fixtureOnly: true } }],
             estimatedAnlas: 7, issues: [], requiredApprovals: [], executionPolicy: { maxConcurrency: 1 }, budget: { maxImages: 1, maxAnlas: 10 } }
-        let owner = null, timeOffset = 0, enqueueCount = 0, runtime, mountRevision = 0
+        let owner = null, timeOffset = 0, enqueueCount = 0, cancelCount = 0, runtime, mountRevision = 0
         const client = { clientId: 'qa-client-9c', keyId: 'qa-key-9c', label: '격리 QA 도우미', actorKind: 'agent', createdAt: new Date().toISOString(), revokedAt: null }
         const files = new Map(), published = new Map(), envelopes = new Map(), queueFacts = new Map()
+        const cancelFacts = new Map()
+        const cancelTarget = { runId: 'qa-cancel-batch', batchId: 'qa-cancel-batch',
+            jobIds: ['qa-cancel-job-1', 'qa-cancel-job-2'], targetHash: digest, previouslyStoppedJobIds: [] }
         const native = {
             initialize: async () => ({ available: true, workspaceId: 'qa-workspace-9c', clients: [client] }),
             acquire: async () => { if (owner) return null; owner = 'qa-owner'; return owner }, release: async () => { owner = null },
@@ -73,7 +76,12 @@ try {
                 ports: { validate: async () => true, isOutstanding: async () => false,
                     enqueue: async (_plan, grant) => { enqueueCount++; const batchId = `main-batch-${grant.scopeId}`
                         const result = { status: 'ready', batchId, runId: batchId, jobIds: [`${batchId}:0`] }; queueFacts.set(grant.scopeId, result); return result },
-                    reconcile: async grant => queueFacts.get(grant.scopeId) ?? null } }),
+                    reconcile: async grant => queueFacts.get(grant.scopeId) ?? null },
+                cancellation: { inspect: async () => structuredClone(cancelTarget),
+                    cancel: async (target, grant) => { cancelCount++; const result = { status: 'cancel-requested',
+                        runId: target.runId, batchId: target.batchId, jobIds: [...target.jobIds] }
+                        cancelFacts.set(grant.requestId, result); return result },
+                    reconcile: async grant => cancelFacts.get(grant.requestId) ?? null } }),
         })
         document.getElementById('root').style.display = 'none'
         document.documentElement.style.cssText = 'height:auto;overflow:auto'
@@ -87,13 +95,14 @@ try {
         }
         await reopen()
         window.phase9cQa = { reopen, stop: () => runtime.stop(), offset: value => { timeOffset = value },
-            facts: async id => ({ receipt: await receipts.get(id), published: published.get(id), enqueueCount, files: files.size,
+            facts: async id => ({ receipt: await receipts.get(id), published: published.get(id), enqueueCount, cancelCount, files: files.size,
                 policy: useSettingsStore.getState().agentExecutionPolicy, pending: runtime.getSnapshot().pendingApprovals }),
-            submit: async (id, replay = false) => {
+            submit: async (id, replay = false, cancel = false) => {
                 const envelope = replay ? envelopes.get(id) : { schemaVersion: 1, requestId: id, requestHash: digest,
                     submittedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 7_200_000).toISOString(),
                     context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'qa-workspace-9c', clientId: client.clientId, actor: { kind: 'agent' }, idempotencyKey: id },
-                    command: { name: 'generation.enqueue', input: { planId: digest, planHash: digest } },
+                    command: cancel ? { name: 'generation.cancel', input: { runId: cancelTarget.runId } }
+                        : { name: 'generation.enqueue', input: { planId: digest, planHash: digest } },
                     authentication: { scheme: 'hmac-sha256', keyId: client.keyId, signature: `hmac-sha256:${'0'.repeat(64)}` } }
                 envelope.requestHash = agentRequestHash(envelope); envelopes.set(id, envelope); files.set(id, JSON.stringify(envelope)); await runtime.poll()
                 return window.phase9cQa.facts(id)
@@ -150,6 +159,40 @@ try {
     report.mobileDimensions = await panel.evaluate(element => ({ viewport: innerWidth, documentWidth: document.documentElement.scrollWidth, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }))
     assert.ok(report.mobileDimensions.documentWidth <= 390 && report.mobileDimensions.scrollWidth <= report.mobileDimensions.clientWidth + 1, JSON.stringify(report.mobileDimensions))
     report.checks.push('390px panel and document have no horizontal overflow')
+    await page.evaluate(() => window.phase9cQa.offset(0))
+    await panel.getByRole('checkbox', { name: '실행 일시 중지', exact: true }).check(); await save()
+    const cancellation = await page.evaluate(() => window.phase9cQa.submit('qa-cancel', false, true))
+    assert.equal(cancellation.receipt.state, 'needs-input'); assert.equal(cancellation.cancelCount, 0)
+    await row('qa-cancel').getByText('배치 전체 중단 요청', { exact: true }).waitFor()
+    await row('qa-cancel').getByText('중단할 배치: qa-cancel-batch', { exact: true }).waitFor()
+    assert.equal(await row('qa-cancel').getByRole('button', { name: '이번 요청 승인', exact: true }).isDisabled(), false)
+    assert.equal(await row('qa-paused').getByRole('button', { name: '이번 요청 승인', exact: true }).isDisabled(), true)
+    assert.equal(await row('qa-cancel').getByText(/예상 .* Anlas/).count(), 0)
+    report.checks.push('Cancellation in bounded-auto still requires human approval, shows exact run/jobs without generation cost, and remains approvable during global pause while enqueue stays blocked')
+    await page.screenshot({ path: path.join(output, '04-cancel-review-mobile.png'), fullPage: true, animations: 'disabled' })
+    const cancelDimensions = await panel.evaluate(element => ({ documentWidth: document.documentElement.scrollWidth, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }))
+    assert.ok(cancelDimensions.documentWidth <= 390 && cancelDimensions.scrollWidth <= cancelDimensions.clientWidth + 1)
+    await page.evaluate(() => window.phase9cQa.reopen())
+    await row('qa-cancel').getByRole('button', { name: '이번 요청 승인', exact: true }).waitFor()
+    const restoredCancel = await facts('qa-cancel')
+    assert.equal(restoredCancel.cancelCount, 0); assert.equal(restoredCancel.files, 0)
+    await row('qa-cancel').getByRole('button', { name: '이번 요청 승인', exact: true }).click()
+    await panel.getByText('중단 요청 기록됨', { exact: true }).waitFor()
+    await panel.getByRole('link', { name: '대상 배치 열기: qa-cancel-batch', exact: true }).waitFor()
+    const cancelled = await facts('qa-cancel')
+    assert.equal(cancelled.cancelCount, 1); assert.equal(cancelled.enqueueCount, 2)
+    assert.equal(cancelled.receipt.result.status, 'cancel-requested'); assert.deepEqual(cancelled.receipt, cancelled.published)
+    report.checks.push('Retired cancellation review survives runtime/settings rehydration and human approval publishes the durable cancel-requested acknowledgement once with a target batch link')
+    const cancelReplay = await page.evaluate(() => window.phase9cQa.submit('qa-cancel', true))
+    assert.equal(cancelReplay.cancelCount, 1); assert.deepEqual(cancelReplay.receipt, cancelled.receipt)
+    await page.evaluate(() => window.phase9cQa.submit('qa-cancel-reject', false, true))
+    await row('qa-cancel-reject').getByRole('button', { name: '거절', exact: true }).click()
+    await row('qa-cancel-reject').waitFor({ state: 'detached' })
+    const cancelRejected = await facts('qa-cancel-reject')
+    assert.equal(cancelRejected.cancelCount, 1); assert.equal(cancelRejected.receipt.state, 'rejected')
+    report.checks.push('Exact cancel replay and a separately rejected cancellation add no cancellation or enqueue calls')
+    report.cancelFacts = cancelled
+    await page.screenshot({ path: path.join(output, '05-cancel-acknowledged.png'), fullPage: true, animations: 'disabled' })
     report.finalFacts = await facts('qa-expired-auto')
     assert.deepEqual(report.pageErrors, []); assert.deepEqual(report.consoleErrors, [])
     assert.ok(report.blockedExternalRequests.every(url => ['fonts.googleapis.com', 'cdn.jsdelivr.net'].includes(new URL(url).hostname)))

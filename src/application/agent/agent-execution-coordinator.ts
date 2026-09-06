@@ -5,15 +5,17 @@ import type { GenerationPlanRepository } from '@/application/generation/generati
 import { AgentCommandError, assertAgentPublicValue, type AgentCommandEnvelope } from './agent-command-contract'
 import { agentResultDigest, type AgentCommandReceipt, type CommandReceiptRepository } from './command-receipt-repository'
 import { effectiveAgentExecutionPolicy, normalizeAgentExecutionPolicy, type AgentExecutionPolicy } from './agent-execution-policy'
-import { agentExecutionScope, isAgentExecutionCommitResult, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentExecutionRepository } from './agent-execution-repository'
+import { agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentCancellationRecord, type AgentExecutionRepository } from './agent-execution-repository'
+import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationGrant, type AgentCancellationPorts } from './agent-cancellation-contract'
 import type { AgentCommandHandler } from './runtime-capability-registry'
 
-export interface AgentExecutionApprovalBinding {
+export interface AgentGenerationApprovalBinding {
     readonly requestHash: Sha256Digest
     readonly planHash: Sha256Digest
     readonly policyRevision: number
 }
-export interface AgentExecutionReview extends AgentExecutionApprovalBinding {
+export interface AgentGenerationExecutionReview extends AgentGenerationApprovalBinding {
+    readonly command?: 'generation.enqueue'
     readonly requestId: string
     readonly clientId: string
     readonly planId: Sha256Digest
@@ -25,6 +27,23 @@ export interface AgentExecutionReview extends AgentExecutionApprovalBinding {
     readonly outputEffect: 'local-output' | 'local-output-and-r2'
     readonly reasons: readonly string[]
 }
+export interface AgentCancellationApprovalBinding {
+    readonly requestHash: Sha256Digest
+    readonly runId: string
+    readonly targetHash: Sha256Digest
+    readonly policyRevision: number
+}
+export interface AgentCancellationReview extends AgentCancellationApprovalBinding {
+    readonly command: 'generation.cancel'
+    readonly requestId: string
+    readonly clientId: string
+    readonly expiresAt: string
+    readonly jobIds: readonly string[]
+    readonly jobCount: number
+    readonly reasons: readonly string[]
+}
+export type AgentExecutionApprovalBinding = AgentGenerationApprovalBinding | AgentCancellationApprovalBinding
+export type AgentExecutionReview = AgentGenerationExecutionReview | AgentCancellationReview
 export type AgentPendingApproval = AgentExecutionReview
 export type AgentApprovalExpectation = AgentExecutionApprovalBinding
 export interface AgentExecutionCoordinatorOptions {
@@ -35,6 +54,7 @@ export interface AgentExecutionCoordinatorOptions {
     readonly getPolicy: () => AgentExecutionPolicy
     readonly now?: () => string
     readonly isClientAuthorized: (envelope: AgentCommandEnvelope) => Promise<boolean>
+    readonly cancellation?: AgentCancellationPorts
     readonly ports: {
         /** Replay source/output authority and current readiness without enqueueing. */
         readonly validate: (plan: GenerationPlan) => Promise<boolean>
@@ -59,7 +79,7 @@ function validateInput(input: JsonObject): JsonObject {
 }
 function receiptState(result: JsonObject): 'completed' | 'needs-input' | 'rejected' {
     return result.code === 'AGENT_APPROVAL_REQUIRED' || result.code === 'AGENT_EXECUTION_UNKNOWN' ? 'needs-input'
-        : result.status === 'ready' ? 'completed' : 'rejected'
+        : result.status === 'ready' || result.status === 'cancel-requested' ? 'completed' : 'rejected'
 }
 
 /** One durable reservation precedes the only enqueue call. Recovery reads Queue facts and never re-enters enqueue. */
@@ -88,7 +108,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
     }
     async function refreshExposure(): Promise<AgentExecutionLedger | null> {
         for (const record of (await ledger())?.records ?? []) {
-            if (record.state === 'completed' && record.grant && record.exposureSettledAt === null
+            if (isAgentGenerationRecord(record) && record.state === 'completed' && record.grant && record.exposureSettledAt === null
                 && options.ports.isOutstanding && !await options.ports.isOutstanding(record.grant)) {
                 // A delayed Queue cannot age a reservation away before it ever dispatches.
                 await replace(record, { ...record, exposureSettledAt: now() })
@@ -109,7 +129,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         await options.receipts.finish(saved, { ...saved, state: receiptState(record.result),
             result: record.result, resultDigest: agentResultDigest(record.result) })
     }
-    async function planFor(record: AgentExecutionRecord): Promise<GenerationPlan | null> {
+    async function planFor(record: AgentGenerationExecutionRecord): Promise<GenerationPlan | null> {
         const plan = await options.plans.get(String(record.envelope.command.input.planId))
         return plan?.planHash === record.envelope.command.input.planHash
             && plan.jobs.length === record.imageCount && plan.estimatedAnlas === record.estimatedAnlas ? plan : null
@@ -128,7 +148,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             || job.destination.r2.profileId === null || !current.r2.allowedProfileIds.includes(job.destination.r2.profileId)))) return 'AGENT_R2_DENIED'
         return null
     }
-    async function eligibility(record: AgentExecutionRecord, current: AgentExecutionPolicy): Promise<{ plan: GenerationPlan | null; code: string | null }> {
+    async function eligibility(record: AgentGenerationExecutionRecord, current: AgentExecutionPolicy): Promise<{ plan: GenerationPlan | null; code: string | null }> {
         if (Date.parse(record.expiresAt) <= Date.parse(now())) return { plan: null, code: 'REQUEST_EXPIRED' }
         if (current.mode === 'observe') return { plan: null, code: 'AGENT_OBSERVE_ONLY' }
         if (!await options.isClientAuthorized(record.envelope)) return { plan: null, code: 'AUTHENTICATION_FAILED' }
@@ -145,7 +165,68 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         if (await replace(record, next)) await publish(next)
         return result
     }
-    async function execute(record: AgentExecutionRecord, human: boolean): Promise<JsonObject> {
+    /** Every supported mutation shares operation identity and durable history capacity. */
+    async function storePending(record: AgentExecutionRecord, current: AgentExecutionPolicy): Promise<string | null> {
+        const envelope = record.envelope
+        let code = 'AGENT_EXECUTION_EXISTS'
+        const created = await change(records => {
+            if (records.some(item => item.envelope.requestId === envelope.requestId)) return null
+            if (records.some(item => item.envelope.context.clientId === envelope.context.clientId
+                && item.envelope.context.idempotencyKey === envelope.context.idempotencyKey)) {
+                code = 'AGENT_IDEMPOTENCY_CONFLICT'; return null
+            }
+            // Keep replay history; full local history requires explicit maintenance.
+            if (records.length >= 1_000) { code = 'AGENT_EXECUTION_CAPACITY'; return null }
+            // Reaching generation exposure limits must never prevent asking to stop that generation.
+            if (isAgentGenerationRecord(record) && records.filter(isAgentGenerationRecord).filter(item => item.envelope.context.clientId === envelope.context.clientId
+                && ((item.state === 'pending' && Date.parse(item.expiresAt) > Date.parse(now()))
+                    || (item.grant && item.exposureSettledAt === null))).length >= current.rollingLimits.maxOutstandingRequestsPerClient) {
+                code = 'AGENT_OUTSTANDING_LIMIT'; return null
+            }
+            return [...records, record]
+        })
+        return created ? null : code
+    }
+
+    /** Consent reserves an exact cancellation grant before touching Queue; no generation authority is spent or released. */
+    async function executeCancellation(record: AgentCancellationRecord): Promise<JsonObject> {
+        const current = policy()
+        if (record.policyRevision !== current.revision) {
+            const refreshed = { ...record, policyRevision: current.revision, result: approval() }
+            if (await replace(record, refreshed)) await publish(refreshed)
+            return refreshed.result
+        }
+        if (current.mode === 'observe') return settle(record, failure('AGENT_OBSERVE_ONLY'), 'rejected')
+        if (Date.parse(record.expiresAt) <= Date.parse(now())) return settle(record, failure('REQUEST_EXPIRED'), 'rejected')
+        if (!await options.isClientAuthorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
+        const target = await options.cancellation?.inspect(record.target.runId)
+        if (target) assertAgentCancellationTarget(target)
+        if (!target || !sameAgentCancellationTarget(record.target, target)) return settle(record, failure('AGENT_CANCEL_TARGET_CHANGED'), 'rejected')
+        const grant: AgentCancellationGrant = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
+            workspaceId: options.workspaceId, clientId: record.envelope.context.clientId, actorKind: record.envelope.context.actor.kind,
+            policyRevision: current.revision, consentedAt: now(), expiresAt: record.expiresAt, authorization: 'human', target: structuredClone(target) }
+        const reserved: AgentCancellationRecord = { ...record, target: grant.target, grant, state: 'reserved', result: unknown() }
+        // Global pause stops new generation, but this explicit human action may stop existing work.
+        const didReserve = await change(records => {
+            const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
+            if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)
+                || canonicalSerialize(policy()) !== canonicalSerialize(current) || Date.parse(record.expiresAt) <= Date.parse(now())) return null
+            return records.map(item => item === saved ? reserved : item)
+        })
+        if (!didReserve) return unknown()
+        const authorized = await options.isClientAuthorized(record.envelope)
+        if (!authorized || canonicalSerialize(policy()) !== canonicalSerialize(current) || Date.parse(record.expiresAt) <= Date.parse(now())) {
+            return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
+        }
+        let result: unknown
+        try {
+            result = await options.cancellation!.cancel(structuredClone(grant.target), structuredClone(grant))
+            assertAgentPublicValue(result)
+        } catch { return settle(reserved, unknown(), 'unknown') }
+        if (!isAgentCancellationResult(result, grant)) return settle(reserved, unknown(), 'unknown')
+        return settle(reserved, { ...result, jobIds: [...result.jobIds] }, 'completed')
+    }
+    async function execute(record: AgentGenerationExecutionRecord, human: boolean): Promise<JsonObject> {
         const current = policy()
         if (record.policyRevision !== current.revision) {
             const result = approval(current.globalPause ? 'AGENT_GLOBAL_PAUSE' : undefined)
@@ -167,7 +248,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             estimatedAnlas: record.estimatedAnlas, imageCount: record.imageCount })
         await refreshExposure()
         let budgetCode: string | null = null
-        const reserved: AgentExecutionRecord = { ...record, state: 'reserved', grant, result: unknown() }
+        const reserved: AgentGenerationExecutionRecord = { ...record, state: 'reserved', grant, result: unknown() }
         const didReserve = await change(records => {
             const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
             if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)) return null
@@ -176,10 +257,10 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 || Date.parse(record.expiresAt) <= Date.parse(now()) || (!human && latest.mode !== 'bounded-auto')) {
                 budgetCode = 'AGENT_AUTHORITY_CHANGED'; return null
             }
-            const consumed = records.filter(item => item.grant !== null)
+            const consumed = records.filter(isAgentGenerationRecord).filter(item => item.grant !== null)
             const hour = consumed.filter(item => item.exposureSettledAt === null || Date.parse(item.exposureSettledAt) > Date.parse(now()) - 3_600_000)
             const day = consumed.filter(item => item.exposureSettledAt === null || Date.parse(item.exposureSettledAt) > Date.parse(now()) - 86_400_000)
-            const sum = (items: readonly AgentExecutionRecord[], key: 'estimatedAnlas' | 'imageCount') => items.reduce((total, item) => total + item[key], 0)
+            const sum = (items: readonly AgentGenerationExecutionRecord[], key: 'estimatedAnlas' | 'imageCount') => items.reduce((total, item) => total + item[key], 0)
             const active = consumed.filter(item => item.exposureSettledAt === null)
             const limits = latest.rollingLimits
             if (hour.length + 1 > limits.maxRunsPerHour || sum(hour, 'imageCount') + record.imageCount > limits.maxImagesPerHour
@@ -188,7 +269,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             else if (sum(active, 'imageCount') + Math.min(record.imageCount, eligible.plan!.executionPolicy.maxConcurrency)
                 > latest.generation.maxConcurrentJobs) budgetCode = 'AGENT_CONCURRENCY_LIMIT'
             else if (active.filter(item => item.envelope.context.clientId === grant.clientId).length
-                + records.filter(item => item !== saved && item.state === 'pending' && item.envelope.context.clientId === grant.clientId
+                + records.filter(isAgentGenerationRecord).filter(item => item !== saved && item.state === 'pending' && item.envelope.context.clientId === grant.clientId
                     && Date.parse(item.expiresAt) > Date.parse(now())).length + 1 > limits.maxOutstandingRequestsPerClient) budgetCode = 'AGENT_OUTSTANDING_LIMIT'
             if (budgetCode) return null
             return records.map(item => item === saved ? reserved : item)
@@ -215,48 +296,78 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             const plan = await options.plans.get(String(envelope.command.input.planId))
             if (!plan || plan.planHash !== envelope.command.input.planHash || !plan.jobs.length) return failure('AGENT_PLAN_CHANGED')
             if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
-            let record: AgentExecutionRecord = { envelope: structuredClone(envelope), policyRevision: current.revision, originalPolicyRevision: current.revision,
+            let record: AgentGenerationExecutionRecord = { envelope: structuredClone(envelope), policyRevision: current.revision, originalPolicyRevision: current.revision,
                 expiresAt: envelope.expiresAt, estimatedAnlas: plan.estimatedAnlas, imageCount: plan.jobs.length,
                 exposureSettledAt: null, state: 'pending', grant: null, result: approval() }
             const checked = await eligibility(record, current)
             if (checked.code && !adjustablePolicyIssue(checked.code)) return failure(checked.code)
             if (checked.code) record = { ...record, result: approval(checked.code) }
             await refreshExposure()
-            let limit = false
-            let duplicateOperation = false
-            let capacity = false
-            const created = await change(records => {
-                if (records.some(item => item.envelope.requestId === envelope.requestId)) return null
-                duplicateOperation = records.some(item => item.envelope.context.clientId === envelope.context.clientId
-                    && item.envelope.context.idempotencyKey === envelope.context.idempotencyKey)
-                if (duplicateOperation) return null
-                // Keep replay history; full local history needs explicit maintenance, never silent deduplication loss.
-                capacity = records.length >= 1_000
-                if (capacity) return null
-                limit = records.filter(item => item.envelope.context.clientId === envelope.context.clientId
-                    && ((item.state === 'pending' && Date.parse(item.expiresAt) > Date.parse(now()))
-                        || (item.grant && item.exposureSettledAt === null))).length >= current.rollingLimits.maxOutstandingRequestsPerClient
-                return limit ? null : [...records, record]
-            })
-            if (!created) return failure(duplicateOperation ? 'AGENT_IDEMPOTENCY_CONFLICT' : capacity ? 'AGENT_EXECUTION_CAPACITY'
-                : limit ? 'AGENT_OUTSTANDING_LIMIT' : 'AGENT_EXECUTION_EXISTS')
+            const createIssue = await storePending(record, current)
+            if (createIssue) return failure(createIssue)
             return current.mode === 'bounded-auto' && !checked.code ? execute(record, false) : record.result
         },
     }
+    const cancelHandler: AgentCommandHandler | undefined = options.cancellation ? {
+        command: 'generation.cancel', effect: 'mutation', executionGate: 'durable-approval', receiptState,
+        validate: input => {
+            if (Object.keys(input).join() !== 'runId' || typeof input.runId !== 'string'
+                || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(input.runId)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+            return input
+        },
+        execute: async (_input, { envelope }) => {
+            const current = policy()
+            if (current.mode === 'observe') return failure('AGENT_OBSERVE_ONLY')
+            if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
+            if (Date.parse(envelope.expiresAt) <= Date.parse(now())) return failure('REQUEST_EXPIRED')
+            if (!await options.isClientAuthorized(envelope)) return failure('AUTHENTICATION_FAILED')
+            const target = await options.cancellation!.inspect(String(envelope.command.input.runId))
+            if (!target) return failure('AGENT_CANCEL_TARGET_UNAVAILABLE')
+            assertAgentCancellationTarget(target)
+            if (target.runId !== envelope.command.input.runId) return failure('AGENT_CANCEL_TARGET_CHANGED')
+            const record: AgentCancellationRecord = { command: 'generation.cancel', envelope: structuredClone(envelope),
+                originalPolicyRevision: current.revision, policyRevision: current.revision, expiresAt: envelope.expiresAt,
+                target: structuredClone(target), state: 'pending', grant: null, result: approval() }
+            const createIssue = await storePending(record, current)
+            // Bounded automatic generation is never cancellation consent.
+            return createIssue ? failure(createIssue) : record.result
+        },
+    } : undefined
     async function decisionRecord(requestId: string, expected: AgentExecutionApprovalBinding): Promise<AgentExecutionRecord | null> {
         const record = (await ledger())?.records.find(item => item.envelope.requestId === requestId)
         if (!record || record.state !== 'pending') return null
-        if (record.envelope.requestHash !== expected.requestHash || record.envelope.command.input.planHash !== expected.planHash
+        const targetMatches = isAgentCancellationRecord(record)
+            ? 'runId' in expected && expected.runId === record.target.runId && expected.targetHash === record.target.targetHash
+            : 'planHash' in expected && record.envelope.command.input.planHash === expected.planHash
+        if (record.envelope.requestHash !== expected.requestHash || !targetMatches
             || record.policyRevision !== expected.policyRevision) throw new AgentCommandError('AGENT_APPROVAL_BINDING_CHANGED')
         const receipt = await options.receipts.get(requestId)
         if (receipt?.state !== 'needs-input' || receipt.result?.code !== 'AGENT_APPROVAL_REQUIRED') return null
         return record
     }
     return {
-        handler,
+        handler, cancelHandler,
         async pending(): Promise<readonly AgentExecutionReview[]> {
             const reviews: AgentExecutionReview[] = []
             for (const stored of (await ledger())?.records ?? []) {
+                if (isAgentCancellationRecord(stored)) {
+                    if (stored.state !== 'pending') continue
+                    let record = stored
+                    const current = policy()
+                    if (record.policyRevision !== current.revision && current.revision >= record.originalPolicyRevision
+                        && Date.parse(record.expiresAt) > Date.parse(now())) {
+                        const refreshed = { ...record, policyRevision: current.revision, result: approval() }
+                        if (!await replace(record, refreshed)) continue
+                        record = refreshed
+                        await publish(record)
+                    }
+                    reviews.push({ command: 'generation.cancel', requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
+                        clientId: record.envelope.context.clientId, policyRevision: record.policyRevision, expiresAt: record.expiresAt,
+                        runId: record.target.runId, targetHash: record.target.targetHash, jobIds: [...record.target.jobIds], jobCount: record.target.jobIds.length,
+                        reasons: Date.parse(record.expiresAt) <= Date.parse(now()) ? ['REQUEST_EXPIRED']
+                            : current.mode === 'observe' ? ['AGENT_OBSERVE_ONLY'] : ['AGENT_APPROVAL_REQUIRED'] })
+                    continue
+                }
                 let record = stored
                 if (record.state !== 'pending') continue
                 const plan = await planFor(record)
@@ -284,7 +395,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         },
         async approve(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)
-            return record ? execute(record, true) : failure('AGENT_APPROVAL_UNAVAILABLE')
+            return record ? isAgentCancellationRecord(record) ? executeCancellation(record) : execute(record, true) : failure('AGENT_APPROVAL_UNAVAILABLE')
         },
         async reject(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)
@@ -292,7 +403,14 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         },
         async recover(): Promise<readonly AgentCommandReceipt[]> {
             for (const record of (await ledger())?.records ?? []) {
-                if ((record.state === 'reserved' || record.state === 'unknown') && record.grant) {
+                if (isAgentCancellationRecord(record) && (record.state === 'reserved' || record.state === 'unknown') && record.grant) {
+                    let result: unknown = null
+                    try { result = await options.cancellation?.reconcile(structuredClone(record.grant)); if (result) assertAgentPublicValue(result) } catch { result = null }
+                    if (isAgentCancellationResult(result, record.grant)) await settle(record, { ...result, jobIds: [...result.jobIds] }, 'completed')
+                    else await settle(record, unknown(), 'unknown')
+                    continue
+                }
+                if (isAgentGenerationRecord(record) && (record.state === 'reserved' || record.state === 'unknown') && record.grant) {
                     let result: JsonObject | null = null
                     try { result = await options.ports.reconcile(record.grant); if (result) assertAgentPublicValue(result) } catch { result = null }
                     if (result && isAgentExecutionCommitResult(result, record.grant)) {

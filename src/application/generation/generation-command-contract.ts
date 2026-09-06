@@ -54,6 +54,8 @@ export interface EnqueueGenerationPort<TPrepared = unknown> {
 export interface CancelGenerationInput {
     readonly batchId: string
     readonly actor: ActorRef
+    /** Exact human-grant digest persisted by Queue for crash reconciliation. */
+    readonly operationId?: string
 }
 
 export interface RetryGenerationStorageInput {

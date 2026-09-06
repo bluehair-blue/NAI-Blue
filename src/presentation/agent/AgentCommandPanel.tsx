@@ -21,7 +21,11 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
     const decide = async (item: AgentExecutionReview, decision: 'approve' | 'reject') => {
         setMessage(null)
         try {
-            await runtime.decideApproval(item.requestId, decision, { requestHash: item.requestHash, planHash: item.planHash, policyRevision: item.policyRevision })
+            // The same human action binds either the reviewed generation plan or exact cancel target.
+            const expected = item.command === 'generation.cancel'
+                ? { requestHash: item.requestHash, runId: item.runId, targetHash: item.targetHash, policyRevision: item.policyRevision }
+                : { requestHash: item.requestHash, planHash: item.planHash, policyRevision: item.policyRevision }
+            await runtime.decideApproval(item.requestId, decision, expected)
             setMessage(t('agentInbox.approvalChanged'))
         } catch { setMessage(t('agentInbox.approvalFailed')) }
     }
@@ -99,14 +103,22 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                 <ul className="space-y-3">{state.pendingApprovals.map(item => <li key={item.requestId} className="space-y-2 rounded-panel border p-3 text-xs">
                     <p className="break-all font-medium">{state.clients.find(client => client.clientId === item.clientId)?.label ?? item.clientId} · {item.clientId}</p>
                     <p className="break-all">{t('agentInbox.request')}: {item.requestId}</p>
-                    <p className="break-all">{t('agentInbox.reviewedSource')}: {item.sourceIds.join(', ')}</p>
-                    <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
-                    <p>{t('agentInbox.outputEffect')}: {t(item.outputEffect === 'local-output-and-r2' ? 'agentInbox.outputLocalR2' : 'agentInbox.outputLocal')}</p>
-                    <p>{t('agentInbox.allowedCompatibility')}: {item.compatibilityStatuses.join(', ')}</p>
+                    {item.command === 'generation.cancel' ? <>
+                        <p className="font-medium">{t('agentInbox.cancelAction')}</p>
+                        <p className="break-all">{t('agentInbox.cancelRun')}: {item.runId}</p>
+                        <p>{t('agentInbox.cancelJobCount', { count: item.jobCount })}</p>
+                        <p className="break-all">{item.jobIds.join(', ')}</p>
+                        <p>{t('agentInbox.cancelEffect')}</p>
+                    </> : <>
+                        <p className="break-all">{t('agentInbox.reviewedSource')}: {item.sourceIds.join(', ')}</p>
+                        <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
+                        <p>{t('agentInbox.outputEffect')}: {t(item.outputEffect === 'local-output-and-r2' ? 'agentInbox.outputLocalR2' : 'agentInbox.outputLocal')}</p>
+                        <p>{t('agentInbox.allowedCompatibility')}: {item.compatibilityStatuses.join(', ')}</p>
+                    </>}
                     <p>{t('agentInbox.approvalExpiry')}: <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p>
                     <p>{t('agentInbox.approvalReasons')}: {item.reasons.map(reason => t(`agentInbox.reason_${reason}`, { defaultValue: reason })).join(', ')}</p>
                     <div className="flex flex-wrap gap-2">
-                        <Button size="sm" disabled={!ready || state.policy.globalPause || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
+                        <Button size="sm" disabled={!ready || (item.command !== 'generation.cancel' && state.policy.globalPause) || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
                             onClick={() => void decide(item, 'approve')}>{t('agentInbox.approveOnce')}</Button>
                         <Button size="sm" variant="outline" disabled={!ready} onClick={() => void decide(item, 'reject')}>{t('agentInbox.rejectApproval')}</Button>
                     </div>
@@ -118,8 +130,8 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                 </li>)}</ul>
             </details>
             {state.recent.length > 0 && <div><p className="mb-2 text-sm font-medium">{t('agentInbox.recent', '이번 실행의 최근 요청')}</p>
-                <ul className="space-y-1">{state.recent.map(item => <li key={item.requestId} className="flex flex-wrap justify-between gap-2 text-xs"><span className="break-all">{item.requestId}</span><span>{item.state}</span>
-                    {item.batchId && <Link className="break-all underline" to="/queue" onClick={() => useQueueStore.getState().setSelectedBatchId(item.batchId!)}>{t('agentInbox.openBatch')}: {item.batchId}</Link>}
+                <ul className="space-y-1">{state.recent.map(item => <li key={item.requestId} className="flex flex-wrap justify-between gap-2 text-xs"><span className="break-all">{item.requestId}</span><span>{item.cancelRequested ? t('agentInbox.cancelRequested') : item.state}</span>
+                    {item.batchId && <Link className="break-all underline" to="/queue" onClick={() => useQueueStore.getState().setSelectedBatchId(item.batchId!)}>{t(item.cancelRequested ? 'agentInbox.openTargetBatch' : 'agentInbox.openBatch')}: {item.batchId}</Link>}
                 </li>)}</ul>
             </div>}
         </CardContent>

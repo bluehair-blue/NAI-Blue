@@ -12,6 +12,7 @@ import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-ag
 import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execution-policy'
 import type { GenerationPlan } from '@/application/generation/generation-plan-contract'
 import type { JsonObject } from '@/domain/composition/types'
+import type { AgentCancellationGrant, AgentCancellationTarget } from '@/application/agent/agent-cancellation-contract'
 
 const runtimes: ForegroundAgentCommandRuntime[] = []
 const subtle = webcrypto.subtle as unknown as SubtleCrypto
@@ -60,7 +61,7 @@ async function fixture() {
     return { native, execute, createHandlers, createRuntime, submit, ready, results }
 }
 
-async function executionFixture() {
+async function executionFixture(withCancellation = false) {
     const f = await fixture()
     const digest = `sha256:${'a'.repeat(64)}` as const
     const plan = { planId: digest, planHash: digest, jobs: [{ compatibility: { status: 'captured-pass' },
@@ -71,6 +72,14 @@ async function executionFixture() {
     let saving = false
     const listeners = new Set<() => void>()
     const receipts = new IndexedDbCommandReceiptRepository()
+    const cancellationTarget: AgentCancellationTarget = { runId: 'batch-cancel', batchId: 'batch-cancel',
+        jobIds: ['job-cancel'], targetHash: digest, previouslyStoppedJobIds: [] }
+    const cancellations = new Map<string, { status: 'cancel-requested'; runId: string; batchId: string; jobIds: string[] }>()
+    const cancel = vi.fn(async (target: AgentCancellationTarget, grant: AgentCancellationGrant) => {
+        const result = { status: 'cancel-requested' as const, runId: target.runId, batchId: target.batchId, jobIds: [...target.jobIds] }
+        cancellations.set(grant.requestId, result)
+        return result
+    })
     const facts = new Map<string, JsonObject>()
     const enqueue = vi.fn(async (_plan: GenerationPlan, grant: { scopeId: string }) => {
         const batchId = `main-batch-${grant.scopeId}`
@@ -92,8 +101,10 @@ async function executionFixture() {
         plans: { get: async () => plan, putIfAbsent: async () => 'same' }, getPolicy: () => policy,
         ports: { enqueue, validate: async () => true, reconcile: async grant => facts.get(grant.scopeId) ?? null,
             isOutstanding: async () => false },
+        ...(withCancellation ? { cancellation: { inspect: async () => cancellationTarget, cancel,
+            reconcile: async (grant: AgentCancellationGrant) => cancellations.get(grant.requestId) ?? null } } : {}),
     }) })
-    return { ...f, createRuntime, receipts, enqueue, persistPolicy,
+    return { ...f, createRuntime, receipts, enqueue, cancel, persistPolicy,
         getPolicy: () => policy, setSaving: (value: boolean) => { saving = value },
         submitEnqueue: (id: string) => f.submit(id, { name: 'generation.enqueue', input: { planId: digest, planHash: digest } }) }
 }
@@ -104,6 +115,43 @@ afterEach(async () => {
 })
 
 describe('foreground native inbox composition', () => {
+    it('restores authenticated cancellation review and publishes its durable acknowledgement during global pause', async () => {
+        const f = await executionFixture(true)
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await runtime.changePolicy(0, { ...f.getPolicy(), globalPause: true })
+        await f.submit('cancel-after-restart', { name: 'generation.cancel', input: { runId: 'batch-cancel' } })
+        await runtime.poll()
+        expect(f.results.get('cancel-after-restart')).toMatchObject({ state: 'needs-input' })
+        expect(f.cancel).not.toHaveBeenCalled()
+        await runtime.stop()
+        resetIndexedDBConnectionForRetry()
+        const reopened = f.createRuntime()
+        await reopened.start(Promise.resolve({ inboxReady: true }))
+        const [review] = reopened.getSnapshot().pendingApprovals
+        expect(review).toMatchObject({ command: 'generation.cancel', runId: 'batch-cancel' })
+        await reopened.decideApproval(review.requestId, 'approve', review)
+        expect(f.cancel).toHaveBeenCalledTimes(1)
+        expect(f.enqueue).not.toHaveBeenCalled()
+        expect(f.results.get(review.requestId)).toEqual(await f.receipts.get(review.requestId))
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'completed', result: { status: 'cancel-requested' } })
+        expect(reopened.getSnapshot().recent[0]).toMatchObject({ batchId: 'batch-cancel', cancelRequested: true })
+        await reopened.decideApproval(review.requestId, 'approve', review)
+        expect(f.cancel).toHaveBeenCalledTimes(1)
+    })
+
+    it('rechecks the registered client before a pending cancellation can execute', async () => {
+        const f = await executionFixture(true)
+        await f.submit('cancel-revoked', { name: 'generation.cancel', input: { runId: 'batch-cancel' } })
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        const [review] = runtime.getSnapshot().pendingApprovals
+        await runtime.changeClient('revoke', 'client-1')
+        await runtime.decideApproval(review.requestId, 'approve', review)
+        expect(f.cancel).not.toHaveBeenCalled()
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'rejected' })
+    })
+
     it('rechecks pending policy persistence after asynchronous native authentication', async () => {
         const f = await executionFixture()
         const original = f.native.authentication(() => 'owner-1')

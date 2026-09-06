@@ -66,6 +66,17 @@ describe('generation Queue command adapter', () => {
         expect(cancelBatch).toHaveBeenCalledOnce()
     })
 
+    it('passes the exact operation marker to the existing coordinator', async () => {
+        const cancelBatch = vi.fn(async () => undefined)
+        const adapter = createGenerationCommandAdapter({
+            repository: await seededRepository(), writer: {} as OutputWriter, coordinator: { cancelBatch },
+        })
+        const operationId = 'b'.repeat(64)
+        await expect(adapter.cancelBatch({ batchId: 'batch:1', actor: ACTOR, operationId }))
+            .resolves.toEqual({ status: 'ready', targetId: 'batch:1' })
+        expect(cancelBatch).toHaveBeenCalledExactlyOnceWith('batch:1', `agent-cancel:${operationId}`)
+    })
+
     it('refuses an unbound job without invoking OutputWriter or Queue execution', async () => {
         const queue = await seededRepository()
         const retryFilesCommittedWorkflow = vi.fn()

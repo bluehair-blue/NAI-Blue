@@ -40,7 +40,7 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
         ports: { validate, enqueue, reconcile: async grant => facts.get(grant.scopeId) ?? null, isOutstanding } }
     function reopen() {
         const coordinator = createAgentExecutionCoordinator({ ...opts, repository: new IndexedDbAgentExecutionRepository() })
-        const dispatcher = new AgentCommandDispatcher({ workspaceId: opts.workspaceId, receipts, handlers: [coordinator.handler],
+        const dispatcher = new AgentCommandDispatcher({ workspaceId: opts.workspaceId, receipts, handlers: [coordinator.handler, ...(coordinator.cancelHandler ? [coordinator.cancelHandler] : [])],
             authentication: { authenticate: async envelope => ({ clientId: envelope.context.clientId, actor: { kind: envelope.context.actor.kind, id: `client:${envelope.context.clientId}` } }) },
             runtime: () => ({ ready: true, mode: policy.mode, globalPause: policy.globalPause }), now: () => time })
         return { coordinator, dispatcher }
@@ -331,5 +331,33 @@ describe('durable agent execution authority', () => {
         expect(await f.dispatcher.dispatch(f.request('corrupt'))).toMatchObject({ state: 'needs-input', result: { code: 'COMMAND_OUTCOME_UNKNOWN' } })
         await expect(f.coordinator.recover()).rejects.toMatchObject({ code: 'INVALID_EXECUTION_STORE' })
         expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('shares enqueue/cancel operation identity and preserves generation exposure even at its outstanding limit', async () => {
+        const f = fixture('bounded-auto')
+        f.setPolicy({ ...f.getPolicy(), rollingLimits: { ...f.getPolicy().rollingLimits, maxOutstandingRequestsPerClient: 1 } })
+        f.isOutstanding.mockResolvedValue(true)
+        const generated = await f.dispatcher.dispatch(f.request('generation-operation'))
+        const originalRecord = (await f.opts.repository.get('workspace-1'))!.records[0]
+        const target = { runId: String(generated.result!.runId), batchId: String(generated.result!.batchId),
+            jobIds: generated.result!.jobIds as string[], targetHash: digest, previouslyStoppedJobIds: [] }
+        const cancel = vi.fn(async () => ({ status: 'cancel-requested' as const, runId: target.runId, batchId: target.batchId, jobIds: target.jobIds }))
+        Object.assign(f.opts, { cancellation: { inspect: async () => target, cancel, reconcile: async () => null } })
+        const active = f.reopen()
+        const makeCancel = (requestId: string, operation: string) => {
+            const envelope = f.request(requestId)
+            envelope.command = { name: 'generation.cancel', input: { runId: target.runId } }
+            envelope.context.idempotencyKey = operation
+            return { ...envelope, requestHash: agentRequestHash(envelope) }
+        }
+        expect(await active.dispatcher.dispatch(makeCancel('duplicate-cancel', 'generation-operation')))
+            .toMatchObject({ state: 'rejected', result: { code: 'AGENT_IDEMPOTENCY_CONFLICT' } })
+        expect(await active.dispatcher.dispatch(makeCancel('stop-generation', 'stop-generation'))).toMatchObject({ state: 'needs-input' })
+        const review = (await active.coordinator.pending())[0]
+        await active.coordinator.approve('stop-generation', review)
+        await active.coordinator.recover()
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect((await f.opts.repository.get('workspace-1'))!.records[0]).toEqual(originalRecord)
+        expect(await active.dispatcher.dispatch(f.request('after-stop'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
     })
 })

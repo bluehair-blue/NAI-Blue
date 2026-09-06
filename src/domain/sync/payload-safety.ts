@@ -397,6 +397,7 @@ const OPAQUE_IDENTIFIER_FIELDS = new Set([
     // random IDs are not generic encoded payloads; credential/image/path checks
     // still run, exactly as for the existing id/requestId/planId fields below.
     'clientid', 'workspaceid', 'correlationid', 'idempotencykey', 'draftid', 'runid', 'batchid', 'jobid', 'jobids',
+    'previouslystoppedjobids',
     'id', 'actionid', 'activeprofileid', 'artifactid', 'baseopid', 'bookmarkid', 'characterid', 'characterids',
     'defaultparamspresetid', 'defaultrecipeid', 'deviceid', 'documentid', 'entityid', 'fromid', 'libraryimageid',
     'maskresourceid', 'moduleid', 'moduleids', 'opid', 'paramspresetid', 'paramspresetids', 'parentid', 'planid',

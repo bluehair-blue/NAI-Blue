@@ -21,6 +21,21 @@ function serialized(value: unknown): string {
 }
 
 describe('sync payload sanitizer', () => {
+    it('recognizes native stopped-job IDs without exempting other payload fields', () => {
+        const jobId = 'main-job-agent-dbe4f2d96161f10b48104a1522e7269abfb8a16ee223c7514912b5c8afc282d2-0'
+        expect(() => assertSyncPayloadSafe({ previouslyStoppedJobIds: [jobId] })).not.toThrow()
+        expect(() => assertSyncPayloadSafe({ arbitraryJobIds: [jobId] })).toThrow(SyncSanitizationError)
+    })
+
+    it.each([
+        'Bearer token-canary',
+        'data:image/png;base64,iVBORw0KGgoAAAAA',
+        'iVBORw0KGgoAAAAA',
+        'C:\\Users\\canary\\image.png',
+    ])('still rejects forbidden material in stopped-job IDs: %s', value => {
+        expect(() => assertSyncPayloadSafe({ previouslyStoppedJobIds: [value] })).toThrow(SyncSanitizationError)
+    })
+
     it('projects Composition entities while stripping extensions and volatile path hints', () => {
         const source = structuredClone(typeFixtureDocument) as CompositionDocument
         const originalResource = source.resources[0]

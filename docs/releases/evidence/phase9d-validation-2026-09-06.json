@@ -1,0 +1,1026 @@
+{
+  "schemaVersion": 1,
+  "phase": "9D",
+  "implementationSlice": "durable-human-approved-generation-cancellation",
+  "recordedAt": "2026-09-06T01:56:22.4865397Z",
+  "baseCommit": "be85cfa8413b0a9fb0493c4ceb35db450d26b991",
+  "commitStatus": "validated-for-local-checkpoint",
+  "sourceScope": "Source and tests are identified by the implementation commit containing this evidence. Current source SHA-256 hashes normalize CRLF to LF; artifact SHA-256 hashes use original file bytes. history preserves the earlier source snapshot and first native failure without overwriting originals.",
+  "phase9Complete": false,
+  "runtimeActivation": "windows-foreground-read-plan-policy-gated-enqueue-and-human-approved-cancel",
+  "addedCommands": [
+    "generation.cancel"
+  ],
+  "supportedInput": "Authenticated unexpired envelope; exact command input {runId}; existing runId equals batchId; whole immutable batch target of at most 100 jobs.",
+  "safetyContracts": [
+    "Suggest and bounded-auto cancellation always require fresh human approval. Observe rejects; globalPause permits approved cancellation while continuing to block enqueue.",
+    "The existing workspace CAS ledger stores typed cancellation records and preserves legacy enqueue records. Operation-key uniqueness spans enqueue and cancel; cancellation is excluded from generation exposure and concurrency sums.",
+    "Consent binds authenticated actor, original request, policy revision, exact immutable batch/job snapshot target hash and canonical grant digest. No caller-provided force, job subset, discard, reservation abandon or retry authority.",
+    "Queue cancellation persists agent-cancel:<64 lowercase hex grant digest> before runtime abort. Existing user/batch/shutdown reasons remain compatible.",
+    "Consumed grants never authorize a second cancel call. Recovery requires exact target plus matching operation marker or verifiable stop facts predating canonical consent time; partial or unknown outcomes remain unknown.",
+    "cancel-requested acknowledges durable cancellation intent, not immediate termination or remote Provider work/billing cancellation. Terminal jobs and other batches remain unchanged.",
+    "Ordinary unused output reservations follow existing cancellation abandonment rules. Unknown Provider and verified/spooled output evidence, receipts, reservations and collision claims remain preserved.",
+    "Queue startup settles Provider/spool/output/lease facts before finishing cancellation markers, including exhausted-attempt recovery. Cancellation does not prove settled enqueue exposure or a refund."
+  ],
+  "automatedTests": {
+    "node": "v24.19.0",
+    "success": true,
+    "files": 319,
+    "passed": 2320,
+    "failed": 0,
+    "pending": 0,
+    "liveSuitesExcluded": true,
+    "report": {
+      "path": "docs/local/evidence/phase-09d/regression-native-fix.json",
+      "sha256": "8a8e50bc7585e26e5f6170d7ec6f9f9e76039e1b6ad5134b399242ba68aabec7"
+    },
+    "boundaries": "Real IndexedDB and Queue tests; no live Provider tests. Includes the actual native opaque job-ID regression and exact stopped-ID scanner field checks."
+  },
+  "browserQA": {
+    "status": "passed",
+    "checks": [
+      "Suggest enqueue is durably pending after ready-file retirement; zero Queue-port calls and reviewed source/cost/output are visible",
+      "Actual policy form save increments and durably stores revision; fresh single-use approval enqueues exactly once and publishes exact persisted receipt with existing batch link",
+      "Exact envelope replay preserves the completed receipt and makes no second Queue-port call",
+      "Human reject finalizes durable rejected receipt without enqueue",
+      "New foreground/coordinator instance and settings rehydration restore retired pending approval and policy revision from actual IndexedDB",
+      "Explicit mode selection plus future expiry saved through the human form permits an in-budget fixture enqueue",
+      "Saved global pause produces pending review and disables approval without enqueue",
+      "Advancing only the coordinator clock beyond the persisted auto expiry downgrades new enqueue to pending without a timer or additional Queue call",
+      "390px panel and document have no horizontal overflow",
+      "Cancellation in bounded-auto still requires human approval, shows exact run/jobs without generation cost, and remains approvable during global pause while enqueue stays blocked",
+      "Retired cancellation review survives runtime/settings rehydration and human approval publishes the durable cancel-requested acknowledgement once with a target batch link",
+      "Exact cancel replay and a separately rejected cancellation add no cancellation or enqueue calls"
+    ],
+    "checkCount": 12,
+    "environment": "isolated Chromium + loopback Vite",
+    "boundaries": "Actual AgentCommandPanel, AgentPolicyForm, ForegroundAgentCommandRuntime, AgentExecutionCoordinator, settings persistence/hydration and IndexedDB approval/receipt repositories. Native ownership/client/authentication, immutable plan lookup and Queue enqueue/reconcile and cancellation ports are fixtures. The expiry scenario advances only the coordinator clock. No Windows keyring, HMAC cryptography, native filesystem inbox, real Queue execution, Provider request, Anlas spending or production profile.",
+    "pageErrors": 0,
+    "consoleErrors": 0,
+    "mobileDimensions": {
+      "viewport": 390,
+      "documentWidth": 390,
+      "scrollWidth": 358,
+      "clientWidth": 358
+    },
+    "report": {
+      "path": "docs/local/evidence/phase-09d/browser/browser-qa-report.json",
+      "sha256": "8d1f6a150ff6bdd8b86461ef31c2696e6d09c2b8f90fe65239ce76ab7bd412a7"
+    },
+    "screenshots": [
+      {
+        "path": "docs/local/evidence/phase-09d/browser/01-suggest-review.png",
+        "sha256": "99f8bfda23cca0a384fb9a19387e301545b269c78e6e24bd03c17ba5113d9d6b"
+      },
+      {
+        "path": "docs/local/evidence/phase-09d/browser/02-policy-and-pending.png",
+        "sha256": "f47a366d0a2d8c0df8d2c2f27bffe8d9529148b98984cce9fb9e0ef436840a03"
+      },
+      {
+        "path": "docs/local/evidence/phase-09d/browser/03-mobile-policy-and-pending.png",
+        "sha256": "dde375498da424e9281147a731b4d66746ebf07cf37332aa8aa300745c6fb43f"
+      },
+      {
+        "path": "docs/local/evidence/phase-09d/browser/04-cancel-review-mobile.png",
+        "sha256": "8851b612c932ac4694045e20c48cfaa61dd646ed3b5ecb66c88eda7a3c4a1e6a"
+      },
+      {
+        "path": "docs/local/evidence/phase-09d/browser/05-cancel-acknowledged.png",
+        "sha256": "2bd46de10fb739eb15febfba0bc6fedc52341db5c8b4722247396aa6562e089c"
+      }
+    ]
+  },
+  "checks": {
+    "lint": {
+      "log": {
+        "path": "docs/local/evidence/phase-09d/lint-native-fix.log",
+        "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+      },
+      "exitCode": 0
+    },
+    "architecture": {
+      "log": {
+        "path": "docs/local/evidence/phase-09d/architecture-native-fix.log",
+        "sha256": "efc9f0a7c0fab21170336380f5da52cc0fd9a746d8957471402a55680230f568"
+      },
+      "exitCode": 0,
+      "violations": 0,
+      "dependencies": 3399,
+      "modules": 616
+    },
+    "redaction": {
+      "tests": 17,
+      "log": {
+        "path": "docs/local/evidence/phase-09d/redaction-native-fix.log",
+        "sha256": "0d93d4def57b7f00e3880d288da704966b2bd6a16c9fd60cd5cd66f0a8372c29"
+      },
+      "exitCode": 0
+    },
+    "frontendBuild": {
+      "log": {
+        "path": "docs/local/evidence/phase-09d/frontend-build-native-fix.log",
+        "sha256": "07ef61f27ea4ee6ff0b7b869e893e1526c2852369519069514a395103be7ce34"
+      },
+      "exitCode": 0,
+      "includesTypecheck": true
+    },
+    "nativeBuild": {
+      "boundary": "Corrected binary verified same-grant native reconciliation, exact replay, completed normal restart and cleanup. Fresh native Queue cancellation transition used the initial binary.",
+      "status": "passed",
+      "profile": "dev-unoptimized-debuginfo",
+      "binarySha256": "E26E11EEDEA626E0087D59141A7FE2DAA085A2534B4E148CE2D2BA4ED6C7E7C1",
+      "durationSeconds": 13.45,
+      "log": {
+        "path": "docs/local/evidence/phase-09d/native-build-fixed.log",
+        "sha256": "375d0f0aaa1c9be58838c3a54a6e7748a575b3f07a2e4cf1bef7f8da94dfa89d"
+      }
+    }
+  },
+  "review": {
+    "method": "Independent code review followed by root integration and final regression.",
+    "outstandingActionableFindings": [],
+    "resolved": [
+      "Existing Queue markers could be stranded after non-running recovery; preserve original marker/time and finalize through the existing cancel transaction.",
+      "Persist operation marker before AbortController abort to avoid losing exact identity on fast executor completion.",
+      "Exhausted-attempt lease recovery must finalize an existing cancellation marker without discarding unknown/spooled facts.",
+      "Reject forged previously-stopped arrays and terminal facts created only after consent; canonical consent time and persisted Queue stop facts are required.",
+      "Actual native job IDs in previouslyStoppedJobIds were rejected by the generic binary scanner after cancellation. Add only the exact previouslystoppedjobids opaque identifier field; preserve credential, image, encoded image and absolute path rejection."
+    ],
+    "boundaryHardening": "Operation ID length assertions explicitly strengthen a boundary that already rejected the input. They are not evidence of a reproduced implementation defect."
+  },
+  "validationFailures": [
+    {
+      "artifact": "queue-cancel-red.log",
+      "classification": "behavior-regression",
+      "description": "Eight new real IndexedDB cancellation cases failed before shared Queue fixes."
+    },
+    {
+      "artifact": "queue-cancel-order-red.log",
+      "classification": "behavior-regression",
+      "description": "Both live cases failed persist-before-abort assertions before order correction."
+    },
+    {
+      "artifact": "queue-cancel-exhausted-attempt-red.log",
+      "classification": "behavior-regression",
+      "description": "Two exhausted-attempt recovery assertions failed before cancellation finalization correction."
+    },
+    {
+      "artifact": "cancellation-bridge-preexisting-stop-red.log",
+      "classification": "behavior-regression",
+      "description": "Three reconciliation assertions failed before exact pre-consent Queue stop validation."
+    },
+    {
+      "artifact": "queue-cancel-fixture-setup.log",
+      "classification": "fixture-setup-only",
+      "description": "Initial fixture omitted measured atomic-batch limits; corrected fixture is not product regression evidence."
+    },
+    {
+      "artifact": "native-fix-red.log",
+      "classification": "native-defect-regression",
+      "description": "Two failures reproduced post-cancel native opaque-ID inspection and missing exact scanner field; GREEN passed 122 tests across 2 files."
+    }
+  ],
+  "nativeDesktopQA": {
+    "status": "passed-after-scoped-fix",
+    "scope": "isolated Windows Tauri native cancellation request, actual human approval under global pause, durable reconciliation, replay, normal restart and client cleanup",
+    "firstBinarySha256": "7C8BA1D606DE0D08203C02527BFBCF3CF232273316A930252C8168B06F4DB835",
+    "fixedBinarySha256": "E26E11EEDEA626E0087D59141A7FE2DAA085A2534B4E148CE2D2BA4ED6C7E7C1",
+    "firstApprovalFailure": {
+      "receiptCode": "AGENT_EXECUTION_UNKNOWN",
+      "queueState": "cancelled",
+      "exactOperationMarker": true,
+      "attempts": 0,
+      "reservationState": "abandoned",
+      "preservedEvidence": "docs/local/evidence/phase-09d/native/approved.json, approved-native.receipt.json, approved.receipt.json and 03-approved.png; first-failure originals remain preserved without overwrite.",
+      "classification": "native-approval-failure-under-investigation",
+      "softwareEvidence": "Existing test counts and source/artifact hashes remain evidence for their recorded source snapshot; no corrected build or successful native approval is claimed.",
+      "activeCollisionClaims": 0,
+      "collisionClaimRows": 1,
+      "collisionClaimBoundary": "The remaining claim row retains originalCollisionKey only; activeCollisionKey is absent."
+    },
+    "recovery": {
+      "replayReceiptJobsLedgerUnchanged": true,
+      "status": "completed",
+      "actualBatchLinkVerified": true,
+      "originalJobsIncludingMarkerAndTimestampsUnchanged": true,
+      "sameGrant": true,
+      "attempts": 0,
+      "boundaries": "Initial binary performed the fresh queued-to-cancelled transition. Fixed binary reconciled the original consumed grant, replayed it, and preserved receipt/jobs/ledger on completed normal restart. No fresh queued-to-cancelled native transition on the fixed binary; actual Queue automated long-ID regression covers the corrected path.",
+      "nativePublicReceiptEqualsIndexedDB": true,
+      "completedRestartReceiptJobsLedgerUnchanged": true
+    },
+    "softwareEvidence": "Automated success does not establish all native scenarios. Browser QA remains the earlier recorded browser run and was not rerun after the scanner-only fix.",
+    "checks": [
+      {
+        "name": "pending request and unchanged queued job survive normal restart",
+        "passed": true
+      },
+      {
+        "name": "global pause human approval durably cancels the exact retained QA job with attempt zero",
+        "passed": true
+      },
+      {
+        "name": "fixed binary reconciles the original grant without a second Queue mutation",
+        "passed": true
+      },
+      {
+        "name": "native public result equals IndexedDB receipt",
+        "passed": true
+      },
+      {
+        "name": "exact signed replay keeps receipt jobs and ledger identical",
+        "passed": true
+      },
+      {
+        "name": "completed normal restart keeps receipt jobs and ledger identical",
+        "passed": true
+      },
+      {
+        "name": "QA client revoked and owned processes/listeners closed",
+        "passed": true
+      }
+    ],
+    "cleanup": {
+      "recordedAt": "2026-09-06T01:54:38.3811941Z",
+      "ownedQaProcesses": [],
+      "diagnosticAndViteListeners": [],
+      "clientRevoked": true,
+      "revokedSignerCode": "CREDENTIAL_UNAVAILABLE",
+      "retainedProfile": "phase9c-final-desktop-qa",
+      "retainedLedger": true,
+      "productionProfileTouched": false,
+      "revokedSignerExitCode": 1
+    },
+    "generationExposure": {
+      "afterCancel": null,
+      "afterNormalRecovery": "2026-09-06T01:50:48.782Z",
+      "meaning": "The existing generation recovery settled the terminal job with zero attempts. Cancellation did not directly refund or modify the enqueue grant; this is not billing evidence."
+    },
+    "boundaries": [
+      "Initial binary exercised pending restart and actual human approval/Queue mutation; fixed binary exercised exact prior-grant reconciliation, replay and completed restart.",
+      "No fresh queued-to-cancelled mutation was performed on the fixed binary; corrected long-ID actual Queue behavior is covered by automated regression.",
+      "No live Provider request, remote cancellation/billing claim, generated image, R2 transfer, installer/upgrade or forced native crash.",
+      "Native GUI used production frontend, keyring authentication and Python signer, with no fixture injection. CDP used for read-only DOM/IndexedDB/screenshot diagnostics.",
+      "Bounded-auto/rejection/mobile UI cases use the separately documented browser fixture harness."
+    ],
+    "report": {
+      "path": "docs/local/evidence/phase-09d/native/native-qa-report.json",
+      "sha256": "8f5241f5d542109667af21b431b077f4806c216a45a4d8298d243b1d175135ba"
+    }
+  },
+  "notVerified": [
+    "Corrected binary fresh queued-to-cancelled native transition; covered by automated actual Queue native-shaped long-ID regression",
+    "Native process crash and installer/upgrade",
+    "Live Provider cancellation or billing",
+    "Actual generated files or R2 delivery",
+    "Phase 9 complete operational gate",
+    "Phase 10 MCP spike or Phase 11 background/headless"
+  ],
+  "sourceFiles": [
+    {
+      "path": "scripts/qa-phase9c-agent-execution.mjs",
+      "sha256": "e96c61cd8f98b7e8414341a174c506132549772ba7b51313a5933a9e9898b420"
+    },
+    {
+      "path": "src/adapters/agent/indexeddb-command-receipt-repository.ts",
+      "sha256": "d9c9f9cb76c3a5ac753513f1ac6052aca60f8f2bfdf6d6ac321f922da6e291ce"
+    },
+    {
+      "path": "src/application/agent/agent-cancellation-contract.ts",
+      "sha256": "a4f4962390645bd418d33110485c3248bd98d9cd300fd810c0cd3d80d9697b5e"
+    },
+    {
+      "path": "src/application/agent/agent-execution-coordinator.ts",
+      "sha256": "90ef57a0dc2b61118275411398058aae299dab52d18798997effe34ffcbc0e2f"
+    },
+    {
+      "path": "src/application/agent/agent-execution-repository.ts",
+      "sha256": "c2e35fb9a365371f1771f4a8eec811aa6750500baf974a254ad9c8f273ae2e92"
+    },
+    {
+      "path": "src/application/agent/runtime-capability-registry.ts",
+      "sha256": "d41c7d109803b71944e2257afed484d617dc6ce09918c4b75817af17cf976a50"
+    },
+    {
+      "path": "src/application/generation/enqueue-generation-plan.ts",
+      "sha256": "b0d3c9c42c56d871501a09960c73d0b7f07f13051185331f1a0c973d2ce8f59f"
+    },
+    {
+      "path": "src/application/generation/generation-command-contract.ts",
+      "sha256": "5aa2b4efe04866af4c29a040a45ff2eb6d8615432ffe188947780e71295d1568"
+    },
+    {
+      "path": "src/composition-root/agent-generation-cancellation.ts",
+      "sha256": "cb06f19673b191dbe7f186e6375d26574e281fc11b551f19c29432453dbbffa8"
+    },
+    {
+      "path": "src/composition-root/foreground-agent-command-runtime.ts",
+      "sha256": "21ff1eca6edc7942f6a652288b0198eb9d43e81cebbe2c0f73c84d70a505aef3"
+    },
+    {
+      "path": "src/composition-root/runtime-agent-commands.ts",
+      "sha256": "6e4c3f53de1de1941e18e1d442a45556c6c6b41432e2c60be64627ff33e95f8e"
+    },
+    {
+      "path": "src/domain/queue/types.ts",
+      "sha256": "a063da8316fb984fb09ce9f2567f05364216e5e3224680e3f342e72199ff04d3"
+    },
+    {
+      "path": "src/domain/sync/payload-safety.ts",
+      "sha256": "acec589d81547df8bf9bb493d3c282226c7bca4518705925581e2766b41f9888"
+    },
+    {
+      "path": "src/i18n/locales/en.json",
+      "sha256": "0e915881a6b00f34907e4475996503e4b6b1a2e5f595ca74260af6592a838470"
+    },
+    {
+      "path": "src/i18n/locales/ja.json",
+      "sha256": "68373f0d40f97eba6e352d4322994165e460d336fb02827c8b1d901216a82282"
+    },
+    {
+      "path": "src/i18n/locales/ko.json",
+      "sha256": "4eb47608c587c81165bb1771f1c3d0c39a06340321ad656000178efa6ece0e5d"
+    },
+    {
+      "path": "src/presentation/agent/AgentCommandPanel.tsx",
+      "sha256": "e68ea313448ed5517559f3935cd2f0d5047ab7610b743312fdfa73e2b67d7ad8"
+    },
+    {
+      "path": "src/services/queue/durable-queue-coordinator.ts",
+      "sha256": "cdda417ae3abb8c7acd20b2826abedc82a291e64d03ab384cf678c8ce79e08fa"
+    },
+    {
+      "path": "src/services/queue/generation-command-adapter.ts",
+      "sha256": "75c2ab8fe197838a89ada50e712201cc0e2a77f11b7caf25df6a6dbe2981cb60"
+    },
+    {
+      "path": "src/services/queue/indexeddb-queue-repository.ts",
+      "sha256": "5b62342bf08e97fb2d5987e910e344030d333194bff0f5f95d312533fbbf27ba"
+    },
+    {
+      "path": "src/services/queue/queue-startup.ts",
+      "sha256": "c43f646ef8cd328b75649c50ee407df86ad9cfb8b34537d6169952fb284f031b"
+    },
+    {
+      "path": "src/services/queue/recovery.ts",
+      "sha256": "c96734bf8848fd21073f262fe3444a9ea2df4aca7e8e0ef133ae9c36965f4454"
+    },
+    {
+      "path": "tests/application/generation/enqueue-generation-plan.test.ts",
+      "sha256": "3b366d762264e15fd83f13b9e3aeee21972ebee77667bbe87c698eae9b79d55f"
+    },
+    {
+      "path": "tests/domain/sync/sanitizer.test.ts",
+      "sha256": "ba277e936e7a1cca6c59c06a505c4d3459c73378cafb32094e09439af4d956b9"
+    },
+    {
+      "path": "tests/persistence/agent-cancellation-coordinator.test.ts",
+      "sha256": "b1126f2c4e79e94126788ce241ccea23c60011807890d83b99e4e6531efff431"
+    },
+    {
+      "path": "tests/persistence/agent-execution-coordinator.test.ts",
+      "sha256": "cf804de157fa7a50a0178d863bafa65877a35258d37883b13e0f5804009fea58"
+    },
+    {
+      "path": "tests/persistence/agent-generation-cancellation.test.ts",
+      "sha256": "31209c9347a03705939efa5b89a1904e0a1f0d23a0a41f0814ca169f9d9d3d07"
+    },
+    {
+      "path": "tests/persistence/foreground-agent-command-runtime.test.ts",
+      "sha256": "726ca07ddf7e7c676db0e29730912d5da2fa9f5b45ed55c84960df04e911774c"
+    },
+    {
+      "path": "tests/presentation/agent-command-panel.test.ts",
+      "sha256": "b114d8b316ba364cebf9a5eacb6c91d31929fbdcced43db308f5d34ed82909d5"
+    },
+    {
+      "path": "tests/services/queue/generation-command-adapter.test.ts",
+      "sha256": "e95fa270a0d76cbac88f58d11fa6501a9c29751a517a3c0591a16b0b9eb9de06"
+    },
+    {
+      "path": "tests/services/queue/queue-cancellation-recovery.test.ts",
+      "sha256": "f6ccbffb6fe8c23b7777465e74aa86801680008e346c19b7ddb99c6659e59e76"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-09d/regression-final.json",
+      "sha256": "05b342cba8218a2babe6aa2c0caf286d08b0666bc513e2632050817cc27110a0"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/regression-final.log",
+      "sha256": "80178e8bca4a0ffca7ffd708e067ebeb813465b293abb568e2fad7935c6e8a06"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/lint-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/architecture-final.log",
+      "sha256": "824550e78d40f861a9eeae9440694cd33a9a0354f2ecdd20907349133d3050d1"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/redaction-final.log",
+      "sha256": "4c615c92198d0f02587bd688102bb5f8be5f8bf5bdc8df7750b8b93ad71de527"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/frontend-build-final.log",
+      "sha256": "613c191065e3dd5c9ad214badab3fb27ece96842ac61442c2924b7ea100bdcdb"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/agent-cancellation-coordinator-tests.log",
+      "sha256": "f25a174ffd9e052aaeab142fa22a1b7332c4eec5f6f98cf2154b65328685566b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/foreground-ui-tests.log",
+      "sha256": "8ab1802d05b41de2643b81aa590ae8b419f1f90e3a4667cc7c97664eb6b7fe56"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/cancellation-bridge-focused-tests.log",
+      "sha256": "ff2a9ba2e7f37d0e050ea217872490b37efae2ff23caf097f5eb5687bc1540eb"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/cancellation-bridge-preexisting-stop-red.log",
+      "sha256": "27cead010bc8c4023d24b7a6a3126ee05a4afb31b2a0a0dbd7db341b2f938d96"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/cancellation-bridge-preexisting-stop-green.log",
+      "sha256": "fc5724e2fe4a1d8db816697adc865b52ce137a1a64f14ba32753c4c851183bd4"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-red.log",
+      "sha256": "666c50e850a3590ac81a07b448f1b94d5480526a4fc2e31a124531157a8f7c1f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-order-red.log",
+      "sha256": "db54c97ce3fb3314ade97974691ac01f5ccc202ab3c85cb90e611bf68c66faa1"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-final-green.log",
+      "sha256": "59c79ba06bfcf59dccf72507964d9917ca1583e2743edc793cd6b895aa0aab85"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-boundary-green.log",
+      "sha256": "cfc5e3a36e6fbb8525bc87ffae18837c8eead862e2ab44237028636609e7d74c"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-exhausted-attempt-red.log",
+      "sha256": "7f4daba62f517b95583b8c3959a1396d744f85deac96f83e773980ef79b2cc71"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-exhausted-attempt-green.log",
+      "sha256": "2a353c80e82d7d445985e1140448e858d562f83d5dff6b7bd43d07e3da7c7d65"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-implementation.md",
+      "sha256": "39f842f217a0e3046d96578326c1f34ef7d734238316a38e24e2e1f71c780c46"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser-qa.log",
+      "sha256": "0c493395ebd723b27027c2b960c124d42dd583f1323319a662afcdb920cae406"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser/browser-qa-report.json",
+      "sha256": "8d1f6a150ff6bdd8b86461ef31c2696e6d09c2b8f90fe65239ce76ab7bd412a7"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser/01-suggest-review.png",
+      "sha256": "99f8bfda23cca0a384fb9a19387e301545b269c78e6e24bd03c17ba5113d9d6b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser/02-policy-and-pending.png",
+      "sha256": "f47a366d0a2d8c0df8d2c2f27bffe8d9529148b98984cce9fb9e0ef436840a03"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser/03-mobile-policy-and-pending.png",
+      "sha256": "dde375498da424e9281147a731b4d66746ebf07cf37332aa8aa300745c6fb43f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser/04-cancel-review-mobile.png",
+      "sha256": "8851b612c932ac4694045e20c48cfaa61dd646ed3b5ecb66c88eda7a3c4a1e6a"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/browser/05-cancel-acknowledged.png",
+      "sha256": "2bd46de10fb739eb15febfba0bc6fedc52341db5c8b4722247396aa6562e089c"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/queue-cancel-fixture-setup.log",
+      "sha256": "d823960b983972bc12dcaa7d013dc52aa7e2a9f772fa7e756e6d64d22947229f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native-build-final.log",
+      "sha256": "17ec56a019aac4e418394cd5898d2c9ab2c99326040278518530b41a689b7971"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/regression-native-fix.json",
+      "sha256": "8a8e50bc7585e26e5f6170d7ec6f9f9e76039e1b6ad5134b399242ba68aabec7"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/regression-native-fix.log",
+      "sha256": "95d0654da14d5e89b56c43eb4ee4795912b614f30dc9a06e33de91844f39d4bd"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/lint-native-fix.log",
+      "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/architecture-native-fix.log",
+      "sha256": "efc9f0a7c0fab21170336380f5da52cc0fd9a746d8957471402a55680230f568"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/redaction-native-fix.log",
+      "sha256": "0d93d4def57b7f00e3880d288da704966b2bd6a16c9fd60cd5cd66f0a8372c29"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/frontend-build-native-fix.log",
+      "sha256": "07ef61f27ea4ee6ff0b7b869e893e1526c2852369519069514a395103be7ce34"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native-build-fixed.log",
+      "sha256": "375d0f0aaa1c9be58838c3a54a6e7748a575b3f07a2e4cf1bef7f8da94dfa89d"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native-fix-summary.md",
+      "sha256": "82357941ec3cdef0be4e3d3e93312a328cfc360f4ac88f717053e3bfbb6ec11b"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native-fix-red.log",
+      "sha256": "22ecb331026407107610fff1ad2af16889210f9a4a0437d74afba60ac1c722ae"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native-fix-green.log",
+      "sha256": "7a03d089e9650ac8a2d579601f0423a81f83b15bb09b35a7540fedef952b9a7f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/binary.json",
+      "sha256": "29774545f69ef0e8e0b9a6c976f15b9b7a4cc8516263f7ad2fb7540a28b3f96a"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/binary-fixed.json",
+      "sha256": "ea1ebd44f3745666801ed65c308b6f6f53b2345735a266a26bacf22cfe7a6178"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/approved.json",
+      "sha256": "37aae754a0c1ee4b46bd042e038ca7d28c4d9d067a43cc39e4350a6f78cb9ebd"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/approved.receipt.json",
+      "sha256": "c2c03bc42cf5e6d3afb05dcdfbb6566ebfa661c8a1771e54b06734f3fe88574f"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/approved-native.receipt.json",
+      "sha256": "5c29d3c433086b4c262b11e60ade97698cb6f20836839cd7605f957512859f9e"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/approved-queue-records.json",
+      "sha256": "c3a0952fd1c74ed3dd8e7374b4e08c9ff9c2d0460550eb442d81deebe5e391a0"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/03-approved.png",
+      "sha256": "89e42ec46d8e26077350e6cc3da66d956db2ede5fa61cbdd151b6534650b0f93"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/recovered.json",
+      "sha256": "8233b9d4623825d1b9fb842f34f81f473267586586824d6c53b87da556ba39d8"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/recovered.receipt.json",
+      "sha256": "671401c7e0bb541ebc878e1eff497d3fe452cde6099341f4f27416958b9aeb62"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/replay.json",
+      "sha256": "adbd9243edbefdfc01043fc08e762519c38a673f281cd8919b6f27d95954c6ce"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/04-recovered.png",
+      "sha256": "2b11e933b76da8825705f1c34ed52ccae57e1feb335570d2964b526cd5f9f490"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/05-cancelled-batch.png",
+      "sha256": "b522308b6ee0aa57282bd8c3ab0fd73c1e63909d6743d68f31ad79a43239c2f3"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/batch-link.json",
+      "sha256": "6db03c4cdd38069f3f138a2db2c17fa5e379f93c4e679615d63823357d8c3159"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/native-qa-report.json",
+      "sha256": "8f5241f5d542109667af21b431b077f4806c216a45a4d8298d243b1d175135ba"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/cleanup.json",
+      "sha256": "0c36f34ebc53441e5fd2735c3338e157fdde8fdf13391f7e572560d86e976d93"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/final.json",
+      "sha256": "a99f2b32a47bbad5d88b75fe09f6f9d3050b1ca8dc6995a0ad02a8cb865b3de2"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/revoked-submit.log",
+      "sha256": "6681cd0926be342ff4806c8d5379e77a06081dd0b0d819212ec70f487feb0065"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/completed-restart.json",
+      "sha256": "a75910f95e56a5810ae37426817766b66fa44f9394f7548040ccb33873774a96"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/recovered-native.receipt.json",
+      "sha256": "9cb68528de19f3b4603ae99ef440b52b823964132edbd7b94ba28b343ebc65d5"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/06-revoked.png",
+      "sha256": "9e5b59e7d43e4090ca5b8fc18f88f6e0d0f9441b15ec2a2091b690a8527d4fc5"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/before.json",
+      "sha256": "2e2d864ec8b8bb0e2e71f093988447ed6ea5ff2740edb38b8de63274d6d76fd0"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/pending.json",
+      "sha256": "1c0b92961674d9969131e94fec9161790caf8f9ad902b609cc684b3e14632309"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/pending.receipt.json",
+      "sha256": "70800668030e6d5ce0c43e3fa3d584372e74fd4b3a63f79fa6717b9336ad0676"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/pending-restart.json",
+      "sha256": "2fc4f4194177d051a6131ec32cbe634acb37f1ef44de90fce8cfb78e4941f1a1"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/01-pending.png",
+      "sha256": "15020ceb676be0f859132abe4ad5dfb73d455a877ff4fac310f39c707379a986"
+    },
+    {
+      "path": "docs/local/evidence/phase-09d/native/02-pending-restart.png",
+      "sha256": "e1527f0149da172d718289ff317c675d247bb945f6b05e104d2f69ca42c70ae7"
+    }
+  ],
+  "history": [
+    {
+      "stage": "initial-software-validation-and-native-approval-failure",
+      "recordedAt": "2026-09-06T01:36:19.8528911Z",
+      "automatedTests": {
+        "node": "v24.19.0",
+        "success": true,
+        "files": 319,
+        "passed": 2314,
+        "failed": 0,
+        "pending": 0,
+        "liveSuitesExcluded": true,
+        "report": {
+          "path": "docs/local/evidence/phase-09d/regression-final.json",
+          "sha256": "05b342cba8218a2babe6aa2c0caf286d08b0666bc513e2632050817cc27110a0"
+        },
+        "boundaries": "Real IndexedDB and Queue transactions in automated tests; Provider transport and native ports are fixtures. No live Provider tests."
+      },
+      "browserQA": {
+        "status": "passed",
+        "checks": [
+          "Suggest enqueue is durably pending after ready-file retirement; zero Queue-port calls and reviewed source/cost/output are visible",
+          "Actual policy form save increments and durably stores revision; fresh single-use approval enqueues exactly once and publishes exact persisted receipt with existing batch link",
+          "Exact envelope replay preserves the completed receipt and makes no second Queue-port call",
+          "Human reject finalizes durable rejected receipt without enqueue",
+          "New foreground/coordinator instance and settings rehydration restore retired pending approval and policy revision from actual IndexedDB",
+          "Explicit mode selection plus future expiry saved through the human form permits an in-budget fixture enqueue",
+          "Saved global pause produces pending review and disables approval without enqueue",
+          "Advancing only the coordinator clock beyond the persisted auto expiry downgrades new enqueue to pending without a timer or additional Queue call",
+          "390px panel and document have no horizontal overflow",
+          "Cancellation in bounded-auto still requires human approval, shows exact run/jobs without generation cost, and remains approvable during global pause while enqueue stays blocked",
+          "Retired cancellation review survives runtime/settings rehydration and human approval publishes the durable cancel-requested acknowledgement once with a target batch link",
+          "Exact cancel replay and a separately rejected cancellation add no cancellation or enqueue calls"
+        ],
+        "checkCount": 12,
+        "environment": "isolated Chromium + loopback Vite",
+        "boundaries": "Actual AgentCommandPanel, AgentPolicyForm, ForegroundAgentCommandRuntime, AgentExecutionCoordinator, settings persistence/hydration and IndexedDB approval/receipt repositories. Native ownership/client/authentication, immutable plan lookup and Queue enqueue/reconcile and cancellation ports are fixtures. The expiry scenario advances only the coordinator clock. No Windows keyring, HMAC cryptography, native filesystem inbox, real Queue execution, Provider request, Anlas spending or production profile.",
+        "pageErrors": 0,
+        "consoleErrors": 0,
+        "mobileDimensions": {
+          "viewport": 390,
+          "documentWidth": 390,
+          "scrollWidth": 358,
+          "clientWidth": 358
+        },
+        "report": {
+          "path": "docs/local/evidence/phase-09d/browser/browser-qa-report.json",
+          "sha256": "8d1f6a150ff6bdd8b86461ef31c2696e6d09c2b8f90fe65239ce76ab7bd412a7"
+        },
+        "screenshots": [
+          {
+            "path": "docs/local/evidence/phase-09d/browser/01-suggest-review.png",
+            "sha256": "99f8bfda23cca0a384fb9a19387e301545b269c78e6e24bd03c17ba5113d9d6b"
+          },
+          {
+            "path": "docs/local/evidence/phase-09d/browser/02-policy-and-pending.png",
+            "sha256": "f47a366d0a2d8c0df8d2c2f27bffe8d9529148b98984cce9fb9e0ef436840a03"
+          },
+          {
+            "path": "docs/local/evidence/phase-09d/browser/03-mobile-policy-and-pending.png",
+            "sha256": "dde375498da424e9281147a731b4d66746ebf07cf37332aa8aa300745c6fb43f"
+          },
+          {
+            "path": "docs/local/evidence/phase-09d/browser/04-cancel-review-mobile.png",
+            "sha256": "8851b612c932ac4694045e20c48cfaa61dd646ed3b5ecb66c88eda7a3c4a1e6a"
+          },
+          {
+            "path": "docs/local/evidence/phase-09d/browser/05-cancel-acknowledged.png",
+            "sha256": "2bd46de10fb739eb15febfba0bc6fedc52341db5c8b4722247396aa6562e089c"
+          }
+        ]
+      },
+      "checks": {
+        "lint": {
+          "exitCode": 0,
+          "log": {
+            "path": "docs/local/evidence/phase-09d/lint-final.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "architecture": {
+          "violations": 0,
+          "exitCode": 0,
+          "dependencies": 3399,
+          "modules": 616,
+          "log": {
+            "path": "docs/local/evidence/phase-09d/architecture-final.log",
+            "sha256": "824550e78d40f861a9eeae9440694cd33a9a0354f2ecdd20907349133d3050d1"
+          }
+        },
+        "redaction": {
+          "tests": 17,
+          "exitCode": 0,
+          "log": {
+            "path": "docs/local/evidence/phase-09d/redaction-final.log",
+            "sha256": "4c615c92198d0f02587bd688102bb5f8be5f8bf5bdc8df7750b8b93ad71de527"
+          }
+        },
+        "frontendBuild": {
+          "log": {
+            "path": "docs/local/evidence/phase-09d/frontend-build-final.log",
+            "sha256": "613c191065e3dd5c9ad214badab3fb27ece96842ac61442c2924b7ea100bdcdb"
+          },
+          "exitCode": 0,
+          "includesTypecheck": true
+        },
+        "nativeBuild": {
+          "status": "passed",
+          "profile": "dev-unoptimized-debuginfo",
+          "durationSeconds": 37.41,
+          "log": {
+            "path": "docs/local/evidence/phase-09d/native-build-final.log",
+            "sha256": "17ec56a019aac4e418394cd5898d2c9ab2c99326040278518530b41a689b7971"
+          },
+          "boundary": "Native application build success only; first actual Windows cancellation approval failed and is under investigation."
+        }
+      },
+      "sourceFiles": [
+        {
+          "path": "scripts/qa-phase9c-agent-execution.mjs",
+          "sha256": "e96c61cd8f98b7e8414341a174c506132549772ba7b51313a5933a9e9898b420"
+        },
+        {
+          "path": "src/adapters/agent/indexeddb-command-receipt-repository.ts",
+          "sha256": "d9c9f9cb76c3a5ac753513f1ac6052aca60f8f2bfdf6d6ac321f922da6e291ce"
+        },
+        {
+          "path": "src/application/agent/agent-cancellation-contract.ts",
+          "sha256": "a4f4962390645bd418d33110485c3248bd98d9cd300fd810c0cd3d80d9697b5e"
+        },
+        {
+          "path": "src/application/agent/agent-execution-coordinator.ts",
+          "sha256": "90ef57a0dc2b61118275411398058aae299dab52d18798997effe34ffcbc0e2f"
+        },
+        {
+          "path": "src/application/agent/agent-execution-repository.ts",
+          "sha256": "c2e35fb9a365371f1771f4a8eec811aa6750500baf974a254ad9c8f273ae2e92"
+        },
+        {
+          "path": "src/application/agent/runtime-capability-registry.ts",
+          "sha256": "d41c7d109803b71944e2257afed484d617dc6ce09918c4b75817af17cf976a50"
+        },
+        {
+          "path": "src/application/generation/enqueue-generation-plan.ts",
+          "sha256": "b0d3c9c42c56d871501a09960c73d0b7f07f13051185331f1a0c973d2ce8f59f"
+        },
+        {
+          "path": "src/application/generation/generation-command-contract.ts",
+          "sha256": "5aa2b4efe04866af4c29a040a45ff2eb6d8615432ffe188947780e71295d1568"
+        },
+        {
+          "path": "src/composition-root/agent-generation-cancellation.ts",
+          "sha256": "cb06f19673b191dbe7f186e6375d26574e281fc11b551f19c29432453dbbffa8"
+        },
+        {
+          "path": "src/composition-root/foreground-agent-command-runtime.ts",
+          "sha256": "21ff1eca6edc7942f6a652288b0198eb9d43e81cebbe2c0f73c84d70a505aef3"
+        },
+        {
+          "path": "src/composition-root/runtime-agent-commands.ts",
+          "sha256": "6e4c3f53de1de1941e18e1d442a45556c6c6b41432e2c60be64627ff33e95f8e"
+        },
+        {
+          "path": "src/domain/queue/types.ts",
+          "sha256": "a063da8316fb984fb09ce9f2567f05364216e5e3224680e3f342e72199ff04d3"
+        },
+        {
+          "path": "src/i18n/locales/en.json",
+          "sha256": "0e915881a6b00f34907e4475996503e4b6b1a2e5f595ca74260af6592a838470"
+        },
+        {
+          "path": "src/i18n/locales/ja.json",
+          "sha256": "68373f0d40f97eba6e352d4322994165e460d336fb02827c8b1d901216a82282"
+        },
+        {
+          "path": "src/i18n/locales/ko.json",
+          "sha256": "4eb47608c587c81165bb1771f1c3d0c39a06340321ad656000178efa6ece0e5d"
+        },
+        {
+          "path": "src/presentation/agent/AgentCommandPanel.tsx",
+          "sha256": "e68ea313448ed5517559f3935cd2f0d5047ab7610b743312fdfa73e2b67d7ad8"
+        },
+        {
+          "path": "src/services/queue/durable-queue-coordinator.ts",
+          "sha256": "cdda417ae3abb8c7acd20b2826abedc82a291e64d03ab384cf678c8ce79e08fa"
+        },
+        {
+          "path": "src/services/queue/generation-command-adapter.ts",
+          "sha256": "75c2ab8fe197838a89ada50e712201cc0e2a77f11b7caf25df6a6dbe2981cb60"
+        },
+        {
+          "path": "src/services/queue/indexeddb-queue-repository.ts",
+          "sha256": "5b62342bf08e97fb2d5987e910e344030d333194bff0f5f95d312533fbbf27ba"
+        },
+        {
+          "path": "src/services/queue/queue-startup.ts",
+          "sha256": "c43f646ef8cd328b75649c50ee407df86ad9cfb8b34537d6169952fb284f031b"
+        },
+        {
+          "path": "src/services/queue/recovery.ts",
+          "sha256": "c96734bf8848fd21073f262fe3444a9ea2df4aca7e8e0ef133ae9c36965f4454"
+        },
+        {
+          "path": "tests/application/generation/enqueue-generation-plan.test.ts",
+          "sha256": "3b366d762264e15fd83f13b9e3aeee21972ebee77667bbe87c698eae9b79d55f"
+        },
+        {
+          "path": "tests/persistence/agent-cancellation-coordinator.test.ts",
+          "sha256": "b1126f2c4e79e94126788ce241ccea23c60011807890d83b99e4e6531efff431"
+        },
+        {
+          "path": "tests/persistence/agent-execution-coordinator.test.ts",
+          "sha256": "cf804de157fa7a50a0178d863bafa65877a35258d37883b13e0f5804009fea58"
+        },
+        {
+          "path": "tests/persistence/agent-generation-cancellation.test.ts",
+          "sha256": "2600475271c01f2f707c033a9c2a4233c82dc64b44b023fbcff71551605d0622"
+        },
+        {
+          "path": "tests/persistence/foreground-agent-command-runtime.test.ts",
+          "sha256": "726ca07ddf7e7c676db0e29730912d5da2fa9f5b45ed55c84960df04e911774c"
+        },
+        {
+          "path": "tests/presentation/agent-command-panel.test.ts",
+          "sha256": "b114d8b316ba364cebf9a5eacb6c91d31929fbdcced43db308f5d34ed82909d5"
+        },
+        {
+          "path": "tests/services/queue/generation-command-adapter.test.ts",
+          "sha256": "e95fa270a0d76cbac88f58d11fa6501a9c29751a517a3c0591a16b0b9eb9de06"
+        },
+        {
+          "path": "tests/services/queue/queue-cancellation-recovery.test.ts",
+          "sha256": "f6ccbffb6fe8c23b7777465e74aa86801680008e346c19b7ddb99c6659e59e76"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "docs/local/evidence/phase-09d/regression-final.json",
+          "sha256": "05b342cba8218a2babe6aa2c0caf286d08b0666bc513e2632050817cc27110a0"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/regression-final.log",
+          "sha256": "80178e8bca4a0ffca7ffd708e067ebeb813465b293abb568e2fad7935c6e8a06"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/lint-final.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/architecture-final.log",
+          "sha256": "824550e78d40f861a9eeae9440694cd33a9a0354f2ecdd20907349133d3050d1"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/redaction-final.log",
+          "sha256": "4c615c92198d0f02587bd688102bb5f8be5f8bf5bdc8df7750b8b93ad71de527"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/frontend-build-final.log",
+          "sha256": "613c191065e3dd5c9ad214badab3fb27ece96842ac61442c2924b7ea100bdcdb"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/agent-cancellation-coordinator-tests.log",
+          "sha256": "f25a174ffd9e052aaeab142fa22a1b7332c4eec5f6f98cf2154b65328685566b"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/foreground-ui-tests.log",
+          "sha256": "8ab1802d05b41de2643b81aa590ae8b419f1f90e3a4667cc7c97664eb6b7fe56"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/cancellation-bridge-focused-tests.log",
+          "sha256": "ff2a9ba2e7f37d0e050ea217872490b37efae2ff23caf097f5eb5687bc1540eb"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/cancellation-bridge-preexisting-stop-red.log",
+          "sha256": "27cead010bc8c4023d24b7a6a3126ee05a4afb31b2a0a0dbd7db341b2f938d96"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/cancellation-bridge-preexisting-stop-green.log",
+          "sha256": "fc5724e2fe4a1d8db816697adc865b52ce137a1a64f14ba32753c4c851183bd4"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-red.log",
+          "sha256": "666c50e850a3590ac81a07b448f1b94d5480526a4fc2e31a124531157a8f7c1f"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-order-red.log",
+          "sha256": "db54c97ce3fb3314ade97974691ac01f5ccc202ab3c85cb90e611bf68c66faa1"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-final-green.log",
+          "sha256": "59c79ba06bfcf59dccf72507964d9917ca1583e2743edc793cd6b895aa0aab85"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-boundary-green.log",
+          "sha256": "cfc5e3a36e6fbb8525bc87ffae18837c8eead862e2ab44237028636609e7d74c"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-exhausted-attempt-red.log",
+          "sha256": "7f4daba62f517b95583b8c3959a1396d744f85deac96f83e773980ef79b2cc71"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-exhausted-attempt-green.log",
+          "sha256": "2a353c80e82d7d445985e1140448e858d562f83d5dff6b7bd43d07e3da7c7d65"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-implementation.md",
+          "sha256": "39f842f217a0e3046d96578326c1f34ef7d734238316a38e24e2e1f71c780c46"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser-qa.log",
+          "sha256": "0c493395ebd723b27027c2b960c124d42dd583f1323319a662afcdb920cae406"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser/browser-qa-report.json",
+          "sha256": "8d1f6a150ff6bdd8b86461ef31c2696e6d09c2b8f90fe65239ce76ab7bd412a7"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser/01-suggest-review.png",
+          "sha256": "99f8bfda23cca0a384fb9a19387e301545b269c78e6e24bd03c17ba5113d9d6b"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser/02-policy-and-pending.png",
+          "sha256": "f47a366d0a2d8c0df8d2c2f27bffe8d9529148b98984cce9fb9e0ef436840a03"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser/03-mobile-policy-and-pending.png",
+          "sha256": "dde375498da424e9281147a731b4d66746ebf07cf37332aa8aa300745c6fb43f"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser/04-cancel-review-mobile.png",
+          "sha256": "8851b612c932ac4694045e20c48cfaa61dd646ed3b5ecb66c88eda7a3c4a1e6a"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/browser/05-cancel-acknowledged.png",
+          "sha256": "2bd46de10fb739eb15febfba0bc6fedc52341db5c8b4722247396aa6562e089c"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/queue-cancel-fixture-setup.log",
+          "sha256": "d823960b983972bc12dcaa7d013dc52aa7e2a9f772fa7e756e6d64d22947229f"
+        },
+        {
+          "path": "docs/local/evidence/phase-09d/native-build-final.log",
+          "sha256": "17ec56a019aac4e418394cd5898d2c9ab2c99326040278518530b41a689b7971"
+        }
+      ],
+      "nativeDesktopQA": {
+        "status": "failed-under-investigation",
+        "scope": "First actual Windows cancellation approval failed: Queue persisted the exact operation marker and cancelled state with zero attempts, abandoned reservation and zero active collision claims; one originalCollisionKey tombstone row remains, while the command receipt reported AGENT_EXECUTION_UNKNOWN. Root and reviewers are investigating. Automated and browser success at the recorded source hashes does not establish native QA success.",
+        "firstFailure": {
+          "receiptCode": "AGENT_EXECUTION_UNKNOWN",
+          "queueState": "cancelled",
+          "exactOperationMarker": true,
+          "attempts": 0,
+          "reservationState": "abandoned",
+          "preservedEvidence": "docs/local/evidence/phase-09d/native/approved.json, approved-native.receipt.json, approved.receipt.json and 03-approved.png; first-failure originals remain preserved without overwrite.",
+          "classification": "native-approval-failure-under-investigation",
+          "softwareEvidence": "Existing test counts and source/artifact hashes remain evidence for their recorded source snapshot; no corrected build or successful native approval is claimed.",
+          "activeCollisionClaims": 0,
+          "collisionClaimRows": 1,
+          "collisionClaimBoundary": "The remaining claim row retains originalCollisionKey only; activeCollisionKey is absent."
+        }
+      },
+      "binarySha256": "7C8BA1D606DE0D08203C02527BFBCF3CF232273316A930252C8168B06F4DB835",
+      "boundary": "Historical source snapshot with 2314 passing tests; the first native approval cancelled Queue but produced AGENT_EXECUTION_UNKNOWN. Original artifacts remain unchanged."
+    }
+  ],
+  "status": "validated-pending-commit"
+}

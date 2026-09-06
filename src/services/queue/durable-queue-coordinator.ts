@@ -4,11 +4,13 @@ import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import type { QueueTokenSlot } from '@/application/queue/queue-token-provider'
 import {
     CURRENT_MAIN_QUEUE_POLICY,
+    isQueueCancelReason,
     type GenerationAttempt,
     type GenerationJob,
     type GenerationWorkflow,
     type QueueArtifactReference,
     type QueueBlockReason,
+    type QueueCancelReason,
     type QueueFailureKind,
     type OutputReservation,
 } from '@/domain/queue/types'
@@ -221,23 +223,26 @@ export class DurableQueueCoordinator {
         return this.active.size
     }
 
-    async cancelJob(jobId: string): Promise<void> {
+    async cancelJob(jobId: string, reason: QueueCancelReason = 'user'): Promise<void> {
+        if (!isQueueCancelReason(reason)) throw new TypeError('Queue cancellation reason is invalid')
+        // Persist the command marker before abort can make a fast executor terminal.
+        await this.repository.requestCancel({ jobId, now: this.now(), reason })
         const execution = this.active.get(jobId)
         if (execution !== undefined) {
             execution.abortMode = 'cancel'
-            execution.controller.abort('durable-queue-cancelled')
+            execution.controller.abort(reason.startsWith('agent-cancel:') ? reason : 'durable-queue-cancelled')
         }
-        await this.repository.requestCancel({ jobId, now: this.now(), reason: 'user' })
     }
 
-    async cancelBatch(batchId: string): Promise<void> {
+    async cancelBatch(batchId: string, reason: QueueCancelReason = 'batch'): Promise<void> {
+        if (!isQueueCancelReason(reason)) throw new TypeError('Queue cancellation reason is invalid')
+        await this.repository.requestCancelBatch({ batchId, now: this.now(), reason })
         for (const execution of this.active.values()) {
             if (execution.job.batchId === batchId) {
                 execution.abortMode = 'cancel'
-                execution.controller.abort('durable-queue-batch-cancelled')
+                execution.controller.abort(reason.startsWith('agent-cancel:') ? reason : 'durable-queue-batch-cancelled')
             }
         }
-        await this.repository.requestCancelBatch({ batchId, now: this.now(), reason: 'batch' })
     }
 
     async cancelWorkflow(workflow: GenerationWorkflow): Promise<void> {
@@ -640,6 +645,13 @@ export class DurableQueueCoordinator {
                 : classified)
         } finally {
             clearInterval(heartbeat)
+            // Provider failure/spool handling can leave running through its own durable transition.
+            // Finish the pending scheduling cancellation only after that journal has settled.
+            const current = await this.repository.getJob(leased.id)
+            if (current !== null && current.cancelRequestedAt !== null
+                && current.state !== 'running' && !isTerminalJobState(current.state)) {
+                await this.repository.requestCancel({ jobId: current.id, now: this.now() })
+            }
         }
     }
 
@@ -672,6 +684,16 @@ export class DurableQueueCoordinator {
                 readyAt: now,
                 failureKind: 'transient',
             })
+            return
+        }
+        if (attempt.providerEvidence?.dispatchState === 'result-spooled') {
+            // Preserve the succeeded Provider fact and spool attempt; cancellation ends only Queue work.
+            const now = this.now()
+            await this.repository.requeueSpooledResult({
+                jobId: job.id, attemptNumber: attempt.attemptNumber, leaseOwner: owner, leaseToken: token,
+                now, readyAt: now,
+            })
+            await this.repository.requestCancel({ jobId: job.id, now })
             return
         }
         await this.repository.transitionJob({

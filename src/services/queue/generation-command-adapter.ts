@@ -4,6 +4,7 @@ import type {
     RetryGenerationStoragePort,
 } from '@/application/generation/generation-command-contract'
 import type { PlanIssue } from '@/application/generation/generation-plan-contract'
+import type { QueueCancelReason } from '@/domain/queue/types'
 import { getRuntimeOutputWriter, type OutputWriter } from '@/services/output/output-writer'
 import { getRuntimeQueueRepository, type IndexedDBQueueRepository } from './indexeddb-queue-repository'
 import { retryQueueLinkedOutput } from './queue-output-recovery'
@@ -17,7 +18,7 @@ interface GenerationCommandAdapterDependencies {
         'initialize' | 'getBatch' | 'getJob' | 'getOutputReservation' | 'recoverFilesCommittedSuccess'
     >
     readonly writer: OutputWriter
-    readonly coordinator: { cancelBatch(batchId: string): Promise<void> }
+    readonly coordinator: { cancelBatch(batchId: string, reason?: QueueCancelReason): Promise<void> }
     readonly now?: () => string
 }
 
@@ -50,7 +51,8 @@ export function createGenerationCommandAdapter(
                     'The generation batch does not exist.',
                 ))
             }
-            await dependencies.coordinator.cancelBatch(input.batchId)
+            if (input.operationId === undefined) await dependencies.coordinator.cancelBatch(input.batchId)
+            else await dependencies.coordinator.cancelBatch(input.batchId, `agent-cancel:${input.operationId}`)
             return Object.freeze({ status: 'ready', targetId: input.batchId })
         },
 

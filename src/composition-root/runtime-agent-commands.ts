@@ -16,6 +16,7 @@ import type { JsonObject } from '@/domain/composition/types'
 import { createAgentExecutionCoordinator } from '@/application/agent/agent-execution-coordinator'
 import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
 import { createAgentGenerationExecutionPort } from './agent-generation-execution'
+import { createAgentGenerationCancellationPort } from './agent-generation-cancellation'
 import { isAgentExecutionPolicyUpdatePending, useSettingsStore } from '@/stores/settings-store'
 
 const receipts = new IndexedDbCommandReceiptRepository()
@@ -77,6 +78,7 @@ export const runtimeAgentCommands = new ForegroundAgentCommandRuntime({
         repository: new IndexedDbAgentExecutionRepository(), plans: new IndexedDbGenerationPlanRepository(),
         getPolicy: () => useSettingsStore.getState().agentExecutionPolicy,
         ports: createAgentGenerationExecutionPort(),
+        cancellation: createAgentGenerationCancellationPort(),
     }),
 })
 

@@ -176,6 +176,18 @@ export function initializeQueueAfterRestart(options: {
             // even when its wall-clock expiry is still in the future.
             includeUnexpiredLeases: true,
         })
+        // Resolve prior-process cancel markers only after Provider, output and lease journals settle.
+        // requestCancel preserves the first marker and retains any unknown/spooled output claims.
+        let cancellationCursor: string | null = null
+        do {
+            const page = await repository.listJobs({
+                states: ['queued', 'blocked', 'recovering'], cursor: cancellationCursor, limit: 250,
+            })
+            for (const job of page.items) {
+                if (job.cancelRequestedAt != null) await repository.requestCancel({ jobId: job.id, now: new Date().toISOString() })
+            }
+            cancellationCursor = page.nextCursor
+        } while (cancellationCursor !== null)
         // Lease recovery determines terminal Queue truth before render costs are
         // reconciled; this releases failed/cancelled work after desktop restarts.
         const styleLabReservations = await reconcileStyleLabRenderReservations({ queueRepository: repository })

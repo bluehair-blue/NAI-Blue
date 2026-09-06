@@ -75,6 +75,12 @@ export async function recoverQueueAfterRestart(
     for (const id of expired) {
         const job = await repository.getJob(id)
         if (job === null || job.state !== 'recovering') continue
+        // Lease recovery has settled this attempt; its persisted cancellation must
+        // precede retry exhaustion, which would otherwise make the reservation immutable.
+        if (job.cancelRequestedAt !== null) {
+            await repository.requestCancel({ jobId: job.id, now: options.now })
+            continue
+        }
         result[await recoverJob(repository, job, options.now)] += 1
     }
     return result

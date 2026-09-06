@@ -183,9 +183,14 @@ export async function cancelGeneration(
     if (!validIdentifier(input.batchId)) {
         return invalid(issue('invalid-batch-id', 'batchId', 'Batch ID must contain 1-200 non-padding characters.'))
     }
+    if (input.operationId !== undefined
+        && (typeof input.operationId !== 'string' || input.operationId.length !== 64 || !/^[a-f0-9]{64}$/.test(input.operationId))) {
+        return invalid(issue('invalid-cancel-operation-id', 'operationId', 'Cancellation operation ID must be a lowercase SHA-256 digest.'))
+    }
     return sanitizeCommandResult(await port.cancelBatch({
         batchId: input.batchId,
         actor: structuredClone(input.actor),
+        ...(input.operationId === undefined ? {} : { operationId: input.operationId }),
     }), input.batchId)
 }
 

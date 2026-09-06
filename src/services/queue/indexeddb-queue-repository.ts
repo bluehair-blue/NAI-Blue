@@ -11,7 +11,7 @@ import {
     applyGenerationJobProjectionDelta,
     createEmptyGenerationBatchSummary,
 } from '@/domain/queue/summary'
-import { GENERATION_JOB_STATES } from '@/domain/queue/types'
+import { GENERATION_JOB_STATES, isQueueCancelReason } from '@/domain/queue/types'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import type {
     ProviderAttemptEvidence,
@@ -40,6 +40,7 @@ import type {
     QueueArtifactReference,
     QueueBatchOrigin,
     QueueBlockReason,
+    QueueCancelReason,
     QueueActivitySummary,
     QueueFailureKind,
     QueueFailurePolicy,
@@ -121,7 +122,7 @@ interface StoredJobRecord {
     blockReason: QueueBlockReason | null
     readyAt: string
     cancelRequestedAt: string | null
-    cancelReason: 'user' | 'batch' | 'shutdown' | null
+    cancelReason: QueueCancelReason | null
     retryOfJobId: string | null
     rootJobId: string
     version: number
@@ -1254,10 +1255,7 @@ function parseStoredJob(value: unknown): StoredJobRecord {
     assertProgress(value.progress)
     assertTimestamp(value.readyAt, 'readyAt')
     if (value.cancelRequestedAt !== null) assertTimestamp(value.cancelRequestedAt, 'cancelRequestedAt')
-    if (value.cancelReason !== null
-        && value.cancelReason !== 'user'
-        && value.cancelReason !== 'batch'
-        && value.cancelReason !== 'shutdown') {
+    if (value.cancelReason !== null && !isQueueCancelReason(value.cancelReason)) {
         throw new QueueRepositoryError('E_QUEUE_RECORD_INVALID', 'cancel reason is invalid')
     }
     if (value.retryOfJobId !== null) assertIdentifier(value.retryOfJobId, 'retry source job id')
@@ -3317,9 +3315,12 @@ export class IndexedDBQueueRepository {
     async requestCancel(input: {
         jobId: string
         now: string
-        reason?: 'user' | 'batch' | 'shutdown'
+        reason?: QueueCancelReason
     }): Promise<GenerationJob> {
         assertTimestamp(input.now, 'cancel request time')
+        if (input.reason !== undefined && !isQueueCancelReason(input.reason)) {
+            throw new QueueRepositoryError('E_QUEUE_RECORD_INVALID', 'cancel reason is invalid')
+        }
         const result = await this.runTransaction(
             ['attempts', 'batches', 'jobs', 'leases', 'output-reservation-claims', 'output-reservations'],
             'readwrite',
@@ -3345,13 +3346,16 @@ export class IndexedDBQueueRepository {
                     : parseOutputReservation(reservationValue).state !== 'abandoned'
                 return { stored, reservationRetained }
             }
-            if (stored.cancelRequestedAt !== null) return { stored, reservationRetained: false }
+            // A live worker owns its running journal; recovered queued/blocked markers must still finish.
+            if (stored.cancelRequestedAt !== null && stored.state === 'running') {
+                return { stored, reservationRetained: false }
+            }
             const batchValue = await requestResult(batches.get(stored.batchId))
             if (batchValue === undefined) {
                 throw new QueueRepositoryError('E_QUEUE_BATCH_NOT_FOUND', 'Queue batch does not exist')
             }
             const batch = parseBatch(batchValue)
-            const reason = input.reason ?? 'user'
+            const reason = stored.cancelRequestedAt === null ? input.reason ?? 'user' : stored.cancelReason
             if (stored.state === 'running') {
                 const next: StoredJobRecord = {
                     ...stored,
@@ -3366,7 +3370,7 @@ export class IndexedDBQueueRepository {
             }
             const next = {
                 ...updateJobState(stored, 'cancelled', input.now),
-                cancelRequestedAt: input.now,
+                cancelRequestedAt: stored.cancelRequestedAt ?? input.now,
                 cancelReason: reason,
             }
             let abandonedReservation: OutputReservation | null = null
@@ -3428,8 +3432,11 @@ export class IndexedDBQueueRepository {
     async requestCancelBatch(input: {
         batchId?: string
         now: string
-        reason?: 'user' | 'batch' | 'shutdown'
+        reason?: QueueCancelReason
     }): Promise<number> {
+        if (input.reason !== undefined && !isQueueCancelReason(input.reason)) {
+            throw new QueueRepositoryError('E_QUEUE_RECORD_INVALID', 'cancel reason is invalid')
+        }
         let cursor: string | null = null
         let changed = 0
         do {

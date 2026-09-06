@@ -19,7 +19,7 @@ export interface ForegroundAgentSnapshot {
     readonly changingExecution: boolean
     readonly policy: AgentExecutionPolicy
     readonly pendingApprovals: readonly AgentPendingApproval[]
-    readonly recent: readonly { requestId: string; state: string; batchId?: string }[]
+    readonly recent: readonly { requestId: string; state: string; batchId?: string; cancelRequested?: boolean }[]
 }
 
 /** One foreground owner uses the same dispatcher for processing and UI capability snapshots. */
@@ -88,7 +88,8 @@ export class ForegroundAgentCommandRuntime {
 
     private recordActivity(requestId: string, state: string, receipt?: AgentCommandReceipt): void {
         const batchId = receipt?.result?.batchId
-        this.update({ recent: [{ requestId, state, ...(typeof batchId === 'string' ? { batchId } : {}) },
+        this.update({ recent: [{ requestId, state, ...(typeof batchId === 'string' ? { batchId } : {}),
+            ...(receipt?.result?.status === 'cancel-requested' ? { cancelRequested: true } : {}) },
             ...this.snapshot.recent.filter(item => item.requestId !== requestId)].slice(0, 20) })
     }
 
@@ -128,7 +129,8 @@ export class ForegroundAgentCommandRuntime {
                         } catch { return false }
                     }) ?? null
                     this.dispatcher = new AgentCommandDispatcher({ workspaceId,
-                        handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler])],
+                        handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler]),
+                            ...(this.execution?.cancelHandler === undefined ? [] : [this.execution.cancelHandler])],
                         authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
                     })
                     this.unsubscribePolicy?.()

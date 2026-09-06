@@ -174,6 +174,15 @@ export interface QueueArtifactReference {
     readonly mimeType?: string
 }
 
+/** Agent cancellation links the durable marker to one canonical command scope, never arbitrary text. */
+export type QueueCancelReason = 'user' | 'batch' | 'shutdown' | `agent-cancel:${string}`
+
+export function isQueueCancelReason(value: unknown): value is QueueCancelReason {
+    return value === 'user' || value === 'batch' || value === 'shutdown'
+        || (typeof value === 'string' && value.length === 'agent-cancel:'.length + 64
+            && /^agent-cancel:[0-9a-f]{64}$/.test(value))
+}
+
 export interface GenerationJob {
     readonly id: string
     readonly batchId: string
@@ -203,7 +212,7 @@ export interface GenerationJob {
     /** Earliest durable claim time. This is the authority for retry/backoff after restart. */
     readonly readyAt: string
     readonly cancelRequestedAt: string | null
-    readonly cancelReason: 'user' | 'batch' | 'shutdown' | null
+    readonly cancelReason: QueueCancelReason | null
     /** Terminal jobs remain immutable; manual retries are linked successor jobs. */
     readonly retryOfJobId: string | null
     readonly rootJobId: string
