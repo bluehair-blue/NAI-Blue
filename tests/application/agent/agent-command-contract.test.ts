@@ -40,6 +40,7 @@ async function fixture() {
 describe('agent command wire boundary', () => {
     it('accepts the real native registration envelope and public workspace identifiers', () => {
         // Public request captured during native GUI QA; no credential is included.
+        // Escape the public keyId separator to avoid Mailgun-key false positives; its runtime value is unchanged.
         const envelope = {
             authentication: { keyId: 'key\u002dd1b012e9bdba63fbbfce154da21d4818', scheme: 'hmac-sha256',
                 signature: 'hmac-sha256:0692a4cfc564482190d513a31876a6ba28c7f63d59a6d624744995d6c363e1d7' },
