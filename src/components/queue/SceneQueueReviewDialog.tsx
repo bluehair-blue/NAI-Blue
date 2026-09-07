@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import type { PreparedSceneQueueReview, SceneQueueSubmission } from '@/services/queue/scene-queue-adapter'
+import { SceneQueueOutputPreview } from './SceneQueueOutputPreview'
 import {
     canApproveSceneQueueReview,
     isSceneQueueReviewConflict,
@@ -24,6 +25,7 @@ interface SceneQueueReviewDialogProps {
     onOpenChange: (open: boolean) => void
     prepared: PreparedSceneQueueReview
     busy?: boolean
+    error?: string | null
     onApprove: (submission: SceneQueueSubmission) => Promise<boolean>
     onReplan: () => Promise<boolean>
     onBack?: () => void
@@ -35,6 +37,7 @@ export function SceneQueueReviewDialog({
     onOpenChange,
     prepared,
     busy = false,
+    error,
     onApprove,
     onReplan,
     onBack,
@@ -89,6 +92,7 @@ export function SceneQueueReviewDialog({
                     </DialogDescription>
                 </DialogHeader>
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" data-testid="scene-queue-review">
+                    {error && <p role="alert" className="border-l-2 border-destructive p-3 text-sm text-destructive">{error}</p>}
                     <div className="rounded-panel border border-border p-3 text-sm">
                         <p className="font-medium">
                             {t('queue.selectionSummary', '{{scenes}} scenes · {{images}} images', {
@@ -140,6 +144,7 @@ export function SceneQueueReviewDialog({
                         </section>
                     ))}
                     {prepared.review.r2Destinations.length > 5 && <p className="text-sm">{t('queue.r2MoreDestinations', '{{count}} more R2 destinations', { count: prepared.review.r2Destinations.length - 5 })}</p>}
+                    {prepared.review.outputs !== undefined && <SceneQueueOutputPreview key={prepared.review.reviewId} outputs={prepared.review.outputs} />}
                     {replanIssue !== null && (
                         <div className="rounded-panel border border-destructive/50 bg-destructive/10 p-3 text-sm" role="alert">
                             <p className="font-semibold">{t('queue.reviewStaleTitle', 'Review is out of date')}</p>

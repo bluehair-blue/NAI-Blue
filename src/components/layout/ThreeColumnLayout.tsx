@@ -42,6 +42,7 @@ import {
     Trash2,
     DatabaseZap,
     BriefcaseBusiness,
+    FolderTree,
 } from 'lucide-react'
 
 interface ThreeColumnLayoutProps {
@@ -88,13 +89,15 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         closeSupportSheet,
     } = useLayoutStore()
     const isDesktopShell = useMediaQuery('(min-width: 1536px)')
-    const leftSheetOpen = supportSheet === 'prompt' && !isDesktopShell
+    const folderWorkbenchOpen = location.pathname === '/folders'
+    const leftSheetOpen = supportSheet === 'prompt' && (!isDesktopShell || folderWorkbenchOpen)
     const rightSheetOpen = supportSheet === 'history'
     const activitySheetOpen = supportSheet === 'activity'
     const compositionWorkspaceOwnsRails = location.pathname === '/advanced'
+        || location.pathname === '/folders'
         || location.pathname === '/scenes'
         || location.pathname.startsWith('/scenes/')
-    const promptPanelIsDocked = isDesktopShell
+    const promptPanelIsDocked = isDesktopShell && !folderWorkbenchOpen
     const historyPanelIsDocked = isDesktopShell && !compositionWorkspaceOwnsRails
     const mainIsGenerating = useGenerationStore(state => state.isGenerating)
     const sceneIsGenerating = useSceneStore(state => state.isGenerating)
@@ -128,16 +131,16 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     }, [])
 
     useEffect(() => {
-        if (!isDesktopShell && leftSheetOpen && (mainIsGenerating || sceneIsGenerating)) {
+        if (!promptPanelIsDocked && leftSheetOpen && (mainIsGenerating || sceneIsGenerating)) {
             closeSupportSheet()
         }
-    }, [closeSupportSheet, isDesktopShell, leftSheetOpen, mainIsGenerating, sceneIsGenerating])
+    }, [closeSupportSheet, promptPanelIsDocked, leftSheetOpen, mainIsGenerating, sceneIsGenerating])
 
     useEffect(() => {
-        if (!isDesktopShell || supportSheet !== 'prompt') return
+        if (!promptPanelIsDocked || supportSheet !== 'prompt') return
         setLeftSidebarVisible(true)
         closeSupportSheet()
-    }, [closeSupportSheet, isDesktopShell, setLeftSidebarVisible, supportSheet])
+    }, [closeSupportSheet, promptPanelIsDocked, setLeftSidebarVisible, supportSheet])
 
     useEffect(() => {
         if (!isAndroidRuntime || (!leftSheetOpen && !rightSheetOpen && !activitySheetOpen)) return
@@ -176,6 +179,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     }, [isVerified, isVerified2, refreshAnlas])
 
     const navItems = [
+        { path: '/folders', icon: FolderTree, labelKey: 'folderWorkbench.title', fallbackLabel: '에셋 작업대' },
         { path: '/advanced', icon: Home, labelKey: 'nav.main' },
         { path: '/guided-preview', icon: Zap, labelKey: 'guided.home.choices', fallbackLabel: '작업 선택' },
         { path: '/scenes', icon: Film, labelKey: 'nav.scenes' },
@@ -308,15 +312,15 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             {!isMac && !isMobileRuntime && <CustomTitleBar />}
 
             {/* Three opaque surface tones carry the workspace hierarchy; only form controls draw edges. */}
-            <div className="flex min-w-0 flex-1 gap-3 overflow-hidden p-3">
+            <div className={cn('flex min-w-0 flex-1 overflow-hidden', folderWorkbenchOpen ? 'gap-0' : 'gap-3 p-3')}>
                 <aside
                     id="nai-blue-prompt-dock"
                     className={cn(
                         "hidden min-h-0 w-[420px] flex-shrink-0 flex-col overflow-hidden border-y border-border/45 bg-card/80 2xl:flex min-[1800px]:w-[500px]",
-                        !leftSidebarVisible && "2xl:hidden"
+                        (!leftSidebarVisible || folderWorkbenchOpen) && "2xl:hidden"
                     )}
                 >
-                    {promptPanelContent}
+                    {!folderWorkbenchOpen && promptPanelContent}
                 </aside>
 
                 <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-y border-border/45 bg-canvas">
@@ -391,7 +395,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     {/* Page Content */}
                     <main className={cn(
                         "relative min-h-0 min-w-0 flex-1",
-                        (location.pathname === '/advanced' || location.pathname === '/library') ? "p-0 overflow-hidden" : "overflow-y-auto p-2 sm:p-4"
+                        (location.pathname === '/advanced' || location.pathname === '/library' || location.pathname === '/folders') ? "p-0 overflow-hidden" : "overflow-y-auto p-2 sm:p-4"
                     )}>
                         {children}
                     </main>

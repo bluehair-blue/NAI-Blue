@@ -221,6 +221,7 @@ function projectAuthoringScene(
         ...optional(scene, 'height'),
         ...optional(scene, 'metadataMode'),
         ...optional(scene, 'generationFolderId'),
+        ...optional(scene, 'productionCount'),
         ...optional(scene, 'filenameTemplate'),
         ...optional(scene, 'excludePinned'),
         ...optional(scene, 'compositionRef'),
@@ -534,6 +535,12 @@ export function applyLegacySceneProjection(projection: SceneV1CompatibilityProje
             : presets[0]?.id ?? null,
         sceneAuthorityInitialized: false,
     })
+}
+
+/** Lets authoring UIs await the existing repository bridge before presenting a saved result. */
+export async function flushSceneAuthorityRuntime(): Promise<void> {
+    if (activeRuntime === null) throw new Error('Scene authority is not ready')
+    await activeRuntime.flush()
 }
 
 export function stopSceneAuthorityRuntimeForTests(): void {

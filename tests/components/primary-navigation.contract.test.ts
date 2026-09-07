@@ -16,6 +16,8 @@ describe('Primary navigation contract', () => {
         expect(app).toContain('path="*"')
         expect(app).toContain('<Navigate to="/guided-preview" replace />')
         expect(app).toContain('path="/advanced"')
+        expect(app).toContain('<Route path="/" element={<Navigate to="/folders" replace />} />')
+        expect(app).toContain('path="/folders" element={<FolderWorkbench />}')
     })
 
     it('does not leave live controls pointing at retired feature routes', async () => {
@@ -33,7 +35,7 @@ describe('Primary navigation contract', () => {
     it('keeps every remaining destination in the top navigation', async () => {
         const layout = await source('src/components/layout/ThreeColumnLayout.tsx')
 
-        for (const route of ['/advanced', '/scenes', '/tools', '/style-lab', '/queue', '/r2', '/data', '/web', '/library', '/settings']) {
+        for (const route of ['/folders', '/advanced', '/scenes', '/tools', '/style-lab', '/queue', '/r2', '/data', '/web', '/library', '/settings']) {
             expect(layout).toContain(`path: '${route}'`)
         }
         expect(layout).not.toContain("path: '/asset-modules'")

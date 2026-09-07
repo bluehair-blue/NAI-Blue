@@ -102,6 +102,7 @@ beforeEach(() => {
     runtime.enqueue.mockResolvedValue({ batch: {}, jobs: [] })
     runtime.allocation.mockImplementation(async (requests: readonly OutputCommitSetPlanningRequest[]) => requests.map(request => ({
         fileName: request.claimPlan.fileName, directoryIdentity: `sha256:${'b'.repeat(64)}`,
+        imageDisplayPath: `output/${request.claimPlan.fileName}`,
         ...createGenerationOutputCommitSet({ ...request.claimPlan, directoryAuthorityId: request.directoryAuthorityId,
             directoryAuthorityFingerprint: `sha256:${'b'.repeat(64)}` }),
     })))
@@ -172,6 +173,10 @@ describe('Scene Queue R2 reviewed planning', () => {
             },
         })
         expect(JSON.stringify(prepared!.review)).not.toContain('credential')
+        expect(prepared!.review.outputs).toEqual([expect.objectContaining({
+            fileName: 'scene.png', localPath: 'output/scene.png',
+            r2Bucket: destination.bucket, r2Key: destination.key, publicUrl: null,
+        })])
         await enqueueReviewedSceneQueue(prepared!.submission)
         const queued = runtime.enqueue.mock.calls[0][0].jobs[0]
         const workflow = decodeSceneJobSnapshot(queued.snapshot).sceneWorkflow

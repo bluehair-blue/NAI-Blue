@@ -22,7 +22,7 @@ interface AnimatedNavBarProps {
     forceCondensed?: boolean
 }
 
-const MOBILE_PRIMARY_PATHS = new Set(['/advanced', '/scenes', '/tools', '/library'])
+const MOBILE_PRIMARY_PATHS = new Set(['/folders', '/advanced', '/scenes', '/queue'])
 
 function isRouteActive(pathname: string, itemPath: string) {
     return itemPath === '/advanced'

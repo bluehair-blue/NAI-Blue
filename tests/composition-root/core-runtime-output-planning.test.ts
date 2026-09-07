@@ -137,6 +137,7 @@ describe('runtime output batch planning', () => {
             'output', 'output/._nai-blue-private',
         ])
         expect(result.map(allocation => allocation.fileName)).toEqual(['portrait-2.png', 'portrait-3.png'])
+        expect(result.map(allocation => allocation.imageDisplayPath)).toEqual(['output/portrait-2.png', 'output/portrait-3.png'])
     })
 
     it.each([

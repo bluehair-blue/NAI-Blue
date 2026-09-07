@@ -14,7 +14,7 @@ describe('Composition workspace shell routing', () => {
         expect(layout).toContain("location.pathname === '/advanced'")
         expect(layout).toContain("location.pathname === '/scenes'")
         expect(layout).toContain("location.pathname.startsWith('/scenes/')")
-        expect(layout).toContain('const promptPanelIsDocked = isDesktopShell')
+        expect(layout).toContain('const promptPanelIsDocked = isDesktopShell && !folderWorkbenchOpen')
         expect(layout).toContain('const historyPanelIsDocked = isDesktopShell && !compositionWorkspaceOwnsRails')
         expect(layout).toContain("id=\"nai-blue-prompt-sheet\"")
         expect(layout).toContain("id=\"nai-blue-history-sheet\"")

@@ -51,10 +51,12 @@ export function GenerationFolderManagerDialog({
     open,
     onOpenChange,
     onSaved,
+    initialFolderId,
 }: {
     open: boolean
     onOpenChange(open: boolean): void
     onSaved?(folderId: string): void
+    initialFolderId?: string
 }) {
     const { t } = useTranslation()
     const folders = useSettingsStore(state => state.generationFolders)
@@ -94,9 +96,9 @@ export function GenerationFolderManagerDialog({
 
     useEffect(() => {
         if (!open) return
-        setSelectedId(activeId)
+        setSelectedId(initialFolderId ?? activeId)
         setStep(0)
-    }, [activeId, open])
+    }, [activeId, initialFolderId, open])
 
     useEffect(() => {
         if (!open || !selected) return
