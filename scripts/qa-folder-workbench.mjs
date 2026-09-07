@@ -31,8 +31,13 @@ const check = async (name, run) => {
     }
 }
 const rows = () => page.locator('[data-scene-id]')
-const summary = () => page.getByTestId('folder-workbench').locator('[aria-live="polite"]').first()
+const summary = () => page.getByTestId('folder-workbench').locator('footer[aria-live="polite"]')
 const waitText = async text => page.getByText(text, { exact: false }).first().waitFor()
+// Native details can close when selection-dependent controls remount; open through their visible summaries.
+const openDetails = async name => {
+    const toggle = page.locator('summary').filter({ hasText: name })
+    if (!(await toggle.locator('..').evaluate(element => element.open))) await toggle.click()
+}
 try {
     await check('default route redirects to folders', async () => {
         await page.goto(base)
@@ -57,13 +62,17 @@ try {
     })
     await check('GUI bulk paste preview and durable import', async () => {
         await page.getByRole('button', { name: 'QA Paste Folder', exact: true }).click()
-        await page.getByRole('button', { name: '여러 프롬프트 붙여넣기', exact: true }).click()
-        const dialog = page.getByRole('dialog')
-        await dialog.locator('textarea').fill('QA happy\tsmile, looking at viewer\t3\nQA sad\ttears, looking down\t2\nQA surprised\twide eyes, open mouth\t1')
-        await dialog.getByText('추가 전 확인 · 처음 5개', { exact: true }).waitFor()
-        assert.equal(await dialog.locator('ol li').count(), 3)
-        await dialog.getByRole('button', { name: '항목 3개 추가', exact: true }).click()
-        await dialog.waitFor({ state: 'hidden' })
+        const next = page.getByRole('button', { name: '다음 · 수량과 저장 확인', exact: true })
+        await next.waitFor()
+        assert.equal(await page.getByLabel('항목 이름 · 프롬프트 검색', { exact: true }).isVisible(), false)
+        await page.screenshot({ path: path.join(output, 'empty-composer-desktop.png'), fullPage: true })
+        await page.getByRole('button', { name: '여러 개 붙여넣기', exact: true }).click()
+        await page.getByLabel('표에서 복사한 내용', { exact: true }).fill('QA happy\tsmile, looking at viewer\t3\nQA sad\ttears, looking down\t2\nQA surprised\twide eyes, open mouth\t1')
+        const preview = page.getByText('입력 미리보기 · 처음 3개', { exact: true })
+        await preview.waitFor()
+        assert.equal(await preview.locator('..').locator(':scope > div').count(), 3)
+        await next.click()
+        await waitText('검색 결과 3개 중 선택 3개 · 총 6장')
         assert.equal(await rows().count(), 3)
         await page.reload()
         await page.getByLabel('QA happy 생성 수량', { exact: true }).waitFor()
@@ -92,15 +101,17 @@ try {
         assert.equal(await rows().count(), 60)
     })
     await check('search, all-results selection, quantity and exact displayed target', async () => {
+        await openDetails('검색과 일괄 편집')
         const search = page.getByLabel('항목 이름 · 프롬프트 검색', { exact: true })
         await search.fill('evengroup')
         await page.getByRole('button', { name: '검색 결과 전체 1200개 선택', exact: true }).click()
+        await openDetails('수량 한꺼번에 바꾸기')
         await page.getByLabel('항목당 수량', { exact: true }).fill('3')
         await page.getByRole('button', { name: '선택에 적용', exact: true }).click()
         await waitText('검색 결과 1200개 중 선택 1200개 · 총 3600장')
         await search.fill('oddgroup')
         await waitText('검색 결과 1200개 중 선택 0개 · 총 0장')
-        assert.equal(await page.getByRole('button', { name: '선택 0장 생성 검토', exact: true }).isDisabled(), true)
+        assert.equal(await page.getByRole('button', { name: '0장 생성 전 확인', exact: true }).isDisabled(), true)
         await search.fill('evengroup')
         await waitText('검색 결과 1200개 중 선택 1200개 · 총 3600장')
         await page.getByRole('button', { name: 'QA Paste Folder', exact: true }).click()
@@ -110,6 +121,7 @@ try {
         assert.equal(await page.getByLabel('QA item 0000 생성 수량', { exact: true }).inputValue(), '3')
     })
     await check('keyboard views and pagination stay bounded', async () => {
+        await openDetails('검색과 일괄 편집')
         const grid = page.getByRole('button', { name: '썸네일 보기', exact: true })
         await grid.focus()
         await page.keyboard.press('Enter')
@@ -127,6 +139,14 @@ try {
     for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
         await check(`viewport ${viewport.width}x${viewport.height} overflow and keyboard access`, async () => {
             await page.setViewportSize(viewport)
+            if (viewport.width === 390) {
+                const folder = page.getByRole('combobox', { name: '작업 폴더 선택', exact: true })
+                await folder.selectOption(fixture.small)
+                await folder.selectOption(fixture.large)
+                await page.getByLabel('QA item 0000 생성 수량', { exact: true }).waitFor()
+            }
+            await openDetails('검색과 일괄 편집')
+            await openDetails('수량 한꺼번에 바꾸기')
             const geometry = await page.evaluate(() => ({ innerWidth, scrollWidth: document.documentElement.scrollWidth, bodyWidth: document.body.scrollWidth }))
             assert.ok(geometry.scrollWidth <= geometry.innerWidth, JSON.stringify(geometry))
             assert.ok(geometry.bodyWidth <= geometry.innerWidth, JSON.stringify(geometry))
