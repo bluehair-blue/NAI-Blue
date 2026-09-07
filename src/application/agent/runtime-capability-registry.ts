@@ -1,5 +1,8 @@
 import type { JsonObject } from '@/domain/composition/types'
 import { AGENT_COMMAND_NAMES, type AgentCommandEnvelope, type AgentCommandName, type AgentCommandAuthenticator } from './agent-command-contract'
+import { getAgentCommandInputContract } from './agent-command-input'
+import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+import type { Sha256Digest } from '@/application/generation/generation-plan-contract'
 
 /** Command semantics are application authority, never a claim made by a handler. */
 export const AGENT_COMMAND_EFFECTS: Readonly<Record<AgentCommandName, 'read' | 'plan' | 'mutation'>> = Object.freeze({
@@ -45,6 +48,7 @@ export interface RuntimeCapabilityDescriptor {
     readonly requiresAppProcess: true
     readonly canExecuteWhileAppClosed: false
     readonly requiresHumanApproval: boolean
+    readonly inputSchemaHash?: Sha256Digest
 }
 
 /** The dispatcher and future UI/MCP projections consume these same handler facts. */
@@ -53,6 +57,7 @@ export function describeAgentCommandCapabilities(
 ): readonly RuntimeCapabilityDescriptor[] {
     return AGENT_COMMAND_NAMES.map(command => {
         const handler = handlers.find(candidate => candidate.command === command)
+        const input = handler === undefined ? undefined : getAgentCommandInputContract(command)
         const effect = AGENT_COMMAND_EFFECTS[command]
         const managedEnqueue = command === 'generation.enqueue' && handler?.effect === effect
             && handler.executionGate === 'durable-approval'
@@ -70,6 +75,9 @@ export function describeAgentCommandCapabilities(
                         : undefined
         return {
             command, available: reason === undefined,
+            // Public metadata binds the local schema without exporting regex/schema
+            // literals through the result scanner. Version drift disables projection.
+            ...(input === undefined ? {} : { inputSchemaHash: `sha256:${hashCanonicalValue(input.schema)}` as Sha256Digest }),
             ...(reason === undefined ? {} : { reason }),
             requiresAppProcess: true, canExecuteWhileAppClosed: false,
             requiresHumanApproval: effect === 'mutation'

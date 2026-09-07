@@ -7,6 +7,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 const REQUEST_LIMIT = 65_536
 const RECEIPT_LIMIT = REQUEST_LIMIT + 4_096 // Native agent_commands.rs permits receipt metadata overhead.
 
+// The development stdio entry reuses these bounded reads instead of owning a second file reader.
+export { inspectPath, readText }
+
 function requireInput(condition) {
     if (!condition) throw new Error('Invalid observation input')
 }

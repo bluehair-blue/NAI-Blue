@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "phase": "10B",
+  "implementationSlice": "development-mcp-stdio-inbox-connection",
+  "recordedAt": "2026-09-07T00:25:14.470Z",
+  "baseCommit": "eda11d0f0e99bc9c7a84dba3625ce4c47298842b",
+  "status": "validated-development-stdio",
+  "phase10Complete": false,
+  "developerStdioSpike": "passed-with-fixture-application",
+  "nativeStdioTauriSpike": "not-run",
+  "spikeGoNoGo": "not-decided",
+  "sdkInstalled": true,
+  "sdkVersions": {
+    "server": "2.0.0",
+    "client": "2.0.0",
+    "core": "2.0.0"
+  },
+  "sidecarInstalled": false,
+  "nativeClientRegistered": false,
+  "externalMcpConfigChanged": false,
+  "phase11Decision": "A-foreground-retained; B/C-no-go",
+  "runtime": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "npmCli": "C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js",
+    "npmChildrenUseNode24Path": true
+  },
+  "sdkInstallation": {
+    "authorization": "Explicit implementation-start reply after exact dev dependency install proposal",
+    "exactPins": true,
+    "existingDependencyVersionsChanged": false,
+    "restoredUnrelatedOptionalLibcMetadataEntries": 40
+  },
+  "sourceHashEncoding": "UTF-8 with CRLF normalized to LF",
+  "artifactHashEncoding": "raw file bytes",
+  "checks": [
+    {
+      "command": "npm run test:agent-mcp",
+      "files": 6,
+      "tests": 46,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:agent-inbox",
+      "files": 17,
+      "tests": 198,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:persistence",
+      "files": 14,
+      "tests": 199,
+      "rescueMode": "keyboard/touch contract passed",
+      "environment": {
+        "RESCUE_MODE_PORT": "7039"
+      },
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:queue",
+      "files": 33,
+      "tests": 302,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:secret-redaction",
+      "files": 2,
+      "tests": 17,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:architecture",
+      "modules": 622,
+      "dependencies": 3440,
+      "violations": 0,
+      "exitCode": 0
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "node node_modules/eslint/bin/eslint.js scripts/run-agent-mcp-stdio.mjs scripts/inspect-agent-command.mjs tests/fixtures/agent-mcp-stdio-process.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node node_modules/typescript/bin/tsc --noEmit",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0
+    }
+  ],
+  "testEvidence": {
+    "inMemorySdk": "Official SDK Client/Server + InMemoryTransport; inbox port fixture. Fresh capabilities, schema drift, input/result rejection, concurrent correlation, receipt states and transport cancellation.",
+    "childProcessStdio": "Official SDK Client + StdioClientTransport + child serveStdio with actual adapter and runner inbox integration. Real files, WebCrypto HMAC dispatcher and IndexedDB repository using fake-indexeddb; fixed fixture signing key and Node wx publisher.",
+    "childProcessAssertions": [
+      "Automatic handshake and JSON-RPC-only stdout",
+      "Parallel read/run/decimal plan commands correlate correctly",
+      "SIGKILL after application acceptance followed by same-ID replay returns original archive/receipt and executes once",
+      "Changed payload under same ID and another client resource are rejected",
+      "No responding app fixture means empty tools and submitted-to-inbox accepted:false",
+      "Observation cancellation retains published request without Queue cancellation"
+    ],
+    "productionMain": "Exact scripts/run-agent-mcp-stdio.mjs main + official StdioClientTransport + actual Python, without fixture signer. Random unregistered credential only: handshake succeeds, tools empty, no inbox/result/rejection files, no stderr/protocol errors, child exits on client.close.",
+    "pythonPublisher": "Actual Windows Python no-replace bridge with credential reader fixture; exact TypeScript canonical/HMAC decimal parity, immutable replay and conflict checks. Native credential success not exercised.",
+    "exclusions": [
+      "Native Tauri receipt/Queue path",
+      "Successful real OS credential signing and registered MCP client",
+      "Installed sidecar/update/rollback",
+      "Real Provider/output/R2 calls",
+      "Adversarial filesystem races and operational load"
+    ]
+  },
+  "transportLimits": {
+    "concurrentToolInvocations": 8,
+    "defaultWaitMs": 3000,
+    "maxWaitMs": 30000,
+    "signingTimeoutMs": 10000,
+    "signingOutputBytesPerStream": 4096,
+    "stdioFrameBytes": 262144,
+    "requestBytes": 65536,
+    "nativeReceiptWrapperBytes": 69632,
+    "publicResultBytes": 65536
+  },
+  "schemaContract": {
+    "dialect": "JSON Schema 2020-12",
+    "metadataBinding": "sha256 of canonical shared input schema in fresh runtime descriptors",
+    "mismatch": "unavailable/schema-version-mismatch",
+    "unicodeLimitation": "Schema maxLength counts code points; existing draft ID validator counts UTF-16 units. x-maxUtf16Length documents 200 and shared validation runs before submission.",
+    "output": "Transport wrapper schema plus existing receipt parser and public scanner"
+  },
+  "review": {
+    "status": "no-actionable-important-findings",
+    "scopes": [
+      "Independent shared input/Python bridge review",
+      "Independent runner replay/client binding/cancellation/limits/error/main lifecycle review"
+    ],
+    "resolvedIntegrationIssue": "Observation cancellation preserves original three-field shape without inventing accepted:false"
+  },
+  "remaining": [
+    "Actual registered MCP client and foreground Tauri stdio/inbox/receipt spike",
+    "Native app lifecycle, approval/cancel/run polling and revoked/rotated client checks",
+    "Windows sidecar install/update/rollback and exact config targets",
+    "Operational usage, availability, security, credential and crash evidence before Phase 11 reevaluation"
+  ],
+  "sources": [
+    {
+      "path": ".dependency-cruiser.cjs",
+      "sha256": "2d34636f3439fd5fb232842472ff4774c935a7e7065e4e641a526835fea6c8ec"
+    },
+    {
+      "path": "docs/architecture/ADR-009-phase10a-inbox-result-observation.md",
+      "sha256": "354753765c3827fc857b78aed229ba2b13946cde974e622f5e7f18b0357b7215"
+    },
+    {
+      "path": "docs/architecture/ADR-011-phase10b-development-stdio-spike.md",
+      "sha256": "512c7a421328d77050a3f1a45f393173c7e21ffd550c5674dc0c5767b23021b5"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "b80b4e5b3254ebd92bd767934871c23775a878a32225dfe6414b5d0808f60556"
+    },
+    {
+      "path": "package.json",
+      "sha256": "1a88b05107c319d901200da1dc94089a94572ee086e81a9c0495049d58002171"
+    },
+    {
+      "path": "scripts/inspect-agent-command.mjs",
+      "sha256": "ea99c9be260e7456e16032d2cebce8dd5e863bdfcc5752aa285d34fb39506ce1"
+    },
+    {
+      "path": "scripts/run-agent-mcp-stdio.mjs",
+      "sha256": "c36bb069852052800cb0901c41dde97a43fc61daa4e8d9e22ee019c0b34c29af"
+    },
+    {
+      "path": "scripts/submit-agent-mcp-command.py",
+      "sha256": "ae7d40d4ad7b07472fd82974a701fe028f1f7c7ebd1a6979a34aa98dcf7ddbcf"
+    },
+    {
+      "path": "src/adapters/agent/mcp/mcp-stdio-server.ts",
+      "sha256": "309c1ecaa8b3d52a189bc4f76cafffc0da4078f7aed64388917f34119c387619"
+    },
+    {
+      "path": "src/application/agent/agent-command-dispatcher.ts",
+      "sha256": "23f044ca2bd4172af9efa5ac642112384cba34dfa9f906bdf49d8318b8f7bd9c"
+    },
+    {
+      "path": "src/application/agent/agent-command-input.ts",
+      "sha256": "7e56c3194e73eaf88022c0f101b07077edc9e43d2931a17e43e0956ce999e4ee"
+    },
+    {
+      "path": "src/application/agent/agent-execution-coordinator.ts",
+      "sha256": "d8586020b2096fde5731d11cd438f331d2a21567fefaa901c368e5ec0a70e499"
+    },
+    {
+      "path": "src/application/agent/agent-generation-plan-handler.ts",
+      "sha256": "fb1850f6d6208e8f6eed8892d06ffd6a6b171be0eb50b6fea54efc07defb138a"
+    },
+    {
+      "path": "src/application/agent/runtime-capability-registry.ts",
+      "sha256": "e2fb98b6bc09fbcf291667df505ec3f41f71e0ea3b5a93f3f772f2db31254997"
+    },
+    {
+      "path": "src/composition-root/runtime-agent-commands.ts",
+      "sha256": "7c83d9cac9524c0c3121c7d4e36304e443d179ad951109407dcb2ab9f535c9f7"
+    },
+    {
+      "path": "tests/application/agent/agent-command-input.test.ts",
+      "sha256": "9ea96f050c3861c9b23d5a9993a4bee48099b266793a97675542896388450abb"
+    },
+    {
+      "path": "tests/application/agent/agent-mcp-stdio-process.test.ts",
+      "sha256": "0c15fce4f7f3d209d38ac017354a33706a4b0f657523257a1ae0dc7622408a10"
+    },
+    {
+      "path": "tests/application/agent/agent-mcp-submission-tool.test.ts",
+      "sha256": "bc3a87596680b5d3f3e989bf9c87f2f73e6748bafe197914b9c913f876acc149"
+    },
+    {
+      "path": "tests/application/agent/mcp-stdio-server.test.ts",
+      "sha256": "20f4b3b89fea50920944596fdba3ac79fb258b55ea24b8c0ca0722aefa2696a0"
+    },
+    {
+      "path": "tests/fixtures/agent-mcp-stdio-process.mjs",
+      "sha256": "a28b9e48744c5139cce3d834d5760498d918c54cc972dec7b523a60f18c0f402"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-10b/agent-inbox.log",
+      "sha256": "97ec441a7848c1fe4fcc5926d6a9b9cf875751df5328b9be6e3e75a2efdaf871"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/architecture.log",
+      "sha256": "a141eb3ab264d800a80015d71674c517d9c0efc5ce7e6c548bc202331dab1a0e"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/build.log",
+      "sha256": "64294a154d8c5eec9f2a75604fce78cd550e06c6eb6fd6a43f464b39ef8b5f06"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/lint.log",
+      "sha256": "f52529d07a8a77db32e0b5dd4293e711e5eb8ac954136408cdb3570130f62faa"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/mcp.log",
+      "sha256": "3d06b4b6c2ed0d21b924aa632b17f9cdc3a6113eef389489e8981821cfcc4d13"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/persistence.log",
+      "sha256": "dd259af7b4c84d2e9e1dad491334da60715a381c3a83169289d58cb3467ff560"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/queue.log",
+      "sha256": "7e7fbb7bd613fe36278898281e6359aef88bae5496f2053888a1c1ef97a65444"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/redaction.log",
+      "sha256": "354848e62e9a4b65920170c4be74c1ee742bc465e7f4fa6a09c7847b71036a97"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/rescue-port.txt",
+      "sha256": "6922311fe9f4886e30519074cc65efd110f0a48cea4f06f387ff65544ee044fe"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/scripts-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10b/typescript.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

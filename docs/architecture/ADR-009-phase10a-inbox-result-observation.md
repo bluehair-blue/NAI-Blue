@@ -58,3 +58,7 @@ npm install --save-dev --save-exact @modelcontextprotocol/server@2.0.0 @modelcon
 ## Rollback
 
 새 inspector, projection과 해당 테스트/package script를 제거하면 된다. 기존 receipt/plan/Queue/키/사용자 config는 변경하지 않았으므로 데이터 rollback이나 migration이 없다. Background/headless 결정은 [ADR-010](ADR-010-phase11-foreground-retention.md)의 A foreground 유지에 따른다.
+
+## 2026-09-07 후속 구현
+
+위 설치 대기와 stdio 미검증 기록은 Phase 10A 커밋 당시의 상태다. 사용자의 명시적 설치 승인 후 SDK 2.0.0 pin, 공유 입력 계약, 소수 입력 서명 bridge와 개발용 stdio 실행부를 구현했다. 현재 구현과 검증 범위는 [ADR-011](ADR-011-phase10b-development-stdio-spike.md) 및 [Phase 10B 검증 기록](../releases/evidence/phase10b-validation-2026-09-07.json)을 따른다. 개발용 실제 프로세스 transport 검증은 추가되었으며, 실제 Tauri 앱·등록 client·설치 경로의 전체 spike Go/No-Go는 아직 미판정이다.

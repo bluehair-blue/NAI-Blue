@@ -55,6 +55,13 @@ module.exports = {
             },
         },
         {
+            name: 'mcp-sdk-stays-in-agent-adapter',
+            comment: 'MCP transport must not become an application, Queue, or UI dependency.',
+            severity: 'error',
+            from: { path: '^src/', pathNot: '^src/adapters/agent/mcp/' },
+            to: { path: '^(?:node_modules/)?@modelcontextprotocol/' },
+        },
+        {
             name: 'adapters-do-not-write-ui-state',
             comment: 'Adapters implement ports and must not reach into presentation stores or components.',
             severity: 'error',

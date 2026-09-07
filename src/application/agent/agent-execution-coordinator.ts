@@ -9,6 +9,7 @@ import { agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationR
 import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationPorts } from './agent-cancellation-contract'
 import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, sameAgentStorageRetryTarget, type AgentStorageRetryPorts } from './agent-storage-retry-contract'
 import type { AgentCommandHandler } from './runtime-capability-registry'
+import { getAgentCommandInputContract } from './agent-command-input'
 
 export interface AgentGenerationApprovalBinding {
     readonly requestHash: Sha256Digest
@@ -83,13 +84,6 @@ const failure = (code: string): JsonObject => ({ code })
 const adjustablePolicyIssue = (code: string | null): boolean => code !== null
     && ['AGENT_RUN_LIMIT', 'AGENT_CONCURRENCY_LIMIT', 'AGENT_COMPATIBILITY_DENIED', 'AGENT_R2_DENIED'].includes(code)
 
-function validateInput(input: JsonObject): JsonObject {
-    if (Object.keys(input).sort().join() !== 'planHash,planId'
-        || !['planId', 'planHash'].every(key => typeof input[key] === 'string' && /^sha256:[a-f0-9]{64}$/.test(input[key] as string))) {
-        throw new AgentCommandError('INVALID_COMMAND_INPUT')
-    }
-    return input
-}
 function receiptState(result: JsonObject): 'completed' | 'needs-input' | 'rejected' {
     return result.code === 'AGENT_APPROVAL_REQUIRED' || result.code === 'AGENT_EXECUTION_UNKNOWN' ? 'needs-input'
         : ['ready', 'cancel-requested', 'storage-registered'].includes(String(result.status)) ? 'completed' : 'rejected'
@@ -322,7 +316,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         return settle(reserved, result, 'completed')
     }
     const handler: AgentCommandHandler = {
-        command: 'generation.enqueue', effect: 'mutation', executionGate: 'durable-approval', validate: validateInput, receiptState,
+        command: 'generation.enqueue', effect: 'mutation', executionGate: 'durable-approval', validate: getAgentCommandInputContract('generation.enqueue')!.validate, receiptState,
         execute: async (_input, { envelope }) => {
             const current = policy()
             const plan = await options.plans.get(String(envelope.command.input.planId))
@@ -343,12 +337,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
     /** Only these two concrete Queue actions share admission; future commands remain unregistered. */
     const queueRepairHandler = (command: AgentQueueRepairRecord['command']): AgentCommandHandler => ({
         command, effect: 'mutation', executionGate: 'durable-approval', receiptState,
-        validate: input => {
-            const fields = command === 'generation.cancel' ? ['runId'] : ['jobId', 'runId']
-            if (Object.keys(input).sort().join() !== fields.join() || fields.some(key => typeof input[key] !== 'string'
-                || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(input[key] as string))) throw new AgentCommandError('INVALID_COMMAND_INPUT')
-            return input
-        },
+        validate: getAgentCommandInputContract(command)!.validate,
         execute: async (_input, { envelope }) => {
             const current = policy()
             if (current.mode === 'observe') return failure('AGENT_OBSERVE_ONLY')

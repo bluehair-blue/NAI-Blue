@@ -5,7 +5,7 @@ import { IndexedDbGenerationPlanRepository } from '@/adapters/generation/indexed
 import { getWorkflowDraftRepository } from '@/adapters/workflow/indexeddb-workflow-draft-repository'
 import { getRuntimeGenerationRun } from '@/adapters/generation/indexeddb-generation-run-reader'
 import { createAgentGenerationPlanHandler } from '@/application/agent/agent-generation-plan-handler'
-import { AgentCommandError } from '@/application/agent/agent-command-contract'
+import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import type { AgentCommandHandler } from '@/application/agent/runtime-capability-registry'
 import { createWorkflowDraftGenerationPlanDependencies } from '@/presentation/generation/workflow-draft-main-batch-planner'
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
@@ -38,7 +38,7 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
         return planner(pricingBasis).execute(input, context)
     } }, {
         command: 'workspace.get_snapshot', effect: 'read',
-        validate: input => { if (Object.keys(input).length !== 0) throw new AgentCommandError('INVALID_COMMAND_INPUT'); return input },
+        validate: getAgentCommandInputContract('workspace.get_snapshot')!.validate,
         execute: async () => {
             const all = await drafts.list()
             return { workspaceId, workflowDrafts: all.slice(0, 100).map(draft => ({ draftId: draft.id, revision: draft.revision })),
@@ -46,11 +46,7 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
         },
     }, {
         command: 'generation.get_run', effect: 'read',
-        validate: input => {
-            if (Object.keys(input).length !== 1 || typeof input.runId !== 'string'
-                || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(input.runId)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
-            return input
-        },
+        validate: getAgentCommandInputContract('generation.get_run')!.validate,
         execute: async (input): Promise<JsonObject> => {
             const run = await getRuntimeGenerationRun(input.runId as string)
             if (run === null) return { found: false }

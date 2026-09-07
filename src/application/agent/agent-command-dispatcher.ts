@@ -1,3 +1,4 @@
+import { getAgentCommandInputContract } from './agent-command-input'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import { AgentCommandError, assertAgentPublicValue, parseAgentCommandEnvelope, type AgentCommandAuthenticator } from './agent-command-contract'
@@ -25,10 +26,7 @@ export class AgentCommandDispatcher {
         }
         this.handlers = [...options.handlers.map(handler => Object.freeze({ ...handler })), {
             command: 'system.describe_capabilities', effect: 'read',
-            validate: input => {
-                if (Object.keys(input).length !== 0) throw new AgentCommandError('INVALID_COMMAND_INPUT')
-                return input
-            },
+            validate: getAgentCommandInputContract('system.describe_capabilities')!.validate,
             execute: async () => ({ capabilities: this.capabilities() } as unknown as JsonObject),
         }]
     }
