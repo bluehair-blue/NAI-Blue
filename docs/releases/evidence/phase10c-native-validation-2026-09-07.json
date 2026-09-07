@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "phase": "10C",
   "implementationSlice": "native-windows-read-only-mcp-stdio-verification",
-  "recordedAt": "2026-09-07T01:26:19.556Z",
+  "recordedAt": "2026-09-07T01:42:14.063Z",
   "baseCommit": "cebb1644a2f450f47ebd4345904edbd182a87e5d",
-  "status": "native-read-path-passed-awaiting-client-cleanup",
+  "status": "native-read-path-and-client-cleanup-passed",
   "phase10Complete": false,
   "fullSpikeGoNoGo": "not-decided",
   "phase11Decision": "A-foreground-retained; B/C-no-go",
@@ -40,7 +40,9 @@
     "mcpClient": "Official SDK Client/StdioClientTransport QA process",
     "mcpHostConfigChanged": false,
     "sidecarInstalled": false,
-    "installerExercised": false
+    "installerExercised": false,
+    "nativeClientRevokedBy": "user in actual isolated app UI",
+    "nativeClientRevocationConfirmed": true
   },
   "build": {
     "command": "node node_modules/@tauri-apps/cli/tauri.js build --debug --no-bundle --config docs/local/evidence/phase-10c-native/tauri.qa.json",
@@ -101,6 +103,18 @@
         "four-real-indexeddb-receipts-equal-native-results",
         "all-receipt-digests-match-recorded-mcp-evidence",
         "zero-attempts-batches-jobs-leases-reservations-claims-resources-artifacts"
+      ]
+    },
+    {
+      "artifact": "docs/local/evidence/phase-10c-native/revoked.json",
+      "status": "passed",
+      "count": 5,
+      "checks": [
+        "sdk-handshake-production-runner",
+        "unconfirmed-app-empty-tools",
+        "revoked-new-request-refused-without-publication",
+        "no-stderr-or-protocol-errors-after-close",
+        "stdio-child-exited"
       ]
     }
   ],
@@ -212,10 +226,9 @@
     }
   ],
   "diagnosticNotes": [
-    "First normal native close logged WebView window class unregister Error 1412. The app PID and CDP listener exited and subsequent recovery checks passed. No underlying WebView defect claim."
+    "Both normal native closes logged WebView window class unregister Error 1412. Each app PID and CDP listener exited; intervening restart/recovery and final cleanup checks passed. No underlying WebView defect claim."
   ],
   "remaining": [
-    "User revocation and denied-submission cleanup check pending",
     "MCP human-approved enqueue/cancel and long-running Queue polling",
     "Native key rotation and uncertain mutation/crash scenario",
     "Packaged sidecar/client-host install/update/rollback",
@@ -230,13 +243,17 @@
     },
     {
       "path": "docs/architecture/ADR-011-phase10b-development-stdio-spike.md",
-      "sha256": "d6c0cca6bf19c6bb2ce9694440f715e667b22e0f7966d24f2d54f55634fa0aa1"
+      "sha256": "8b120963ba351b902ecb253e44a2b4fc030a79cc9241fcec674e2a15a1cb4cc3"
     }
   ],
   "artifacts": [
     {
       "path": "docs/local/evidence/phase-10c-native/01-native-ready.png",
       "sha256": "8bfe931f827f56b47d8ba10cb1b8519aca9c8e3f1773196f483b397a1cd040c2"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/02-client-revoked.png",
+      "sha256": "274a8f981550aac06693efb33a43f728f3feb09315ff5ee647dbcb352ab237dc"
     },
     {
       "path": "docs/local/evidence/phase-10c-native/app-closed.json",
@@ -257,6 +274,10 @@
     {
       "path": "docs/local/evidence/phase-10c-native/app-stdout.log",
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/cleanup.json",
+      "sha256": "3f477aaeff09500cc0856d2442a1afd1a90b05188abff028236fe945c8eb41ca"
     },
     {
       "path": "docs/local/evidence/phase-10c-native/connection.json",
@@ -316,7 +337,7 @@
     },
     {
       "path": "docs/local/evidence/phase-10c-native/restart-stderr.log",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      "sha256": "5279c069bf860ea5158ba8765eb457f3077d9de8a333fba1ecae88bf366fe45c"
     },
     {
       "path": "docs/local/evidence/phase-10c-native/restart-stdout.log",
@@ -325,6 +346,18 @@
     {
       "path": "docs/local/evidence/phase-10c-native/restart.json",
       "sha256": "1962382ac08dddebae435490f2837f8b622f18af2bc1f51a1e02f8e82f9f14ff"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/revoked-ui.json",
+      "sha256": "5c4c5e321dce5fbdb6e97164d2c43470bdd2843b200db4b8f2591f16842583b1"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/revoked.json",
+      "sha256": "381abff8edd2d815ceec530d7b5df78c07d66d7634dea85edb44cce8acde859e"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/revoked.log",
+      "sha256": "5e95990fb3a273ce08d4ab67f0006a91c5ee1f3d7932cf062a983b9b50fc4b4d"
     },
     {
       "path": "docs/local/evidence/phase-10c-native/signing-diagnostic.json",
@@ -338,5 +371,20 @@
       "path": "docs/local/evidence/phase-10c-native/tauri.qa.json",
       "sha256": "e0494b85db991e9caec05c45f2f84a09ca78aaa50d399aaaae2285b0734e4262"
     }
-  ]
+  ],
+  "cleanup": {
+    "diagnosticPort": 9332,
+    "clientRevokedBy": "user",
+    "evidenceDataRetained": true,
+    "normalUiClose": true,
+    "verifiedAt": "2026-09-07T01:41:11.5698213Z",
+    "stdioChildAbsent": true,
+    "diagnosticPortAbsent": true,
+    "stdioChildPid": 29792,
+    "appPid": 34744,
+    "appProcessAbsent": true,
+    "revocationUiConfirmed": true,
+    "newRequestRefusedBeforePublication": true,
+    "nativeIngressWithRetainedRevokedSecretTested": false
+  }
 }

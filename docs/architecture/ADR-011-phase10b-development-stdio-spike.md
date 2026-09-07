@@ -83,6 +83,8 @@ JSON Schema의 표준 `maxLength`는 Unicode code point를 세고 기존 draft I
 
 이 후속 검증은 위 남은 항목 중 읽기 경로·정상 종료/재시작의 범위를 좁힌다. 클라이언트 폐기와 앱 종료의 최종 정리 상태는 검증 기록에 별도로 명시한다. MCP를 통한 사람 승인 enqueue/cancel, 장시간 run polling, native key rotation, 강제 종료 시 불명 mutation, 설치·업데이트·rollback과 실제 운영 증거는 별도로 남는다. 전체 Phase 10 Go/No-Go와 Phase 11 foreground 결정은 자동 승격하지 않는다.
 
+같은 날 사용자가 검증용 접속을 폐기한 뒤 UI의 `권한 폐기됨`을 확인했고, 기존 공개 연결 정보를 사용한 신규 요청은 파일 공개 전에 차단되었다. 폐기 후 검증 5개가 통과했다. 검증 앱은 정상 종료했으며 앱 PID, stdio 하위 프로세스와 loopback 진단 포트가 모두 사라진 것을 확인했다. 기존 native receipt/archive와 격리 QA 증거는 보존했다.
+
 ## Rollback
 
 개발 stdio entry/adapter/bridge, 추가 SDK 개발 의존성과 해당 tests/scripts를 제거할 수 있다. 기존 inbox·receipt·plan·Queue 데이터, OS key store, 사용자 config, production binary의 migration은 없다. 공유 validator는 기존 application 동작을 유지하는 추출이며 Phase 9 foreground authority는 계속 유효하다.
