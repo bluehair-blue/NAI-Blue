@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { CircleHelp } from 'lucide-react'
@@ -58,7 +58,7 @@ function GuideSection({
 }
 
 /** Versioned onboarding and contextual recovery help; all actions stay user initiated. */
-export function ProductGuidance() {
+export function ProductGuidance({ returnFocusRef }: { returnFocusRef?: RefObject<HTMLElement | null> } = {}) {
     const { t } = useTranslation()
     const navigate = useNavigate()
     const triggerRef = useRef<HTMLButtonElement>(null)
@@ -144,7 +144,7 @@ export function ProductGuidance() {
                 description={t('productGuidance.description')}
                 closeLabel={t('common.close')}
                 side={isMobileRuntime ? 'bottom' : 'right'}
-                returnFocusRef={triggerRef}
+                returnFocusRef={returnFocusRef ?? triggerRef}
                 testId="product-guidance-sheet"
                 className="motion-reduce:transition-none"
             >

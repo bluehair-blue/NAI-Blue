@@ -1,6 +1,6 @@
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode, useEffect, useRef, useState } from 'react'
 import { registerNativeBackButton } from '@/platform/native-app'
-import { useLocation } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { PromptPanel } from './PromptPanel'
@@ -11,6 +11,15 @@ import { PresetDropdown } from '@/components/preset/PresetDropdown'
 import { PresetDraftControls } from '@/components/preset/PresetDraftControls'
 import { DiagnosticDrawer } from '@/components/diagnostics/DiagnosticDrawer'
 import { ProductGuidance } from '@/components/guidance/ProductGuidance'
+import { openProductGuidance } from '@/services/guidance/diagnostic-guides'
+import { useDiagnosticsStore } from '@/stores/diagnostics-store'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useAuthStore } from '@/stores/auth-store'
 import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { Tip } from '@/components/ui/tooltip'
@@ -43,6 +52,7 @@ import {
     DatabaseZap,
     BriefcaseBusiness,
     FolderTree,
+    ChevronDown,
 } from 'lucide-react'
 
 interface ThreeColumnLayoutProps {
@@ -90,6 +100,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     } = useLayoutStore()
     const isDesktopShell = useMediaQuery('(min-width: 1536px)')
     const folderWorkbenchOpen = location.pathname === '/folders'
+    const workbenchToolsRef = useRef<HTMLButtonElement>(null)
     const leftSheetOpen = supportSheet === 'prompt' && (!isDesktopShell || folderWorkbenchOpen)
     const rightSheetOpen = supportSheet === 'history'
     const activitySheetOpen = supportSheet === 'activity'
@@ -324,7 +335,66 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                 </aside>
 
                 <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-y border-border/45 bg-canvas">
-                    {/* The compact row keeps navigation primary; utility dialogs wrap below it on phones so every control stays in normal flow. */}
+                    {/* The workbench names the two primary tasks; secondary routes reuse the existing navigation and support-sheet authorities. */}
+                    {folderWorkbenchOpen ? (
+                        <nav
+                            aria-label={t('folderWorkbench.navigation.label', '작업대 탐색')}
+                            className="z-10 flex min-w-0 shrink-0 flex-wrap items-center gap-1 border-b border-border/45 bg-card px-3 py-2"
+                        >
+                            <Link
+                                to="/folders"
+                                aria-current="page"
+                                className="inline-flex min-h-11 items-center rounded-[4px] bg-primary/10 px-3 text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                {t('folderWorkbench.navigation.create', '에셋 만들기')}
+                            </Link>
+                            <Link
+                                to="/queue"
+                                className="inline-flex min-h-11 items-center rounded-[4px] px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                {t('folderWorkbench.navigation.progress', '진행 상황')}
+                            </Link>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <button
+                                        ref={workbenchToolsRef}
+                                        type="button"
+                                        className="inline-flex min-h-11 items-center gap-2 rounded-[4px] px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    >
+                                        {t('folderWorkbench.navigation.tools', '도구')}
+                                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                                    </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]">
+                                    {navItems.filter(item => item.path !== '/folders' && item.path !== '/queue').map(item => (
+                                        <DropdownMenuItem key={item.path} asChild className="min-h-11 rounded-[4px]">
+                                            <Link to={item.path}>
+                                                <item.icon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                                                {t(item.labelKey, item.fallbackLabel ?? item.labelKey)}
+                                            </Link>
+                                        </DropdownMenuItem>
+                                    ))}
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={handleLeftPanelToggle}>
+                                        {t('prompt.title', '프롬프트')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={handleRightPanelToggle}>
+                                        {t('history.title', '기록')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" data-testid="open-my-work-activity" onSelect={() => openSupportSheet('activity')}>
+                                        {t('guided.activity.title', '내 작업')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => openProductGuidance()}>
+                                        {t('productGuidance.trigger')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => useDiagnosticsStore.getState().openDrawer()}>
+                                        {t('diagnosticDrawer.open')}
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </nav>
+                    ) : (
+                    /* Utility dialogs wrap below the legacy navigation on other routes. */
                     <div className="z-10 flex shrink-0 flex-wrap items-center gap-2 bg-card px-3 py-2 sm:flex-nowrap">
                         <Tip content={t('layout.toggleLeftSidebar', 'Toggle Left Sidebar')}>
                             <button
@@ -391,6 +461,14 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                             <DiagnosticDrawer />
                         </div>
                     </div>
+                    )}
+                    {/* Keep dialog owners mounted when the menu closes; only their legacy triggers are hidden on the workbench. */}
+                    {folderWorkbenchOpen && (
+                        <div className="[&>button]:hidden">
+                            <ProductGuidance returnFocusRef={workbenchToolsRef} />
+                            <DiagnosticDrawer />
+                        </div>
+                    )}
 
                     {/* Page Content */}
                     <main className={cn(
