@@ -115,7 +115,7 @@ function isArtifactRef(value: unknown): value is SceneArtifactRef {
 function isSceneAuthoringRecord(value: unknown): value is SceneAuthoringRecord {
     if (!isRecord(value) || !isJsonValue(value) || !hasOnlyKeys(value, [
         'id', 'name', 'scenePrompt', 'prompts', 'characterCaptions', 'characterPositionEnabled',
-        'generation', 'width', 'height', 'metadataMode', 'generationFolderId', 'filenameTemplate',
+        'generation', 'width', 'height', 'metadataMode', 'generationFolderId', 'filenameTemplate', 'productionCount',
         'excludePinned', 'compositionRef', 'artifactRefs', 'createdAt',
     ])) return false
     const dimensions = [value.width, value.height]
@@ -132,6 +132,7 @@ function isSceneAuthoringRecord(value: unknown): value is SceneAuthoringRecord {
             || (typeof dimension === 'number' && Number.isSafeInteger(dimension) && dimension > 0))
         && (value.metadataMode === undefined || metadataModes.includes(value.metadataMode as string))
         && (value.generationFolderId === undefined || isNonEmptyString(value.generationFolderId))
+        && (value.productionCount === undefined || (Number.isInteger(value.productionCount) && Number(value.productionCount) >= 1 && Number(value.productionCount) <= 999))
         && (value.filenameTemplate === undefined || typeof value.filenameTemplate === 'string')
         && (value.excludePinned === undefined || typeof value.excludePinned === 'boolean')
         && isSceneCompositionRef(value.compositionRef)
@@ -224,6 +225,7 @@ function projectScene(value: unknown): SceneV1AuthoringRecord {
         ...defined(value, 'height'),
         ...defined(value, 'metadataMode'),
         ...defined(value, 'generationFolderId'),
+        ...defined(value, 'productionCount'),
         ...defined(value, 'filenameTemplate'),
         ...defined(value, 'excludePinned'),
         ...defined(value, 'compositionRef'),

@@ -101,6 +101,8 @@ export interface SceneCard {
     /** Scene-owned generation parameters; Main prompt-panel changes never mutate this snapshot. */
     generation?: Partial<SceneGenerationConfig>
     queueCount: number  // Number of images to generate
+    /** Saved authoring quantity for repeatable production; never a pending Queue entry or replay instruction. */
+    productionCount?: number
     images: SceneImage[]  // Generated images for this scene
     width?: number
     height?: number
@@ -282,6 +284,7 @@ interface SceneState {
 
     // Actions - Queue
     setQueueCount: (presetId: string, sceneId: string, count: number) => void
+    setSceneProductionCounts: (targets: readonly { presetId: string; sceneId: string }[], count: number) => void
     incrementQueue: (presetId: string, sceneId: string, count?: number) => void
     decrementQueue: (presetId: string, sceneId: string) => void
     addAllToQueue: (presetId: string, count?: number) => void
@@ -1066,16 +1069,36 @@ export const useSceneStore = create<SceneState>()(
             setQueueCount: (presetId, sceneId, count) => {
                 const nextCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
                 set(state => ({
+                    presets: state.presets.map(p => p.id === presetId ? {
+                        ...p,
+                        scenes: p.scenes.map(scene => scene.id === sceneId ? {
+                            ...scene, queueCount: nextCount,
+                            queuedFileNames: normalizeQueuedFileNames(scene.queuedFileNames ?? [], nextCount),
+                        } : scene),
+                    } : p),
+                }))
+            },
+
+            // Bulk editing visits each preset once and emits one persisted update, even for thousands of items.
+            setSceneProductionCounts: (targets, count) => {
+                if (!Number.isInteger(count) || count < 1 || count > 999) throw new RangeError('Production quantity must be 1–999')
+                const byPreset = new Map<string, Set<string>>()
+                for (const target of targets) {
+                    const ids = byPreset.get(target.presetId) ?? new Set<string>()
+                    ids.add(target.sceneId)
+                    byPreset.set(target.presetId, ids)
+                }
+                if (byPreset.size === 0) return
+                set(state => ({
                     presets: state.presets.map(p =>
-                        p.id === presetId
+                        byPreset.has(p.id)
                             ? {
                                 ...p,
                                 scenes: p.scenes.map(s =>
-                                    s.id === sceneId
+                                    byPreset.get(p.id)!.has(s.id)
                                         ? {
                                             ...s,
-                                            queueCount: nextCount,
-                                            queuedFileNames: normalizeQueuedFileNames(s.queuedFileNames ?? [], nextCount),
+                                            productionCount: count,
                                         }
                                         : s
                                 ),

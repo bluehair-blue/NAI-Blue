@@ -17,6 +17,7 @@ import {
     activateSceneAuthorityRuntime,
     applyLegacySceneProjection,
     applySceneDocumentProjection,
+    flushSceneAuthorityRuntime,
     stopSceneAuthorityRuntimeForTests,
 } from '@/lib/scene-authority-runtime'
 import { projectScenePresentationState, sceneImagePresentationKey, useSceneStore } from '@/stores/scene-store'
@@ -418,17 +419,30 @@ describe('Scene Zustand authority runtime', () => {
 
     it('refreshes from current authority on stale UI conflict and accepts verified external documents', async () => {
         const repository = new MemoryRepository(document(2, 'server wins'))
-        const runtime = await activateSceneAuthorityRuntime(repository, {
+        await activateSceneAuthorityRuntime(repository, {
             documents: [document(1, 'stale snapshot')],
             legacyProjection: LEGACY,
         })
 
         useSceneStore.getState().updateScenePrompt('preset-a', 'scene-a', 'stale edit')
-        await runtime.flush()
+        await flushSceneAuthorityRuntime()
 
         expect(repository.commits[0].expected).toBe(1)
         expect(useSceneStore.getState().presets[0].scenes[0].scenePrompt).toBe('server wins')
         expect(applySceneDocumentProjection(document(3, 'agent result'))).toBe(true)
         expect(useSceneStore.getState().presets[0].scenes[0].scenePrompt).toBe('agent result')
+    })
+
+    it('persists configured production quantity while clearing transient pending entries on reopen', async () => {
+        const repository = new MemoryRepository(document())
+        await activateSceneAuthorityRuntime(repository, { documents: [document()], legacyProjection: LEGACY })
+        useSceneStore.getState().setSceneProductionCounts([{ presetId: 'preset-a', sceneId: 'scene-a' }], 20)
+        useSceneStore.getState().setQueueCount('preset-a', 'scene-a', 3)
+        await flushSceneAuthorityRuntime()
+        const saved = repository.commits.at(-1)!.next
+        expect(saved.scenes[0].productionCount).toBe(20)
+        expect(saved.scenes[0]).not.toHaveProperty('queueCount')
+        await activateSceneAuthorityRuntime(repository, { documents: [saved], legacyProjection: LEGACY })
+        expect(useSceneStore.getState().presets[0].scenes[0]).toMatchObject({ productionCount: 20, queueCount: 0 })
     })
 })

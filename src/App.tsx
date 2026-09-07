@@ -11,6 +11,7 @@ import { pruneExpiredTrashItems } from '@/services/trash/asset-trash-service'
 
 const ThreeColumnLayout = lazy(() => import('@/components/layout/ThreeColumnLayout').then(module => ({ default: module.ThreeColumnLayout })))
 const MainMode = lazy(() => import('@/pages/MainMode'))
+const FolderWorkbench = lazy(() => import('@/pages/FolderWorkbench'))
 const SceneMode = lazy(() => import('@/pages/SceneMode'))
 const SceneDetail = lazy(() => import('@/pages/SceneDetail'))
 const WebView = lazy(() => import('@/pages/WebView'))
@@ -57,9 +58,10 @@ function AppContent() {
     return (
         <Suspense fallback={<RouteLoadingFallback />}>
             <Routes>
-                <Route path="/" element={<Navigate to="/guided-preview" replace />} />
+                <Route path="/" element={<Navigate to="/folders" replace />} />
                 <Route path="/guided-preview/*" element={<GuidedPreview />} />
                 <Route element={<AdvancedShell />}>
+                    <Route path="/folders" element={<FolderWorkbench />} />
                     <Route path="/advanced" element={<MainMode />} />
                     <Route path="/scenes" element={<SceneMode />} />
                     <Route path="/scenes/:id" element={<SceneDetail />} />
@@ -79,7 +81,7 @@ function AppContent() {
     )
 }
 
-/** Existing expert workspaces remain a lazy sibling shell beside the Guided default. */
+/** Shared navigation keeps the production workbench and existing specialist editors reachable. */
 function AdvancedShell() {
     return (
         <ThreeColumnLayout>

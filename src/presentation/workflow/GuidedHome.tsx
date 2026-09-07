@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     ArrowRight,
     Clock3,
+    FolderTree,
     Images,
     Image as ImageIcon,
     Library,
@@ -187,6 +188,11 @@ export function GuidedHome() {
                 </section>
 
                 {selectedWorkflow === null ? <nav aria-label={t('guided.home.choices', '작업 선택')} className="border-y border-border/40">
+                    <button type="button" className="guided-choice-row flex min-h-24 w-full items-center gap-4 border-b border-border/45 px-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4" onClick={() => navigate('/folders')}>
+                        <FolderTree className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                        <span className="min-w-0 flex-1 py-4"><span className="block text-base font-semibold">{t('folderWorkbench.title', '에셋 작업대')}</span><span className="mt-1.5 block text-sm text-muted-foreground">{t('folderWorkbench.entryDescription', '서로 다른 프롬프트를 폴더별로 모아 한 번에 생산합니다.')}</span></span>
+                        <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    </button>
                     {resumeHref !== null && (
                         <button
                             type="button"

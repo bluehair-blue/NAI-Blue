@@ -209,10 +209,13 @@ export async function planOutputCommitSetBatch(
     const freshByIndex = new Map(freshIndexes.map((index, ordinal) => [index, freshAllocations[ordinal]]))
     return resolved.map((item, index) => {
         const replay = replayAllocations.get(index)
-        if (replay !== undefined) return replay
-        const allocation = freshByIndex.get(index)
+        const allocation = replay ?? freshByIndex.get(index)
         if (allocation === undefined) throw new Error('Output allocation is missing')
-        return { ...allocation, directoryIdentity: item.directoryIdentity }
+        return {
+            ...allocation,
+            directoryIdentity: item.directoryIdentity,
+            imageDisplayPath: childOutputRef(item.directory, allocation.fileName).displayPath,
+        }
     })
 }
 

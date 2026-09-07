@@ -77,6 +77,7 @@ export interface SceneV1AuthoringRecord {
     readonly height?: number
     readonly metadataMode?: 'embedded' | 'sidecar-only' | 'strip-and-sidecar' | 'strip-only'
     readonly generationFolderId?: string
+    readonly productionCount?: number
     readonly filenameTemplate?: string
     readonly excludePinned?: boolean
     readonly compositionRef?: unknown
@@ -132,6 +133,8 @@ export interface SceneAuthoringRecord {
     readonly height?: number
     readonly metadataMode?: 'embedded' | 'sidecar-only' | 'strip-and-sidecar' | 'strip-only'
     readonly generationFolderId?: string
+    /** Optional saved quantity; old documents remain valid and transient queue counts stay excluded. */
+    readonly productionCount?: number
     readonly filenameTemplate?: string
     readonly excludePinned?: boolean
     readonly compositionRef?: SceneCompositionRef

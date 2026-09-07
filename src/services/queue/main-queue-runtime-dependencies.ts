@@ -30,6 +30,8 @@ export interface OutputCommitSetPlanningRequest {
 
 export interface PlannedOutputCommitSet extends ExactOutputCommitSetAllocation {
     readonly directoryIdentity: `sha256:${string}`
+    /** Ephemeral GUI preview from the same resolved directory; never added to a reservation snapshot. */
+    readonly imageDisplayPath?: string
 }
 
 export interface OutputReservationPlanningPort {

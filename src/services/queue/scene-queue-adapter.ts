@@ -34,6 +34,7 @@ import { IndexedDbGenerationFolderRepository } from '@/adapters/folder/indexeddb
 import { DEFAULT_GENERATION_FOLDER_WORKSPACE_ID } from '@/lib/generation-folder-authority-runtime'
 import { resolveGenerationFolderAuthority } from '@/lib/generation-folder-authority-runtime'
 import { DEFAULT_R2_PROFILE_ID } from '@/domain/r2/types'
+import { plannedR2PublicUrl } from '@/domain/r2/public-url'
 import { buildSceneGenerationParams } from '@/lib/scene-generation/build-scene-params'
 import type { SaveSceneResultContext } from '@/lib/scene-generation/save-scene-result'
 import { getRotationCharacterFolderName } from '@/lib/scene-output-path'
@@ -115,6 +116,16 @@ export interface SceneQueueDestinationReview {
     readonly filenameSummary: SceneQueueFilenameSummary
 }
 
+export interface SceneQueueOutputReview {
+    readonly sceneName: string
+    readonly fileName: string
+    readonly localPath: string | null
+    readonly prompt: string
+    readonly r2Bucket: string | null
+    readonly r2Key: string | null
+    readonly publicUrl: string | null
+}
+
 export interface SceneQueueReview {
     readonly assessment?: GenerationAssessmentRequirement
     readonly reviewId: string
@@ -125,6 +136,8 @@ export interface SceneQueueReview {
     readonly claimCount: number
     readonly destinations: readonly SceneQueueDestinationReview[]
     readonly r2Destinations: readonly PlannedR2Destination[]
+    /** GUI-only planned facts; public access remains unverified until delivery completes. */
+    readonly outputs?: readonly SceneQueueOutputReview[]
 }
 
 declare const sceneQueueSubmissionBrand: unique symbol
@@ -721,6 +734,20 @@ async function prepareSceneQueueReviewOnce(
                 filenameSummary: summarizeSceneFilenames(destination.filenames),
             }))),
             r2Destinations: Object.freeze(r2Deliveries.flatMap(delivery => delivery.planned === null ? [] : [delivery.planned.destination])),
+            outputs: Object.freeze(prepared.map((item, index) => {
+                const release = r2Deliveries[index].planned
+                return Object.freeze({
+                    sceneName: item.prepared.scene.name,
+                    fileName: allocations[index].fileName,
+                    localPath: allocations[index].imageDisplayPath ?? null,
+                    prompt: item.prepared.finalPrompt,
+                    r2Bucket: release?.destination.bucket ?? null,
+                    r2Key: release?.destination.key ?? null,
+                    publicUrl: release === null ? null : plannedR2PublicUrl(
+                        release.profile.publicMode, release.profile.publicBaseUrl, release.destination.key,
+                    ),
+                })
+            })),
         })
         const submission = Object.freeze({ reviewId }) as SceneQueueSubmission
         sceneQueueSubmissions.set(submission, {

@@ -22,6 +22,7 @@ const WIDE_COMPOSITION_ROUTES = ['/advanced', '/scenes', '/queue', '/r2']
 // These routes represent each responsive information architecture used by the
 // production shell: command canvas, split editor, dense grids, and settings.
 const defaultRoutes = [
+    '/folders',
     '/advanced',
     '/guided-preview',
     '/style-lab',
