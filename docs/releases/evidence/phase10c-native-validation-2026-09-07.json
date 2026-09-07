@@ -1,0 +1,342 @@
+{
+  "schemaVersion": 1,
+  "phase": "10C",
+  "implementationSlice": "native-windows-read-only-mcp-stdio-verification",
+  "recordedAt": "2026-09-07T01:26:19.556Z",
+  "baseCommit": "cebb1644a2f450f47ebd4345904edbd182a87e5d",
+  "status": "native-read-path-passed-awaiting-client-cleanup",
+  "phase10Complete": false,
+  "fullSpikeGoNoGo": "not-decided",
+  "phase11Decision": "A-foreground-retained; B/C-no-go",
+  "environment": {
+    "os": "Windows",
+    "node": "v24.19.0",
+    "python": "standalone Python 3.12.14",
+    "application": "Standalone debug Tauri EXE with current production Vite frontend, real WebView2/native inbox and IndexedDB",
+    "appIdentifier": "blue.bluehair.naiblue.phase10cqa",
+    "webviewDataDirectory": "phase10c-native-qa",
+    "diagnosticCdp": "127.0.0.1:9332 (read-only)",
+    "productionProfileUsed": false,
+    "binary": {
+      "path": "src-tauri/target/debug/NAI-Blue.exe",
+      "sha256": "c607489a8bc8b26eae499f99627182e9bc28466d94e0712640ec47504be66f56"
+    },
+    "frontend": {
+      "buildEvidence": "docs/releases/evidence/phase10b-validation-2026-09-07.json",
+      "runtimeBundle": "dist/assets/runtime-agent-commands-BEk5Gu-T.js",
+      "sha256": "a6d6995310294550ce7a069bfe4806f010c2c0a5ce6dffdf008f9b534e0a7936"
+    }
+  },
+  "authority": {
+    "nativeClientRegisteredBy": "user in actual isolated app UI",
+    "connection": {
+      "workspaceId": "workspace-d52909ef4d0e93d337ba74ba1adf9a08",
+      "clientId": "client-5410765670e118690a153c6e22cc906d",
+      "keyId": "key\u002d99f8996abb49d66e44e93c4d0dbf3de8",
+      "actorKind": "agent"
+    },
+    "credential": "Actual Windows CredReadW signing via production Python bridge; no secret exported",
+    "nativeAndApplicationFixtures": false,
+    "mcpClient": "Official SDK Client/StdioClientTransport QA process",
+    "mcpHostConfigChanged": false,
+    "sidecarInstalled": false,
+    "installerExercised": false
+  },
+  "build": {
+    "command": "node node_modules/@tauri-apps/cli/tauri.js build --debug --no-bundle --config docs/local/evidence/phase-10c-native/tauri.qa.json",
+    "exitCode": 0,
+    "priorFrontendBuild": "npm run build at base source cebb164; current schema hashes confirmed through actual native receipt"
+  },
+  "checks": [
+    {
+      "artifact": "docs/local/evidence/phase-10c-native/live-standalone-python.json",
+      "status": "passed",
+      "count": 9,
+      "checks": [
+        "sdk-handshake-production-runner",
+        "fresh-native-capability-receipt",
+        "exact-tool-and-schema-hash-projection",
+        "concurrent-read-correlation",
+        "resource-and-native-receipt-exact-equality",
+        "nonexistent-run-found-false",
+        "same-id-replay-archive-and-receipt-unchanged",
+        "no-stderr-or-protocol-errors-after-close",
+        "stdio-child-exited"
+      ]
+    },
+    {
+      "artifact": "docs/local/evidence/phase-10c-native/app-off.json",
+      "status": "passed",
+      "count": 6,
+      "checks": [
+        "sdk-handshake-production-runner",
+        "unconfirmed-app-empty-tools",
+        "app-off-submission-not-accepted",
+        "ready-preserved-for-startup-recovery",
+        "no-stderr-or-protocol-errors-after-close",
+        "stdio-child-exited"
+      ]
+    },
+    {
+      "artifact": "docs/local/evidence/phase-10c-native/recovery.json",
+      "status": "passed",
+      "count": 9,
+      "checks": [
+        "production-sdk-handshake",
+        "app-off-request-completed-without-resubmission",
+        "recovered-resource-equals-native-receipt",
+        "app-off-archive-digest-unchanged",
+        "pending-ready-consumed",
+        "historical-native-receipt-and-archive-digests-unchanged-after-restart",
+        "recorded-app-off-capability-request-recovered",
+        "no-stderr-or-protocol-errors-after-close",
+        "stdio-child-exited"
+      ]
+    },
+    {
+      "artifact": "docs/local/evidence/phase-10c-native/indexeddb-final.json",
+      "status": "passed",
+      "count": 3,
+      "checks": [
+        "four-real-indexeddb-receipts-equal-native-results",
+        "all-receipt-digests-match-recorded-mcp-evidence",
+        "zero-attempts-batches-jobs-leases-reservations-claims-resources-artifacts"
+      ]
+    }
+  ],
+  "lifecycle": {
+    "normalClose": {
+      "processAbsent": true,
+      "pid": 37980,
+      "verifiedAt": "2026-09-07T01:18:26.8233719Z",
+      "diagnosticPortAbsent": true
+    },
+    "restart": {
+      "restartedAt": "2026-09-07T01:19:08.8381027Z",
+      "pid": 34744,
+      "sha256": "C607489A8BC8B26EAE499F99627182E9BC28466D94E0712640EC47504BE66F56"
+    },
+    "newCommandsDuringRecovery": 0,
+    "recovered": {
+      "requestId": "qa10c-63d1b05f-d0e8-4f09-a1d5-efc9c13cb79f-snapshot",
+      "state": "completed",
+      "command": "workspace.get_snapshot",
+      "resultDigest": "sha256:0c85bcd0055b508b8fca4a4c16196d0cae216fdf8bf8080dc22ed76ba7a2f6f0",
+      "nativeReceiptSha256": "sha256:92063082e6a1a0836fd9d9e938cff56117329435fe528032938a30139968c614",
+      "archiveSha256": "sha256:f38b03ceca8edbf892d842bc93050691975bab713d00c511de4fa2e3d2aa6c44",
+      "resourceEqualsNativeReceipt": true,
+      "archiveUnchanged": true,
+      "readyConsumed": true
+    },
+    "historical": {
+      "requestId": "qa10c-043af941-f00b-48c0-b46f-3310b37642a4-snapshot",
+      "state": "completed",
+      "command": "workspace.get_snapshot",
+      "resultDigest": "sha256:0c85bcd0055b508b8fca4a4c16196d0cae216fdf8bf8080dc22ed76ba7a2f6f0",
+      "nativeReceiptSha256": "sha256:6bc6a3e5f457a9eeef84ee10a5c7d955155a93128680d15a1e6367cd5f868f7c",
+      "archiveSha256": "sha256:de83ab4dd38fcb1ea61e9ba545e552beb8d3416eb11b7358ff40d84268988bc5",
+      "resourceEqualsNativeReceipt": true,
+      "archiveUnchanged": true,
+      "readyConsumed": true,
+      "priorNativeReceiptDigestUnchanged": true
+    }
+  },
+  "persistedResults": {
+    "receiptCount": 4,
+    "allActualIndexedDbReceiptsMatchNativeAndMcp": true,
+    "queue": {
+      "databasePresent": true,
+      "counts": {
+        "attempts": 0,
+        "batches": 0,
+        "jobs": 0,
+        "leases": 0,
+        "output-reservation-claims": 0,
+        "output-reservations": 0,
+        "resources": 0
+      }
+    },
+    "artifacts": {
+      "databasePresent": true,
+      "counts": {
+        "artifacts": 0
+      }
+    }
+  },
+  "resolvedEnvironmentFailure": {
+    "initialProbe": "live.json",
+    "failure": "fresh-capabilities unavailable before any publication",
+    "exception": {
+      "exitCode": 1,
+      "exceptionType": "FileNotFoundError",
+      "frames": [
+        {
+          "file": "<string>",
+          "function": "<module>",
+          "line": 4
+        },
+        {
+          "file": "submit-agent-mcp-command.py",
+          "function": "submit",
+          "line": 131
+        },
+        {
+          "file": "submit-agent-command.py",
+          "function": "safe_path",
+          "line": 153
+        },
+        {
+          "file": "__init__.py",
+          "function": "lstat",
+          "line": 661
+        }
+      ]
+    },
+    "cause": "WindowsApps Store Python 3.14.3 could not lstat the existing native AppData directory. The same safe_path passed under standalone Python 3.12.14; consistent with Store AppData redirection.",
+    "resolution": "Explicit standalone --python path; no application/signing/publication guard changes",
+    "credentialReadReachedInFailure": false
+  },
+  "review": {
+    "status": "resolved",
+    "finding": "QA script checked zero stderr/protocol errors before close. Moved success/counter checks after SDK/Vite close and verified child PID absent.",
+    "scope": "SDK API, read-only command scope, native receipt comparison, replay, error and shutdown evidence"
+  },
+  "codeChecks": [
+    {
+      "command": "node --check scripts/qa-phase10c-mcp-native.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node node_modules/eslint/bin/eslint.js scripts/qa-phase10c-mcp-native.mjs --max-warnings 0",
+      "exitCode": 0
+    }
+  ],
+  "diagnosticNotes": [
+    "First normal native close logged WebView window class unregister Error 1412. The app PID and CDP listener exited and subsequent recovery checks passed. No underlying WebView defect claim."
+  ],
+  "remaining": [
+    "User revocation and denied-submission cleanup check pending",
+    "MCP human-approved enqueue/cancel and long-running Queue polling",
+    "Native key rotation and uncertain mutation/crash scenario",
+    "Packaged sidecar/client-host install/update/rollback",
+    "Operational usage and availability evidence before Phase 11 reevaluation"
+  ],
+  "uiFollowup": "User requested UI/UX cleanup later; no UI changes in this verification.",
+  "sourceHashEncoding": "UTF-8 with CRLF normalized to LF",
+  "sources": [
+    {
+      "path": "scripts/qa-phase10c-mcp-native.mjs",
+      "sha256": "d190d8baf12e252b32c0bb766584823fe3f988ae43f0760b59cffcc5062155d5"
+    },
+    {
+      "path": "docs/architecture/ADR-011-phase10b-development-stdio-spike.md",
+      "sha256": "d6c0cca6bf19c6bb2ce9694440f715e667b22e0f7966d24f2d54f55634fa0aa1"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/local/evidence/phase-10c-native/01-native-ready.png",
+      "sha256": "8bfe931f827f56b47d8ba10cb1b8519aca9c8e3f1773196f483b397a1cd040c2"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/app-closed.json",
+      "sha256": "9d07755f06b76c0fab72ee7aa19212e648e1c1a0d2283287c4cf24b72af2230a"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/app-off.json",
+      "sha256": "4f4f5791e21112e44a1879b2b523f62617111eaab8a1c77a70fef7645c65d32b"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/app-off.log",
+      "sha256": "2c1224564b24f68c5797a81f2805a0f8d489a68d9d448eb22ccbfc4799906783"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/app-stderr.log",
+      "sha256": "970895baa89b4cdf470a2c28735d28e1e9de9b4482c644af106936edee903285"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/app-stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/connection.json",
+      "sha256": "639d14f1e0aa40f26139fb8b849ca3f73499021634773315cdb22b61d9fa7585"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/indexeddb-final.json",
+      "sha256": "089c5786e948f56530b7f47b33781d2dc3cfbdd11c7759015f3fcbc6969c6ee4"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/inspect-indexeddb.mjs",
+      "sha256": "b7c8692de35d9e25e0b7a620304a4163b4b96435412082277c6f45106593e4bd"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/launch.json",
+      "sha256": "75be909871b950a7cde1c577454aceecd25e93b82b8fdcc30a3a496ce0f2e7a6"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/live-standalone-python.json",
+      "sha256": "2ed9e9e49221be79131145cbd622b7baa78b2478d662be31f1cbc4177f11d9ea"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/live-standalone-python.log",
+      "sha256": "506ed43172c9da39202e4bf1a7f3e84d0d5314403113d7ddc25d2bec4462de6b"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/live.json",
+      "sha256": "a86ac876b75124731bd021b1ef5e136bdab911613cb835281f38eca00b912600"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/live.log",
+      "sha256": "bf8b3404b2b64baa90a8519ef9a8cfeaeb456ee39a7ae46f5403a1ff6e674bdc"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/native-build.log",
+      "sha256": "eb59f1b918cf6fd2c167bf0724ea4b0babb7a66b3ee6b54e034736510b54a520"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/native-startup.json",
+      "sha256": "2623501e8fbe6b28e79792fb78b2dcc5d86dee4e55304aaca514f8c8af2771bd"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/probe-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/probe-syntax.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/recover.mjs",
+      "sha256": "37af2deb5b7717d091a2fb8bad624ffdb97e550bc42a0c42f57d8e4bac69f674"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/recovery.json",
+      "sha256": "df0aa85b936c0f63bd8c980bdba85439b7eef44b4ea934bda998f1164a1776ee"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/restart-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/restart-stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/restart.json",
+      "sha256": "1962382ac08dddebae435490f2837f8b622f18af2bc1f51a1e02f8e82f9f14ff"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/signing-diagnostic.json",
+      "sha256": "cc04139d6b08f5094ed11ef2957f47910d6ac5512491dba873b303ecb3e8d0e1"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/signing-exception.json",
+      "sha256": "9da8d2cd37b8ebfec1e8700db0be2c5b4c9e17c43cffb9c33cc4994c962aa14a"
+    },
+    {
+      "path": "docs/local/evidence/phase-10c-native/tauri.qa.json",
+      "sha256": "e0494b85db991e9caec05c45f2f84a09ca78aaa50d399aaaae2285b0734e4262"
+    }
+  ]
+}

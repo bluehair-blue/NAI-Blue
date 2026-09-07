@@ -47,6 +47,8 @@ Tool arguments는 `{ requestId, input }`다. `requestId`는 호출자가 호출 
 
 기존 Windows 앱에서 사람이 등록한 client의 공개 연결 정보가 있어야 한다. 아래 placeholder는 실제 로컬 경로로 교체한다. Python은 기존 bridge처럼 표준 라이브러리만 사용한다.
 
+Native inbox에는 실제 AppData 경로를 읽을 수 있는 **standalone Python**을 사용한다. 2026-09-07 native QA에서 WindowsApps Store Python 3.14.3은 존재하는 앱 디렉터리를 `FileNotFoundError`로 처리했고, 같은 `safe_path` 검사를 standalone Python 3.12.14는 통과했다. 실패는 credential 접근 이전이었다. WindowsApps 실행 별칭을 그대로 선택하지 말고 검증된 Python 실행 파일을 `--python`으로 지정한다.
+
 ```powershell
 & '<Node-24-executable>' 'E:\AI_Project_Library\projects\nais\NAI-Blue\scripts\run-agent-mcp-stdio.mjs' `
   --connection '<public-connection.json>' `
@@ -72,6 +74,14 @@ JSON Schema의 표준 `maxLength`는 Unicode code point를 세고 기존 draft I
 2. 실제 app-off/복구 오류 상태, 사람 승인 후 enqueue·cancel, 장시간 Queue polling, client 폐기/rotation의 native 관측.
 3. Windows sidecar path, 설치·업데이트·rollback 실험과 정리.
 4. 실제 운영 usage·availability·security/credential·crash evidence. Phase 11은 [ADR-010](ADR-010-phase11-foreground-retention.md)의 foreground 유지/No-Go를 계속 따른다.
+
+## 2026-09-07 후속: 실제 Windows 읽기 경로 검증
+
+[Phase 10C native 검증 기록](../releases/evidence/phase10c-native-validation-2026-09-07.json)에 실제 앱 경로의 후속 증거를 남긴다. 별도 identifier/WebView profile의 debug Tauri 앱에 현재 frontend를 포함하고, 사용자가 직접 등록한 client와 공식 SDK client → production stdio runner → standalone Python → 실제 Windows credential/inbox → foreground dispatcher/IndexedDB를 연결했다. Fixture signer, native adapter 대체, mock dispatcher는 사용하지 않았다.
+
+현재 capability/schema hash, 병렬 snapshot/run 조회, native receipt/resource 동일성, 동일 ID replay, 실제 앱 종료 중 미수락 제출과 재시작 후 무재제출 처리를 확인했다. 이 검증에서 생성 계정, Queue 등록, Provider 호출은 필요하지 않다. 재실행에는 [`qa-phase10c-mcp-native.mjs`](../../scripts/qa-phase10c-mcp-native.mjs)의 `--help`를 사용하며 `live`, `app-off`, `revoked`는 실제 앱/클라이언트 상태를 먼저 준비해야 한다. Script가 그 상태를 대신 만들지 않는다.
+
+이 후속 검증은 위 남은 항목 중 읽기 경로·정상 종료/재시작의 범위를 좁힌다. 클라이언트 폐기와 앱 종료의 최종 정리 상태는 검증 기록에 별도로 명시한다. MCP를 통한 사람 승인 enqueue/cancel, 장시간 run polling, native key rotation, 강제 종료 시 불명 mutation, 설치·업데이트·rollback과 실제 운영 증거는 별도로 남는다. 전체 Phase 10 Go/No-Go와 Phase 11 foreground 결정은 자동 승격하지 않는다.
 
 ## Rollback
 
