@@ -84,17 +84,17 @@ export function AnimatedNavBar({ items, forceCondensed = false }: AnimatedNavBar
             className="flex w-full min-w-0 items-center justify-center"
         >
             {/* Full labels depend on the center workspace width shared with both
-                side docks. The 2200px threshold keeps enlarged labels away from
-                sidebar toggles; ordinary desktops retain clear icons and tooltips. */}
+                side docks. Rows wrap within the available width so fixed-size
+                targets cannot overflow into sidebar toggles as fonts or docks change. */}
             <div className={cn(
-                'hidden min-w-0 items-center justify-center gap-0 min-[2200px]:flex',
+                'hidden min-w-0 flex-wrap items-center justify-center gap-0 min-[2200px]:flex',
                 forceCondensed && '!hidden',
             )}>
                 {items.map(item => renderItem(item, 'activeTab-desktop', true))}
             </div>
 
             <div className={cn(
-                'hidden min-w-0 items-center justify-center gap-1 lg:flex min-[2200px]:!hidden',
+                'hidden min-w-0 flex-wrap items-center justify-center gap-1 lg:flex min-[2200px]:!hidden',
                 forceCondensed && '!hidden',
             )}>
                 {items.map(item => renderItem(item, 'activeTab-compact', false))}
