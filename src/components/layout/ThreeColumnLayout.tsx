@@ -53,6 +53,8 @@ import {
     BriefcaseBusiness,
     FolderTree,
     ChevronDown,
+    Moon,
+    Sun,
 } from 'lucide-react'
 
 interface ThreeColumnLayoutProps {
@@ -63,6 +65,7 @@ import { usePresetStore } from '@/stores/preset-store'
 import { useLayoutStore } from '@/stores/layout-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useSceneStore } from '@/stores/scene-store'
+import { useThemeStore } from '@/stores/theme-store'
 import { isAndroidRuntime, isMobileRuntime } from '@/platform/runtime'
 
 // Check if running on Mac (works in browser and Tauri WebView)
@@ -82,6 +85,32 @@ function useMediaQuery(query: string) {
     }, [query])
 
     return matches
+}
+
+function WorkbenchThemeToggle() {
+    const { t } = useTranslation()
+    const theme = useThemeStore(state => state.theme)
+    const setTheme = useThemeStore(state => state.setTheme)
+    const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
+    // Match the existing theme owner, including live system changes; a click persists an explicit choice there.
+    const isDark = theme === 'dark' || (theme === 'system' && systemDark)
+    const Icon = isDark ? Sun : Moon
+
+    return (
+        <button
+            type="button"
+            onClick={() => setTheme(isDark ? 'light' : 'dark')}
+            aria-label={isDark
+                ? t('folderWorkbench.design.toLight', '밝은 화면으로 바꾸기')
+                : t('folderWorkbench.design.toDark', '어두운 화면으로 바꾸기')}
+            className="fb-theme-toggle ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-control px-2 text-base font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+        >
+            <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+            <span>{isDark
+                ? t('folderWorkbench.design.light', '밝게')
+                : t('folderWorkbench.design.dark', '어둡게')}</span>
+        </button>
+    )
 }
 
 export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
@@ -305,6 +334,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         <div
             className={cn(
                 "flex h-screen flex-col overflow-hidden bg-background",
+                folderWorkbenchOpen && "folder-workbench-shell",
                 isAndroidRuntime && "android-landscape-safe-inline",
             )}
             style={isMobileRuntime ? {
@@ -334,32 +364,37 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     {!folderWorkbenchOpen && promptPanelContent}
                 </aside>
 
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-y border-border/45 bg-canvas">
+                <div className={cn('flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas', !folderWorkbenchOpen && 'border-y border-border/45')}>
                     {/* The workbench names the two primary tasks; secondary routes reuse the existing navigation and support-sheet authorities. */}
                     {folderWorkbenchOpen ? (
-                        <nav
-                            aria-label={t('folderWorkbench.navigation.label', '작업대 탐색')}
-                            className="z-10 flex min-w-0 shrink-0 flex-wrap items-center gap-1 border-b border-border/45 bg-card px-3 py-2"
-                        >
+                        <header className="fb-app-header z-10 flex min-w-0 shrink-0 items-center gap-1 border-b border-border/45 bg-card px-2 py-2 sm:px-3 lg:pl-0">
+                            <div className="fb-app-brand hidden shrink-0 items-center px-5 text-lg font-semibold tracking-tight sm:flex lg:w-[232px]">
+                                NAI <span className="ml-1 text-primary">Blue</span>
+                            </div>
+                            <nav
+                                aria-label={t('folderWorkbench.navigation.label', '작업대 탐색')}
+                                className="fb-app-navigation flex min-w-0 items-center gap-1"
+                            >
                             <Link
                                 to="/folders"
                                 aria-current="page"
-                                className="inline-flex min-h-11 items-center rounded-[4px] bg-primary/10 px-3 text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control bg-primary/10 px-2 text-base font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
                             >
-                                {t('folderWorkbench.navigation.create', '에셋 만들기')}
+                                {t('folderWorkbench.design.navCreate', '이미지 만들기')}
                             </Link>
                             <Link
                                 to="/queue"
-                                className="inline-flex min-h-11 items-center rounded-[4px] px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
                             >
-                                {t('folderWorkbench.navigation.progress', '진행 상황')}
+                                {t('folderWorkbench.design.navHistory', '작업 기록')}
                             </Link>
+                            </nav>
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <button
                                         ref={workbenchToolsRef}
                                         type="button"
-                                        className="inline-flex min-h-11 items-center gap-2 rounded-[4px] px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="fb-app-tools inline-flex min-h-11 shrink-0 items-center gap-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3"
                                     >
                                         {t('folderWorkbench.navigation.tools', '도구')}
                                         <ChevronDown className="h-4 w-4" aria-hidden="true" />
@@ -392,7 +427,8 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
-                        </nav>
+                            <WorkbenchThemeToggle />
+                        </header>
                     ) : (
                     /* Utility dialogs wrap below the legacy navigation on other routes. */
                     <div className="z-10 flex shrink-0 flex-wrap items-center gap-2 bg-card px-3 py-2 sm:flex-nowrap">

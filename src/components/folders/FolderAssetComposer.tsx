@@ -68,7 +68,7 @@ export function FolderAssetComposer({ busy, disabled, error, templates, onSubmit
     }
 
     return (
-        <form onSubmit={submit} className="min-w-0 space-y-5" aria-busy={busy || submitting}>
+        <form onSubmit={submit} className="fb-composer min-w-0 space-y-5" aria-busy={busy || submitting}>
             <fieldset disabled={locked} className="min-w-0 space-y-4">
                 {mode === 'form' ? <>
                     {draft.map((row, index) => <div key={row.id} className="min-w-0 space-y-3 rounded-[4px] border border-border/70 bg-card p-3 sm:p-4">

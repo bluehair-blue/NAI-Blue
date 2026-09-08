@@ -958,7 +958,8 @@ async function main() {
                                 }
                             })
 
-                        const navTargets = Array.from(document.querySelectorAll('nav a, nav button'))
+                        const navTargets = Array.from(document.querySelectorAll(document.querySelector('.folder-workbench-shell')
+                            ? '.fb-app-navigation a' : 'nav a, nav button'))
                             .filter((target) => {
                                 const rect = target.getBoundingClientRect()
                                 const style = getComputedStyle(target)
@@ -1008,10 +1009,10 @@ async function main() {
                     assert.ok(report.mainWithinViewport, `${route} @ ${viewport.width}px main region leaves the viewport`)
                     assertVisibleCtaLayout(ctaReport, `${route} @ ${viewport.width}px`)
 
-                    // The workbench exposes two destinations plus a tools menu;
+                    // The workbench names two destinations; Tools and theme are adjacent header controls.
                     // other expert routes retain the five-destination primary nav.
                     if (route !== '/guided-preview') {
-                        assert.ok(report.navTargets.length >= (route === '/folders' ? 3 : 5), `${route} @ ${viewport.width}px should expose primary navigation`)
+                        assert.ok(report.navTargets.length >= (route === '/folders' ? 2 : 5), `${route} @ ${viewport.width}px should expose primary navigation`)
                         for (const [index, target] of report.navTargets.entries()) {
                             assert.ok(
                                 target.width >= 40 && target.height >= 40,
@@ -1021,11 +1022,41 @@ async function main() {
                     }
 
                     if (route === '/folders') {
-                        const navigation = page.locator('nav[aria-label]')
-                        assert.ok((await navigation.getAttribute('aria-label'))?.trim(), 'Workbench navigation must have an accessible name')
-                        assert.equal(await navigation.locator('a[href="/folders"][aria-current="page"]').count(), 1)
-                        assert.equal(await navigation.locator('a[href="/queue"]').count(), 1)
-                        const tools = navigation.locator('button[aria-haspopup="menu"]')
+                        // Match the named controls in the browser's current locale without changing other routes' language.
+                        const labels = await page.evaluate(async () => {
+                            const { default: i18n } = await import('/src/i18n/index.ts')
+                            return Object.fromEntries([
+                                'navigation.label', 'navigation.tools', 'design.navCreate', 'design.navHistory',
+                                'design.toLight', 'design.toDark', 'design.light', 'design.dark', 'design.folders', 'design.findFolder',
+                            ].map(key => [key, i18n.t(`folderWorkbench.${key}`)]))
+                        })
+                        const navigation = page.getByRole('navigation', { name: labels['navigation.label'], exact: true })
+                        const create = navigation.getByRole('link', { name: labels['design.navCreate'], exact: true })
+                        const history = navigation.getByRole('link', { name: labels['design.navHistory'], exact: true })
+                        assert.equal(await create.getAttribute('href'), '/folders')
+                        assert.equal(await create.getAttribute('aria-current'), 'page')
+                        assert.equal(await history.getAttribute('href'), '/queue')
+                        const header = page.locator('.fb-app-header')
+                        const tools = header.getByRole('button', { name: labels['navigation.tools'], exact: true })
+                        const theme = header.getByRole('button', { name: labels['design.toLight'], exact: true })
+                            .or(header.getByRole('button', { name: labels['design.toDark'], exact: true }))
+                        for (const control of [create, history, tools, theme]) {
+                            assert.equal(await control.isVisible(), true, 'Workbench header controls must always be visible')
+                            const box = await control.boundingBox()
+                            assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= -1 && box.x + box.width <= viewport.width + 1 && box.y >= -1 && box.y + box.height <= viewport.height + 1, 'Workbench header controls must fit the viewport with 44px targets')
+                            assert.ok(await control.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize) >= 16), 'Workbench primary controls need 16px text')
+                        }
+                        assert.ok([labels['design.light'], labels['design.dark']].includes((await theme.innerText()).trim()))
+                        const sidebar = page.locator('.fb-sidebar')
+                        assert.equal(await sidebar.isVisible(), viewport.width >= 1024, 'Workbench folder rail must switch to a drawer below desktop width')
+                        if (viewport.width < 1024) {
+                            await page.getByRole('button', { name: labels['design.folders'], exact: true }).click()
+                            const drawer = page.getByRole('dialog', { name: labels['design.folders'], exact: true })
+                            await drawer.waitFor({ state: 'visible' })
+                            assert.equal(await drawer.getByLabel(labels['design.findFolder'], { exact: true }).isVisible(), true)
+                            await page.keyboard.press('Escape')
+                            await drawer.waitFor({ state: 'hidden' })
+                        }
                         await tools.focus()
                         await page.keyboard.press('Enter')
                         const menu = page.getByRole('menu')
@@ -1039,7 +1070,7 @@ async function main() {
                         }
                         await page.keyboard.press('Escape')
                         await menu.waitFor({ state: 'hidden' })
-                        await page.waitForFunction(() => document.activeElement?.matches('nav button[aria-haspopup="menu"]'), undefined, { timeout: 2000 })
+                        await page.waitForFunction(() => document.activeElement?.matches('.fb-app-header button[aria-haspopup="menu"]'), undefined, { timeout: 2000 })
                     }
 
                     if (viewport.sidebars === 'hidden') {

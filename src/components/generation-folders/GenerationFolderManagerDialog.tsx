@@ -33,7 +33,7 @@ interface FolderRow {
     readonly depth: number
 }
 
-const STEPS = ['컴퓨터 저장 위치', '공통 프롬프트', 'R2 업로드'] as const
+const STEPS = ['저장 위치', '그림 설명', '인터넷에 올리기'] as const
 
 function folderRows(folders: readonly GenerationFolder[]): FolderRow[] {
     const rows: FolderRow[] = []
@@ -230,7 +230,7 @@ export function GenerationFolderManagerDialog({
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="grid max-h-[calc(100dvh-2rem)] max-w-4xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0">
+                <DialogContent closeLabel={t('common.close', '닫기')} className="grid max-h-[calc(100dvh-2rem)] max-w-4xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0">
                     <DialogHeader className="border-b border-border/60 px-5 py-4 pr-14">
                         <DialogTitle>{t('generationFolders.manager.title', '이미지 저장 폴더')}</DialogTitle>
                         <DialogDescription>{t('generationFolders.manager.simpleDescription', '왼쪽에서 폴더를 고르고, 오른쪽의 3단계만 따라가면 됩니다.')}</DialogDescription>
@@ -339,17 +339,17 @@ export function GenerationFolderManagerDialog({
                                 {step === 1 && (
                                     <section className="mx-auto max-w-xl space-y-5">
                                         <div>
-                                            <h3 className="text-base font-semibold">{t('generationFolders.manager.promptTitle', '이 폴더에서 항상 쓸 프롬프트가 있나요?')}</h3>
+                                            <h3 className="text-base font-semibold">{t('generationFolders.manager.promptTitle', '이 폴더의 모든 이미지에 넣을 설명이 있나요?')}</h3>
                                             <p className="mt-1 text-sm text-muted-foreground">{t('generationFolders.manager.promptHelp', '없으면 비워 두고 다음으로 넘어가도 됩니다.')}</p>
                                         </div>
                                         <label className="grid gap-2 text-xs font-medium">
-                                            <span>{t('generationFolders.manager.commonPrompt', '폴더 공통 프롬프트 · 선택')}</span>
-                                            <textarea className="min-h-32 resize-y rounded-control border border-input bg-background p-3 text-sm" value={commonPrompt} onChange={event => setCommonPrompt(event.target.value)} maxLength={20_000} placeholder={t('generationFolders.manager.commonPlaceholder', '이 폴더의 작업 앞에만 추가됩니다.')} />
-                                            <span className="font-normal text-muted-foreground">{t('generationFolders.manager.noPromptInheritance', '새 하위 폴더에는 자동으로 복사되지 않습니다.')}</span>
+                                            <span>{t('generationFolders.manager.commonPrompt', '모든 이미지에 넣을 그림 설명 · 선택')}</span>
+                                            <textarea className="min-h-32 resize-y rounded-control border border-input bg-background p-3 text-sm" value={commonPrompt} onChange={event => setCommonPrompt(event.target.value)} maxLength={20_000} placeholder={t('generationFolders.manager.commonPlaceholder', '이 폴더에서 만들 이미지의 설명 앞에 넣어요.')} />
+                                            <span className="font-normal text-muted-foreground">{t('generationFolders.manager.noPromptInheritance', '안쪽에 새로 만든 폴더에는 자동으로 복사되지 않아요.')}</span>
                                         </label>
                                         {transferOptions.length > 0 && (
                                             <details className="rounded-panel border border-border/60 p-4">
-                                                <summary className="cursor-pointer text-sm font-semibold">{t('generationFolders.manager.transferTitle', '이 프롬프트를 기존 하위 폴더에도 복사')}</summary>
+                                                <summary className="cursor-pointer text-sm font-semibold">{t('generationFolders.manager.transferTitle', '이 설명을 안쪽 폴더에도 복사하기')}</summary>
                                                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                                     {transferOptions.map(row => (
                                                         <label key={row.folder.id} className="flex min-h-9 items-center gap-2 text-xs">
@@ -358,7 +358,7 @@ export function GenerationFolderManagerDialog({
                                                         </label>
                                                     ))}
                                                 </div>
-                                                <p className="mt-2 text-xs text-muted-foreground">{t('generationFolders.manager.transferWarning', '선택한 폴더의 기존 공통 프롬프트를 덮어씁니다.')}</p>
+                                                <p className="mt-2 text-xs text-muted-foreground">{t('generationFolders.manager.transferWarning', '선택한 폴더에 있던 그림 설명을 이 설명으로 바꿔요.')}</p>
                                                 <Button type="button" size="sm" variant="outline" className="mt-3" disabled={transferTargets.length === 0} onClick={() => void transferPrompt()}>{t('generationFolders.manager.transferAction', '선택한 폴더로 복사')}</Button>
                                             </details>
                                         )}
@@ -368,33 +368,33 @@ export function GenerationFolderManagerDialog({
                                 {step === 2 && (
                                     <section className="mx-auto max-w-xl space-y-5">
                                         <div>
-                                            <h3 className="text-base font-semibold">{t('generationFolders.manager.r2Title', '완료된 이미지를 R2에도 올릴까요?')}</h3>
+                                            <h3 className="text-base font-semibold">{t('generationFolders.manager.r2Title', '완성된 이미지를 인터넷에도 올릴까요?')}</h3>
                                             <p className="mt-1 text-sm text-muted-foreground">{t('generationFolders.manager.r2Help', '폴더마다 켜거나 끌 수 있습니다.')}</p>
                                         </div>
                                         <div className={cn('rounded-panel border border-border p-4', !r2Ready && 'bg-muted/45 opacity-70')}>
                                             <label className="flex min-h-11 items-start gap-3 text-sm font-medium">
                                                 <Checkbox checked={r2Ready && autoUpload} disabled={!r2Ready} onCheckedChange={checked => setAutoUpload(checked === true)} />
-                                                <span>{t('generationFolders.manager.autoUpload', '이 폴더의 새 이미지를 자동 업로드')}<span className="mt-1 block text-xs font-normal text-muted-foreground">{t('generationFolders.manager.autoUploadHelp', '하위 폴더는 각자 따로 선택합니다.')}</span></span>
+                                                <span>{t('generationFolders.manager.autoUpload', '이 폴더에서 만든 이미지를 자동으로 올리기')}<span className="mt-1 block text-xs font-normal text-muted-foreground">{t('generationFolders.manager.autoUploadHelp', '하위 폴더는 각자 따로 선택합니다.')}</span></span>
                                             </label>
                                             {!r2Ready && selectedProfileId !== null && (
                                                 <Button asChild type="button" variant="outline" size="sm" className="mt-3 opacity-100">
-                                                    <Link to="/guided-preview/task/library/r2"><CloudUpload className="mr-2 h-4 w-4" />{t('generationFolders.manager.setupR2', 'R2 업로드 설정하기')}</Link>
+                                                    <Link to="/guided-preview/task/library/r2"><CloudUpload className="mr-2 h-4 w-4" />{t('generationFolders.manager.setupR2', '인터넷에 올리기 설정')}</Link>
                                                 </Button>
                                             )}
                                         </div>
                                         {resolved && (
                                             <div className="rounded-panel bg-muted/45 p-4 text-sm">
-                                                <p className="font-medium">{t('generationFolders.manager.target', '업로드 위치')}</p>
-                                                <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{resolved.r2.bucket ?? t('generationFolders.manager.bucketUnset', '버킷 미설정')}/{resolved.r2.prefix}</p>
+                                                <p className="font-medium">{t('generationFolders.manager.target', '인터넷 저장 위치')}</p>
+                                                <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{resolved.r2.bucket ?? t('generationFolders.manager.bucketUnset', '저장 공간을 아직 정하지 않았어요')}/{resolved.r2.prefix}</p>
                                             </div>
                                         )}
                                         <details className="rounded-panel border border-border/60 p-4">
-                                            <summary className="cursor-pointer text-sm font-semibold">{t('generationFolders.manager.advancedR2', '버킷 또는 프리픽스 직접 바꾸기 · 고급')}</summary>
+                                            <summary className="cursor-pointer text-sm font-semibold">{t('generationFolders.manager.advancedR2', '인터넷 저장 위치 직접 바꾸기')}</summary>
                                             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                                                <label className="grid gap-1 text-xs font-medium"><span>{t('generationFolders.manager.bucketOverride', '버킷')}</span><Input value={bucket} onChange={event => setBucket(event.target.value)} placeholder={selectedR2Profile?.bucket || t('generationFolders.manager.useDefaultProfile', '기본 프로필 사용')} /></label>
-                                                <label className="grid gap-1 text-xs font-medium"><span>{t('generationFolders.manager.prefixOverride', '프리픽스')}</span><Input value={prefix} onChange={event => setPrefix(event.target.value)} placeholder={selectedR2Profile?.prefix || t('generationFolders.manager.useDefaultProfile', '기본 프로필 사용')} /></label>
+                                                <label className="grid gap-1 text-xs font-medium"><span>{t('generationFolders.manager.bucketOverride', '저장 공간 이름 (버킷)')}</span><Input value={bucket} onChange={event => setBucket(event.target.value)} placeholder={selectedR2Profile?.bucket || t('generationFolders.manager.useDefaultProfile', '기존 연결 설정 사용')} /></label>
+                                                <label className="grid gap-1 text-xs font-medium"><span>{t('generationFolders.manager.prefixOverride', '저장할 폴더 이름')}</span><Input value={prefix} onChange={event => setPrefix(event.target.value)} placeholder={selectedR2Profile?.prefix || t('generationFolders.manager.useDefaultProfile', '기존 연결 설정 사용')} /></label>
                                             </div>
-                                            <p className="mt-3 text-xs leading-5 text-muted-foreground">{t('generationFolders.manager.prefixRule', '상위 프리픽스가 있으면 폴더 이름이 뒤에 붙습니다. 이 폴더에서 직접 입력한 값이 있으면 그 값이 우선합니다.')}</p>
+                                            <p className="mt-3 text-xs leading-5 text-muted-foreground">{t('generationFolders.manager.prefixRule', '바깥 폴더의 저장 위치 뒤에 이 폴더 이름이 붙어요. 여기에 직접 적으면 적은 위치를 사용해요.')}</p>
                                         </details>
                                     </section>
                                 )}
@@ -422,7 +422,7 @@ export function GenerationFolderManagerDialog({
                 open={deleteOpen}
                 onOpenChange={setDeleteOpen}
                 title={t('generationFolders.manager.deleteTitle', '이 생성 폴더를 삭제할까요?')}
-                description={t('generationFolders.manager.deleteDescription', '하위 폴더 정의도 함께 삭제됩니다. 디스크의 이미지와 R2 파일은 삭제하지 않습니다.')}
+                description={t('generationFolders.manager.deleteDescription', '안쪽 폴더의 설정도 함께 삭제해요. 컴퓨터와 인터넷에 저장한 이미지 파일은 지우지 않아요.')}
                 confirmText={t('generationFolders.manager.delete', '폴더 정의 삭제')}
                 variant="destructive"
                 onConfirm={async () => {
