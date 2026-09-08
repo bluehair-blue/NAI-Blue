@@ -27,7 +27,7 @@ describe('Phase 13 product guidance UI contract', () => {
         expect(source).toContain('focus-visible:ring-2')
         expect(source).toContain('aria-controls="product-guidance-sheet"')
         expect(source).toContain("side={isMobileRuntime ? 'bottom' : 'right'}")
-        expect(source).toContain('returnFocusRef={triggerRef}')
+        expect(source).toContain('returnFocusRef={returnFocusRef ?? triggerRef}')
         expect(source).toContain('motion-reduce:transition-none')
         expect(source).toContain('<details')
         expect(source).toContain('id="advanced"')
