@@ -10,6 +10,14 @@ const plan = (): JsonObject => ({ source: { kind: 'workflow-draft', draftId: 'ì 
     count: 1, seedPolicy: { kind: 'random' }, budget: { maxImages: 100, maxAnlas: 1.25 } })
 const digest = `sha256:${'a'.repeat(64)}`
 const fixtures: Partial<Record<AgentCommandName, { valid: JsonObject[]; invalid: unknown[] }>> = {
+    'scene.resolve_many': { valid: [{ targets: [{ presetId: 'preset-1', sceneId: 'scene-1' }] }], invalid: [{ targets: [] }] },
+    'scene.patch_many': { valid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', prompts: { base: 'rainy street' }, generation: { cfgScale: 4.5 } }] }],
+        invalid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', artifactRefs: [] }] }] },
+    'folder.plan_changes': { valid: [{ expectedRevision: 0, changes: [{ op: 'create', folderId: 'folder-1', parentId: 'root', displayName: 'Scenes', pathSegment: 'Scenes', autoUpload: true, r2ProfilePolicy: { mode: 'set', value: 'profile-1' } }] }],
+        invalid: [{ expectedRevision: 0, changes: [{ op: 'create', folderId: 'folder-1', parentId: null, displayName: 'Scenes', pathSegment: 'Scenes' }] }] },
+    'folder.apply_changes': { valid: [{ expectedRevision: 0, expectedPlanHash: digest, changes: [{ op: 'patch', folderId: 'folder-1', commonPrompt: 'rain' }] }],
+        invalid: [{ expectedRevision: 0, expectedPlanHash: digest, changes: [{ op: 'delete', folderId: 'folder-1' }] }] },
+    'r2.get_readiness': { valid: [{}], invalid: [{ extra: true }] },
     'system.describe_capabilities': { valid: [{}], invalid: [{ extra: true }] },
     'workspace.get_snapshot': { valid: [{}], invalid: [{ extra: true }] },
     'generation.get_run': { valid: [{ runId: 'run-1' }], invalid: [{}, { runId: '' }, { runId: '../private' }, { runId: 'a'.repeat(201) }, { runId: 'run-1', extra: true }] },
@@ -79,5 +87,38 @@ describe('shared application command input contracts', () => {
         const capabilities = describeAgentCommandCapabilities(handlers, { ready: true, mode: 'suggest', globalPause: false })
         expect(() => assertAgentPublicValue({ capabilities })).not.toThrow()
         expect(JSON.stringify(capabilities)).not.toContain('$schema')
+    })
+})
+
+
+describe('authoring trust-boundary restrictions', () => {
+    it('accepts the Scene planning shape and rejects duplicate targets and total image overflow', () => {
+        const contract = getAgentCommandInputContract('generation.plan')!
+        const target = { presetId: 'preset-1', sceneId: 'scene-1', expectedRevision: 1, count: 2 }
+        const input = { source: { kind: 'scene', targets: [target] }, seedPolicy: { kind: 'fixed', seed: 10 }, budget: { maxImages: 2, maxAnlas: 5 } }
+        expect(contract.validate(input)).toBe(input)
+        expect(new AjvJsonSchemaValidator().getValidator(contract.schema)(input).valid).toBe(true)
+        expect(() => contract.validate({ ...input, count: 2 })).toThrow()
+        expect(() => contract.validate({ ...input, source: { kind: 'scene', targets: [target, target] } })).toThrow()
+        expect(() => contract.validate({ ...input, source: { kind: 'scene', targets: [{ ...target, count: 100 }, { ...target, sceneId: 'scene-2' }] } })).toThrow()
+    })
+    it('rejects path injection, grant-owned fields, deletion and duplicate bulk identities', () => {
+        const contract = getAgentCommandInputContract('folder.plan_changes')!
+        const change = { op: 'create', folderId: 'folder-1', parentId: 'root', displayName: 'Safe', pathSegment: 'Safe' }
+        const schemaValidator = new AjvJsonSchemaValidator().getValidator(contract.schema)
+        for (const pathSegment of ['..', 'CON', 'folder.', 'folder ', 'a/b', 'E:\\private']) {
+            expect(() => contract.validate({ expectedRevision: 0, changes: [{ ...change, pathSegment }] })).toThrow()
+            expect(schemaValidator({ expectedRevision: 0, changes: [{ ...change, pathSegment }] }).valid).toBe(false)
+        }
+        expect(() => contract.validate({ expectedRevision: 0, changes: [change, change] })).toThrow()
+        const scene = getAgentCommandInputContract('scene.patch_many')!
+        for (const field of ['artifactRefs', 'queueCount', 'queuedFileNames', 'images', 'savePath']) {
+            expect(() => scene.validate({ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', [field]: [] }] })).toThrow()
+        }
+        expect(() => assertAgentPublicValue({ prompts: { base: 'E:\\private\\output' } })).toThrow()
+        const snapshot = getAgentCommandInputContract('workspace.get_snapshot')!
+        expect(snapshot.validate({ offset: 100, limit: 100 })).toEqual({ offset: 100, limit: 100 })
+        expect(() => snapshot.validate({ offset: -1 })).toThrow()
+        expect(() => snapshot.validate({ limit: 101 })).toThrow()
     })
 })

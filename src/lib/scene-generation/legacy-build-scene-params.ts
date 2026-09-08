@@ -99,7 +99,11 @@ export async function buildLegacySceneGenerationParams(
     options: { presetId?: string; seed?: number } = {},
 ): Promise<SceneGenerationBuildResult> {
     const genState = useGenerationStore.getState()
-    const fragmentSession = createWildcardResolutionSession()
+    // Queue review/replay supplies a seed: wildcard choices must replay with the same
+    // Scene identity. Unseeded direct legacy generation keeps its existing random session.
+    const fragmentSession = createWildcardResolutionSession(options.seed === undefined ? {} : {
+        seed: options.seed, scope: `scene:${options.presetId ?? ''}:${scene.id}`,
+    })
     const scenePrompts = resolveScenePrompts(scene)
     const sceneGeneration = resolveSceneGeneration(scene)
 

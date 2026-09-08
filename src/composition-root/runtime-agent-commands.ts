@@ -19,6 +19,8 @@ import { createAgentGenerationExecutionPort } from './agent-generation-execution
 import { createAgentGenerationCancellationPort } from './agent-generation-cancellation'
 import { createAgentGenerationStorageRetryPort } from './agent-generation-storage-retry'
 import { isAgentExecutionPolicyUpdatePending, useSettingsStore } from '@/stores/settings-store'
+import { createRuntimeAgentAuthoring, createAgentAuthoringReadHandlers, getAgentAuthoringSnapshot } from './agent-authoring'
+import { createAgentSceneGenerationPlanHandler } from './agent-scene-generation-plan'
 
 const receipts = new IndexedDbCommandReceiptRepository()
 
@@ -31,6 +33,9 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
             fragmentRepository: useFragmentStore.getState().getLookupRepository(), pricingBasis }), plans,
     )
     return [{ ...planner('paid'), execute: async (input, context) => {
+        if ((input.source as { kind?: string }).kind === 'scene') {
+            return createAgentSceneGenerationPlanHandler(plans).execute(input, context)
+        }
         const source = input.source as { draftId: string }
         const draft = await drafts.get(source.draftId)
         const pricingBasis = resolveAnlasPricingBasis({ model: draft?.payload.model ?? '',
@@ -39,10 +44,15 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
     } }, {
         command: 'workspace.get_snapshot', effect: 'read',
         validate: getAgentCommandInputContract('workspace.get_snapshot')!.validate,
-        execute: async () => {
-            const all = await drafts.list()
-            return { workspaceId, workflowDrafts: all.slice(0, 100).map(draft => ({ draftId: draft.id, revision: draft.revision })),
-                totalDrafts: all.length, truncated: all.length > 100 }
+        execute: async input => {
+            const offset = Number(input.offset ?? 0)
+            const limit = Math.min(Number(input.limit ?? 20), 50)
+            const all = [...await drafts.list()].sort((a, b) => a.id.localeCompare(b.id))
+            const authoring = await getAgentAuthoringSnapshot(offset, limit)
+            const hasMore = offset + limit < Math.max(all.length, Number(authoring.totalScenes), Number(authoring.totalPresets), Number(authoring.totalFolders))
+            return { workspaceId, ...authoring,
+                workflowDrafts: all.slice(offset, offset + limit).map(draft => ({ draftId: draft.id, revision: draft.revision })),
+                totalDrafts: all.length, truncated: hasMore, nextOffset: hasMore ? offset + limit : null }
         },
     }, {
         command: 'generation.get_run', effect: 'read',
@@ -56,7 +66,7 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
                     providerState: job.provider.state, storageState: job.storage.state, releaseState: job.release.state,
                     acceptanceState: job.acceptance.state })) }
         },
-    }]
+    }, ...createAgentAuthoringReadHandlers()]
 }
 
 /** Singleton is shared by Data Hub and post-recovery startup; no second Queue or credential authority. */
@@ -77,6 +87,7 @@ export const runtimeAgentCommands = new ForegroundAgentCommandRuntime({
         ports: createAgentGenerationExecutionPort(),
         cancellation: createAgentGenerationCancellationPort(),
         storageRetry: createAgentGenerationStorageRetryPort(),
+        authoring: createRuntimeAgentAuthoring(),
     }),
 })
 

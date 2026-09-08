@@ -578,6 +578,26 @@ beforeEach(() => {
 })
 
 describe('Scene workflow golden characterization', () => {
+    it('replays explicit Queue seeds through real wildcard resolution while unseeded legacy calls remain random', async () => {
+        const { buildLegacySceneGenerationParams } = await import('@/lib/scene-generation/legacy-build-scene-params')
+        const source = scene('scene-seeded-wildcards', 1, { prompts: {
+            base: '<red|blue|green>', additional: '', negative: '',
+        } })
+        resetRuntime(100, [source])
+        vi.mocked(Math.random).mockReturnValue(0.01)
+        const reviewed = await buildLegacySceneGenerationParams(source, { presetId: PRESET_ID, seed: 123 })
+        vi.mocked(Math.random).mockReturnValue(0.99)
+        const replayed = await buildLegacySceneGenerationParams(source, { presetId: PRESET_ID, seed: 123 })
+        expect(replayed.finalPrompt).toBe(reviewed.finalPrompt)
+        expect(replayed.params.seed).toBe(123)
+        vi.mocked(Math.random).mockReturnValue(0.01)
+        const unseededFirst = await buildLegacySceneGenerationParams(source)
+        vi.mocked(Math.random).mockReturnValue(0.99)
+        const unseededSecond = await buildLegacySceneGenerationParams(source)
+        expect(unseededFirst.finalPrompt).not.toBe(unseededSecond.finalPrompt)
+        expect(runtimeCapture.requests).toHaveLength(0)
+    })
+
     it('matches real builder, worker, payload, queue, cancellation and save behavior', async () => {
         const scenarios: Array<Record<string, unknown>> = []
 

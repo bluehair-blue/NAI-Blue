@@ -9,7 +9,25 @@ import { runtimeAgentCommands } from '@/composition-root/runtime-agent-commands'
 import type { ForegroundAgentCommandRuntime } from '@/composition-root/foreground-agent-command-runtime'
 import type { AgentExecutionReview } from '@/application/agent/agent-execution-coordinator'
 import { useQueueStore } from '@/stores/queue-store'
+import type { JsonValue } from '@/domain/composition/types'
 import { AgentPolicyForm } from './AgentPolicyForm'
+
+/** Show every signed input field for review; display labels never alter the consent binding. */
+function authoringRows(value: JsonValue, prefix = ''): { label: string; value: string }[] {
+    const labels: Record<string, string> = { presetId: '프리셋 ID', presetName: '프리셋 이름', expectedRevision: '기준 버전',
+        expectedPlanHash: '검토 계획 확인값', changes: '변경 항목', sceneId: '에셋 ID', name: '에셋 이름', prompts: '프롬프트',
+        base: '기본', additional: '추가', character: '캐릭터', negative: '제외', characterNegative: '캐릭터 제외',
+        generation: '생성 설정', model: '모델', steps: '단계', cfgScale: '프롬프트 강도', cfgRescale: '강도 보정', sampler: '샘플러',
+        scheduler: '노이즈 일정', smea: 'SMEA', smeaDyn: '동적 SMEA', variety: '다양성', qualityToggle: '품질 태그',
+        ucPreset: '제외 프리셋', seed: '시드', seedLocked: '시드 고정', width: '너비', height: '높이', generationFolderId: '저장 폴더 ID',
+        productionCount: '생성 수량', filenameTemplate: '파일 이름 규칙', op: '작업', folderId: '폴더 ID', parentId: '상위 폴더 ID',
+        displayName: '폴더 이름', pathSegment: '저장 폴더 이름', commonPrompt: '공통 프롬프트', autoUpload: 'R2 자동 업로드 설정',
+        r2ProfilePolicy: 'R2 프로필', r2BucketPolicy: 'R2 버킷', r2PrefixPolicy: 'R2 저장 위치', mode: '적용 방식', value: '설정값' }
+    if (Array.isArray(value)) return value.flatMap((item, index) => authoringRows(item, `${prefix} ${index + 1}`))
+    if (value !== null && typeof value === 'object') return Object.entries(value).flatMap(([key, item]) =>
+        authoringRows(item, [prefix, labels[key] ?? key].filter(Boolean).join(' · ')))
+    return [{ label: prefix, value: value === null ? '없음' : typeof value === 'boolean' ? value ? '켜짐' : '꺼짐' : String(value) }]
+}
 
 /** Human registration controls share the live dispatcher's capabilities, never its secret keys. */
 export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?: ForegroundAgentCommandRuntime }) {
@@ -26,6 +44,8 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                 ? { requestHash: item.requestHash, runId: item.runId, jobId: item.jobId, targetHash: item.targetHash, policyRevision: item.policyRevision }
                 : item.command === 'generation.cancel'
                 ? { requestHash: item.requestHash, runId: item.runId, targetHash: item.targetHash, policyRevision: item.policyRevision }
+                : 'input' in item
+                ? { requestHash: item.requestHash, resourceId: item.resourceId, targetHash: item.targetHash, policyRevision: item.policyRevision }
                 : { requestHash: item.requestHash, planHash: item.planHash, policyRevision: item.policyRevision }
             await runtime.decideApproval(item.requestId, decision, expected)
             setMessage(t('agentInbox.approvalChanged'))
@@ -117,6 +137,16 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                         <p className="break-all">{t('agentInbox.storageJob')}: {item.jobId}</p>
                         <p className="break-all">{t('agentInbox.storageArtifact')}: {item.artifactId}</p>
                         <p>{t('agentInbox.storageEffect')}</p>
+                    </> : 'input' in item ? <>
+                        <p className="font-medium">{item.command === 'scene.patch_many' ? t('agentInbox.sceneAuthoringAction', '에셋 설정 편집') : t('agentInbox.folderAuthoringAction', '생성 폴더 설정 편집')}</p>
+                        <p className="break-all">{item.resourceId} · {t('agentInbox.authoringChangeCount', '{{count}}개 항목', { count: item.changeCount })}</p>
+                        <details><summary className="cursor-pointer font-medium">{t('agentInbox.authoringChanges', '바뀌는 내용')}</summary>
+                            <div className="mt-2 max-h-96 space-y-2 overflow-y-auto">{authoringRows(item.input).map((row, index) => <label key={index} className="block space-y-1">
+                                <span>{row.label}</span><textarea readOnly className="w-full resize-y rounded border bg-background p-2" value={row.value} rows={Math.min(6, Math.max(1, row.value.split('\n').length))} />
+                            </label>)}</div>
+                        </details>
+                        {item.createsFolders && <p>{t('agentInbox.authoringCreatesFolders', '설정된 저장 위치 아래에 폴더를 만듭니다.')}</p>}
+                        {item.renamesPathSegments && <p>{t('agentInbox.authoringRenamesFolders', '비어 있는 폴더의 저장 경로를 변경합니다.')}</p>}
                     </> : <>
                         <p className="break-all">{t('agentInbox.reviewedSource')}: {item.sourceIds.join(', ')}</p>
                         <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
@@ -126,7 +156,7 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                     <p>{t('agentInbox.approvalExpiry')}: <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p>
                     <p>{t('agentInbox.approvalReasons')}: {item.reasons.map(reason => t(`agentInbox.reason_${reason}`, { defaultValue: reason })).join(', ')}</p>
                     <div className="flex flex-wrap gap-2">
-                        <Button size="sm" disabled={!ready || ((item.command ?? 'generation.enqueue') === 'generation.enqueue' && state.policy.globalPause) || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
+                        <Button size="sm" disabled={!ready || (!['generation.cancel', 'generation.retry_storage'].includes(item.command ?? 'generation.enqueue') && state.policy.globalPause) || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
                             onClick={() => void decide(item, 'approve')}>{t('agentInbox.approveOnce')}</Button>
                         <Button size="sm" variant="outline" disabled={!ready} onClick={() => void decide(item, 'reject')}>{t('agentInbox.rejectApproval')}</Button>
                     </div>

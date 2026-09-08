@@ -66,7 +66,9 @@ const sourceScene: SceneCard = {
     height: 1024,
     metadataMode: 'strip-only',
     queueCount: 4,
+    queuedFileNames: ['pending.png'],
     images: [{ id: 'image:1', url: 'source.png', timestamp: 1, isFavorite: true }],
+    artifactRefs: [{ artifactId: 'image:1', createdAt: '2026-09-01T00:00:00.000Z', favorite: true }],
     createdAt: 1,
 }
 
@@ -86,6 +88,22 @@ beforeEach(() => {
 })
 
 describe('Scene folder management', () => {
+    it.each(['scene', 'preset'] as const)('duplicates a %s without inheriting completed outputs or pending filenames', kind => {
+        const store = useSceneStore.getState()
+        if (kind === 'scene') store.duplicateScene('folder:source', 'scene:source')
+        else store.duplicatePresets(['folder:source'])
+        const presets = useSceneStore.getState().presets
+        const clone = kind === 'scene'
+            ? presets[0].scenes.find(scene => scene.id !== sourceScene.id)!
+            : presets.find(preset => preset.id !== 'folder:source' && preset.scenes.length > 0)!.scenes[0]
+
+        expect(clone.id).not.toBe(sourceScene.id)
+        expect(clone).toMatchObject({ prompts: sourceScene.prompts, generation: sourceScene.generation,
+            queueCount: 0, images: [], artifactRefs: [] })
+        expect(clone.queuedFileNames).toBeUndefined()
+        expect(presets[0].scenes[0]).toEqual(sourceScene)
+    })
+
     it('copies a complete Scene snapshot as a folder default and opens clean new Scene state', () => {
         const store = useSceneStore.getState()
         store.setPresetDefaultFromScene(['folder:target'], 'folder:source', 'scene:source')

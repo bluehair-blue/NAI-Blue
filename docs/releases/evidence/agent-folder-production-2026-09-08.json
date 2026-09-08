@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-08T07:54:36.0058367Z",
+  "status": "implementation-and-automated-validation-passed",
+  "productOperationalValidationComplete": false,
+  "baseCommit": "ad8ec5a915a4cf1b869cd0f2b895adbc95ebedba",
+  "implementationTreeBeforeEvidence": "0d699326dfa0b1914821188c4bcc9b3b6da65b73",
+  "contract": "docs/architecture/ADR-013-agent-folder-production.md",
+  "runtime": {
+    "platform": "Windows",
+    "node": "24.19.0",
+    "executionAuthority": "existing-foreground-runtime-and-durable-queue"
+  },
+  "checks": {
+    "frontendProductionBuild": "passed",
+    "lint": "passed; generated artifacts excluded; maintained tests retained",
+    "nativeCargoCheckOffline": "passed",
+    "architecture": {
+      "dependencies": 3563,
+      "modules": 636,
+      "violations": 0,
+      "status": "passed"
+    },
+    "windowsDebugBuild": {
+      "path": "src-tauri/target/debug/NAI-Blue.exe",
+      "launched": false,
+      "installed": false,
+      "identifier": "blue.bluehair.naiblue.phase10cqa",
+      "status": "passed",
+      "sha256": "d9c8cddd67a6c12ef957e23b0db4b1cd5af92a822e563b252976ba7840e2cc39"
+    },
+    "vitest": {
+      "failed": 0,
+      "artifact": "artifacts/agent-folder-production/vitest.json",
+      "testFiles": 339,
+      "skipped": 4,
+      "passed": 2506
+    },
+    "typecheck": "passed"
+  },
+  "integrationEvidence": [
+    {
+      "verifies": "Official MCP SDK handshake/schema/tool call to dispatcher, durable plan, execution coordinator, real IndexedDB Scene Queue; identical request preserves one batch",
+      "simulated": [
+        "native inbox and authentication port",
+        "external metadata and resource adapters"
+      ],
+      "path": "tests/services/queue/scene-queue-r2-planning.test.ts",
+      "queueRunnerInvoked": false
+    },
+    {
+      "verifies": "Actual Scene authoring CAS, persisted navigation shell, Artifact link, Zustand result publication, latest preview, UI revision conflict, fresh edit and restart restoration",
+      "revisions": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "path": "tests/persistence/agent-scene-preview.integration.test.ts",
+      "synthetic": [
+        "Artifact records",
+        "preview paths"
+      ]
+    },
+    {
+      "path": "tests/persistence/agent-execution-coordinator.test.ts",
+      "verifies": "Concurrent approval once, scope and policy checks, durable replay, positive reconciliation, unknown outcomes without reapplication"
+    },
+    {
+      "path": "tests/presentation/workflow/folder-queue-activity.test.ts",
+      "verifies": "Agent-origin status, exact preset and Scene identity, multiple runs, stale observation and recovery"
+    },
+    {
+      "path": "tests/services/agent/agent-authoring-read-handlers.test.ts",
+      "verifies": "Large response forward progress and bounded Artifact history"
+    }
+  ],
+  "correctedDuringValidation": [
+    "Scene authoring comparison depended on object property insertion order",
+    "Partial generation settings caused a spurious retired-flag update after result publication",
+    "Explicit Queue seed did not previously control legacy wildcard resolution",
+    "One source-order assertion referenced a renamed allocation variable",
+    "Agent R2 upload permissions had no UI control"
+  ],
+  "operationalState": {
+    "browserVisualQAThisRun": false,
+    "realR2Upload": false,
+    "productionUserDataChanged": false,
+    "realProviderInvoked": false,
+    "nativeClientRegisteredThisRun": false,
+    "codexMcpConfigured": false
+  },
+  "supportedBounds": {
+    "storage": "existing configured roots and referenced child paths",
+    "imagesPerPlan": 100,
+    "appRequired": true,
+    "authoringRowsPerRequest": 100,
+    "credentials": "existing native credential authority"
+  },
+  "remainingOperationalEvidence": [
+    "Register the actual NAI Blue client and Codex MCP host connection",
+    "Run an explicitly scoped real NAI generation and observe the actual app preview",
+    "Verify actual R2 upload separately when authorized"
+  ]
+}

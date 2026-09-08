@@ -191,7 +191,8 @@ export function GenerationFolderManagerDialog({
                 useAbsolutePath: absolute,
                 commonPrompt,
                 r2: {
-                    autoUpload: r2Ready ? autoUpload : false,
+                    // Readiness gates execution; a transient connection state must not erase the saved preference.
+                    autoUpload,
                     bucket,
                     prefix,
                 },
@@ -373,7 +374,7 @@ export function GenerationFolderManagerDialog({
                                         </div>
                                         <div className={cn('rounded-panel border border-border p-4', !r2Ready && 'bg-muted/45 opacity-70')}>
                                             <label className="flex min-h-11 items-start gap-3 text-sm font-medium">
-                                                <Checkbox checked={r2Ready && autoUpload} disabled={!r2Ready} onCheckedChange={checked => setAutoUpload(checked === true)} />
+                                                <Checkbox checked={autoUpload} disabled={!r2Ready} onCheckedChange={checked => setAutoUpload(checked === true)} />
                                                 <span>{t('generationFolders.manager.autoUpload', '이 폴더에서 만든 이미지를 자동으로 올리기')}<span className="mt-1 block text-xs font-normal text-muted-foreground">{t('generationFolders.manager.autoUploadHelp', '하위 폴더는 각자 따로 선택합니다.')}</span></span>
                                             </label>
                                             {!r2Ready && selectedProfileId !== null && (

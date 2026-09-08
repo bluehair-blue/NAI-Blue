@@ -1,3 +1,4 @@
+import { parseAgentExecutionLedger } from '@/application/agent/agent-execution-repository'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
@@ -41,7 +42,7 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
     function reopen() {
         const coordinator = createAgentExecutionCoordinator({ ...opts, repository: new IndexedDbAgentExecutionRepository() })
         const dispatcher = new AgentCommandDispatcher({ workspaceId: opts.workspaceId, receipts,
-            handlers: [coordinator.handler, ...(coordinator.cancelHandler ? [coordinator.cancelHandler] : []), ...(coordinator.storageRetryHandler ? [coordinator.storageRetryHandler] : [])],
+            handlers: [coordinator.handler, ...(coordinator.cancelHandler ? [coordinator.cancelHandler] : []), ...(coordinator.storageRetryHandler ? [coordinator.storageRetryHandler] : []), ...coordinator.authoringHandlers],
             authentication: { authenticate: async envelope => ({ clientId: envelope.context.clientId, actor: { kind: envelope.context.actor.kind, id: `client:${envelope.context.clientId}` } }) },
             runtime: () => ({ ready: true, mode: policy.mode, globalPause: policy.globalPause }), now: () => time })
         return { coordinator, dispatcher }
@@ -388,4 +389,110 @@ describe('durable agent execution authority', () => {
         expect(await active.dispatcher.dispatch(f.request('after-registration'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
         expect(f.enqueue).toHaveBeenCalledTimes(1)
     })
+})
+
+
+describe('durable local authoring through the shared execution authority', () => {
+    function authoring(mode: AgentExecutionPolicy['mode'] = 'suggest') {
+        const f = fixture(mode)
+        const target = { command: 'scene.patch_many' as const, resourceId: 'preset-1', expectedRevision: 0,
+            targetHash: digest, changeCount: 1, createsFolders: false, renamesPathSegments: false }
+        let committed: JsonObject | null = null
+        const inspect = vi.fn(async () => structuredClone(target))
+        const apply = vi.fn(async (_command, _input, _target, grant) => {
+            committed = { status: 'authoring-committed', command: grant.target.command, resourceId: grant.target.resourceId,
+                revision: grant.target.expectedRevision + 1, targetHash: grant.target.targetHash }
+            return committed
+        })
+        f.opts.authoring = { inspect, apply, reconcile: async () => committed }
+        const base = f.request('authoring-once')
+        const unsigned = { ...base, command: { name: 'scene.patch_many' as const,
+            input: { presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', name: 'Rain' }] } } }
+        const envelope = { ...unsigned, requestHash: agentRequestHash(unsigned) }
+        return { ...f, ...f.reopen(), envelope, target, inspect, apply, clearFacts: () => { committed = null } }
+    }
+    it('requires review, persists one grant, survives restart and replays exact saved completion', async () => {
+        const f = authoring()
+        expect(await f.dispatcher.dispatch(f.envelope)).toMatchObject({ state: 'needs-input', result: { code: 'AGENT_APPROVAL_REQUIRED' } })
+        expect(f.apply).not.toHaveBeenCalled()
+        const [review] = await f.coordinator.pending()
+        expect(review).toMatchObject({ command: 'scene.patch_many', resourceId: 'preset-1', changeCount: 1 })
+        await Promise.all([f.coordinator.approve(review.requestId, review), f.reopen().coordinator.approve(review.requestId, review)])
+        expect(f.apply).toHaveBeenCalledTimes(1)
+        const reopened = f.reopen()
+        await reopened.coordinator.recover()
+        expect(await reopened.dispatcher.dispatch(f.envelope)).toMatchObject({ state: 'completed', result: { status: 'authoring-committed' } })
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it.each(['default-deny', 'enabled', 'paused', 'expired'])('scopes bounded authoring authority for %s', async scenario => {
+        const f = authoring('bounded-auto')
+        f.setPolicy({ ...f.getPolicy(), authoring: { allowSceneChanges: scenario !== 'default-deny' },
+            globalPause: scenario === 'paused', boundedAutoExpiresAt: scenario === 'expired' ? initialTime : '2026-09-05T01:00:00.000Z' })
+        const receipt = await f.dispatcher.dispatch(f.envelope)
+        expect(f.apply).toHaveBeenCalledTimes(scenario === 'enabled' ? 1 : 0)
+        expect(receipt.state).toBe(scenario === 'enabled' ? 'completed' : 'needs-input')
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it.each(['stale-target', 'revoked', 'wrong-binding', 'policy-change'])('does not apply with %s', async scenario => {
+        const f = authoring()
+        await f.dispatcher.dispatch(f.envelope)
+        const [review] = await f.coordinator.pending()
+        if (scenario === 'stale-target') f.inspect.mockResolvedValue({ ...f.target, targetHash: `sha256:${'b'.repeat(64)}` })
+        if (scenario === 'revoked') f.revoke()
+        if (scenario === 'policy-change') f.setPolicy({ ...f.getPolicy(), revision: 1 })
+        if (scenario === 'wrong-binding') await expect(f.coordinator.approve(review.requestId, { ...review, targetHash: `sha256:${'b'.repeat(64)}` })).rejects.toThrow()
+        else await f.coordinator.approve(review.requestId, review)
+        expect(f.apply).not.toHaveBeenCalled()
+    })
+    it.each([true, false])('reconciles only persisted positive evidence after uncertain apply: %s', async hasFacts => {
+        const f = authoring('bounded-auto')
+        f.setPolicy({ ...f.getPolicy(), authoring: { allowSceneChanges: true } })
+        const original = f.apply.getMockImplementation()!
+        f.apply.mockImplementation(async (...args) => { await original(...args); if (!hasFacts) f.clearFacts(); throw new Error('crash') })
+        expect(await f.dispatcher.dispatch(f.envelope)).toMatchObject({ state: 'needs-input', result: { code: 'AGENT_EXECUTION_UNKNOWN' } })
+        const reopened = f.reopen()
+        await reopened.coordinator.recover()
+        const receipt = await reopened.dispatcher.dispatch(f.envelope)
+        expect(receipt.state).toBe(hasFacts ? 'completed' : 'needs-input')
+        expect(f.apply).toHaveBeenCalledTimes(1)
+    })
+    it.each(['create-denied', 'create-allowed', 'rename-denied', 'rename-allowed'])('enforces existing folder flags for %s', async scenario => {
+        const f = authoring('bounded-auto')
+        const create = scenario.startsWith('create')
+        const permitted = scenario.endsWith('allowed')
+        f.setPolicy({ ...f.getPolicy(), output: { ...f.getPolicy().output,
+            allowCreateFolders: create && permitted, allowRenamePathSegments: !create && permitted } })
+        f.inspect.mockResolvedValue({ ...f.target, command: 'folder.apply_changes', resourceId: 'local',
+            createsFolders: create, renamesPathSegments: !create })
+        const unsigned = { ...f.envelope, command: { name: 'folder.apply_changes' as const,
+            input: { expectedRevision: 0, expectedPlanHash: digest, changes: [create
+                ? { op: 'create', folderId: 'folder-1', parentId: 'root', displayName: 'Folder', pathSegment: 'Folder' }
+                : { op: 'patch', folderId: 'folder-1', pathSegment: 'Updated' }] } } }
+        const receipt = await f.dispatcher.dispatch({ ...unsigned, requestHash: agentRequestHash(unsigned) })
+        expect(receipt.state).toBe(permitted ? 'completed' : 'needs-input')
+        expect(f.apply).toHaveBeenCalledTimes(permitted ? 1 : 0)
+        if (!permitted) {
+            const [review] = await f.coordinator.pending()
+            await f.coordinator.approve(review.requestId, review)
+            expect(f.apply).not.toHaveBeenCalled()
+        }
+    })
+    it('rejects forged authoring result and consent bindings in persisted ledger data', async () => {
+        const f = authoring('bounded-auto')
+        f.setPolicy({ ...f.getPolicy(), authoring: { allowSceneChanges: true } })
+        await f.dispatcher.dispatch(f.envelope)
+        const ledger = (await f.opts.repository.get('workspace-1'))!
+        expect(parseAgentExecutionLedger(ledger, 'workspace-1')).toEqual(ledger)
+        for (const mutate of [
+            (record: any) => { record.grant.target.resourceId = 'other-preset' },
+            (record: any) => { record.grant.policyRevision += 1 },
+            (record: any) => { record.result.revision += 1 },
+            (record: any) => { record.target.changeCount += 1 },
+        ]) {
+            const corrupt = structuredClone(ledger)
+            mutate(corrupt.records[0])
+            expect(() => parseAgentExecutionLedger(corrupt, 'workspace-1')).toThrow()
+        }
+    })
+
 })

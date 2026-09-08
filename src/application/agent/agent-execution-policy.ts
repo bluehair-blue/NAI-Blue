@@ -18,6 +18,7 @@ export interface AgentExecutionPolicy {
         readonly maxAnlasPerDay: number
         readonly maxOutstandingRequestsPerClient: number
     }
+    readonly authoring: { readonly allowSceneChanges: boolean }
     readonly output: {
         readonly allowCreateFolders: boolean
         readonly allowRenamePathSegments: boolean
@@ -38,6 +39,7 @@ export const DEFAULT_AGENT_EXECUTION_POLICY: AgentExecutionPolicy = {
         allowedCompatibilityStatuses: ['captured-pass', 'live-canary-pass'] },
     rollingLimits: { maxRunsPerHour: 10, maxImagesPerHour: 20, maxAnlasPerHour: 100,
         maxAnlasPerDay: 200, maxOutstandingRequestsPerClient: 3 },
+    authoring: { allowSceneChanges: false },
     output: { allowCreateFolders: false, allowRenamePathSegments: false, allowOverwrite: false, allowDeleteOriginal: false },
     r2: { allowedProfileIds: [], allowUpload: false, allowOverwrite: false },
     destructiveActions: 'deny',
@@ -57,7 +59,7 @@ function strings(value: unknown, valid: (item: string) => boolean, max: number):
 
 /** Reject unknown authority and unsafe numbers instead of silently repairing permission grants. */
 export function validateAgentExecutionPolicy(value: unknown): value is AgentExecutionPolicy {
-    if (!record(value, ['schemaVersion', 'revision', 'mode', 'globalPause', 'boundedAutoExpiresAt', 'generation', 'rollingLimits', 'output', 'r2', 'destructiveActions'])) return false
+    if (!record(value, ['schemaVersion', 'revision', 'mode', 'globalPause', 'boundedAutoExpiresAt', 'generation', 'rollingLimits', 'authoring', 'output', 'r2', 'destructiveActions'])) return false
     const { generation, rollingLimits, output, r2 } = value
     return value.schemaVersion === 1 && integer(value.revision, Number.MAX_SAFE_INTEGER - 1)
         && ['observe', 'suggest', 'bounded-auto'].includes(value.mode as string) && typeof value.globalPause === 'boolean'
@@ -72,6 +74,7 @@ export function validateAgentExecutionPolicy(value: unknown): value is AgentExec
         && integer(rollingLimits.maxRunsPerHour, 10_000) && integer(rollingLimits.maxImagesPerHour, 100_000)
         && integer(rollingLimits.maxAnlasPerHour, 10_000_000) && integer(rollingLimits.maxAnlasPerDay, 100_000_000)
         && integer(rollingLimits.maxOutstandingRequestsPerClient, 100, 1)
+        && record(value.authoring, ['allowSceneChanges']) && typeof value.authoring.allowSceneChanges === 'boolean'
         && record(output, ['allowCreateFolders', 'allowRenamePathSegments', 'allowOverwrite', 'allowDeleteOriginal'])
         && typeof output.allowCreateFolders === 'boolean' && typeof output.allowRenamePathSegments === 'boolean'
         && output.allowOverwrite === false && output.allowDeleteOriginal === false
@@ -83,6 +86,11 @@ export function validateAgentExecutionPolicy(value: unknown): value is AgentExec
 
 export function normalizeAgentExecutionPolicy(value: unknown): AgentExecutionPolicy {
     if (value === undefined) return structuredClone(DEFAULT_AGENT_EXECUTION_POLICY)
+    // Version 1 policies predate Scene authoring; migration never grants new authority.
+    if (value && typeof value === 'object' && !Array.isArray(value) && !Object.prototype.hasOwnProperty.call(value, 'authoring')) {
+        const migrated = { ...value, authoring: { allowSceneChanges: false } }
+        if (validateAgentExecutionPolicy(migrated)) return structuredClone(migrated)
+    }
     if (validateAgentExecutionPolicy(value)) return structuredClone(value)
     return { ...structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), mode: 'observe', globalPause: true }
 }

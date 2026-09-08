@@ -57,6 +57,20 @@ vi.mock('@/services/queue/queue-resource-materializer', () => ({
 
 import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type SceneQueueTarget } from '@/services/queue/scene-queue-adapter'
 import { decodeSceneJobSnapshot } from '@/services/queue/scene-job-snapshot-codec'
+import { planAgentSceneGeneration, validateAgentSceneGenerationPlan, enqueueAgentSceneGenerationPlan,
+    type AgentSceneGenerationInput } from '@/composition-root/agent-scene-generation-plan'
+import { IndexedDbGenerationPlanRepository } from '@/adapters/generation/indexeddb-generation-plan-repository'
+import type { AgentExecutionGrant } from '@/application/agent/agent-execution-repository'
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
+import { createAgentMcpServer } from '@/adapters/agent/mcp/mcp-stdio-server'
+import { AgentCommandDispatcher } from '@/application/agent/agent-command-dispatcher'
+import { agentRequestHash, type AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
+import { createAgentExecutionCoordinator } from '@/application/agent/agent-execution-coordinator'
+import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execution-policy'
+import { IndexedDbCommandReceiptRepository } from '@/adapters/agent/indexeddb-command-receipt-repository'
+import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
+import { createAgentSceneGenerationPlanHandler } from '@/composition-root/agent-scene-generation-plan'
+import type { JsonObject } from '@/domain/composition/types'
 
 const selected = createR2ProfileV2({
     id: 'profile-1', name: 'Profile', accountId: 'account', jurisdiction: null, endpoint: null,
@@ -106,6 +120,202 @@ beforeEach(() => {
         ...createGenerationOutputCommitSet({ ...request.claimPlan, directoryAuthorityId: request.directoryAuthorityId,
             directoryAuthorityFingerprint: `sha256:${'b'.repeat(64)}` }),
     })))
+})
+
+const agentInput: AgentSceneGenerationInput = {
+    source: { kind: 'scene', targets: [{ presetId: 'preset', sceneId: 'scene', expectedRevision: 2, count: 1 }] },
+    seedPolicy: { kind: 'fixed', seed: 7 }, budget: { maxImages: 1, maxAnlas: 100 },
+}
+
+async function agentFixture(input = agentInput) {
+    const { result } = await planAgentSceneGeneration(input)
+    if (result.status !== 'ready' && result.status !== 'needs_input') throw new Error(JSON.stringify(result))
+    const grant: AgentExecutionGrant = {
+        requestId: 'request', requestHash: `sha256:${'b'.repeat(64)}`, workspaceId: 'workspace',
+        clientId: 'client', actorKind: 'service', planId: result.plan.planId, planHash: result.plan.planHash,
+        scopeId: 'agent-scene-scope', policyRevision: 1, consentedAt: new Date().toISOString(),
+        authorization: 'human', estimatedAnlas: result.plan.estimatedAnlas, imageCount: result.plan.jobs.length,
+    }
+    return { plan: result.plan, grant }
+}
+
+describe('agent Scene plans use the existing durable Scene Queue', () => {
+    it('advertises and executes the SDK Scene tool chain through dispatcher, approval policy and the actual Queue once', async () => {
+        const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
+        const { createAgentGenerationExecutionPort } = await import('@/composition-root/agent-generation-execution')
+        const storage = new Map<string, string>()
+        const persistence = { getItem: async (key: string) => storage.get(key) ?? null,
+            compareAndSet: async (key: string, expected: string | null, next: string) => {
+                if ((storage.get(key) ?? null) !== expected) return false
+                storage.set(key, next); return true
+            } }
+        const plans = new IndexedDbGenerationPlanRepository(persistence)
+        const receipts = new IndexedDbCommandReceiptRepository(persistence)
+        const ledger = new IndexedDbAgentExecutionRepository(persistence)
+        const startedAt = new Date().toISOString()
+        const expiresAt = new Date(Date.parse(startedAt) + 3_600_000).toISOString()
+        const queue = new IndexedDBQueueRepository({ factory: new IDBFactory(), keyRange: IDBKeyRange,
+            databaseName: 'mcp-scene-chain', generationLimits: { maxJobsPerAtomicBatch: 100, maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: startedAt, evidenceId: 'mcp-scene-test' } })
+        runtime.enqueue.mockImplementation(input => queue.createBatchAndEnqueue(input))
+        const policy = { ...structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), mode: 'bounded-auto' as const,
+            boundedAutoExpiresAt: expiresAt,
+            generation: { ...DEFAULT_AGENT_EXECUTION_POLICY.generation,
+                allowedCompatibilityStatuses: ['captured-pass', 'live-canary-pass', 'synthetic-only'] as const },
+            r2: { ...DEFAULT_AGENT_EXECUTION_POLICY.r2, allowUpload: true, allowedProfileIds: [selected.id] } }
+        const coordinator = createAgentExecutionCoordinator({ workspaceId: 'workspace', repository: ledger, receipts, plans,
+            getPolicy: () => policy, isClientAuthorized: async () => true,
+            ports: createAgentGenerationExecutionPort({ repository: queue }) })
+        const dispatcher = new AgentCommandDispatcher({ workspaceId: 'workspace', receipts,
+            handlers: [createAgentSceneGenerationPlanHandler(plans), coordinator.handler],
+            authentication: { authenticate: async envelope => ({ clientId: envelope.context.clientId,
+                actor: { kind: envelope.context.actor.kind, id: `client:${envelope.context.clientId}` } }) },
+            runtime: () => ({ ready: true, mode: policy.mode, globalPause: false }) })
+        // SDK transport and business pipeline are real. Only native signing/inbox delivery and
+        // metadata/resource adapters are simulated; no Queue runner or Provider is started.
+        const server = createAgentMcpServer({
+            invoke: async (command, requestId) => {
+                const unsigned: AgentCommandEnvelope = { schemaVersion: 1, requestId, requestHash: `sha256:${'a'.repeat(64)}`,
+                    submittedAt: startedAt, expiresAt, command,
+                    context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'workspace', clientId: 'client',
+                        actor: { kind: 'agent' }, idempotencyKey: requestId },
+                    authentication: { scheme: 'hmac-sha256', keyId: 'test-key', signature: `hmac-sha256:${'0'.repeat(64)}` } }
+                const receipt = await dispatcher.dispatch({ ...unsigned, requestHash: agentRequestHash(unsigned) })
+                return { status: 'application-receipt', requestId, requiresAppProcess: true, receipt } as unknown as JsonObject
+            },
+            inspect: async requestId => ({ status: 'application-receipt', requestId, requiresAppProcess: true,
+                receipt: await receipts.get(requestId) }) as unknown as JsonObject,
+        })
+        const client = new Client({ name: 'scene-end-to-end-test', version: '1.0.0' })
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+        try {
+            await server.connect(serverTransport)
+            await client.connect(clientTransport)
+            const tools = await client.listTools()
+            expect(tools.tools.map(tool => tool.name)).toContain('generation.plan')
+            expect(tools.tools.map(tool => tool.name)).toContain('generation.enqueue')
+            expect(JSON.stringify(tools.tools.find(tool => tool.name === 'generation.plan')!.inputSchema)).toContain('targets')
+            const planned = await client.callTool({ name: 'generation.plan', arguments: {
+                requestId: 'scene-plan-request', input: agentInput as unknown as JsonObject,
+            } })
+            expect(planned.isError).toBe(false)
+            const planReceipt = (planned.structuredContent as JsonObject).receipt as JsonObject
+            expect(planReceipt, JSON.stringify(planReceipt)).toMatchObject({ state: 'completed', result: { status: 'ready' } })
+            const planResult = planReceipt.result as JsonObject
+            expect(planResult.status).toBe('ready')
+            expect(planResult.review).toMatchObject({ sources: [{ presetId: 'preset', sceneId: 'scene', name: 'Scene', count: 1 }],
+                jobs: [{ prompt: 'A room', model: params.model, seed: 7, destination: { generationFolderId: 'child' } }] })
+            expect(JSON.stringify(planResult)).not.toContain('output/')
+            const request = { name: 'generation.enqueue', arguments: { requestId: 'scene-enqueue-request',
+                input: { planId: planResult.planId, planHash: planResult.planHash } } }
+            const first = await client.callTool(request)
+            expect(first.isError).toBe(false)
+            expect(first.structuredContent).toMatchObject({ receipt: { state: 'completed', result: { status: 'ready' } } })
+            const repeated = await client.callTool(request)
+            expect(repeated.structuredContent).toEqual(first.structuredContent)
+            const jobs = (await queue.listJobs()).items
+            expect(jobs).toHaveLength(1)
+            expect(jobs[0]).toMatchObject({ workflow: 'scene', sceneId: 'scene',
+                snapshot: { agentExecutionBinding: { planHash: planResult.planHash } } })
+            expect(jobs[0].batchId).toMatch(/^scene-batch-/)
+            expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+            expect((await ledger.get('workspace'))?.records[0]).toMatchObject({ state: 'completed',
+                grant: { authorization: 'bounded-auto', imageCount: 1 } })
+        } finally { await client.close(); await server.close(); queue.close() }
+    })
+
+    it('persists replay facts, reconstructs without the old submission, then reopens and reconciles one exact grant', async () => {
+        const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
+        const { createAgentGenerationExecutionPort } = await import('@/composition-root/agent-generation-execution')
+        const storage = new Map<string, string>()
+        const persistence = { getItem: async (key: string) => storage.get(key) ?? null,
+            compareAndSet: async (key: string, expected: string | null, next: string) => {
+                if ((storage.get(key) ?? null) !== expected) return false
+                storage.set(key, next); return true
+            } }
+        const { plan, grant } = await agentFixture()
+        await new IndexedDbGenerationPlanRepository(persistence).putIfAbsent(plan)
+        const reopenedPlan = await new IndexedDbGenerationPlanRepository(persistence).get(plan.planId)
+        expect(reopenedPlan).toEqual(plan)
+        expect([...storage.values()].join('')).not.toContain('resourcePlan')
+        expect([...storage.values()].join('')).not.toContain('generationParams')
+        const options = { factory: new IDBFactory(), keyRange: IDBKeyRange, databaseName: 'agent-scene-restart',
+            generationLimits: { maxJobsPerAtomicBatch: 100, maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: '2026-09-05T00:00:00.000Z', evidenceId: 'agent-scene-test' } }
+        let queue = new IndexedDBQueueRepository(options)
+        runtime.enqueue.mockImplementation(input => queue.createBatchAndEnqueue(input))
+        try {
+            const execution = createAgentGenerationExecutionPort({ repository: queue })
+            expect(await execution.validate(reopenedPlan!)).toBe(true)
+            const committed = await execution.enqueue(reopenedPlan!, grant)
+            expect(committed).toEqual({ status: 'ready', batchId: 'scene-batch-agent-scene-scope',
+                runId: 'scene-batch-agent-scene-scope', jobIds: ['scene-job-agent-scene-scope-0'] })
+            const jobs = (await queue.listJobs()).items
+            expect(jobs).toHaveLength(1)
+            expect(jobs[0]).toMatchObject({ workflow: 'scene', sceneId: 'scene',
+                snapshot: { agentExecutionBinding: { planId: plan.planId, planHash: plan.planHash, scopeId: grant.scopeId } } })
+            const snapshot = decodeSceneJobSnapshot(jobs[0].snapshot)
+            expect(snapshot.sceneWorkflow.costConsent?.approvedAt).toBe(grant.consentedAt)
+            expect(snapshot.sceneWorkflow.batch?.request.actor).toEqual({ kind: 'service', id: 'client:client' })
+            expect(snapshot.sceneWorkflow.saveContext.activePresetId).toBe('preset')
+            expect(snapshot.sceneWorkflow.sceneBinding?.resourceId).toBe('preset:scene')
+            queue.close()
+            queue = new IndexedDBQueueRepository(options)
+            runtime.scene.mockResolvedValue(null)
+            const afterRestart = createAgentGenerationExecutionPort({ repository: queue })
+            expect(await afterRestart.validate(reopenedPlan!)).toBe(false)
+            expect(await afterRestart.reconcile(grant)).toEqual(committed)
+            expect(await afterRestart.enqueue(reopenedPlan!, grant)).toEqual(committed)
+            expect(await afterRestart.reconcile({ ...grant, clientId: 'different-client' })).toBeNull()
+            expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+            expect((await queue.listJobs()).items).toHaveLength(1)
+        } finally { queue.close() }
+    })
+
+    it.each(['scene', 'folder', 'r2', 'destination'] as const)('rejects %s drift on replay before Queue writes', async kind => {
+        const { plan, grant } = await agentFixture()
+        if (kind === 'scene') {
+            const document = await runtime.scene()
+            runtime.scene.mockResolvedValue({ ...document, revision: document.revision + 1 })
+        } else if (kind === 'folder') {
+            runtime.folder.mockResolvedValue({ ...folder(), revision: 4 })
+        } else if (kind === 'r2') {
+            runtime.profile.mockResolvedValue({ ...selected, bucket: 'changed-bucket', updatedAt: '2026-09-06T00:00:00.000Z' })
+        } else {
+            const allocate = runtime.allocation.getMockImplementation()!
+            runtime.allocation.mockImplementation(async requests => (await allocate(requests)).map((allocation: object) => ({
+                ...allocation, imageDisplayPath: 'changed/location.png',
+            })))
+        }
+        expect(await validateAgentSceneGenerationPlan(plan)).toBe(false)
+        expect(await enqueueAgentSceneGenerationPlan(plan, grant)).toMatchObject({ status: 'conflict' })
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+        expect(runtime.dehydrate).not.toHaveBeenCalled()
+    })
+
+    it('retains insufficient reviewed budget instead of minting a larger grant', async () => {
+        const { plan, grant } = await agentFixture({ ...agentInput, budget: { maxImages: 0, maxAnlas: 0 } })
+        expect(plan.requiredApprovals.length).toBeGreaterThan(0)
+        expect(await validateAgentSceneGenerationPlan(plan)).toBe(false)
+        expect(await enqueueAgentSceneGenerationPlan(plan, grant)).toMatchObject({ status: 'invalid' })
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+    })
+
+    it.each(['random', 'fixed', 'increment'] as const)('materializes and replays the %s seed policy', async kind => {
+        runtime.build.mockImplementation(async (_scene, options) => ({ success: true,
+            params: { ...params, seed: options.seed }, finalPrompt: 'A room', mimeType: 'image/png',
+            sequenceCommitProposal: null, planHash: null, mode: 'legacy', warnings: [], errors: [],
+        }))
+        const { plan } = await agentFixture({ source: { kind: 'scene', targets: [{ ...agentInput.source.targets[0], count: 2 }] },
+            seedPolicy: kind === 'fixed' ? { kind, seed: 10 } : kind === 'increment' ? { kind, firstSeed: 0xffff_ffff } : { kind },
+            budget: { maxImages: 2, maxAnlas: 100 } })
+        const seeds = plan.materializedSeedTrace.seeds
+        expect(seeds).toHaveLength(2)
+        if (kind === 'fixed') expect(seeds).toEqual([10, 10])
+        if (kind === 'increment') expect(seeds).toEqual([0xffff_ffff, 0])
+        expect(await validateAgentSceneGenerationPlan(structuredClone(plan))).toBe(true)
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+    })
 })
 
 describe('Scene Queue R2 reviewed planning', () => {

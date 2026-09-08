@@ -67,7 +67,8 @@ export class ForegroundAgentCommandRuntime {
     private runtimeState() {
         const policy = effectiveAgentExecutionPolicy(this.dependencies.policy?.get() ?? DEFAULT_AGENT_EXECUTION_POLICY)
         return { ready: this.running && !this.snapshot.changingClient && !this.snapshot.changingExecution
-            && !this.dependencies.policy?.isSaving(), mode: policy.mode, globalPause: policy.globalPause }
+            && !this.dependencies.policy?.isSaving(), mode: policy.mode, globalPause: policy.globalPause,
+            allowSceneChanges: policy.authoring.allowSceneChanges }
     }
 
     private async refreshApprovals(): Promise<void> {
@@ -132,7 +133,8 @@ export class ForegroundAgentCommandRuntime {
                     this.dispatcher = new AgentCommandDispatcher({ workspaceId,
                         handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler]),
                             ...(this.execution?.cancelHandler === undefined ? [] : [this.execution.cancelHandler]),
-                            ...(this.execution?.storageRetryHandler === undefined ? [] : [this.execution.storageRetryHandler])],
+                            ...(this.execution?.storageRetryHandler === undefined ? [] : [this.execution.storageRetryHandler]),
+                            ...(this.execution?.authoringHandlers ?? [])],
                         authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
                     })
                     this.unsubscribePolicy?.()

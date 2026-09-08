@@ -18,7 +18,8 @@ import { useDefaultR2Readiness } from '@/hooks/useDefaultR2Readiness'
 import { resolveGenerationFolderAuthority } from '@/lib/generation-folder-authority-runtime'
 import { flushSceneAuthorityRuntime } from '@/lib/scene-authority-runtime'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
-import { collectFolderAssets, createFolderAssetPreset, folderAssetProductionCount, type FolderAssetInput, UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
+import { collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, folderAssetProductionCount, type FolderAssetInput, UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
+import { useFolderQueueActivity } from '@/presentation/folders/folder-queue-activity'
 import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type PreparedSceneQueueReview, type SceneQueueSubmission } from '@/services/queue/scene-queue-adapter'
 import { resolveScenePrompts, type SceneFolderTemplate, useSceneStore } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -52,6 +53,7 @@ export default function FolderWorkbench() {
     const sceneAuthorityReady = useSceneStore(state => state.sceneAuthorityInitialized)
     const setSceneProductionCounts = useSceneStore(state => state.setSceneProductionCounts)
     const selectBatch = useQueueStore(state => state.setSelectedBatchId)
+    const { activity: queueActivity, unavailable: queueActivityUnavailable } = useFolderQueueActivity()
     const [folderId, setFolderId] = useState<string | null>(activeFolderId || null)
     const [views, setViews] = useState<Record<string, FolderView>>({})
     const scopeKey = folderId ?? '__all__'
@@ -262,6 +264,7 @@ export default function FolderWorkbench() {
                         {invalidCount && <p className="fb-error" role="alert">{t('folderWorkbench.design.countHint', '장수는 1부터 999까지 적어 주세요.')}</p>}
                         {error && rows.length > 0 && !composerOpen && <p className="fb-error" role="alert">{error}</p>}
                         {success && <p role="status" className={queued ? 'fb-notice' : 'sr-only'}>{success} {queued && <Link className="underline" to="/queue">{t('folderWorkbench.design.openHistory', '작업 기록 보기')}</Link>}</p>}
+                        {queueActivityUnavailable && <p role="status" className="fb-notice">{t('folderWorkbench.design.statusUnavailable', '작업 상태를 확인하지 못했어요.')} <Link className="underline" to="/queue">{t('folderWorkbench.design.openHistory', '작업 기록 보기')}</Link></p>}
                     </header>
                     {rows.length === 0 ? <div className="fb-empty-workspace">
                         {concreteFolder ? <>
@@ -304,7 +307,19 @@ export default function FolderWorkbench() {
                                 : <ul className={`fb-gallery ${view.view === 'list' ? 'is-list' : ''}`}>
                                     {pageRows.map(row => {
                                         const prompt = resolveScenePrompts(row.scene).additional
-                                        const lastImage = row.scene.images[row.scene.images.length - 1]
+                                        const lastImage = folderAssetLatestImage(row.scene)
+                                        const activity = queueActivity.get(row.key)
+                                        const activityLabel = activity ? ({
+                                            queued: t('folderWorkbench.design.jobQueued', '대기 중'),
+                                            leased: t('folderWorkbench.design.jobRunning', '만드는 중'),
+                                            running: t('folderWorkbench.design.jobRunning', '만드는 중'),
+                                            recovering: t('folderWorkbench.design.jobRecovering', '확인 중'),
+                                            blocked: t('folderWorkbench.design.jobBlocked', '확인 필요'),
+                                            failed: t('folderWorkbench.design.jobFailed', '만들지 못했어요'),
+                                            succeeded: t('folderWorkbench.design.jobSucceeded', '완료'),
+                                            cancelled: t('folderWorkbench.design.jobCancelled', '취소됨'),
+                                            skipped: t('folderWorkbench.design.jobSkipped', '건너뜀'),
+                                        })[activity.state] : null
                                         const imageUrl = !lastImage || lastImage.url.startsWith('data:') ? lastImage?.url : toNativeAssetUrl(lastImage.url)
                                         return <li key={row.key} data-preset-id={row.presetId} data-scene-id={row.scene.id} className={`fb-asset-card ${selectedKeys.has(row.key) ? 'is-selected' : ''}`}>
                                             <div className="fb-card-media">
@@ -315,7 +330,7 @@ export default function FolderWorkbench() {
                                                     {imageUrl ? <img src={imageUrl} alt={row.scene.name} loading="lazy" /> : <span className="fb-prompt-preview"><ImageIcon aria-hidden="true" /><span>{prompt || t('folderWorkbench.design.addDescription', '그림 설명을 적어 주세요.')}</span><small>{t('folderWorkbench.design.withoutImages', '만들기 전')}</small></span>}
                                                 </button>
                                             </div>
-                                            <div className="fb-card-info"><h3 title={row.scene.name}>{row.scene.name}</h3><p className="fb-card-status">{imageUrl ? <><Check aria-hidden="true" />{t('folderWorkbench.design.imageAvailable', '이미지 {{count}}장 있음', { count: row.scene.images.length })}</> : t('folderWorkbench.design.readyDescription', '설명 준비됨')}</p>
+                                            <div className="fb-card-info"><h3 title={row.scene.name}>{row.scene.name}</h3><p className="fb-card-status">{activity ? <>{queueActivityUnavailable && <>{t('folderWorkbench.design.lastKnownStatus', '마지막 확인')} · </>}{activityLabel}{activity.unfinished > 0 && <> · {t('folderWorkbench.design.jobRemaining', '남은 {{count}}장', { count: activity.unfinished })}</>}</> : imageUrl ? <><Check aria-hidden="true" />{t('folderWorkbench.design.imageAvailable', '이미지 {{count}}장 있음', { count: row.scene.images.length })}</> : t('folderWorkbench.design.readyDescription', '설명 준비됨')}</p>
                                                 {view.view === 'list' && <p className="fb-list-description">{prompt}</p>}
                                                 <div className="fb-card-actions"><label>{t('folderWorkbench.design.quantity', '장수')}<Input type="number" min={1} max={999} value={folderAssetProductionCount(row.scene)} disabled={busy}
                                                     aria-label={t('folderWorkbench.assetCount', '{{name}} 생성 수량', { name: row.scene.name })}

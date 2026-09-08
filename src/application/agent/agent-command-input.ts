@@ -1,10 +1,8 @@
+import { agentAuthoringInputContracts, workspaceSnapshotInputContract, type AgentCommandInputContract } from './agent-authoring-input'
 import type { JsonObject } from '@/domain/composition/types'
 import { AgentCommandError, type AgentCommandName } from './agent-command-contract'
 
-export interface AgentCommandInputContract {
-    readonly schema: JsonObject
-    readonly validate: (input: JsonObject) => JsonObject
-}
+export type { AgentCommandInputContract } from './agent-authoring-input'
 
 const dialect = 'https://json-schema.org/draft/2020-12/schema'
 const identifier = { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$' }
@@ -22,13 +20,32 @@ function record(value: unknown, keys: readonly string[]): Record<string, unknown
 
 /** Existing application validators remain admission authority; schema is transport metadata. */
 function validatePlanInput(value: JsonObject): JsonObject {
-    const input = record(value, ['source', 'count', 'seedPolicy', 'budget'])
-    const source = record(input.source, ['kind', 'draftId', 'expectedRevision'])
+    const sceneSource = !!value.source && typeof value.source === 'object' && !Array.isArray(value.source) && value.source.kind === 'scene'
+    const input = record(value, sceneSource ? ['source', 'seedPolicy', 'budget'] : ['source', 'count', 'seedPolicy', 'budget'])
+    const source = record(input.source, sceneSource ? ['kind', 'targets'] : ['kind', 'draftId', 'expectedRevision'])
+    if (sceneSource) {
+        if (!Array.isArray(source.targets) || !source.targets.length || source.targets.length > 100) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        const identities = new Set<string>()
+        let count = 0
+        for (const item of source.targets) {
+            const target = record(item, ['presetId', 'sceneId', 'expectedRevision', 'count'])
+            if (['presetId', 'sceneId'].some(key => typeof target[key] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(target[key] as string))
+                || !Number.isSafeInteger(target.expectedRevision) || Number(target.expectedRevision) < 0
+                || !Number.isSafeInteger(target.count) || Number(target.count) < 1 || Number(target.count) > 100) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+            const identity = JSON.stringify([target.presetId, target.sceneId])
+            if (identities.has(identity)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+            identities.add(identity)
+            count += Number(target.count)
+        }
+        if (count > 100) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+    }
+    if (!sceneSource) {
     if (source.kind !== 'workflow-draft' || typeof source.draftId !== 'string'
         || source.draftId.trim() !== source.draftId || source.draftId.length === 0 || source.draftId.length > 200
         || !Number.isSafeInteger(source.expectedRevision) || Number(source.expectedRevision) < 0
         || !Number.isSafeInteger(input.count) || Number(input.count) < 1 || Number(input.count) > 100) {
         throw new AgentCommandError('INVALID_COMMAND_INPUT')
+    }
     }
     if (typeof input.seedPolicy !== 'object' || input.seedPolicy === null || Array.isArray(input.seedPolicy)) {
         throw new AgentCommandError('INVALID_COMMAND_INPUT')
@@ -66,14 +83,15 @@ const empty: AgentCommandInputContract = { schema: { $schema: dialect, ...object
 const run = referenceContract({ runId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/)
 const contracts: Partial<Record<AgentCommandName, AgentCommandInputContract>> = {
     'system.describe_capabilities': empty,
-    'workspace.get_snapshot': empty,
+    'workspace.get_snapshot': workspaceSnapshotInputContract,
+    ...agentAuthoringInputContracts,
     'generation.get_run': run,
     'generation.cancel': run,
     'generation.retry_storage': referenceContract({ jobId: identifier, runId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
     'generation.enqueue': referenceContract({ planId: digest, planHash: digest }, /^sha256:[a-f0-9]{64}$/),
     'generation.plan': {
         validate: validatePlanInput,
-        schema: { $schema: dialect, ...object({
+        schema: { $schema: dialect, oneOf: [object({
             source: object({ kind: { const: 'workflow-draft' },
                 draftId: { type: 'string', minLength: 1, maxLength: 200, pattern: '^\\S(?:[\\s\\S]*\\S)?(?![\\s\\S])',
                     description: 'Existing workflow draft ID. Application additionally limits the ID to 200 UTF-16 code units.',
@@ -84,7 +102,15 @@ const contracts: Partial<Record<AgentCommandName, AgentCommandInputContract>> = 
                 object({ kind: { const: 'fixed' }, seed: integer(0xffff_ffff) }),
                 object({ kind: { const: 'increment' }, firstSeed: integer(0xffff_ffff) })] },
             budget: object({ maxImages: integer(100), maxAnlas: { type: 'number', minimum: 0, maximum: Number.MAX_VALUE } }),
-        }) },
+        }), object({
+            source: object({ kind: { const: 'scene' }, targets: { type: 'array', minItems: 1, maxItems: 100,
+                items: object({ presetId: identifier, sceneId: identifier, expectedRevision: integer(Number.MAX_SAFE_INTEGER), count: integer(100, 1) }),
+                description: 'Unique preset/Scene targets; total image count across targets must not exceed 100.' } }),
+            seedPolicy: { oneOf: [object({ kind: { const: 'random' } }),
+                object({ kind: { const: 'fixed' }, seed: integer(0xffff_ffff) }),
+                object({ kind: { const: 'increment' }, firstSeed: integer(0xffff_ffff) })] },
+            budget: object({ maxImages: integer(100), maxAnlas: { type: 'number', minimum: 0, maximum: Number.MAX_VALUE } }),
+        })] },
     },
 }
 

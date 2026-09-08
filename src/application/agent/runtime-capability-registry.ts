@@ -18,6 +18,7 @@ export const AGENT_COMMAND_EFFECTS: Readonly<Record<AgentCommandName, 'read' | '
     'scene.resolve_many': 'read',
     'scene.patch_many': 'mutation',
     'folder.plan_changes': 'plan',
+    'folder.apply_changes': 'mutation',
     'r2.get_readiness': 'read',
 })
 
@@ -39,6 +40,7 @@ export interface AgentCommandRuntimeState {
     readonly ready: boolean
     readonly mode: 'observe' | 'suggest' | 'bounded-auto'
     readonly globalPause: boolean
+    readonly allowSceneChanges?: boolean
 }
 
 export interface RuntimeCapabilityDescriptor {
@@ -65,12 +67,16 @@ export function describeAgentCommandCapabilities(
             && handler.executionGate === 'durable-approval'
         const managedStorageRetry = command === 'generation.retry_storage' && handler?.effect === effect
             && handler.executionGate === 'durable-approval'
+        const managedAuthoring = ['scene.patch_many', 'folder.apply_changes'].includes(command)
+            && handler?.effect === effect && handler.executionGate === 'durable-approval'
+        const automaticAuthoring = managedAuthoring
+            && (command === 'folder.apply_changes' || state.allowSceneChanges === true)
         // Effective runtime policy controls the general approval requirement;
         // the coordinator still checks each plan and its durable budget reservation.
         const reason = !state.ready ? 'app-unavailable'
             : handler === undefined ? 'handler-not-registered'
                 : handler.effect !== effect ? 'invalid-command-registration'
-                    : effect === 'mutation' && !managedEnqueue && !managedCancellation && !managedStorageRetry ? 'human-approval-unavailable'
+                    : effect === 'mutation' && !managedEnqueue && !managedCancellation && !managedStorageRetry && !managedAuthoring ? 'human-approval-unavailable'
                     : state.mode === 'observe' && effect !== 'read' ? 'observe-only'
                         : undefined
         return {
@@ -81,7 +87,7 @@ export function describeAgentCommandCapabilities(
             ...(reason === undefined ? {} : { reason }),
             requiresAppProcess: true, canExecuteWhileAppClosed: false,
             requiresHumanApproval: effect === 'mutation'
-                && !(managedEnqueue && state.mode === 'bounded-auto' && !state.globalPause),
+                && !((managedEnqueue || automaticAuthoring) && state.mode === 'bounded-auto' && !state.globalPause),
         }
     })
 }

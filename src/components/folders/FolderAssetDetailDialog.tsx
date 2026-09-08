@@ -11,7 +11,7 @@ import { toast } from '@/components/ui/use-toast'
 import { flushSceneAuthorityRuntime } from '@/lib/scene-authority-runtime'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { toNativeAssetUrl } from '@/platform/asset-url'
-import { folderAssetProductionCount, type FolderAssetRow } from '@/presentation/folders/folder-workbench'
+import { folderAssetLatestImage, folderAssetProductionCount, type FolderAssetRow } from '@/presentation/folders/folder-workbench'
 import { resolveScenePrompts, useSceneStore } from '@/stores/scene-store'
 
 interface FolderAssetDetailDialogProps {
@@ -33,7 +33,7 @@ function AssetDetailEditor({ row, ready, onClose }: Omit<FolderAssetDetailDialog
     const [busy, setBusy] = useState(false)
     const busyRef = useRef(false)
     const [error, setError] = useState<string | null>(null)
-    const lastImage = row.scene.images[row.scene.images.length - 1]
+    const lastImage = folderAssetLatestImage(row.scene)
     const imageUrl = lastImage?.url.startsWith('data:') ? lastImage.url : lastImage ? toNativeAssetUrl(lastImage.url) : null
     const close = () => { if (!busyRef.current) onClose() }
 

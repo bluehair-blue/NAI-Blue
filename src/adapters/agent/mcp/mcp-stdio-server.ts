@@ -84,7 +84,8 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         capabilities: { tools: {}, resources: {} },
         instructions: 'Local foreground inbox. Keep the same requestId after timeout or restart. '
             + 'Receipt completion is command completion; inspect its result for Queue/run state. '
-            + 'Human approval happens in NAI Blue. Transport cancellation only stops waiting.',
+            + 'Authoring uses existing folder IDs and safe child folder segments; absolute storage paths are unsupported. '
+            + 'R2 preferences do not prove readiness or upload completion. Human approval happens in NAI Blue. Transport cancellation only stops waiting.',
     })
 
     async function freshCapabilities(signal: AbortSignal) {
@@ -121,7 +122,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const snapshot = await freshCapabilities(context.mcpReq.signal)
         return { tools: snapshot.available.map(descriptor => ({
             name: descriptor.command,
-            description: `${descriptor.command}. Foreground app required. ${descriptor.requiresHumanApproval ? 'Human approval required in NAI Blue.' : ''} Preserve requestId across retries.`,
+            description: `${descriptor.command}. Foreground app required. ${descriptor.requiresHumanApproval ? 'Human approval required in NAI Blue.' : 'Input-specific policy limits still apply.'} Preserve requestId across retries.`,
             inputSchema: { type: 'object' as const, properties: { requestId: requestIdSchema,
                 input: getAgentCommandInputContract(descriptor.command)!.schema },
                 required: ['requestId', 'input'], additionalProperties: false },

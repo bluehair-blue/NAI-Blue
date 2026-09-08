@@ -7,6 +7,7 @@ import type {
     SceneV1PresetProjection,
 } from '@/application/scene/scene-repository'
 import type { ArtifactRecord } from '@/domain/organizer/types'
+import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import { flushIndexedDBKey, SCENE_PRESENTATION_STORE_KEY } from '@/lib/indexed-db'
 import {
     sceneImagePresentationKey,
@@ -37,6 +38,7 @@ export interface ActivateSceneAuthorityOptions {
 
 interface ActiveRuntime extends SceneAuthorityRuntime {
     apply(document: SceneDocument, legacyPreset?: SceneV1PresetProjection): boolean
+    createShell(document: SceneDocument, name: string): void
 }
 
 let activeRuntime: ActiveRuntime | null = null
@@ -245,7 +247,8 @@ function projectPreset(
 }
 
 function authoringHash(scenes: readonly SceneAuthoringRecord[]): string {
-    return JSON.stringify(scenes)
+    // UI projection and repository writers insert properties in different orders. A result preview must not become an authoring edit.
+    return canonicalSerialize(JSON.parse(JSON.stringify(scenes)))
 }
 
 function removesArtifactReference(
@@ -492,6 +495,15 @@ export async function activateSceneAuthorityRuntime(
     const unsubscribe = useSceneStore.subscribe(scan)
     const runtime: ActiveRuntime = {
         apply: (document, legacyPreset) => apply(document, legacyPreset),
+        createShell(document, name) {
+            if (useSceneStore.getState().presets.some(preset => preset.id === document.presetId)) return
+            // Only an explicitly committed authoring request can create a shell. Ordinary result replay keeps orphan protection.
+            applying = true
+            useSceneStore.setState(current => ({ presets: [...current.presets, {
+                id: document.presetId, name, scenes: [], parentId: null, createdAt: Date.parse(document.updatedAt),
+            }] }))
+            applying = false
+        },
         async flush() {
             scan()
             while (running.size > 0 || latest.size > 0) {
@@ -518,6 +530,14 @@ export function applySceneDocumentProjection(
     legacyPreset?: SceneV1PresetProjection,
 ): boolean {
     return activeRuntime?.apply(document, legacyPreset) ?? false
+}
+
+/** Agent authoring publishes the committed Scene through the same revision tracker and durable navigation shell as the UI. */
+export async function publishAgentSceneDocument(document: SceneDocument, newPresetName?: string): Promise<void> {
+    if (activeRuntime === null) throw new Error('Scene authority is not ready')
+    if (newPresetName !== undefined) activeRuntime.createShell(document, newPresetName)
+    if (!activeRuntime.apply(document)) throw new Error('Scene navigation shell is missing')
+    await flushIndexedDBKey(SCENE_PRESENTATION_STORE_KEY)
 }
 
 /** Restores the preserved read-only V1 projection without starting a V2 writer. */

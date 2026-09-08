@@ -3,6 +3,7 @@ import {
     DEFAULT_SCENE_GENERATION,
     DEFAULT_SCENE_PROMPTS,
     type SceneCard,
+    type SceneImage,
     type SceneFolderTemplate,
     type ScenePreset,
 } from '@/stores/scene-store'
@@ -20,6 +21,14 @@ export interface FolderAssetRow {
 /** Legacy pending counts can seed the first edit; new workbench quantities survive Queue consumption/restarts. */
 export function folderAssetProductionCount(scene: SceneCard): number {
     return scene.productionCount ?? (scene.queueCount > 0 ? scene.queueCount : 1)
+}
+
+/** Both folder previews use creation time; legacy/imported history need not be newest-first. */
+export function folderAssetLatestImage(scene: Pick<SceneCard, 'images'>): SceneImage | undefined {
+    return scene.images.reduce<SceneImage | undefined>((latest, image) =>
+        !latest || (Number.isFinite(image.timestamp)
+            && (!Number.isFinite(latest.timestamp) || image.timestamp > latest.timestamp))
+            ? image : latest, undefined)
 }
 
 /** Read projection only: folder membership stays on Scene, including legacy manual destinations. */

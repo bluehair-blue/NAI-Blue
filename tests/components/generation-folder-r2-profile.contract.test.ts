@@ -20,7 +20,7 @@ describe('generation folder R2 profile UI contract', () => {
         expect(source).toContain('!r2Ready && requestedProfileId !== null')
     })
 
-    it('derives manager preview and save gating from its internal selected folder', () => {
+    it('derives manager readiness from its selected folder and preserves the saved upload preference', () => {
         const source = readFileSync('src/components/generation-folders/GenerationFolderManagerDialog.tsx', 'utf8')
 
         expect(source).toContain('selectedPreliminary')
@@ -29,6 +29,9 @@ describe('generation folder R2 profile UI contract', () => {
         expect(source).toContain('matchR2Readiness(selectedProfileId, r2State)')
         expect(source).toContain('r2Bucket: selectedR2Profile?.bucket')
         expect(source).toContain('r2Prefix: selectedR2Profile?.prefix')
-        expect(source).toContain('autoUpload: r2Ready ? autoUpload : false')
+        const save = source.slice(source.indexOf('const save = async () =>'), source.indexOf('const transferPrompt'))
+        expect(save).toContain('autoUpload,')
+        expect(save).not.toContain('r2Ready')
+        expect(source).toContain('checked={autoUpload} disabled={!r2Ready}')
     })
 })

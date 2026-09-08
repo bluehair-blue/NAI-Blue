@@ -41,6 +41,8 @@ export default [
     {
         ignores: [
             'dist/**',
+            // Local QA evidence may contain deliberately failing fixtures; maintained tests live under tests/.
+            'artifacts/**',
             'node_modules/**',
             'NAI-Blue-main/**',
             'src-tauri/**',

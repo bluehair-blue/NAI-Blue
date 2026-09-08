@@ -37,3 +37,11 @@ describe('human execution policy authority', () => {
         expect(effectiveAgentExecutionPolicy({ ...hydrated, mode: 'observe', globalPause: true }, now).mode).toBe('observe')
     })
 })
+
+
+it('migrates a valid pre-authoring policy without granting Scene editing or revoking existing bounded generation', () => {
+    const { authoring: _authoring, ...legacy } = { ...structuredClone(defaults),
+        revision: 7, mode: 'bounded-auto' as const, boundedAutoExpiresAt: '2026-09-08T12:00:00.000Z' }
+    expect(normalizeAgentExecutionPolicy(legacy)).toEqual({ ...legacy, authoring: { allowSceneChanges: false } })
+    expect(normalizeAgentExecutionPolicy({ ...legacy, extraAuthority: true })).toMatchObject({ mode: 'observe', globalPause: true })
+})

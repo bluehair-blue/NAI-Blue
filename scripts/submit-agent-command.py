@@ -36,7 +36,7 @@ COMMAND_NAMES = frozenset((
     "system.describe_capabilities", "workspace.get_snapshot", "generation.plan",
     "generation.enqueue", "generation.get_run", "generation.cancel",
     "generation.retry_storage", "scene.retry_link", "output.abandon_reservation",
-    "scene.resolve_many", "scene.patch_many", "folder.plan_changes", "r2.get_readiness",
+    "scene.resolve_many", "scene.patch_many", "folder.plan_changes", "folder.apply_changes", "r2.get_readiness",
 ))
 FORBIDDEN_KEYS = re.compile(
     r"token|secret|password|credential|authorization|cookie|session|apikey|accesskey|privatekey|"

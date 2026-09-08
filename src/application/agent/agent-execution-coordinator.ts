@@ -1,3 +1,5 @@
+import { assertAgentAuthoringTarget, isAgentAuthoringResult, type AgentAuthoringCommand, type AgentAuthoringPort } from './agent-authoring-contract'
+import { isAgentAuthoringRecord, type AgentAuthoringRecord } from './agent-execution-repository'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import type { GenerationPlan, Sha256Digest } from '@/application/generation/generation-plan-contract'
@@ -55,8 +57,25 @@ export interface AgentStorageRetryReview extends AgentStorageRetryApprovalBindin
     readonly artifactId: string
     readonly reasons: readonly string[]
 }
-export type AgentExecutionApprovalBinding = AgentGenerationApprovalBinding | AgentCancellationApprovalBinding | AgentStorageRetryApprovalBinding
-export type AgentExecutionReview = AgentGenerationExecutionReview | AgentCancellationReview | AgentStorageRetryReview
+export interface AgentAuthoringApprovalBinding {
+    readonly requestHash: Sha256Digest
+    readonly targetHash: Sha256Digest
+    readonly resourceId: string
+    readonly policyRevision: number
+}
+export interface AgentAuthoringReview extends AgentAuthoringApprovalBinding {
+    readonly input: JsonObject
+    readonly command: AgentAuthoringCommand
+    readonly requestId: string
+    readonly clientId: string
+    readonly expiresAt: string
+    readonly changeCount: number
+    readonly createsFolders: boolean
+    readonly renamesPathSegments: boolean
+    readonly reasons: readonly string[]
+}
+export type AgentExecutionApprovalBinding = AgentAuthoringApprovalBinding | AgentGenerationApprovalBinding | AgentCancellationApprovalBinding | AgentStorageRetryApprovalBinding
+export type AgentExecutionReview = AgentAuthoringReview | AgentGenerationExecutionReview | AgentCancellationReview | AgentStorageRetryReview
 export type AgentPendingApproval = AgentExecutionReview
 export type AgentApprovalExpectation = AgentExecutionApprovalBinding
 export interface AgentExecutionCoordinatorOptions {
@@ -69,6 +88,7 @@ export interface AgentExecutionCoordinatorOptions {
     readonly isClientAuthorized: (envelope: AgentCommandEnvelope) => Promise<boolean>
     readonly cancellation?: AgentCancellationPorts
     readonly storageRetry?: AgentStorageRetryPorts
+    readonly authoring?: AgentAuthoringPort
     readonly ports: {
         /** Replay source/output authority and current readiness without enqueueing. */
         readonly validate: (plan: GenerationPlan) => Promise<boolean>
@@ -86,7 +106,7 @@ const adjustablePolicyIssue = (code: string | null): boolean => code !== null
 
 function receiptState(result: JsonObject): 'completed' | 'needs-input' | 'rejected' {
     return result.code === 'AGENT_APPROVAL_REQUIRED' || result.code === 'AGENT_EXECUTION_UNKNOWN' ? 'needs-input'
-        : ['ready', 'cancel-requested', 'storage-registered'].includes(String(result.status)) ? 'completed' : 'rejected'
+        : ['ready', 'cancel-requested', 'storage-registered', 'authoring-committed'].includes(String(result.status)) ? 'completed' : 'rejected'
 }
 
 /** One durable reservation precedes the only enqueue call. Recovery reads Queue facts and never re-enters enqueue. */
@@ -367,12 +387,81 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             return createIssue ? failure(createIssue) : record.result
         },
     })
+    function authoringIssue(record: AgentAuthoringRecord, current: AgentExecutionPolicy, human: boolean): string | null {
+        if (current.mode === 'observe') return 'AGENT_OBSERVE_ONLY'
+        if (current.globalPause) return 'AGENT_GLOBAL_PAUSE'
+        if (!human && current.mode !== 'bounded-auto') return 'AGENT_APPROVAL_REQUIRED'
+        if (!human && record.command === 'scene.patch_many' && !current.authoring.allowSceneChanges) return 'AGENT_SCENE_AUTHORING_DENIED'
+        if (record.target.createsFolders && !current.output.allowCreateFolders) return 'AGENT_FOLDER_CREATE_DENIED'
+        if (record.target.renamesPathSegments && !current.output.allowRenamePathSegments) return 'AGENT_FOLDER_RENAME_DENIED'
+        return null
+    }
+    async function executeAuthoring(record: AgentAuthoringRecord, human: boolean): Promise<JsonObject> {
+        const current = policy()
+        if (current.revision !== record.policyRevision) {
+            const refreshed = { ...record, policyRevision: current.revision, result: approval() }
+            if (await replace(record, refreshed)) await publish(refreshed)
+            return refreshed.result
+        }
+        const issue = authoringIssue(record, current, human)
+        if (issue) return settle(record, approval(issue), 'pending')
+        if (Date.parse(record.expiresAt) <= Date.parse(now())) return settle(record, failure('REQUEST_EXPIRED'), 'rejected')
+        if (!await options.isClientAuthorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
+        const target = await options.authoring!.inspect(record.command, structuredClone(record.envelope.command.input))
+        if (target) assertAgentAuthoringTarget(target)
+        if (!target || canonicalSerialize(target) !== canonicalSerialize(record.target)) return settle(record, failure('AGENT_AUTHORING_TARGET_CHANGED'), 'rejected')
+        const grant = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
+            workspaceId: options.workspaceId, clientId: record.envelope.context.clientId, actorKind: record.envelope.context.actor.kind,
+            policyRevision: current.revision, expiresAt: record.expiresAt, consentedAt: now(),
+            authorization: human ? 'human' as const : 'bounded-auto' as const, target: structuredClone(target) }
+        const reserved: AgentAuthoringRecord = { ...record, grant, state: 'reserved', result: unknown() }
+        const didReserve = await change(records => {
+            const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
+            if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)
+                || canonicalSerialize(policy()) !== canonicalSerialize(current) || Date.parse(record.expiresAt) <= Date.parse(now())) return null
+            return records.map(item => item === saved ? reserved : item)
+        })
+        if (!didReserve) return unknown()
+        if (!await options.isClientAuthorized(record.envelope) || canonicalSerialize(policy()) !== canonicalSerialize(current)
+            || Date.parse(record.expiresAt) <= Date.parse(now())) return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
+        let result: JsonObject
+        try {
+            result = await options.authoring!.apply(record.command, structuredClone(record.envelope.command.input), structuredClone(target), structuredClone(grant))
+            assertAgentPublicValue(result)
+        } catch { return settle(reserved, unknown(), 'unknown') }
+        return isAgentAuthoringResult(result, grant) ? settle(reserved, result, 'completed') : settle(reserved, unknown(), 'unknown')
+    }
+    const authoringHandlers: AgentCommandHandler[] = options.authoring ? (['scene.patch_many', 'folder.apply_changes'] as const).map(command => ({
+        command, effect: 'mutation', executionGate: 'durable-approval', receiptState,
+        validate: getAgentCommandInputContract(command)!.validate,
+        execute: async (_input, { envelope }) => {
+            const current = policy()
+            if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
+            if (Date.parse(envelope.expiresAt) <= Date.parse(now())) return failure('REQUEST_EXPIRED')
+            if (current.mode === 'observe') return failure('AGENT_OBSERVE_ONLY')
+            if (!await options.isClientAuthorized(envelope)) return failure('AUTHENTICATION_FAILED')
+            const target = await options.authoring!.inspect(command, structuredClone(envelope.command.input))
+            if (!target) return failure('AGENT_AUTHORING_TARGET_UNAVAILABLE')
+            assertAgentAuthoringTarget(target)
+            if (target.command !== command || target.expectedRevision !== envelope.command.input.expectedRevision
+                || target.changeCount !== (envelope.command.input.changes as unknown[]).length
+                || (command === 'scene.patch_many' && target.resourceId !== envelope.command.input.presetId)) return failure('AGENT_AUTHORING_TARGET_CHANGED')
+            const record: AgentAuthoringRecord = { command, envelope: structuredClone(envelope), target: structuredClone(target),
+                originalPolicyRevision: current.revision, policyRevision: current.revision, expiresAt: envelope.expiresAt,
+                state: 'pending', grant: null, result: approval() }
+            const createIssue = await storePending(record, current)
+            if (createIssue) return failure(createIssue)
+            return current.mode === 'bounded-auto' && !authoringIssue(record, current, false) ? executeAuthoring(record, false) : record.result
+        },
+    })) : []
     const cancelHandler = options.cancellation ? queueRepairHandler('generation.cancel') : undefined
     const storageRetryHandler = options.storageRetry ? queueRepairHandler('generation.retry_storage') : undefined
     async function decisionRecord(requestId: string, expected: AgentExecutionApprovalBinding): Promise<AgentExecutionRecord | null> {
         const record = (await ledger())?.records.find(item => item.envelope.requestId === requestId)
         if (!record || record.state !== 'pending') return null
-        const targetMatches = isAgentCancellationRecord(record)
+        const targetMatches = isAgentAuthoringRecord(record)
+            ? 'resourceId' in expected && expected.resourceId === record.target.resourceId && expected.targetHash === record.target.targetHash
+            : isAgentCancellationRecord(record)
             ? 'runId' in expected && expected.runId === record.target.runId && expected.targetHash === record.target.targetHash
             : isAgentStorageRetryRecord(record)
                 ? 'jobId' in expected && expected.runId === record.target.runId && expected.jobId === record.target.jobId && expected.targetHash === record.target.targetHash
@@ -384,10 +473,28 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         return record
     }
     return {
-        handler, cancelHandler, storageRetryHandler,
+        handler, cancelHandler, storageRetryHandler, authoringHandlers,
         async pending(): Promise<readonly AgentExecutionReview[]> {
             const reviews: AgentExecutionReview[] = []
             for (const stored of (await ledger())?.records ?? []) {
+                if (isAgentAuthoringRecord(stored)) {
+                    if (stored.state !== 'pending') continue
+                    let record = stored
+                    const current = policy()
+                    if (record.policyRevision !== current.revision && current.revision >= record.originalPolicyRevision
+                        && Date.parse(record.expiresAt) > Date.parse(now())) {
+                        const refreshed = { ...record, policyRevision: current.revision, result: approval() }
+                        if (!await replace(record, refreshed)) continue
+                        record = refreshed
+                        await publish(record)
+                    }
+                    reviews.push({ input: structuredClone(record.envelope.command.input), command: record.command, requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
+                        clientId: record.envelope.context.clientId, policyRevision: record.policyRevision, expiresAt: record.expiresAt,
+                        resourceId: record.target.resourceId, targetHash: record.target.targetHash, changeCount: record.target.changeCount,
+                        createsFolders: record.target.createsFolders, renamesPathSegments: record.target.renamesPathSegments,
+                        reasons: [Date.parse(record.expiresAt) <= Date.parse(now()) ? 'REQUEST_EXPIRED' : authoringIssue(record, current, true) ?? 'AGENT_APPROVAL_REQUIRED'] })
+                    continue
+                }
                 if (!isAgentGenerationRecord(stored)) {
                     if (stored.state !== 'pending') continue
                     let record = stored
@@ -436,7 +543,8 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         },
         async approve(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)
-            return record ? isAgentGenerationRecord(record) ? execute(record, true) : executeQueueRepair(record) : failure('AGENT_APPROVAL_UNAVAILABLE')
+            return record ? isAgentAuthoringRecord(record) ? executeAuthoring(record, true)
+                : isAgentGenerationRecord(record) ? execute(record, true) : executeQueueRepair(record) : failure('AGENT_APPROVAL_UNAVAILABLE')
         },
         async reject(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)
@@ -444,6 +552,17 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         },
         async recover(): Promise<readonly AgentCommandReceipt[]> {
             for (const record of (await ledger())?.records ?? []) {
+                if (isAgentAuthoringRecord(record)) {
+                    if ((record.state === 'reserved' || record.state === 'unknown') && record.grant) {
+                        let result: JsonObject | null = null
+                        try { result = await options.authoring?.reconcile(structuredClone(record.grant), structuredClone(record.envelope.command.input)) ?? null; if (result) assertAgentPublicValue(result) } catch { result = null }
+                        await settle(record, result && isAgentAuthoringResult(result, record.grant) ? result : unknown(),
+                            result && isAgentAuthoringResult(result, record.grant) ? 'completed' : 'unknown')
+                    } else if (record.state === 'pending' && Date.parse(record.expiresAt) <= Date.parse(now())) {
+                        await settle(record, failure('REQUEST_EXPIRED'), 'rejected')
+                    } else await publish(record)
+                    continue
+                }
                 if (!isAgentGenerationRecord(record) && (record.state === 'reserved' || record.state === 'unknown') && record.grant) {
                     let result: unknown = null
                     try {

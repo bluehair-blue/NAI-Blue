@@ -19,7 +19,7 @@ describe('generation-folder workspace mutation integration', () => {
     it('revalidates the reviewed Scene commit set inside its gate before Queue commit', async () => {
         const source = await readFile(resolve(process.cwd(), 'src/services/queue/scene-queue-adapter.ts'), 'utf8')
         const gate = source.lastIndexOf('runtimeWorkspaceMutationGate.runExclusive(')
-        const revalidation = source.indexOf('outputReservations.planBatch(data.allocationRequests)', gate)
+        const revalidation = source.indexOf('outputReservations.planBatch(allocationRequests)', gate)
         const enqueue = source.indexOf('getRuntimeQueueRepository().createBatchAndEnqueue', gate)
         const guarded = source.slice(gate, enqueue)
 

@@ -1,4 +1,5 @@
 import type {
+    GenerationJobSnapshot,
     OutputCommitSetReservation,
     QueueBatchOrigin,
     QueueResourceRecord,
@@ -151,6 +152,22 @@ export interface PreparedSceneQueueReview {
     readonly submission: SceneQueueSubmission
 }
 
+/** Internal replay facts; agent JSON supplies source IDs, never this preparation identity. */
+export interface SceneQueueReplayIdentity {
+    readonly reviewId: string
+    readonly reviewedAt: string
+    readonly materializedSeeds: readonly number[]
+}
+
+export interface SceneQueueAgentExecution {
+    readonly binding: NonNullable<GenerationJobSnapshot['agentExecutionBinding']>
+    readonly approvedAt: string
+    readonly actor: import('@/application/generation/generation-command-contract').ActorRef
+    readonly imageCount: number
+    readonly estimatedAnlas: number
+    readonly budget: { readonly maxImages: number; readonly maxAnlas: number }
+}
+
 interface ResolvedSceneQueueTarget {
     readonly target: SceneQueueTarget
     readonly preset: ScenePreset
@@ -191,6 +208,7 @@ interface PreparedSceneQueueJob {
 }
 
 interface SceneQueueSubmissionData {
+    readonly replayIdentity: SceneQueueReplayIdentity
     readonly intentAssessment?: IntentAssessmentRunBinding
     readonly submission: SceneQueueSubmission
     readonly review: SceneQueueReview
@@ -216,6 +234,7 @@ interface SceneQueueSubmissionData {
 
 const sceneQueueSubmissions = new WeakMap<SceneQueueSubmission, SceneQueueSubmissionData>()
 const sceneQueueApprovals = new SceneQueueApprovalRegistry<SceneQueueSubmission, CreateBatchAndEnqueueResult>()
+const sceneQueueApprovalBindings = new WeakMap<SceneQueueSubmission, string>()
 
 function replan(reason: SceneQueueReplanIssue['reason'], message: string): never {
     assertSceneQueueReviewCondition(false, reason, message)
@@ -351,7 +370,8 @@ export function enqueueSceneQueueTargets(
 /** Reads Scene/Folder authority and the exact allocator, returning UI-safe review data without Queue or presentation writes. */
 export function prepareSceneQueueReview(
     targets: readonly SceneQueueTarget[],
-    options: { origin?: QueueBatchOrigin; consumePendingEntries?: boolean; assessment?: GenerationAssessmentRequirement } = {},
+    options: { origin?: QueueBatchOrigin; consumePendingEntries?: boolean; assessment?: GenerationAssessmentRequirement;
+        replayIdentity?: SceneQueueReplayIdentity } = {},
 ): Promise<PreparedSceneQueueReview | null> {
     const normalizedTargets = normalizeSceneQueueTargets(targets)
     if (normalizedTargets.length === 0) return Promise.resolve(null)
@@ -360,6 +380,7 @@ export function prepareSceneQueueReview(
         options.origin ?? 'fresh',
         options.consumePendingEntries === true,
         options.assessment,
+        options.replayIdentity,
     )
 }
 
@@ -368,7 +389,15 @@ async function prepareSceneQueueReviewOnce(
     origin: QueueBatchOrigin,
     consumePendingEntries: boolean,
     requestedAssessment?: GenerationAssessmentRequirement,
+    replayIdentity?: SceneQueueReplayIdentity,
 ): Promise<PreparedSceneQueueReview> {
+        if (replayIdentity !== undefined && (
+            !/^scene-review-[A-Za-z0-9-]{1,100}$/.test(replayIdentity.reviewId)
+            || !Number.isFinite(Date.parse(replayIdentity.reviewedAt))
+            || new Date(replayIdentity.reviewedAt).toISOString() !== replayIdentity.reviewedAt
+            || replayIdentity.materializedSeeds.length !== targets.reduce((sum, target) => sum + target.count, 0)
+            || replayIdentity.materializedSeeds.some(seed => !Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff)
+        )) throw new TypeError('Invalid Scene replay identity')
         const assessment = requestedAssessment === undefined ? undefined : parseAssessmentRequirement(requestedAssessment)
         if (assessment !== undefined && assessment.requiredAcceptedCount > targets.reduce((sum, target) => sum + target.count, 0)) {
             throw new TypeError('Required acceptance count exceeds planned Scene images.')
@@ -398,9 +427,9 @@ async function prepareSceneQueueReviewOnce(
             }
             return { target, preset, scene: projectRepositoryScene(source), document }
         })
-        const reviewedAt = new Date().toISOString()
+        const reviewedAt = replayIdentity?.reviewedAt ?? new Date().toISOString()
         const requestedDay = reviewedAt.slice(0, 10)
-        const reviewId = `scene-review-${globalThis.crypto.randomUUID()}`
+        const reviewId = replayIdentity?.reviewId ?? `scene-review-${globalThis.crypto.randomUUID()}`
         const canonicalRequestHash = `sha256:${hashCanonicalValue({
             schemaVersion: 1,
             reviewId,
@@ -518,9 +547,9 @@ async function prepareSceneQueueReviewOnce(
                 const generation = resolveSceneGeneration(scene)
                 // Seed selection is pure here; the Zustand seed is consumed only after
                 // the repository commits the complete batch and its reservations.
-                const seed = generation.seedLocked
+                const seed = replayIdentity?.materializedSeeds[ordinal] ?? (generation.seedLocked
                     ? generation.seed
-                    : Number.parseInt(hashCanonicalValue({ canonicalRequestHash, presetId: preset.id, sceneId: scene.id, count }).slice(0, 8), 16) >>> 0
+                    : Number.parseInt(hashCanonicalValue({ canonicalRequestHash, presetId: preset.id, sceneId: scene.id, count }).slice(0, 8), 16) >>> 0)
                 const built = await buildSceneGenerationParams(scene, {
                     requestId: `durable-enqueue:${canonicalRequestHash.slice(7, 39)}:${preset.id}:${scene.id}:${count}`,
                     now,
@@ -751,6 +780,7 @@ async function prepareSceneQueueReviewOnce(
         })
         const submission = Object.freeze({ reviewId }) as SceneQueueSubmission
         sceneQueueSubmissions.set(submission, {
+            replayIdentity: { reviewId, reviewedAt, materializedSeeds: prepared.map(item => item.seed) },
             // One run can span presets: bind their plans and exact destinations to a single human rubric.
             ...(assessment === undefined ? {} : { intentAssessment: {
                 runId: batchId, requirement: assessment,
@@ -784,20 +814,59 @@ async function prepareSceneQueueReviewOnce(
         return Object.freeze({ review, submission })
 }
 
+/** Internal read-only planning projection. Repositories and resource materializers remain process-local. */
+export function getSceneQueuePlanningFacts(submission: SceneQueueSubmission) {
+    const data = sceneQueueSubmissions.get(submission)
+    if (data === undefined) throw new TypeError('Scene Queue review is unavailable')
+    return structuredClone({
+        replayIdentity: data.replayIdentity,
+        folderBinding: data.folderBinding,
+        prepared: data.prepared,
+        allocations: data.allocations,
+        r2Deliveries: data.r2Deliveries,
+        streaming: data.useStreaming,
+    })
+}
+
 /** Revalidates the opaque review under the shared workspace gate, then commits Queue state before projecting UI state. */
 export function enqueueReviewedSceneQueue(
     submission: SceneQueueSubmission,
+    agent?: SceneQueueAgentExecution,
 ): Promise<CreateBatchAndEnqueueResult> {
     const data = sceneQueueSubmissions.get(submission)
     if (data === undefined || data.submission.reviewId !== submission.reviewId) {
         return Promise.reject(new TypeError('Scene Queue submission is invalid or belongs to another process'))
     }
-    return sceneQueueApprovals.run(submission, () => enqueueReviewedSceneQueueOnce(data))
+    if (agent !== undefined && (
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(agent.binding.scopeId)
+        || !/^sha256:[a-f0-9]{64}$/.test(agent.binding.planId)
+        || agent.binding.planId !== agent.binding.planHash
+        || !/^sha256:[a-f0-9]{64}$/.test(agent.binding.grantHash)
+        || !Number.isFinite(Date.parse(agent.approvedAt))
+        || new Date(agent.approvedAt).toISOString() !== agent.approvedAt
+        || agent.imageCount !== data.review.imageCount || agent.estimatedAnlas !== data.review.estimatedAnlas
+        || !Number.isSafeInteger(agent.budget.maxImages) || agent.budget.maxImages < agent.imageCount
+        || !Number.isSafeInteger(agent.budget.maxAnlas) || agent.budget.maxAnlas < agent.estimatedAnlas
+    )) return Promise.reject(new TypeError('Scene Queue grant does not match the reviewed budget and identity'))
+    const approvalIdentity = canonicalSerialize(agent ?? null)
+    const previous = sceneQueueApprovalBindings.get(submission)
+    if (previous !== undefined && previous !== approvalIdentity) {
+        return Promise.reject(new TypeError('Scene Queue review is already bound to another approval'))
+    }
+    sceneQueueApprovalBindings.set(submission, approvalIdentity)
+    return sceneQueueApprovals.run(submission, () => enqueueReviewedSceneQueueOnce(data, agent))
 }
 
 async function enqueueReviewedSceneQueueOnce(
     data: SceneQueueSubmissionData,
+    agent?: SceneQueueAgentExecution,
 ): Promise<CreateBatchAndEnqueueResult> {
+    const requestIdentity = agent?.binding.scopeId ?? data.requestIdentity
+    const batchId = `scene-batch-${requestIdentity}`
+    const allocationRequests = data.allocationRequests.map((request, ordinal) => ({ ...request,
+        reservationIdentity: { reservationId: `output-reservation:scene-job-${requestIdentity}-${ordinal}`,
+            batchId, jobId: `scene-job-${requestIdentity}-${ordinal}` },
+    }))
     const operationId = useQueueStore.getState().beginEnqueueOperation('scene')
     try {
         const materializer = getRuntimeQueueResourceMaterializer()
@@ -865,7 +934,7 @@ async function enqueueReviewedSceneQueueOnce(
 
                 let currentAllocations: readonly PlannedOutputCommitSet[]
                 try {
-                    currentAllocations = await getRuntimeMainQueueDependencies().outputReservations.planBatch(data.allocationRequests)
+                    currentAllocations = await getRuntimeMainQueueDependencies().outputReservations.planBatch(allocationRequests)
                 } catch {
                     replan('commit-set-changed', 'Exact Scene output commit set conflicts after review')
                 }
@@ -882,15 +951,19 @@ async function enqueueReviewedSceneQueueOnce(
 
                 const jobs: EnqueueGenerationJobInput[] = []
                 const reservations: OutputCommitSetReservation[] = []
-                const approvedAt = new Date().toISOString()
+                const approvedAt = agent?.approvedAt ?? new Date().toISOString()
                 const costConsents = approveSceneQueueCostEstimates(
                     data.prepared.map(item => item.prepared.costEstimate),
                     approvedAt,
                 )
                 data.prepared.forEach((item, ordinal) => {
-                    const plan = data.plans.get(item.presetId)
-                    if (plan === undefined) replan('scene-changed', `Scene sub-plan is missing for preset ${item.presetId}`)
-                    const jobId = `scene-job-${data.requestIdentity}-${ordinal}`
+                    const reviewedPlan = data.plans.get(item.presetId)
+                    if (reviewedPlan === undefined) replan('scene-changed', `Scene sub-plan is missing for preset ${item.presetId}`)
+                    const plan = agent === undefined ? reviewedPlan : planSceneBatch({
+                        folderBinding: reviewedPlan.folderBinding,
+                        request: { ...reviewedPlan.request, actor: agent.actor }, jobs: reviewedPlan.jobs,
+                    })
+                    const jobId = `scene-job-${requestIdentity}-${ordinal}`
                     const allocation = currentAllocations[ordinal]
                     assertExactOutputCommitSetAllocation({
                         ...data.allocationRequests[ordinal].claimPlan,
@@ -900,7 +973,7 @@ async function enqueueReviewedSceneQueueOnce(
                     const reservation: OutputCommitSetReservation = {
                         reservationSchemaVersion: 1,
                         reservationId: `output-reservation:${jobId}`,
-                        batchId: data.batchId,
+                        batchId,
                         jobId,
                         folderBinding: plan.folderBinding,
                         directoryIdentity: allocation.directoryIdentity,
@@ -948,7 +1021,7 @@ async function enqueueReviewedSceneQueueOnce(
                     }, dehydratedByOrdinal[ordinal])
                     jobs.push({
                         id: jobId,
-                        batchId: data.batchId,
+                        batchId,
                         workflow: 'scene',
                         sceneId: item.sceneId,
                         createdAt: data.createdAt,
@@ -956,22 +1029,25 @@ async function enqueueReviewedSceneQueueOnce(
                         ordinal,
                         snapshot: bindOutputReservationSnapshot({
                             ...encoded.snapshot,
-                            ...(data.intentAssessment === undefined ? {} : { intentAssessment: data.intentAssessment }),
+                            ...(agent === undefined ? {} : { agentExecutionBinding: agent.binding }),
+                            ...(data.intentAssessment === undefined ? {} : { intentAssessment: {
+                                ...data.intentAssessment, runId: batchId,
+                            } }),
                         }, reservationSnapshot),
                         compositionPlanHash: destinationBoundPlanHash,
                         maxAttempts: 3,
-                        idempotencyKey: `scene-enqueue-${data.requestIdentity}-${ordinal}`,
+                        idempotencyKey: `scene-enqueue-${requestIdentity}-${ordinal}`,
                     })
                     reservations.push(reservation)
                 })
                 return getRuntimeQueueRepository().createBatchAndEnqueue({
                     batch: {
-                        id: data.batchId,
+                        id: batchId,
                         workflow: 'scene',
                         createdAt: data.createdAt,
                         failurePolicy: 'continue',
                         origin: data.origin,
-                        idempotencyKey: `scene-enqueue-${data.requestIdentity}`,
+                        idempotencyKey: `scene-enqueue-${requestIdentity}`,
                     },
                     jobs,
                     resources: [...resources.values()],

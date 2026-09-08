@@ -16,7 +16,7 @@ describe('Scene Queue boundaries', () => {
         const adapter = await readFile(resolve(process.cwd(), 'src/services/queue/scene-queue-adapter.ts'), 'utf8')
         const prepareAllocation = adapter.indexOf('outputReservations.planBatch(allocationRequests)')
         const gate = adapter.indexOf('runtimeWorkspaceMutationGate.runExclusive(')
-        const approvalAllocation = adapter.indexOf('outputReservations.planBatch(data.allocationRequests)')
+        const approvalAllocation = adapter.indexOf('outputReservations.planBatch(allocationRequests)', gate)
         const commit = adapter.indexOf('createBatchAndEnqueue({')
 
         expect(adapter.match(/outputReservations\.planBatch\(/g)).toHaveLength(2)
@@ -47,7 +47,8 @@ describe('Scene Queue boundaries', () => {
         expect(adapter).toContain('resolveRepositorySceneBatchTargets(sceneRepository, targets)')
         expect(adapter).toContain('folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID)')
         expect(adapter).toContain('reviewId,')
-        expect(adapter).toContain('idempotencyKey: `scene-enqueue-${data.requestIdentity}`')
+        expect(adapter).toContain('const requestIdentity = agent?.binding.scopeId ?? data.requestIdentity')
+        expect(adapter).toContain('idempotencyKey: `scene-enqueue-${requestIdentity}`')
         expect(executor).not.toContain('createBatchAndEnqueue')
         expect(executor).not.toMatch(/@\/stores\//)
         expect(executor).toContain('SceneResultPresentationPort')

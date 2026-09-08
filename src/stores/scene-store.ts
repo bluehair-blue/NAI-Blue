@@ -647,7 +647,10 @@ export const useSceneStore = create<SceneState>()(
                             ...scene,
                             id: createSceneEntityId(),
                             queueCount: 0,
+                            queuedFileNames: undefined,
                             images: [],
+                            // A new Scene copies authoring inputs, never the source's completed output lineage.
+                            artifactRefs: [],
                             prompts: scene.prompts ? { ...scene.prompts } : undefined,
                             characterCaptions: cloneSceneCharacterCaptions(scene.characterCaptions),
                             generation: scene.generation ? { ...scene.generation } : undefined,
@@ -763,6 +766,8 @@ export const useSceneStore = create<SceneState>()(
                             queueCount: 0,
                             queuedFileNames: undefined,
                             images: [],
+                            // Keep durable output links as empty as the new Scene's preview history.
+                            artifactRefs: [],
                             prompts: scene.prompts ? { ...scene.prompts } : undefined,
                             characterCaptions: cloneSceneCharacterCaptions(scene.characterCaptions),
                             generation: scene.generation ? { ...scene.generation } : undefined,

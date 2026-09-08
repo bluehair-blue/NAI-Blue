@@ -40,10 +40,16 @@ function binding(grant: AgentExecutionGrant): NonNullable<GenerationJob['snapsho
         grantHash: `sha256:${hashCanonicalValue(grant)}` }
 }
 
-function runResult(grant: AgentExecutionGrant): JsonObject {
-    const batchId = `main-batch-${grant.scopeId}`
+function runResult(grant: AgentExecutionGrant, workflow: 'main' | 'scene' = 'main'): JsonObject {
+    const batchId = `${workflow}-batch-${grant.scopeId}`
     return { status: 'ready', batchId, runId: batchId,
-        jobIds: Array.from({ length: grant.imageCount }, (_, ordinal) => `main-job-${grant.scopeId}-${ordinal}`) }
+        jobIds: Array.from({ length: grant.imageCount }, (_, ordinal) => `${workflow}-job-${grant.scopeId}-${ordinal}`) }
+}
+
+function isScenePlan(plan: GenerationPlan): boolean {
+    const prepared = plan.jobs[0]?.prepared
+    return typeof prepared === 'object' && prepared !== null
+        && 'kind' in prepared && prepared.kind === 'agent-scene-generation'
 }
 
 async function runtimeReplan(plan: GenerationPlan): Promise<PlanGenerationDependencies<PreparedMainGeneration>> {
@@ -69,14 +75,19 @@ export function createAgentGenerationExecutionPort(
     const checkedJobs = async (grant: AgentExecutionGrant): Promise<GenerationJob[] | null> => {
         if (!Number.isSafeInteger(grant.imageCount) || grant.imageCount < 1 || grant.imageCount > 100) return null
         await dependencies.repository.initialize()
-        const batchId = `main-batch-${grant.scopeId}`
-        const batch = await dependencies.repository.getBatch(batchId)
-        if (batch === null || batch.workflow !== 'main' || batch.idempotencyKey !== `main-enqueue-${grant.scopeId}`) return null
+        const batches = await Promise.all(['main', 'scene'].map(workflow => dependencies.repository.getBatch(`${workflow}-batch-${grant.scopeId}`)))
+        const present = batches.filter(batch => batch !== null)
+        if (present.length !== 1) return null
+        const batch = present[0]
+        const workflow = batch.workflow
+        const batchId = batch.id
+        if ((workflow !== 'main' && workflow !== 'scene') || batchId !== `${workflow}-batch-${grant.scopeId}`
+            || batch.idempotencyKey !== `${workflow}-enqueue-${grant.scopeId}`) return null
         const page = await dependencies.repository.listJobs({ batchId, limit: 100 })
         const jobs = [...page.items].sort((left, right) => left.ordinal - right.ordinal)
         if (page.nextCursor !== null || jobs.length !== grant.imageCount || jobs.some((job, ordinal) => (
-            job.id !== `main-job-${grant.scopeId}-${ordinal}` || job.batchId !== batchId || job.ordinal !== ordinal
-            || job.workflow !== 'main' || job.idempotencyKey !== `main-enqueue-${grant.scopeId}-${ordinal}`
+            job.id !== `${workflow}-job-${grant.scopeId}-${ordinal}` || job.batchId !== batchId || job.ordinal !== ordinal
+            || job.workflow !== workflow || job.idempotencyKey !== `${workflow}-enqueue-${grant.scopeId}-${ordinal}`
             || job.snapshotHash !== hashGenerationJobSnapshot(job.snapshot)
             || canonicalSerialize(job.snapshot.agentExecutionBinding ?? null) !== canonicalSerialize(binding(grant))
         ))) return null
@@ -85,6 +96,10 @@ export function createAgentGenerationExecutionPort(
     return {
         async validate(plan) {
             try {
+                if (isScenePlan(plan)) {
+                    const scene = await import('./agent-scene-generation-plan')
+                    return scene.validateAgentSceneGenerationPlan(plan)
+                }
                 const input = replanInput(plan)
                 if (input === null || plan.requiredApprovals.length !== 0 || plan.jobs.length > 100
                     || plan.executionPolicy.credentialDispatch.kind !== 'auto'
@@ -97,9 +112,15 @@ export function createAgentGenerationExecutionPort(
         },
         async enqueue(plan, grant) {
             // Check original facts first: a receipt crash must not mint another batch or timestamp.
-            if (await checkedJobs(grant) !== null) return runResult(grant)
-            if (await dependencies.repository.getBatch(`main-batch-${grant.scopeId}`) !== null) {
+            const existing = await checkedJobs(grant)
+            if (existing !== null) return runResult(grant, existing[0].workflow as 'main' | 'scene')
+            if (await dependencies.repository.getBatch(`main-batch-${grant.scopeId}`) !== null
+                || await dependencies.repository.getBatch(`scene-batch-${grant.scopeId}`) !== null) {
                 return { status: 'conflict', issueCodes: ['agent-queue-binding-conflict'] }
+            }
+            if (isScenePlan(plan)) {
+                const scene = await import('./agent-scene-generation-plan')
+                return scene.enqueueAgentSceneGenerationPlan(plan, grant)
             }
             const input = replanInput(plan)
             if (input === null || plan.planId !== grant.planId || plan.planHash !== grant.planHash
@@ -135,7 +156,8 @@ export function createAgentGenerationExecutionPort(
                 ? result.issues.map(issue => issue.code) : ['reviewed-source-conflict'] }
         },
         async reconcile(grant) {
-            return await checkedJobs(grant) === null ? null : runResult(grant)
+            const existing = await checkedJobs(grant)
+            return existing === null ? null : runResult(grant, existing[0].workflow as 'main' | 'scene')
         },
         async isOutstanding(grant) {
             const jobs = await checkedJobs(grant)

@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import {
-    collectFolderAssets, createFolderAssetPreset, parseFolderAssetTable, UNASSIGNED_FOLDER_ID,
+    collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, parseFolderAssetTable, UNASSIGNED_FOLDER_ID,
 } from '@/presentation/folders/folder-workbench'
 import type { GenerationFolder } from '@/domain/generation-folders'
 import { DEFAULT_SCENE_GENERATION, DEFAULT_SCENE_PROMPTS, useSceneStore, type SceneFolderTemplate } from '@/stores/scene-store'
@@ -12,6 +12,19 @@ const folder = (id: string, parentId: string | null): GenerationFolder => ({
 })
 
 describe('Folder production input and scope', () => {
+    it('selects the newest completed preview without depending on history order or mutating it', () => {
+        const older = { id: 'older', url: 'older.png', timestamp: 1, isFavorite: false }
+        const newer = { ...older, id: 'newer', url: 'newer.png', timestamp: 2 }
+        const invalid = { ...older, id: 'legacy-invalid-date', timestamp: Number.NaN }
+        for (const images of [[newer, older], [older, newer], [invalid, newer, older]]) {
+            const before = [...images]
+            expect(folderAssetLatestImage({ images })).toBe(newer)
+            expect(images).toEqual(before)
+        }
+        expect(folderAssetLatestImage({ images: [newer, { ...newer, id: 'same-time' }] })).toBe(newer)
+        expect(folderAssetLatestImage({ images: [] })).toBeUndefined()
+    })
+
     it('reads pasted table columns without splitting prompt commas and rejects invalid quantities', () => {
         const parsed = parseFolderAssetTable('이름\t프롬프트\t수량\r\nhappy\tsmile, blue eyes\t20\r\nsad\ttears\t\r\nbad\tfrown\t2.5')
         expect(parsed.rows).toEqual([{ name: 'happy', prompt: 'smile, blue eyes', count: 20 }, { name: 'sad', prompt: 'tears', count: 1 }])

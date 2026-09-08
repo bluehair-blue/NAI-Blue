@@ -64,7 +64,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         for (const tool of listed.tools) {
             expect(tool.inputSchema.properties?.input).toEqual(getAgentCommandInputContract(tool.name as AgentCommandName)!.schema)
         }
-        expect(listed.tools.map(item => item.name)).not.toContain('r2.get_readiness')
+        expect(listed.tools.map(item => item.name)).not.toContain('scene.retry_link')
         expect(f.invokes).toHaveLength(1)
         expect(f.invokes[0].command).toEqual({ name: 'system.describe_capabilities', input: {} })
         const resource = await f.client.readResource({ uri: 'nai-blue://capabilities' })
@@ -111,7 +111,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
     it('validates public input, implemented command, request ID and shared contract before invoking the port', async () => {
         const f = await fixture()
         for (const params of [
-            { name: 'r2.get_readiness', arguments: { requestId: 'request-1', input: {} } },
+            { name: 'scene.retry_link', arguments: { requestId: 'request-1', input: {} } },
             { name: 'generation.get_run', arguments: { requestId: '../bad', input: { runId: 'run-1' } } },
             { name: 'generation.get_run', arguments: { requestId: 'CON', input: { runId: 'run-1' } } },
             { name: 'generation.get_run', arguments: { requestId: 'request-1', input: { runId: 'run-1', extra: true } } },

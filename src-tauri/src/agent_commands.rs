@@ -894,6 +894,7 @@ mod native {
                     | "scene.resolve_many"
                     | "scene.patch_many"
                     | "folder.plan_changes"
+                    | "folder.apply_changes"
                     | "r2.get_readiness"
             )
             || envelope.authentication.scheme != "hmac-sha256"

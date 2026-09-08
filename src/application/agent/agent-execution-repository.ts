@@ -1,3 +1,5 @@
+import { assertAgentAuthoringTarget, isAgentAuthoringResult, type AgentAuthoringCommand, type AgentAuthoringGrant, type AgentAuthoringTarget } from './agent-authoring-contract'
+import { getAgentCommandInputContract } from './agent-command-input'
 import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import type { Sha256Digest } from '@/application/generation/generation-plan-contract'
@@ -52,12 +54,20 @@ export interface AgentStorageRetryRecord extends Omit<AgentCancellationRecord, '
     readonly grant: AgentStorageRetryGrant | null
 }
 export type AgentQueueRepairRecord = AgentCancellationRecord | AgentStorageRetryRecord
-export type AgentExecutionRecord = AgentGenerationExecutionRecord | AgentQueueRepairRecord
+export interface AgentAuthoringRecord extends Omit<AgentCancellationRecord, 'command' | 'target' | 'grant'> {
+    readonly command: AgentAuthoringCommand
+    readonly target: AgentAuthoringTarget
+    readonly grant: AgentAuthoringGrant | null
+}
+export type AgentExecutionRecord = AgentGenerationExecutionRecord | AgentQueueRepairRecord | AgentAuthoringRecord
+export function isAgentAuthoringRecord(record: AgentExecutionRecord): record is AgentAuthoringRecord {
+    return 'command' in record && ['scene.patch_many', 'folder.apply_changes'].includes(record.command)
+}
 export function isAgentCancellationRecord(record: AgentExecutionRecord): record is AgentCancellationRecord {
     return 'command' in record && record.command === 'generation.cancel'
 }
 export function isAgentGenerationRecord(record: AgentExecutionRecord): record is AgentGenerationExecutionRecord {
-    return !isAgentCancellationRecord(record) && !isAgentStorageRetryRecord(record)
+    return !('command' in record)
 }
 export function isAgentStorageRetryRecord(record: AgentExecutionRecord): record is AgentStorageRetryRecord {
     return 'command' in record && record.command === 'generation.retry_storage'
@@ -79,9 +89,11 @@ export function agentExecutionScope(envelope: AgentCommandEnvelope): string {
 }
 /** Public commit facts still bind to the exact reserved batch and ordered job count. */
 export function isAgentExecutionCommitResult(result: JsonObject, grant: AgentExecutionGrant): boolean {
-    return result.status === 'ready' && result.batchId === `main-batch-${grant.scopeId}` && result.runId === result.batchId
+    const scene = result.batchId === `scene-batch-${grant.scopeId}`
+    return result.status === 'ready' && (scene || result.batchId === `main-batch-${grant.scopeId}`) && result.runId === result.batchId
         && Array.isArray(result.jobIds) && result.jobIds.length === grant.imageCount
-        && result.jobIds.every(id => typeof id === 'string' && id.length > 0)
+        && result.jobIds.every((id, ordinal) => typeof id === 'string' && id.length > 0
+            && (!scene || id === `scene-job-${grant.scopeId}-${ordinal}`))
         && new Set(result.jobIds).size === result.jobIds.length
 }
 
@@ -95,6 +107,12 @@ export function parseAgentExecutionLedger(value: unknown, workspaceId: string): 
         const ids = new Set<string>()
         for (const record of ledger.records) {
             const envelope = parseAgentCommandEnvelope(record.envelope)
+            if (isAgentAuthoringRecord(record)) {
+                validateAuthoringRecord(record, envelope, workspaceId)
+                if (ids.has(envelope.requestId)) throw new Error()
+                ids.add(envelope.requestId)
+                continue
+            }
             if (!isAgentGenerationRecord(record)) {
                 validateQueueRepairRecord(record, envelope, workspaceId)
                 if (ids.has(envelope.requestId)) throw new Error()
@@ -184,4 +202,37 @@ function validateQueueRepairRecord(record: AgentQueueRepairRecord, envelope: Age
         || canonicalSerialize(record.target) !== canonicalSerialize(grant.target)
         || !Number.isFinite(Date.parse(grant.consentedAt)) || new Date(grant.consentedAt).toISOString() !== grant.consentedAt
         || grant.consentedAt < envelope.submittedAt || grant.consentedAt >= record.expiresAt) throw new Error()
+}
+
+/** Authoring history shares the execution ledger and binds command, target, consent and result. */
+function validateAuthoringRecord(record: AgentAuthoringRecord, envelope: AgentCommandEnvelope, workspaceId: string): void {
+    if (Object.keys(record).sort().join() !== 'command,envelope,expiresAt,grant,originalPolicyRevision,policyRevision,result,state,target'
+        || envelope.command.name !== record.command || envelope.context.workspaceId !== workspaceId
+        || agentRequestHash(envelope) !== envelope.requestHash
+        || !Number.isSafeInteger(record.policyRevision) || record.policyRevision < 0
+        || !Number.isSafeInteger(record.originalPolicyRevision) || record.originalPolicyRevision < 0
+        || record.originalPolicyRevision > record.policyRevision || record.expiresAt !== envelope.expiresAt
+        || !Number.isFinite(Date.parse(record.expiresAt)) || new Date(record.expiresAt).toISOString() !== record.expiresAt
+        || !['pending', 'reserved', 'unknown', 'completed', 'rejected'].includes(record.state)) throw new Error()
+    getAgentCommandInputContract(record.command)!.validate(envelope.command.input)
+    assertAgentAuthoringTarget(record.target)
+    if (record.target.command !== record.command || record.target.expectedRevision !== envelope.command.input.expectedRevision
+        || record.target.changeCount !== (envelope.command.input.changes as unknown[]).length
+        || (record.command === 'scene.patch_many' && record.target.resourceId !== envelope.command.input.presetId)) throw new Error()
+    assertAgentPublicValue(record.result)
+    if (record.state === 'pending' && (record.grant !== null || record.result.code !== 'AGENT_APPROVAL_REQUIRED')) throw new Error()
+    if (['reserved', 'unknown'].includes(record.state) && record.result.code !== 'AGENT_EXECUTION_UNKNOWN') throw new Error()
+    if (['reserved', 'unknown', 'completed'].includes(record.state) && !record.grant) throw new Error()
+    const grant = record.grant
+    if (!grant) return
+    assertAgentAuthoringTarget(grant.target)
+    if (Object.keys(grant).sort().join() !== 'actorKind,authorization,clientId,consentedAt,expiresAt,policyRevision,requestHash,requestId,target,workspaceId'
+        || grant.requestId !== envelope.requestId || grant.requestHash !== envelope.requestHash
+        || grant.workspaceId !== workspaceId || grant.clientId !== envelope.context.clientId
+        || grant.actorKind !== envelope.context.actor.kind || !['human', 'bounded-auto'].includes(grant.authorization)
+        || grant.policyRevision !== record.policyRevision || grant.expiresAt !== record.expiresAt
+        || canonicalSerialize(grant.target) !== canonicalSerialize(record.target)
+        || !Number.isFinite(Date.parse(grant.consentedAt)) || new Date(grant.consentedAt).toISOString() !== grant.consentedAt
+        || grant.consentedAt < envelope.submittedAt || grant.consentedAt >= record.expiresAt
+        || (record.state === 'completed' && !isAgentAuthoringResult(record.result, grant))) throw new Error()
 }
