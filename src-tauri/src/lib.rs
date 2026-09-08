@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 mod nai_transport;
 mod agent_commands;
 mod novelai_credentials;
@@ -473,8 +474,6 @@ async fn remove_background(image_base64: String) -> RemoveBackgroundResult {
 
 #[cfg(not(mobile))]
 use std::collections::HashMap;
-#[cfg(not(mobile))]
-use std::path::PathBuf;
 #[cfg(not(mobile))]
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
