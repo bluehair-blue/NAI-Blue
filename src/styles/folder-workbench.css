@@ -1,45 +1,47 @@
 /* DESIGN.md defines this route's palette. Scoping at body also reaches Radix
    portals; leaving /folders restores the shared app palette and theme authority. */
 body:has(.folder-workbench-shell), .folder-workbench-surface {
-  --background: 0.965 0.007 255;
-  --canvas: 0.938 0.012 260;
-  --card: 0.985 0.002 260;
-  --popover: 0.985 0.002 260;
-  --foreground: 0.290 0.035 260;
-  --card-foreground: 0.290 0.035 260;
-  --popover-foreground: 0.290 0.035 260;
-  --primary: 0.540 0.180 262;
-  --ring: 0.540 0.180 262;
-  --primary-foreground: 0.990 0.002 260;
-  --secondary: 0.925 0.012 260;
-  --muted: 0.925 0.012 260;
-  --secondary-foreground: 0.360 0.035 260;
-  --muted-foreground: 0.510 0.024 260;
-  --accent: 0.915 0.025 260;
-  --accent-foreground: 0.380 0.110 262;
-  --border: 0.860 0.016 255;
-  --input: 0.800 0.020 255;
+  color-scheme: light;
+  --background: 0.945 0.014 265;
+  --canvas: 0.915 0.021 265;
+  --card: 0.975 0.007 265;
+  --popover: 0.975 0.007 265;
+  --foreground: 0.255 0.045 265;
+  --card-foreground: 0.255 0.045 265;
+  --popover-foreground: 0.255 0.045 265;
+  --primary: 0.505 0.195 264;
+  --ring: 0.505 0.195 264;
+  --primary-foreground: 0.985 0.004 265;
+  --secondary: 0.895 0.025 265;
+  --muted: 0.895 0.025 265;
+  --secondary-foreground: 0.330 0.045 265;
+  --muted-foreground: 0.475 0.035 265;
+  --accent: 0.875 0.050 265;
+  --accent-foreground: 0.345 0.130 264;
+  --border: 0.820 0.025 265;
+  --input: 0.735 0.035 265;
   --radius-control: 4px;
 }
 .dark body:has(.folder-workbench-shell), .dark .folder-workbench-surface {
-  --background: 0.285 0.022 255;
-  --canvas: 0.245 0.018 255;
-  --card: 0.310 0.023 255;
-  --popover: 0.310 0.023 255;
-  --foreground: 0.930 0.009 250;
-  --card-foreground: 0.930 0.009 250;
-  --popover-foreground: 0.930 0.009 250;
-  --primary: 0.710 0.135 258;
-  --ring: 0.710 0.135 258;
-  --primary-foreground: 0.190 0.023 260;
-  --secondary: 0.350 0.022 255;
-  --muted: 0.350 0.022 255;
-  --secondary-foreground: 0.900 0.012 250;
-  --muted-foreground: 0.770 0.018 250;
-  --accent: 0.385 0.040 258;
-  --accent-foreground: 0.890 0.045 255;
-  --border: 0.435 0.023 255;
-  --input: 0.510 0.025 255;
+  color-scheme: dark;
+  --background: 0.225 0.037 265;
+  --canvas: 0.195 0.032 265;
+  --card: 0.270 0.044 265;
+  --popover: 0.270 0.044 265;
+  --foreground: 0.950 0.008 265;
+  --card-foreground: 0.950 0.008 265;
+  --popover-foreground: 0.950 0.008 265;
+  --primary: 0.700 0.155 264;
+  --ring: 0.700 0.155 264;
+  --primary-foreground: 0.170 0.038 265;
+  --secondary: 0.300 0.045 265;
+  --muted: 0.300 0.045 265;
+  --secondary-foreground: 0.915 0.014 265;
+  --muted-foreground: 0.750 0.030 265;
+  --accent: 0.315 0.077 264;
+  --accent-foreground: 0.895 0.050 264;
+  --border: 0.380 0.041 265;
+  --input: 0.475 0.047 265;
 }
 .folder-workbench-shell, .folder-workbench-surface { font-size: 16px; line-height: 1.5; }
 .folder-workbench-shell :is(button, input, textarea, select), .folder-workbench-surface :is(button, input, textarea, select) { font: inherit; }
@@ -126,7 +128,7 @@ body:has(.folder-workbench-shell), .folder-workbench-surface {
 .fb-bulk-popover { position: absolute; z-index: 5; display: grid; gap: 12px; width: 280px; max-width: 100%; padding: 16px; border: 1px solid oklch(var(--border)); border-radius: 4px; background: oklch(var(--popover)); }
 .fb-bulk-popover label { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .fb-bulk-popover input { width: 80px; min-height: 44px; }
-.fb-gallery-region { padding-block: 24px 32px; background: oklch(var(--canvas) / .45); }
+.fb-gallery-region { padding-block: 24px 32px; background: oklch(var(--canvas)); }
 .fb-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
 .fb-asset-card { min-width: 0; overflow: hidden; background: oklch(var(--card)); border: 1px solid oklch(var(--border) / .65); border-radius: 4px; }
 .fb-asset-card.is-selected { border-color: oklch(var(--primary)); box-shadow: 0 0 0 1px oklch(var(--primary)); }

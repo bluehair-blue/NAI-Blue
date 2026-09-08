@@ -22,27 +22,31 @@ cards, and every Advanced surface remain flat. `DESIGN_VARIANCE = 3`,
 
 ### Folder workbench, September 2026
 
-The `/folders` workspace uses a softer local palette in `folder-workbench.css`.
+The `/folders` workspace uses an ink-blue local palette in `folder-workbench.css`.
 These values override the shared semantic tokens only while this route is open,
 including its portalled dialogs. The existing theme store remains authoritative.
 The central folder title and adjacent next action form one visual focus; navigation
 and settings have lower contrast. Settings open on demand to preserve image space.
+Background lightness is restrained in both themes, with enough blue chroma to avoid
+a gray haze. The gallery uses an opaque canvas beneath lighter cards, retaining
+clear surface separation without blur or decorative shadows. Native controls use
+the matching `color-scheme`. All color declarations consume OKLCH channel tokens.
 
 | Semantic tokens | Light channels | Dark channels |
 | --- | --- | --- |
-| background | `0.965 0.007 255` | `0.285 0.022 255` |
-| canvas | `0.938 0.012 260` | `0.245 0.018 255` |
-| card, popover | `0.985 0.002 260` | `0.310 0.023 255` |
-| foreground, card-foreground, popover-foreground | `0.290 0.035 260` | `0.930 0.009 250` |
-| primary, ring | `0.540 0.180 262` | `0.710 0.135 258` |
-| primary-foreground | `0.990 0.002 260` | `0.190 0.023 260` |
-| secondary, muted | `0.925 0.012 260` | `0.350 0.022 255` |
-| secondary-foreground | `0.360 0.035 260` | `0.900 0.012 250` |
-| muted-foreground | `0.510 0.024 260` | `0.770 0.018 250` |
-| accent | `0.915 0.025 260` | `0.385 0.040 258` |
-| accent-foreground | `0.380 0.110 262` | `0.890 0.045 255` |
-| border | `0.860 0.016 255` | `0.435 0.023 255` |
-| input | `0.800 0.020 255` | `0.510 0.025 255` |
+| background | `0.945 0.014 265` | `0.225 0.037 265` |
+| canvas | `0.915 0.021 265` | `0.195 0.032 265` |
+| card, popover | `0.975 0.007 265` | `0.270 0.044 265` |
+| foreground, card-foreground, popover-foreground | `0.255 0.045 265` | `0.950 0.008 265` |
+| primary, ring | `0.505 0.195 264` | `0.700 0.155 264` |
+| primary-foreground | `0.985 0.004 265` | `0.170 0.038 265` |
+| secondary, muted | `0.895 0.025 265` | `0.300 0.045 265` |
+| secondary-foreground | `0.330 0.045 265` | `0.915 0.014 265` |
+| muted-foreground | `0.475 0.035 265` | `0.750 0.030 265` |
+| accent | `0.875 0.050 265` | `0.315 0.077 264` |
+| accent-foreground | `0.345 0.130 264` | `0.895 0.050 264` |
+| border | `0.820 0.025 265` | `0.380 0.041 265` |
+| input | `0.735 0.035 265` | `0.475 0.047 265` |
 
 Workbench type: title `36px/1.2` desktop and `30px/1.2` mobile; section
 heading `22px/1.4`; navigation, controls and descriptions `16px/1.5`; quiet
