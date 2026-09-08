@@ -1008,16 +1008,38 @@ async function main() {
                     assert.ok(report.mainWithinViewport, `${route} @ ${viewport.width}px main region leaves the viewport`)
                     assertVisibleCtaLayout(ctaReport, `${route} @ ${viewport.width}px`)
 
-                    // Guided has a task chooser only after the credential gate;
-                    // expert routes always expose the five-destination primary nav.
+                    // The workbench exposes two destinations plus a tools menu;
+                    // other expert routes retain the five-destination primary nav.
                     if (route !== '/guided-preview') {
-                        assert.ok(report.navTargets.length >= 5, `${route} @ ${viewport.width}px should expose primary navigation`)
+                        assert.ok(report.navTargets.length >= (route === '/folders' ? 3 : 5), `${route} @ ${viewport.width}px should expose primary navigation`)
                         for (const [index, target] of report.navTargets.entries()) {
                             assert.ok(
                                 target.width >= 40 && target.height >= 40,
                                 `${route} @ ${viewport.width}px nav target ${index} is too small (${target.width}x${target.height})`,
                             )
                         }
+                    }
+
+                    if (route === '/folders') {
+                        const navigation = page.locator('nav[aria-label]')
+                        assert.ok((await navigation.getAttribute('aria-label'))?.trim(), 'Workbench navigation must have an accessible name')
+                        assert.equal(await navigation.locator('a[href="/folders"][aria-current="page"]').count(), 1)
+                        assert.equal(await navigation.locator('a[href="/queue"]').count(), 1)
+                        const tools = navigation.locator('button[aria-haspopup="menu"]')
+                        await tools.focus()
+                        await page.keyboard.press('Enter')
+                        const menu = page.getByRole('menu')
+                        await menu.waitFor({ state: 'visible' })
+                        for (const destination of defaultRoutes.filter(value => !['/folders', '/queue', '/guided-preview'].includes(value))) {
+                            const link = menu.locator(`a[href="${destination}"]`)
+                            assert.equal(await link.count(), 1, `Workbench tools must expose ${destination}`)
+                            assert.ok((await link.innerText()).trim(), `Workbench ${destination} link must have an accessible name`)
+                            const bounds = await link.boundingBox()
+                            assert.ok(bounds && bounds.width >= 40 && bounds.height >= 40, `Workbench ${destination} target must be at least 40px`)
+                        }
+                        await page.keyboard.press('Escape')
+                        await menu.waitFor({ state: 'hidden' })
+                        await page.waitForFunction(() => document.activeElement?.matches('nav button[aria-haspopup="menu"]'), undefined, { timeout: 2000 })
                     }
 
                     if (viewport.sidebars === 'hidden') {
