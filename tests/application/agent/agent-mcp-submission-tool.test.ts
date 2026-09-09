@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentRequestHash, canonicalAgentSigningPayload, parseAgentCommandEnvelope } from '@/application/agent/agent-command-contract'
+import { AGENT_COMMAND_NAMES, agentRequestHash, canonicalAgentSigningPayload, parseAgentCommandEnvelope, type AgentCommandName } from '@/application/agent/agent-command-contract'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 
@@ -15,11 +15,11 @@ const python = existsSync(bundledPython) ? bundledPython : process.platform === 
 const script = path.resolve('scripts/submit-agent-mcp-command.py')
 const connection = { workspaceId: 'workspace-1', clientId: 'client-1', keyId: 'key-1', actorKind: 'agent' }
 
-function payload(input: JsonObject = { budget: 1.5, tiny: 1e-7, larger: 1e21, text: '한글 🙂' }) {
+function payload(input: JsonObject = { budget: 1.5, tiny: 1e-7, larger: 1e21, text: '한글 🙂' }, name: AgentCommandName = 'generation.plan') {
     const unsigned = { schemaVersion: 1 as const, requestId: 'decimal-request', submittedAt: '2026-09-06T00:00:00.000Z',
         expiresAt: '2026-09-06T01:00:00.000Z', context: { apiVersion: 'nai-blue.agent/v1alpha1' as const,
             workspaceId: connection.workspaceId, clientId: connection.clientId, actor: { kind: 'agent' as const },
-            idempotencyKey: 'decimal-operation' }, command: { name: 'generation.plan' as const, input } }
+            idempotencyKey: 'decimal-operation' }, command: { name, input } }
     const envelope = parseAgentCommandEnvelope({ ...unsigned, requestHash: agentRequestHash(unsigned),
         authentication: { scheme: 'hmac-sha256', keyId: connection.keyId, signature: `hmac-sha256:${'0'.repeat(64)}` } })
     return { connection, unsignedPayload: canonicalSerialize(unsigned), signingPayload: canonicalAgentSigningPayload(envelope) }
@@ -50,6 +50,40 @@ def rejected(call):
 }
 
 describe('Phase 10 TS-canonical Python signing bridge (fixture credentials, no app)', () => {
+    it('keeps Python signing and native authentication command admission aligned with the application catalog', () => {
+        expect(JSON.parse(runPython('print(json.dumps(sorted(module.base.COMMAND_NAMES)))'))).toEqual([...AGENT_COMMAND_NAMES].sort())
+        // Native input semantics still belong to the application; this checks only the cross-language name boundary.
+        const native = readFileSync('src-tauri/src/agent_commands.rs', 'utf8')
+        const admission = native.match(/!matches!\(\s*envelope\.command\.name\.as_str\(\),([\s\S]*?)\n\s*\)/)?.[1]
+        expect(admission).toBeDefined()
+        expect([...admission!.matchAll(/"([a-z0-9_]+\.[a-z0-9_]+)"/g)].map(match => match[1]).sort()).toEqual([...AGENT_COMMAND_NAMES].sort())
+    })
+
+    it.skipIf(process.platform !== 'win32').each([
+        ['production.create', { title: 'Native bridge smoke', source: { kind: 'scene', targets: [
+            { presetId: 'preset-1', sceneId: 'scene-1', expectedRevision: 0, count: 1 },
+        ] }, seedPolicy: { kind: 'fixed', seed: 42 }, budget: { maxImages: 1, maxAnlas: 1.5 } }],
+        ['production.list', {}],
+        ['production.get', { productionId: `production-${'a1b2c3d4'.repeat(8)}` }],
+        ['production.plan_next', { productionId: `production-${'a1b2c3d4'.repeat(8)}`, expectedRevision: 0 }],
+    ] satisfies [AgentCommandName, JsonObject][])('signs and publishes %s through the actual Python bridge with a fixture key', (name, input) => {
+        const result = JSON.parse(runPython(`
+with tempfile.TemporaryDirectory() as directory:
+    inbox = pathlib.Path(directory) / "inbox"
+    inbox.mkdir()
+    with patch.object(module.base, "_read_credential", return_value=bytearray(range(32))):
+        module.submit(payload, inbox, "decimal-request")
+    archive = (inbox / "decimal-request.submitted.json").read_bytes()
+    assert archive == (inbox / "decimal-request.ready.json").read_bytes()
+    print(archive.decode("utf-8"))
+`, payload(input, name)))
+        const envelope = parseAgentCommandEnvelope(result)
+        expect(envelope.command).toEqual({ name, input })
+        expect(envelope.requestHash).toBe(agentRequestHash(envelope))
+        expect(envelope.authentication.signature).toBe(`hmac-sha256:${createHmac('sha256', Buffer.from(Array.from({ length: 32 }, (_, i) => i)))
+            .update(canonicalAgentSigningPayload(envelope), 'utf8').digest('hex')}`)
+    })
+
     it.skipIf(process.platform !== 'win32')('signs exact TypeScript bytes and roundtrips finite decimal/exponent values through native publication', () => {
         const result = JSON.parse(runPython(`
 with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-09T04:59:21.4731095Z",
+  "baseCommit": "11372ab7b67c40672c93d124521220fc727a913f",
+  "status": "native-command-admission-fixed; awaiting-human-client-registration",
+  "implementationScope": "Align Python and Rust command-name admission with the existing TypeScript catalog; retain input, HMAC, client identity and execution approval authorities.",
+  "finding": "The first production slice registered four production commands in TypeScript but omitted the shared Python signer allowlist and the Rust native authentication allowlist. SDK-only integration had bypassed these boundaries, so real native calls would be rejected.",
+  "fixedCommands": [
+    "production.create",
+    "production.list",
+    "production.get",
+    "production.plan_next"
+  ],
+  "sourceScope": "The local commit containing this record identifies source and tests. QA binary uses the previously verified frontend from 11372ab with the updated native receiver; Rust formatting after build has no semantic changes.",
+  "checks": {
+    "bridgeRed": {
+      "failed": 5,
+      "passed": 6,
+      "scope": "One catalog parity and four real Python production submission checks fail before the fix."
+    },
+    "bridgeGreen": {
+      "passed": 35,
+      "node": "24.19.0",
+      "failed": 0,
+      "python": "3.12.14",
+      "scope": "Python signing/publication with fixture keys, legacy CLI validation, MCP discovery and production input contract.",
+      "files": 4
+    },
+    "rust": {
+      "failed": 0,
+      "passed": 2,
+      "scope": "Native production command parsing with unknown enqueue/approve/force rejection, and existing exact HMAC/client/workspace/key/actor authentication. No real app client registered."
+    },
+    "nativeBuild": {
+      "mode": "debug --no-bundle",
+      "passed": true,
+      "warning": "Existing scrypt profile package mismatch warning."
+    },
+    "stdioGuidance": {
+      "status": "passed",
+      "modelReadVerified": false,
+      "checksPassed": 8,
+      "scope": "Official SDK and production stdio runner against the existing revoked Phase10C client. Initial instructions, metadata-only resource discovery, explicit guide read, no new publication, clean child shutdown."
+    },
+    "scopedLint": "passed",
+    "scriptSyntax": "passed",
+    "diffWhitespace": "passed",
+    "fullRegression": "not repeated; no application TypeScript runtime changed"
+  },
+  "preparedApp": {
+    "identifier": "blue.bluehair.naiblue.productionqa",
+    "webviewDataDirectory": "production-mcp-qa",
+    "windowTitle": "NAI Blue - Production MCP QA",
+    "pid": 43820,
+    "observedScreen": "Data Hub > AI editing: authenticated request receiver ready, zero registered clients, no pending approvals.",
+    "workspaceId": "workspace-e1e219adf21d5177aa11ac87d98d8ac9",
+    "inbox": "C:/Users/User/AppData/Roaming/blue.bluehair.naiblue.productionqa/agent-commands/inbox",
+    "proposedClientLabel": "Production QA",
+    "remoteDebugging": "127.0.0.1:9332, isolated debug app only"
+  },
+  "operatorNextStep": "Register one Production QA client in the isolated app UI, then use its public connection metadata with the existing native QA script. Connection metadata contains no secret. Production request/plan/approval testing remains pending.",
+  "notPerformed": [
+    "Codex or Claude MCP configuration change",
+    "Model read/use of guidance",
+    "New persistent client/key registration",
+    "Production request or Queue submission through a newly registered native client",
+    "Real NAI generation or charges",
+    "Native generated image commit",
+    "R2 upload",
+    "Installed-app update",
+    "Remote push"
+  ],
+  "artifacts": [
+    {
+      "path": "artifacts/production-native/bridge-red.log",
+      "sha256": "6da1058853753395d877435f1d72eb478384cc14f95adf02395978e0fb666e4f"
+    },
+    {
+      "path": "artifacts/production-native/bridge-green.log",
+      "sha256": "0814e15c05ca7422ea7e0facd4fcb724901bac5843090d36019a5c66a38cbce7"
+    },
+    {
+      "path": "artifacts/production-native/native-production-test.log",
+      "sha256": "506b1211028cceb56c3a19e6d580af055bc49d853f69c8c92017552c781689e5"
+    },
+    {
+      "path": "artifacts/production-native/native-auth-test.log",
+      "sha256": "b0292f08e70bfe17f5334995a25d483cfce7c56b386718c1f62557109ba3760b"
+    },
+    {
+      "path": "artifacts/production-native/build.log",
+      "sha256": "0f70926f4a066b8ae096fb5e7787dfa59587912d60d45b6fc1c3fca85a7519ce"
+    },
+    {
+      "path": "artifacts/production-native/tauri.qa.json",
+      "sha256": "6fc795a71cfa8fa98de186b650d21fe2a76001defe6e9f7fbd86974094223973"
+    },
+    {
+      "path": "artifacts/production-native/guidance-revoked.json",
+      "sha256": "0d16e95da97e16ae933a9ee77f08e449d5e0e946b3d10298c3c7cffcb1d99b4f"
+    },
+    {
+      "path": "src-tauri/target/debug/NAI-Blue.exe",
+      "sha256": "d0132048fb2a57e0330152124db96082036ccb06ca56dbfd4154f2bff6c5492c"
+    }
+  ]
+}

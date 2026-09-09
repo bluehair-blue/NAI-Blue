@@ -53,6 +53,8 @@ async function main() {
         const requests = [
             { name: 'workspace.get_snapshot', arguments: { requestId: `${execution}-snapshot`, input: {} } },
             { name: 'generation.get_run', arguments: { requestId: `${execution}-run`, input: { runId: `${execution}-missing` } } },
+            { name: 'production.list', arguments: { requestId: `${execution}-productions`, input: {} } },
+            { name: 'production.get', arguments: { requestId: `${execution}-production`, input: { productionId: `${execution}-missing` } } },
         ]
         report.requestIds = requests.map(request => request.arguments.requestId)
         transport = new StdioClientTransport({ command: process.execPath,
@@ -70,6 +72,21 @@ async function main() {
         report.handshake = { server: client.getServerVersion(), protocol: client.getNegotiatedProtocolVersion(),
             capabilities: client.getServerCapabilities(), childPid: transport.pid }
         report.checks.push('sdk-handshake-production-runner')
+
+        // Read static guidance before discovery so this proof also works with the app off or a revoked client.
+        const guideUri = 'nai-blue://guides/agent-workflow/v1'
+        const instructions = client.getInstructions()
+        assert(typeof instructions === 'string' && instructions.length < 700 && instructions.includes(guideUri))
+        const resources = await client.listResources({}, freshOptions)
+        const guideMetadata = resources.resources.find(item => item.uri === guideUri)
+        assert(guideMetadata && !('text' in guideMetadata) && !('contents' in guideMetadata))
+        const guide = await client.readResource({ uri: guideUri }, freshOptions)
+        assert.equal(guide.contents.length, 1)
+        assert.equal(guide.contents[0].uri, guideUri)
+        assert(guide.contents[0].text.includes('production.plan_next'))
+        report.guidance = { uri: guideUri, instructionCharacters: instructions.length,
+            guideSha256: sha256(guide.contents[0].text), hostModelReadVerified: false }
+        report.checks.push('short-initialize-instructions', 'metadata-only-guide-discovery', 'explicit-workflow-guide-read')
 
         const resource = async uri => {
             const result = await client.readResource({ uri }, freshOptions)
@@ -130,6 +147,8 @@ async function main() {
                 const rawReceipt = await readText(path.join(inboxDir, '..', 'results', `${requestId}.json`), 69_632)
                 assert.deepEqual(JSON.parse(rawReceipt), observed.receipt)
                 if (index === 1) assert.deepEqual(observed.receipt.result, { found: false })
+                if (request.name === 'production.get') assert.deepEqual(observed.receipt.result, { found: false })
+                if (request.name === 'production.list') assert(Array.isArray(observed.receipt.result.requests))
                 report.reads.push({ requestId, command: request.name, state: observed.receipt.state,
                     resultDigest: observed.receipt.resultDigest, nativeReceiptSha256: sha256(rawReceipt),
                     resourceAndNativeReceiptEqual: true })

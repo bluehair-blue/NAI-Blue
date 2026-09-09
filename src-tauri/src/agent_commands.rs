@@ -896,6 +896,10 @@ mod native {
                     | "folder.plan_changes"
                     | "folder.apply_changes"
                     | "r2.get_readiness"
+                    | "production.create"
+                    | "production.list"
+                    | "production.get"
+                    | "production.plan_next"
             )
             || envelope.authentication.scheme != "hmac-sha256"
         {
@@ -1057,6 +1061,43 @@ assert result["accepted"] is False and result["status"] == "submitted-to-inbox"
                 "workspaceId":"workspace-test","clientId":"client-test","actor":{"kind":"agent"},"idempotencyKey":"request-test"},
                 "command":{"name":"workspace.get_snapshot","input":{}},"authentication":{"scheme":"hmac-sha256","keyId":"key-test"}})
         }
+        #[test]
+        fn production_commands_reach_application_validation_without_expanding_execution_authority()
+        {
+            let registry = Registry {
+                schema_version: 1,
+                workspace_id: "workspace-test".into(),
+                clients: vec![client()],
+            };
+            // Native authentication admits names only; the signed input and approval
+            // still pass through the foreground application's existing validators.
+            for name in [
+                "production.create",
+                "production.list",
+                "production.get",
+                "production.plan_next",
+            ] {
+                let mut payload = signed();
+                payload["command"]["name"] = json!(name);
+                assert!(
+                    parse_signed(&payload.to_string(), &registry).is_ok(),
+                    "{name}"
+                );
+            }
+            for name in [
+                "production.enqueue",
+                "production.approve",
+                "production.force",
+            ] {
+                let mut payload = signed();
+                payload["command"]["name"] = json!(name);
+                assert!(
+                    parse_signed(&payload.to_string(), &registry).is_err(),
+                    "{name}"
+                );
+            }
+        }
+
         #[test]
         fn native_auth_binds_exact_bytes_client_workspace_key_and_actor() {
             let registry = Registry {
