@@ -7,6 +7,8 @@ import { AGENT_COMMAND_EFFECTS, describeAgentCommandCapabilities, type AgentComm
 import { agentResultDigest, type AgentCommandReceipt } from '@/application/agent/command-receipt-repository'
 import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
+import { deriveGenerationFulfillment } from '@/application/generation/generation-fulfillment'
+import { projectGenerationRunStatus } from '@/application/generation/generation-run-monitor'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(close => close())) })
@@ -56,6 +58,27 @@ async function fixture(overrides: Partial<McpAgentInbox> = {}) {
 }
 
 describe('Phase 10 official SDK server with simulated inbox', () => {
+    it('returns shared production counts and storage-only recovery through generation.get_run', async () => {
+        const fact = { source: 'fixture', referenceId: 'result-1', observedAt: '2026-09-09T00:00:00.000Z', kind: 'direct' as const }
+        const status = projectGenerationRunStatus(deriveGenerationFulfillment({ batchId: 'run-1', queueState: 'active', jobs: [{
+            jobId: 'job-1', queueState: 'failed', interpretation: { ...fact, state: 'succeeded' },
+            provider: { ...fact, state: 'succeeded' }, storage: { ...fact, state: 'failed' },
+            release: { policy: 'not-required' }, acceptance: { required: false },
+            issues: [{ code: 'OUTPUT_RESERVATION_CONFLICT', jobId: 'job-1', severity: 'blocking',
+                action: { kind: 'retry-storage', requiresHuman: false } }],
+        }] }))
+        const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name,
+            command.name === 'system.describe_capabilities' ? { capabilities: descriptors() } as unknown as JsonObject : status) })
+        await f.client.listTools()
+        const result = await f.client.callTool({ name: 'generation.get_run', arguments: { requestId: 'monitor-1', input: { runId: 'run-1' } } })
+        expect(result.isError).toBe(false)
+        expect(result.structuredContent).toMatchObject({ receipt: { state: 'completed', result: {
+            monitor: { complete: false, nextAction: 'review-recovery', counts: { generated: 1, stored: 0 },
+                recoveryActions: [{ kind: 'retry-storage', requiresHuman: false, jobCount: 1 }] },
+        } } })
+        expect(f.invokes.map(item => item.command.name)).toEqual(['system.describe_capabilities', 'generation.get_run'])
+    })
+
     it('handshakes and advertises exactly the fresh registered available schema-bound tools', async () => {
         const f = await fixture()
         const listed = await f.client.listTools()

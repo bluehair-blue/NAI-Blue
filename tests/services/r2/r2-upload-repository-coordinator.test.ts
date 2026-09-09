@@ -1,4 +1,4 @@
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
+import { IDBFactory, IDBKeyRange, IDBObjectStore } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createR2ProfileV2, hashR2ProfileV2, type NativeR2ScannedArtifact, type R2ProfileV2 } from '@/domain/r2/types'
@@ -96,6 +96,44 @@ function adapter(overrides: Partial<NativeR2UploadAdapter> = {}): NativeR2Upload
 }
 
 describe('R2 upload repository and coordinator', () => {
+    it('reads only requested artifact histories through the index and deduplicates lookup IDs', async () => {
+        const repo = repository('artifact-monitor')
+        const selected = createUploadJob(profile().id, artifact(401), { id: 'selected', now: NOW })
+        const other = createUploadJob(profile().id, artifact(402), { id: 'unrelated', now: NOW })
+        await repo.enqueue([selected, other])
+        const all = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+        expect((await repo.listJobsForArtifacts([selected.artifactId, selected.artifactId])).map(item => item.id)).toEqual(['selected'])
+        expect(await repo.listJobsForArtifacts([])).toEqual([])
+        expect(all).not.toHaveBeenCalled()
+        all.mockRestore()
+    })
+
+    it('adds the artifact index to v2 without changing existing job contents', async () => {
+        const factory = new IDBFactory()
+        const databaseName = `r2-v2-index-${++databaseCounter}`
+        const stored = { ...createUploadJob(profile().id, artifact(403), { id: 'v2-job', now: NOW }), dedupeKey: 'v2-dedupe' }
+        const old = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = factory.open(databaseName, 2)
+            request.onupgradeneeded = () => {
+                request.result.createObjectStore('profiles', { keyPath: 'id' })
+                const jobs = request.result.createObjectStore('jobs', { keyPath: 'id' })
+                jobs.createIndex('by-state-ready', ['state', 'nextAttemptAt', 'createdAt', 'id'])
+                jobs.createIndex('by-profile', ['profileId', 'createdAt', 'id'])
+                jobs.createIndex('by-dedupe', 'dedupeKey', { unique: true })
+                jobs.add(stored)
+                const manifest = request.result.createObjectStore('manifest', { keyPath: 'id' })
+                manifest.createIndex('by-profile', ['profileId', 'remoteKey'])
+            }
+            request.onsuccess = () => resolve(request.result as unknown as IDBDatabase)
+            request.onerror = () => reject(request.error)
+        })
+        old.close()
+        const repo = new IndexedDBR2UploadRepository({ factory: factory as unknown as globalThis.IDBFactory,
+            keyRange: IDBKeyRange as unknown as typeof globalThis.IDBKeyRange, databaseName })
+        expect(await repo.listJobsForArtifacts([stored.artifactId])).toEqual([stored])
+        expect(await repo.getJob(stored.id)).toEqual(stored)
+    })
+
     it('keeps independent same-timestamp delivery plans distinct and deduplicates repeated artifacts', async () => {
         const repo = repository('same-timestamp-plans')
         const coordinator = new R2UploadCoordinator(repo, adapter(), () => new Date(NOW))

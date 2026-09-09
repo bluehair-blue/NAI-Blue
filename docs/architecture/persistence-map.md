@@ -47,7 +47,7 @@
 | --- | --- | --- |
 | `nai-blue-durable-generation-queue` | `batches`, `jobs`, `attempts`, `leases`, `resources` | `GenerationJob` 실행 기준. immutable snapshot, CAS lease, retry/restart recovery를 소유하며 성공 output을 ArtifactRecord로 연결한다. |
 | `nai-blue-organizer-artifacts` | `artifacts` | `ArtifactRecord` 결과 기준. `sourceJobId`/`sourceSceneId`, checksum, original과 distribution variant를 보존한다. token, prompt, signed URL, absolute path는 거부한다. |
-| `nai-blue-r2-upload-queue` | `profiles`, `jobs`, `manifest` | R2 foreground upload 상태와 portable remote reference. secret/signed URL은 profile record에 넣지 않는다. |
+| `nai-blue-r2-upload-queue` | `profiles`, `jobs`, `manifest` | R2 foreground upload 상태와 portable remote reference. v3는 `jobs.by-artifact` 인덱스만 추가해 기존 행을 유지하고 생산 모니터의 전체 이력 조회를 피한다. secret/signed URL은 profile record에 넣지 않는다. |
 | `nai-blue-local-sync[-user]` | `entities`, `outbox`, `inbox`, `tombstones`, `checkpoints` | per-user sync authority. lease/CAS와 tombstone retention을 유지한다. |
 | `nai-blue-wildcard-content` | `contents` | fragment 본문. `nai-blue-wildcards` metadata와 stable id/path로 연결된다. |
 
@@ -60,6 +60,8 @@
 | media base `NAI_Blue_Backup/<store>/...json` | per-store snapshot | `store-snapshot/2`, store당 최대 30개. 중앙 backup projection과 restore preflight를 사용한다. |
 | `localStorage: nai-blue-auto-backup` | startup backup | 최근 3개. disk backup의 보조 수단이며 동일한 redaction projection을 사용한다. |
 | `localStorage: nai-blue-last-auto-backup`, `nai-blue-last-disk-auto-backup` | backup scheduling timestamp | 데이터 authority가 아닌 best-effort bookkeeping이다. |
+| `localStorage: nai-blue-folder-composer-drafts-v1` | 폴더별 미제출 프롬프트·이름·수량·선택한 설정 ID | 장치 내 입력 복구용. 32개 폴더/전체 JSON 200만 문자 한도, 초과·손상은 보존하고 실패 표시. 명시적 버리기 또는 정확히 일치하는 제출분의 저장 성공 때만 정리한다. credential/image bytes/승인/실행 상태를 넣지 않으며 `BACKUP_STORE_KEYS`·동기화 대상에서 제외한다. [ADR-014](ADR-014-production-monitoring-and-drafts.md) 참고. |
+| `localStorage: nai-blue-folder-workbench-view-v1` | 최근 폴더·검색·선택·보기·필터·페이지·스크롤 | 최근 32개 범위까지의 장치 내 presentation 복구. 실행 authority가 아니며 백업·동기화에 포함하지 않는다. 실제 생성 대상은 매번 기존 계획에서 검증한다. |
 | plugin-store `webview-settings.json` | embedded WebView의 최소 설정 | WebView 전용. Composition/credential/generation 상태를 넣지 않는다. |
 | managed AppData content-addressed resources | queue source/mask/character/vibe bytes | SHA-256 address, temp+rename, readback digest를 사용한다. DB에는 portable reference만 두며 reference-aware GC 전 임의 삭제하지 않는다. |
 | 사용자 출력·scene/library 디렉터리 | 생성 원본과 export 파일 | OutputWriter와 platform adapter가 소유한다. DB 경로는 index/reference이며 파일 자체의 대체 authority가 아니다. |

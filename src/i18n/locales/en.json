@@ -1,6 +1,12 @@
 {
     "folderWorkbench": {
         "composer": {
+            "missingTemplate": "The saved generation settings could not be found. Choose the defaults or another setting.",
+            "unavailableTemplate": "Settings not found",
+            "draftSaved": "Draft saved for this folder. You can close this panel and continue later.",
+            "draftAutoSave": "Your draft is saved automatically on this device.",
+            "draftFailed": "The draft could not be saved. Copy your input before closing this screen.",
+            "discardDraft": "Discard draft",
             "asset": "Image {{number}}",
             "remove": "Remove image {{number}}",
             "prompt": "Image description",
@@ -160,6 +166,7 @@
             "limit": "You can add up to 2,400 items at a time."
         },
         "design": {
+            "viewSaveFailed": "The current view and selection could not be saved. They may not be restored when you return.",
             "allImages": "All images",
             "unfiled": "Images without a folder",
             "imageWorkspace": "Image workspace",
@@ -1918,6 +1925,23 @@
         }
     },
     "queue": {
+        "monitor": {
+            "title": "Production results",
+            "wait": "The app is generating and saving your images. Results update automatically.",
+            "paused": "Paused. Use the resume button above to continue.",
+            "complete": "The requested generation, storage, and uploads are complete. Review the images in your folder.",
+            "recovery": "Some items need attention. Open the details below to see available recovery actions.",
+            "uncertain": "Some results are uncertain. Check the details below before generating again.",
+            "inspect": "Some items are unfinished or need review. Check the details and job list below.",
+            "generated": "Generation confirmed",
+            "stored": "Storage confirmed",
+            "uploaded": "Upload confirmed",
+            "foreground": "Keep NAI Blue running during generation.",
+            "copied": "Status copied",
+            "copyFailed": "Copy failed · Retry",
+            "copy": "Copy job status",
+            "notRequested": "Not requested"
+        },
         "r2ReadinessPause": "Required R2 delivery is waiting for its runtime or credential. Restore access in R2 settings, then resume this job group.",
         "r2Requirement": { "required": "Required delivery", "best-effort": "Best-effort delivery", "disabled": "No delivery" },
         "r2Source": { "folder": "Selected folder", "ancestor": "Parent folder", "workspace": "Default profile", "cleared": "Inheritance cleared", "profile-snapshot": "Selected profile", "legacy-output": "Existing output settings" },

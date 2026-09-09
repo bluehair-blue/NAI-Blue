@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type FormEvent } from 'react'
+import { useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowRight, ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { MAX_FOLDER_ASSET_ROWS, parseFolderAssetTable, type FolderAssetInput } from '@/presentation/folders/folder-workbench'
 import type { SceneFolderTemplate } from '@/stores/scene-store'
+import { completeFolderDraft, emptyComposerDraft, hasFolderDraftInput, loadFolderDraft, saveFolderDraft, type FolderComposerDraft } from '@/presentation/folders/folder-workbench-draft'
 
 interface FolderAssetComposerProps {
+    folderId: string
     busy: boolean
     disabled: boolean
     error: string | null
@@ -18,14 +20,25 @@ interface FolderAssetComposerProps {
 const emptyRow = () => ({ id: crypto.randomUUID(), name: '', prompt: '', count: '1' })
 const control = 'min-h-11 !rounded-[4px]'
 
-/** Keeps both input drafts local; the parent alone saves assets and opens the review step. */
-export function FolderAssetComposer({ busy, disabled, error, templates, onSubmit }: FolderAssetComposerProps) {
+/** Restores folder-scoped inputs; the parent alone commits assets and owns the review step. */
+export function FolderAssetComposer({ folderId, busy, disabled, error, templates, onSubmit }: FolderAssetComposerProps) {
     const { t } = useTranslation()
     const formId = useId()
-    const [mode, setMode] = useState<'form' | 'table'>('form')
-    const [draft, setDraft] = useState(() => [emptyRow()])
-    const [table, setTable] = useState('')
-    const [templateId, setTemplateId] = useState('')
+    const [restored] = useState(() => loadFolderDraft(folderId))
+    const [inputs, setInputs] = useState<FolderComposerDraft>(() => restored.draft ?? emptyComposerDraft())
+    const inputRef = useRef(inputs)
+    const [draftSaved, setDraftSaved] = useState(restored.saved)
+    const { mode, rows: draft, table, templateId } = inputs
+    const updateInputs = (patch: Partial<FolderComposerDraft>) => {
+        const next = { ...inputRef.current, ...patch }
+        inputRef.current = next
+        setInputs(next)
+        setDraftSaved(saveFolderDraft(folderId, next))
+    }
+    const setDraft = (update: (rows: FolderComposerDraft['rows']) => FolderComposerDraft['rows']) => updateInputs({ rows: update(inputRef.current.rows) })
+    const setMode = (mode: FolderComposerDraft['mode']) => updateInputs({ mode })
+    const setTable = (table: string) => updateInputs({ table })
+    const setTemplateId = (templateId: string) => updateInputs({ templateId })
     const [submitting, setSubmitting] = useState(false)
     const [validationError, setValidationError] = useState<string | null>(null)
     const parsed = useMemo(() => parseFolderAssetTable(table), [table])
@@ -39,6 +52,11 @@ export function FolderAssetComposer({ busy, disabled, error, templates, onSubmit
     async function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
         if (locked || !hasInput || (mode === 'table' && parsed.errors.length > 0)) return
+        if (templateId && !templates.some(template => template.id === templateId)) {
+            setValidationError(t('folderWorkbench.composer.missingTemplate', '저장한 생성 설정을 찾지 못했어요. 기본 설정이나 다른 설정을 골라 주세요.'))
+            return
+        }
+        const submitted = inputRef.current
         const rows = mode === 'table' ? parsed.rows : draft.map((row, index) => ({
             name: row.name.trim() || `asset_${String(index + 1).padStart(3, '0')}`,
             prompt: row.prompt.trim(),
@@ -56,9 +74,12 @@ export function FolderAssetComposer({ busy, disabled, error, templates, onSubmit
         setValidationError(null)
         try {
             if (await onSubmit(rows, templates.find(template => template.id === templateId)?.template)) {
-                setDraft([emptyRow()])
-                setTable('')
-                setTemplateId('')
+                const completed = completeFolderDraft(folderId, submitted)
+                if (inputRef.current === submitted && completed) {
+                    inputRef.current = completed.draft
+                    setInputs(completed.draft)
+                    setDraftSaved(completed.saved)
+                }
             }
         } catch {
             setValidationError(t('folderWorkbench.actionFailed'))
@@ -134,7 +155,7 @@ export function FolderAssetComposer({ busy, disabled, error, templates, onSubmit
                         {t(mode === 'form' ? 'folderWorkbench.composer.tableMode' : 'folderWorkbench.composer.formMode')}
                     </Button>
                 </div>
-                {templates.length > 0 && <details className="group rounded-[4px] border border-border/70 px-3">
+                {(templates.length > 0 || templateId) && <details className="group rounded-[4px] border border-border/70 px-3">
                     <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
                         {t('folderWorkbench.composer.settings')}
                         <ChevronDown className="h-4 w-4 group-open:rotate-180" aria-hidden="true" />
@@ -144,11 +165,25 @@ export function FolderAssetComposer({ busy, disabled, error, templates, onSubmit
                         <select id={`${formId}-template`} value={templateId} onChange={event => setTemplateId(event.target.value)}
                             className={`${control} w-full min-w-0 border border-input bg-canvas px-3 text-sm`}>
                             <option value="">{t('folderWorkbench.defaultTemplate')}</option>
+                            {templateId && !templates.some(template => template.id === templateId) && <option value={templateId} disabled>{t('folderWorkbench.composer.unavailableTemplate', '찾을 수 없는 설정')}</option>}
                             {templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
                         </select>
                     </div>
                 </details>}
             </fieldset>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <p role="status" className={draftSaved ? 'text-muted-foreground' : 'text-destructive'}>{draftSaved
+                    ? hasFolderDraftInput(inputs) ? t('folderWorkbench.composer.draftSaved', '이 폴더의 초안을 저장했어요. 닫아도 이어서 쓸 수 있어요.') : t('folderWorkbench.composer.draftAutoSave', '작성 중인 내용은 이 기기에 자동으로 저장돼요.')
+                    : t('folderWorkbench.composer.draftFailed', '초안을 저장하지 못했어요. 화면을 닫기 전에 입력을 복사해 주세요.')}</p>
+                <Button type="button" variant="ghost" className={control} disabled={locked || !hasFolderDraftInput(inputs)} onClick={() => {
+                    if (!saveFolderDraft(folderId, null)) { setDraftSaved(false); return }
+                    const next = emptyComposerDraft()
+                    inputRef.current = next
+                    setInputs(next)
+                    setDraftSaved(true)
+                    setValidationError(null)
+                }}>{t('folderWorkbench.composer.discardDraft', '초안 버리기')}</Button>
+            </div>
             {(error || validationError) && <p role="alert" className="text-sm text-destructive">{error || validationError}</p>}
             <div className="space-y-3 border-t border-border/70 pt-4">
                 <p className="text-sm leading-relaxed text-muted-foreground">{t('folderWorkbench.composer.reviewHint')}</p>

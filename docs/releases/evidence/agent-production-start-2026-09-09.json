@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-09T02:53:24.5475831Z",
+  "status": "first-slice-implemented-and-validated",
+  "baseCommit": "e6bf27ffe1a0b1cbbdc744fe72bc302585bae825",
+  "contract": "docs/architecture/ADR-014-production-monitoring-and-drafts.md",
+  "completeProductionWorkflow": false,
+  "implemented": [
+    "One fulfillment-derived generation.get_run monitor and human Queue summary, with bounded public job details and recovery hints",
+    "Visible 5-second result refresh for batches of up to 100 images, separate from Queue revisions",
+    "R2 v3 additive artifact index; exact journal reads for batches with all output transaction IDs recorded",
+    "Folder-scoped input drafts, exact submitted-mode consumption, explicit discard and visible persistence failure",
+    "Folder, search, selection, filters, view, page and scroll restoration",
+    "Korean, English and Japanese labels"
+  ],
+  "runtime": {
+    "platform": "Windows development checkout",
+    "node": "24.19.0",
+    "executionAuthority": "existing-foreground-runtime-and-durable-queue"
+  },
+  "checks": {
+    "composition": {
+      "status": "passed",
+      "passed": 2523,
+      "skipped": 4,
+      "failed": 0,
+      "passedFiles": 339,
+      "skippedFiles": 2,
+      "artifact": "artifacts/agent-production-start/composition.log"
+    },
+    "lint": {
+      "status": "passed",
+      "artifact": "artifacts/agent-production-start/lint.log"
+    },
+    "architecture": {
+      "status": "passed",
+      "modules": 639,
+      "dependencies": 3576,
+      "violations": 0,
+      "artifact": "artifacts/agent-production-start/architecture.log"
+    },
+    "frontendProductionBuild": {
+      "status": "passed",
+      "includesTypecheck": true,
+      "artifact": "artifacts/agent-production-start/build.log",
+      "warning": "Existing mixed static/dynamic import of agent-scene-generation-plan; no chunk separation for that import"
+    },
+    "secretRedaction": {
+      "status": "passed",
+      "tests": 17,
+      "artifact": "artifacts/agent-production-start/secret-redaction.log"
+    },
+    "gitDiffCheck": "passed"
+  },
+  "browser": {
+    "status": "passed",
+    "checkpoints": 8,
+    "viewports": [
+      {
+        "width": 1440,
+        "height": 960
+      },
+      {
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "fixtures": "Isolated Chromium and localhost only; real local repositories with synthetic Queue, Artifact and legacy-v1 R2 job/manifest records",
+    "evidenceMethod": "Six passing draft/view checks plus post-fix monitoring rerun; unrelated draft checks were not repeated after Queue-only fixes",
+    "summary": "artifacts/agent-production-start/qa-summary.json",
+    "finalMonitor": "artifacts/agent-production-start/monitor-only/qa-report.json",
+    "preservedRed": "artifacts/agent-production-start/monitor-only/qa-red-duplicate-key.json",
+    "restoredAssetCount": 2400,
+    "restoredPageOneBased": 2,
+    "restoredScrollTop": 750,
+    "queueProjectionRevision": {
+      "before": 4,
+      "after": 4
+    },
+    "uploadCount": {
+      "before": 0,
+      "after": 1,
+      "total": 1
+    },
+    "monitorSectionsAfterAdditional10500ms": 1,
+    "pageErrors": 0,
+    "duplicateKeyWarnings": 0,
+    "ownedVitePortsRemaining": 0,
+    "screenshots": [
+      "artifacts/agent-production-start/draft-restored-390.png",
+      "artifacts/agent-production-start/view-restored-1440.png",
+      "artifacts/agent-production-start/view-restored-390.png",
+      "artifacts/agent-production-start/monitor-only/queue-upload-complete-1440.png",
+      "artifacts/agent-production-start/monitor-only/monitor-complete-390.png"
+    ]
+  },
+  "integration": [
+    {
+      "path": "tests/application/agent/mcp-stdio-server.test.ts",
+      "verifies": "Official SDK get_run tool carries common counts and storage recovery; command receipt completion remains distinct from production completion",
+      "simulated": "Inbox and application result fixture"
+    },
+    {
+      "path": "tests/application/generation/generation-run-monitor.test.ts",
+      "verifies": "Missing output never completes; pending/failed upload, unknown results, pause/cancel, acceptance, content hashes, bounded 2400-item read projection",
+      "bulkProductionExecuted": false
+    },
+    {
+      "path": "tests/services/r2/r2-upload-repository-coordinator.test.ts",
+      "verifies": "v2 to v3 additive index preserves rows; artifact query avoids object-store getAll; existing v1 migration and R2 coordination"
+    },
+    {
+      "path": "tests/adapters/generation/indexeddb-generation-run-reader.test.ts",
+      "verifies": "Indexed runtime selection, exact journals when recorded, unrecorded-journal discovery retained for safe recovery"
+    },
+    {
+      "path": "tests/presentation/workflow/folder-workbench-draft.test.ts",
+      "verifies": "Restore/consume/discard, corruption/quota failure, capacity, view state"
+    }
+  ],
+  "corrections": [
+    "Independent review found global upload history scans in new recurring reads; replaced runtime lookup with artifact index and exact recorded-journal queries",
+    "Browser RED found summary and assessment dialog sibling keys colliding; summary key now has a monitor prefix; repeated polls remain one section",
+    "New read fixture initially omitted existing strip-and-sidecar policy; fixed fixture without weakening production guard",
+    "New content version uses stateHash so unchanged public digest validation accepts it"
+  ],
+  "intermediateValidation": {
+    "artifact": "artifacts/agent-production-start/composition-parallel-red.log",
+    "stdioProcessAssertion": "One existing concurrent-read test failed during parallel test/build validation. Isolated retry and later full suite passed without modifying the test or transport. Cause not established."
+  },
+  "hostGate": {
+    "hostWakeupVerified": false,
+    "codexDesktopVersion": "0.153.4",
+    "pathCliVersion": "0.153.2",
+    "result": "No supported external endpoint proven for starting a turn in the original desktop-owned task. General MCP resource notifications are not proof of model wakeup.",
+    "waitingModelCallsMeasured": false,
+    "waitingReasoningTokensMeasured": false,
+    "localObservation": "No --listen argument or owned TCP listening endpoint found for current app-server processes; managed daemon command reported Unix-only on Windows.",
+    "sources": [
+      "https://modelcontextprotocol.io/specification/2025-11-25/server/resources",
+      "https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/logging_client_handler.rs#L56",
+      "https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/event_notification_transport.rs#L109",
+      "https://developers.openai.com/codex/app-server/"
+    ],
+    "sourceLimit": "Public main source was inspected as of this date; not asserted identical to installed binary."
+  },
+  "operationalEvidence": {
+    "actualCodexMcpConfigured": false,
+    "clientRegistered": false,
+    "actualOriginalTaskWakeup": false,
+    "installedWindowsAppQA": false,
+    "realProviderInvoked": false,
+    "realFileBytesVerified": false,
+    "realR2Upload": false,
+    "full2400ImageProduction": false,
+    "firstTimeHumanUsabilityTest": false,
+    "productionUserDataChanged": false,
+    "packagesInstalled": false,
+    "released": false
+  },
+  "limits": {
+    "imagesPerPlan": 100,
+    "automaticallyMonitoredImagesPerBatch": 100,
+    "agentJobDetails": 100,
+    "draftFolders": 32,
+    "draftSerializedCharacters": 2000000,
+    "viewScopes": 32,
+    "draftsBackedUpOrSynced": false,
+    "pendingJournalDiscovery": "Jobs without a recorded output transaction retain global pending-journal discovery; no claim of a hard global read budget."
+  },
+  "nextGates": [
+    "Official original-task host delivery spike with measured zero-model waiting",
+    "Persisted production request, frozen full scope and budget, existing Queue chunk continuation",
+    "Durable events and acknowledgement, stage-specific stalls and app liveness",
+    "Output numbering/commit-set reservations, upload resume and verified URL export",
+    "2400-image production simulation and separately authorized native/Provider/R2/human evidence"
+  ],
+  "implementationFileSha256": {
+    "scripts/qa-agent-production-start.mjs": "a6e769fb476017b873524937aa28b1792938cc7336a5590853a2937d98d33279",
+    "src/adapters/generation/indexeddb-generation-run-reader.ts": "4290d03247cba8d800ec33ea24eaef315c1fed2b99c0f9f0faf299587afda7b7",
+    "src/application/generation/generation-run-monitor.ts": "d7a9e8fa71bcde1aa9103e9c8b7ab5462477639c5492519e5417e48bc55d2ca4",
+    "src/components/folders/FolderAssetComposer.tsx": "c768f2931e222165437d06f154565a1a184ba944e350ea94715bbe678a47bc43",
+    "src/components/queue/GenerationRunSummary.tsx": "be0e3722cf3be95c384859a8d850ac32e50a277a97a0a8b7b34458d7d71dbd81",
+    "src/composition-root/runtime-agent-commands.ts": "61328a961d25dbe85109cf69aa2b56969fcc07502f897d07f8acc2bd698cb2a3",
+    "src/i18n/locales/en.json": "50351979047b84f5e5d329fe008e211576a1a1dc8ee4fbad323ece3527002883",
+    "src/i18n/locales/ja.json": "06474bcb186cbc57fe09f73b15387c11aae574cc1772923d593a674507ef5baa",
+    "src/i18n/locales/ko.json": "80fdec767f6e25e48e76c121b7371e6ec8c73cecfddf447736e5bfcc5c16323d",
+    "src/pages/FolderWorkbench.tsx": "e630d7c9a186162e3e18d1fa9030d158b584a8f54786d247d0207df8cd0b279f",
+    "src/pages/QueueCenter.tsx": "32dbffbfac593615bfd9a5571f265b960e6c238f285458307aaa49706beb1e7c",
+    "src/presentation/folders/folder-workbench-draft.ts": "87b3bbd3ebd3199b53008b142d2c0f46eb90837eb9b3bcb23bb7730266fa6aaa",
+    "src/services/r2/indexeddb-r2-upload-repository.ts": "90986066ad9c202e88d9cb460542cfc1b8b8a6ea799391b1f7039e2205ae7b73",
+    "tests/adapters/generation/indexeddb-generation-run-reader.test.ts": "ccc686347b1d6d2b69bbb94e6113f727c60f4ea49db7f3283b6f2acf7ede3b5f",
+    "tests/application/agent/mcp-stdio-server.test.ts": "bf7a0e4eb11123649ff0fd52054dad2f046461c439cf8f2b6625b30ddfa76c4e",
+    "tests/application/generation/generation-run-monitor.test.ts": "fc7b3e86a5dfa3fccf37446a7e2d5743f9736cb4fa0354b24fca2edc585d60be",
+    "tests/components/queue-fulfillment-summary.contract.test.ts": "b1c3e8b0226a416387e7289dcc61262b79baa789da9a8bebbd1fcc60b0bfe749",
+    "tests/presentation/workflow/folder-workbench-draft.test.ts": "3cae939a7adb0092910333c9597bf8eaf4f16a134bfbeab4e332b944d42c36ca",
+    "tests/services/r2/r2-upload-repository-coordinator.test.ts": "1e49607f325da8ecad3814864368fe834c7211aa663d64045387973f8e101acc"
+  },
+  "independentReview": {
+    "remainingLimit": "Unrecorded output transactions retain pending-journal discovery for safe recovery",
+    "reviewerRetested": false,
+    "finding": "Repeated global R2 history reads",
+    "correction": "Artifact-index query and exact recorded output journal reads",
+    "status": "passed-after-correction"
+  }
+}

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, Folder, ImageIcon, LayoutGrid, List, Plus, Search, Settings2 } from 'lucide-react'
@@ -20,6 +20,7 @@ import { flushSceneAuthorityRuntime } from '@/lib/scene-authority-runtime'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, folderAssetProductionCount, type FolderAssetInput, UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
 import { useFolderQueueActivity } from '@/presentation/folders/folder-queue-activity'
+import { emptyFolderView, loadFolderWorkbenchView, saveFolderWorkbenchView, type FolderView } from '@/presentation/folders/folder-workbench-draft'
 import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type PreparedSceneQueueReview, type SceneQueueSubmission } from '@/services/queue/scene-queue-adapter'
 import { resolveScenePrompts, type SceneFolderTemplate, useSceneStore } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -28,16 +29,6 @@ import { runtimeCapabilities } from '@/platform/capabilities'
 import { toNativeAssetUrl } from '@/platform/asset-url'
 import '@/styles/folder-workbench.css'
 
-interface FolderView {
-    query: string
-    selected: string[]
-    view: 'list' | 'grid'
-    includeChildren: boolean
-    filter: 'all' | 'images' | 'planned'
-    page: number
-}
-
-const emptyView = (): FolderView => ({ query: '', selected: [], view: 'grid', includeChildren: false, filter: 'all', page: 0 })
 const PAGE_SIZE = 60
 
 /** A folder is the viewing scope; SceneStore still owns all editable assets and Queue owns execution. */
@@ -54,10 +45,13 @@ export default function FolderWorkbench() {
     const setSceneProductionCounts = useSceneStore(state => state.setSceneProductionCounts)
     const selectBatch = useQueueStore(state => state.setSelectedBatchId)
     const { activity: queueActivity, unavailable: queueActivityUnavailable } = useFolderQueueActivity()
-    const [folderId, setFolderId] = useState<string | null>(activeFolderId || null)
-    const [views, setViews] = useState<Record<string, FolderView>>({})
+    const [restoredView] = useState(() => loadFolderWorkbenchView())
+    const [folderId, setFolderId] = useState<string | null>(restoredView ? restoredView.folderId : activeFolderId || null)
+    const [views, setViews] = useState<Record<string, FolderView>>(restoredView?.views ?? {})
+    const viewStateRef = useRef({ folderId, views })
+    const [viewSaved, setViewSaved] = useState(true)
     const scopeKey = folderId ?? '__all__'
-    const view = views[scopeKey] ?? emptyView()
+    const view = Object.prototype.hasOwnProperty.call(views, scopeKey) ? views[scopeKey] : emptyFolderView()
     const [folderSheetOpen, setFolderSheetOpen] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [detailKey, setDetailKey] = useState<string | null>(null)
@@ -71,19 +65,33 @@ export default function FolderWorkbench() {
     const [queued, setQueued] = useState(false)
     const [prepared, setPrepared] = useState<PreparedSceneQueueReview | null>(null)
     const contentRef = useRef<HTMLDivElement>(null)
-    const scrollPositions = useRef<Record<string, number>>({})
-    const scrollKey = `${scopeKey}:${view.view}:${view.page}`
-
-    // Session-only position restores are independent of durable folder/prompt data.
-    useLayoutEffect(() => {
-        if (contentRef.current) contentRef.current.scrollTop = scrollPositions.current[scrollKey] ?? 0
-    }, [scrollKey])
-
-    const updateView = (patch: Partial<FolderView>) => setViews(previous => ({
-        ...previous,
-        [scopeKey]: { ...(previous[scopeKey] ?? emptyView()), ...patch },
-    }))
+    const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Scroll writes are coalesced; navigation/pagehide flush the latest position before this view disappears.
+    useEffect(() => {
+        const flush = () => {
+            if (scrollSaveTimer.current !== null) clearTimeout(scrollSaveTimer.current)
+            saveFolderWorkbenchView(viewStateRef.current)
+        }
+        window.addEventListener('pagehide', flush)
+        return () => { window.removeEventListener('pagehide', flush); flush() }
+    }, [])
+    const updateView = (patch: Partial<FolderView>) => {
+        const previous = viewStateRef.current.views
+        const current = Object.prototype.hasOwnProperty.call(previous, scopeKey) ? previous[scopeKey] : emptyFolderView()
+        const resetsScroll = 'query' in patch || 'filter' in patch || 'page' in patch || 'includeChildren' in patch
+        // Reinsert the current scope last so bounded persistence retains recently visited folders.
+        const next = { ...previous }
+        delete next[scopeKey]
+        next[scopeKey] = { ...current, ...(resetsScroll ? { scrollTop: 0 } : {}), ...patch }
+        const bounded = Object.fromEntries(Object.entries(next).slice(-32))
+        viewStateRef.current = { folderId, views: bounded }
+        setViews(bounded)
+        setViewSaved(saveFolderWorkbenchView(viewStateRef.current))
+    }
     const selectFolder = (id: string | null) => {
+        if (busyRef.current) return
+        viewStateRef.current = { ...viewStateRef.current, folderId: id }
+        setViewSaved(saveFolderWorkbenchView(viewStateRef.current))
         setFolderId(id)
         if (id !== null && id !== UNASSIGNED_FOLDER_ID) setActiveFolder(id)
         setError(null)
@@ -91,6 +99,7 @@ export default function FolderWorkbench() {
         setQueued(false)
         setFolderSheetOpen(false)
         setDetailKey(null)
+        setComposerOpen(false)
     }
     const concreteFolder = folders.find(folder => folder.id === folderId)
     const folderRows = useMemo(() => {
@@ -141,6 +150,9 @@ export default function FolderWorkbench() {
     const page = Math.min(view.page, pageCount - 1)
     // ponytail: 60 rendered assets per page bounds the 2400-item workbench without a virtualizer dependency.
     const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+    useLayoutEffect(() => {
+        if (sceneAuthorityReady && contentRef.current) contentRef.current.scrollTop = viewStateRef.current.views[scopeKey]?.scrollTop ?? 0
+    }, [scopeKey, view.view, view.page, view.query, view.filter, view.includeChildren, sceneAuthorityReady, rows.length])
     const templates = presets.flatMap(preset => preset.defaultTemplate
         ? [{ id: preset.id, name: preset.name, template: preset.defaultTemplate }] : [])
     const preliminary = concreteFolder ? resolveGenerationFolderAuthority(folderDocument, folders, concreteFolder.id, {
@@ -223,7 +235,7 @@ export default function FolderWorkbench() {
     }
     const folderPanel = <FolderTreePanel folders={folders} activeFolderId={folderId} counts={folderCounts}
         onSelect={selectFolder} onManage={() => { setFolderSheetOpen(false); setManagerOpen(true) }} />
-    const composer = <FolderAssetComposer busy={busy} disabled={!sceneAuthorityReady || !concreteFolder}
+    const composer = <FolderAssetComposer key={scopeKey} folderId={scopeKey} busy={busy} disabled={!sceneAuthorityReady || !concreteFolder}
         error={error} templates={templates} onSubmit={addAssets} />
     const canReview = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overImageLimit && !executionUnavailable
 
@@ -231,8 +243,14 @@ export default function FolderWorkbench() {
         <div className="fb-workspace" data-testid="folder-workbench">
             <aside className="fb-sidebar">{folderPanel}</aside>
             <section className="fb-main" aria-label={t('folderWorkbench.design.imageWorkspace', '이미지 작업 공간')}>
-                <div ref={contentRef} onScroll={event => { scrollPositions.current[scrollKey] = event.currentTarget.scrollTop }} className="fb-content-scroll">
+                <div ref={contentRef} onScroll={event => {
+                    const current = viewStateRef.current.views[scopeKey] ?? emptyFolderView()
+                    viewStateRef.current.views[scopeKey] = { ...current, scrollTop: event.currentTarget.scrollTop }
+                    if (scrollSaveTimer.current !== null) clearTimeout(scrollSaveTimer.current)
+                    scrollSaveTimer.current = setTimeout(() => setViewSaved(saveFolderWorkbenchView(viewStateRef.current)), 200)
+                }} className="fb-content-scroll">
                     <header className="fb-workspace-header">
+                        {!viewSaved && <p role="status" className="fb-notice">{t('folderWorkbench.design.viewSaveFailed', '현재 보기와 선택을 저장하지 못했어요. 다시 열면 복구되지 않을 수 있어요.')}</p>}
                         <div className="fb-location-row">
                             <Button variant="ghost" className="fb-button fb-mobile-folders" onClick={() => setFolderSheetOpen(true)}><Folder aria-hidden="true" />{t('folderWorkbench.design.folders', '폴더')}</Button>
                             <p className="fb-breadcrumb" title={scopeName}><span className="fb-breadcrumb-label">{t('folderWorkbench.design.currentFolder', '지금 보고 있는 폴더')}</span><ChevronRight aria-hidden="true" /><span className="fb-folder-trail">{scopeName}</span></p>

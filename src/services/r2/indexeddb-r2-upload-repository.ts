@@ -14,7 +14,7 @@ import type { ArtifactRecord, ArtifactRemoteObjectRef } from '@/domain/organizer
 
 // Physical database names stay stable so pending uploads survive the rename.
 export const R2_UPLOAD_DATABASE_NAME = 'nai-blue-r2-upload-queue'
-export const R2_UPLOAD_DATABASE_VERSION = 2
+export const R2_UPLOAD_DATABASE_VERSION = 3
 
 const SECRET_KEY_PATTERN = /(?:access.?key|secret|authorization|signed.?url|session.?token|private.?key)/i
 const SIGNED_URL_PATTERN = /[?&](?:x-amz-(?:credential|signature|security-token)|signature)=/i
@@ -272,6 +272,10 @@ export class IndexedDBR2UploadRepository {
                     const manifest = db.createObjectStore('manifest', { keyPath: 'id' })
                     manifest.createIndex('by-profile', ['profileId', 'remoteKey'])
                 }
+                // Additive index: live production reads need one artifact's upload
+                // history without scanning every past upload. Existing rows stay intact.
+                const indexedJobs = request.transaction!.objectStore('jobs')
+                if (!indexedJobs.indexNames.contains('by-artifact')) indexedJobs.createIndex('by-artifact', 'artifactId')
                 if ((event.oldVersion ?? 0) < 2 && db.objectStoreNames.contains('jobs')) {
                     const jobs = request.transaction?.objectStore('jobs')
                     const cursorRequest = jobs?.openCursor()
@@ -401,6 +405,18 @@ export class IndexedDBR2UploadRepository {
         const values = profileId
             ? await requestValue(store.index('by-profile').getAll(this.keyRange.bound([profileId, ''], [profileId, '\uffff']))) as StoredUploadJob[]
             : await requestValue(store.getAll()) as StoredUploadJob[]
+        await transactionDone(transaction)
+        values.forEach(validateUploadJob)
+        return values.map(cloneJob).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+    }
+
+    /** Batch-scoped monitoring reads all attempts for these artifacts, across current and legacy contracts. */
+    async listJobsForArtifacts(artifactIds: readonly string[]): Promise<UploadJob[]> {
+        if (artifactIds.length === 0) return []
+        const db = await this.open()
+        const transaction = db.transaction('jobs', 'readonly')
+        const index = transaction.objectStore('jobs').index('by-artifact')
+        const values = (await Promise.all([...new Set(artifactIds)].map(id => requestValue(index.getAll(id)) as Promise<StoredUploadJob[]>))).flat()
         await transactionDone(transaction)
         values.forEach(validateUploadJob)
         return values.map(cloneJob).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))

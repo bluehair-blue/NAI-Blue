@@ -19,6 +19,7 @@ import { SceneQueueSelectionDialog } from '@/components/queue/SceneQueueSelectio
 import { HumanAssessmentDialog } from '@/components/assessment/HumanAssessmentDialog'
 import type { GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
+import { GenerationRunSummary } from '@/components/queue/GenerationRunSummary'
 import type {
     FulfillmentIssue,
     GenerationFulfillmentProjection,
@@ -125,6 +126,7 @@ export default function QueueCenter() {
     const refreshId = useRef(0)
     const windowRequestId = useRef(0)
     const fulfillmentRequestId = useRef(0)
+    const fulfillmentReading = useRef(new Set<string>())
     const pendingFocusIndex = useRef<number | null>(null)
     const recoveryGate = useRef(new QueueRecoveryActionGate())
     const selectedBatchIdRef = useRef<string | null>(selectedBatchId)
@@ -148,6 +150,7 @@ export default function QueueCenter() {
 
     const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null
     const summary = projectionMeta?.batchId === selectedBatchId ? projectionMeta.summary : null
+    const autoRefreshFulfillment = summary !== null && summary.total <= 100
     // The durable batch aggregate is independent from the visible state filter,
     // so retry controls cannot be accidentally hidden by a narrowed viewport.
     const hasRetryableFailures = selectedBatch !== null
@@ -208,10 +211,11 @@ export default function QueueCenter() {
         setAssessmentOpen(false)
     }, [selectedBatchId])
 
-    // This joins several durable authorities, so Queue polling never calls it;
-    // opening or refreshing the compact detail is the explicit query boundary.
+    // This joins durable storage/R2 authorities independently of Queue revisions:
+    // an upload can finish after Queue work has already stopped changing.
     const loadFulfillment = useCallback(async () => {
-        if (selectedBatchId === null) return
+        if (selectedBatchId === null || fulfillmentReading.current.has(selectedBatchId)) return
+        fulfillmentReading.current.add(selectedBatchId)
         const requestId = ++fulfillmentRequestId.current
         setFulfillmentLoading(true)
         setFulfillmentError(false)
@@ -230,9 +234,27 @@ export default function QueueCenter() {
                 category: 'persistence',
             })
         } finally {
+            fulfillmentReading.current.delete(selectedBatchId)
             if (requestId === fulfillmentRequestId.current) setFulfillmentLoading(false)
         }
     }, [selectedBatchId])
+
+    useEffect(() => {
+        // Current production plans contain at most 100 images. Preserve the
+        // manual join for large historical batches and the 10,000-row viewport.
+        if (!autoRefreshFulfillment) return
+        const refreshResults = () => {
+            if (document.visibilityState === 'visible') void loadFulfillment()
+        }
+        refreshResults()
+        const interval = window.setInterval(refreshResults, 5_000)
+        document.addEventListener('visibilitychange', refreshResults)
+        return () => {
+            window.clearInterval(interval)
+            document.removeEventListener('visibilitychange', refreshResults)
+            fulfillmentRequestId.current += 1
+        }
+    }, [loadFulfillment, autoRefreshFulfillment])
 
     useEffect(() => {
         const viewport = viewportRef.current
@@ -751,6 +773,9 @@ export default function QueueCenter() {
                 )}
             </section>
 
+            {fulfillment !== null && fulfillment.runId === selectedBatchId && !fulfillmentError
+                && <GenerationRunSummary key={`monitor:${fulfillment.runId}`} run={fulfillment} />}
+
             {selectedBatchId !== null && (
                 <details
                     className="shrink-0 border-b border-border bg-muted/10"
@@ -770,7 +795,7 @@ export default function QueueCenter() {
                         )}
                     </summary>
                     <div className="px-3 pb-3 sm:px-5">
-                        {fulfillmentLoading ? (
+                        {fulfillmentLoading && fulfillment === null ? (
                             <p className="text-xs text-muted-foreground">{t('common.loading', 'Loading...')}</p>
                         ) : fulfillmentError || fulfillment === null ? (
                             <p className="text-xs text-muted-foreground">

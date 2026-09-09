@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('Queue fulfillment summary contract', () => {
-    it('loads the full generation run only on detail open or explicit refresh', async () => {
+    it('separates bounded visible monitoring from the lightweight Queue revision poll and keeps manual recovery', async () => {
         const source = await readFile(resolve(process.cwd(), 'src/pages/QueueCenter.tsx'), 'utf8')
         const pollingStart = source.indexOf('const refresh = useCallback')
         const fulfillmentStart = source.indexOf('const loadFulfillment = useCallback')
@@ -16,6 +16,11 @@ describe('Queue fulfillment summary contract', () => {
         expect(source.slice(fulfillmentStart)).toContain('getRuntimeGenerationRun(selectedBatchId)')
         expect(source).toContain('data-testid="queue-fulfillment-summary"')
         expect(source).toContain('onToggle={event =>')
+        expect(source).toContain('summary.total <= 100')
+        expect(source).toContain('window.setInterval(refreshResults, 5_000)')
+        expect(source).toContain("document.removeEventListener('visibilitychange', refreshResults)")
+        expect(source).toContain('fulfillmentReading.current.has(selectedBatchId)')
+        expect(source).toContain('<GenerationRunSummary')
         expect(source).toContain("t('queue.fulfillment.refresh', 'Refresh stages')")
         expect(source).toContain('fulfillment.issues.length > 0')
         expect(source).toContain("'retry-scene-link'")

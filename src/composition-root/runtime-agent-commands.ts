@@ -4,6 +4,7 @@ import { IndexedDbCommandReceiptRepository } from '@/adapters/agent/indexeddb-co
 import { IndexedDbGenerationPlanRepository } from '@/adapters/generation/indexeddb-generation-plan-repository'
 import { getWorkflowDraftRepository } from '@/adapters/workflow/indexeddb-workflow-draft-repository'
 import { getRuntimeGenerationRun } from '@/adapters/generation/indexeddb-generation-run-reader'
+import { projectGenerationRunStatus } from '@/application/generation/generation-run-monitor'
 import { createAgentGenerationPlanHandler } from '@/application/agent/agent-generation-plan-handler'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import type { AgentCommandHandler } from '@/application/agent/runtime-capability-registry'
@@ -60,11 +61,7 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
         execute: async (input): Promise<JsonObject> => {
             const run = await getRuntimeGenerationRun(input.runId as string)
             if (run === null) return { found: false }
-            return { found: true, runId: run.runId, state: run.overall, queueState: run.queue.state,
-                jobCount: run.jobs.length, truncated: run.jobs.length > 100,
-                jobs: run.jobs.slice(0, 100).map(job => ({ jobId: job.jobId, queueState: job.queue.state,
-                    providerState: job.provider.state, storageState: job.storage.state, releaseState: job.release.state,
-                    acceptanceState: job.acceptance.state })) }
+            return projectGenerationRunStatus(run)
         },
     }, ...createAgentAuthoringReadHandlers()]
 }

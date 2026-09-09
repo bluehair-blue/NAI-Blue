@@ -38,9 +38,9 @@ import { latestArtifactAssessments } from '@/domain/assessment/intent-assessment
 
 export interface GenerationRunAuthorityReaders {
     readonly queue: Pick<IndexedDBQueueRepository, 'getBatch' | 'listJobs' | 'getOutputReservation' | 'listAttempts'>
-    readonly output: Pick<OutputWriter, 'inspectPendingQueueTransactions'>
+    readonly output: Pick<OutputWriter, 'inspectPendingQueueTransactions'> & Partial<Pick<OutputWriter, 'inspectQueueTransaction'>>
     readonly artifacts: Pick<IndexedDBArtifactRepository, 'get'>
-    readonly r2: Pick<IndexedDBR2UploadRepository, 'listJobs' | 'getProfile' | 'getManifest'>
+    readonly r2: Pick<IndexedDBR2UploadRepository, 'listJobs' | 'getProfile' | 'getManifest'> & Partial<Pick<IndexedDBR2UploadRepository, 'listJobsForArtifacts'>>
     /** Optional in injected readers; runtime supplies it to project Scene-link issues. */
     readonly scenes?: Pick<SceneRepositoryPort, 'getDocument'>
     readonly assessments?: IntentAssessmentRepository
@@ -313,10 +313,22 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
         const latestAssessments = assessmentRun === null ? new Map() : latestArtifactAssessments(
             assessmentRun.binding, assessmentRun.candidateArtifactIds, assessmentRun.events,
         )
+        const releaseArtifactIds = jobs.filter(job => releaseProfileId(job) !== null).flatMap(job => [
+            ...(job.artifactReference === null ? [] : [job.artifactReference.artifactId]),
+            `${job.id}:release-image`, `${job.id}:release-sidecar`,
+        ])
+        // Recorded output IDs permit exact reads. Unrecorded transactions still
+        // require discovery: suppressing it could incorrectly offer destructive recovery.
+        const readPending = this.authorities.output.inspectQueueTransaction !== undefined
+            && jobs.every(job => job.outputTransactionId !== null)
+            ? Promise.all([...new Set(jobs.map(job => job.outputTransactionId!))]
+                .map(id => this.authorities.output.inspectQueueTransaction!(id)))
+                .then(values => values.filter((value): value is PendingQueueOutputTransaction => value !== null))
+            : this.authorities.output.inspectPendingQueueTransactions()
         const [pendingTransactions, r2Jobs] = await Promise.all([
-            this.authorities.output.inspectPendingQueueTransactions().catch(() => null),
+            readPending.catch(() => null),
             jobs.some(job => releaseProfileId(job) !== null)
-                ? this.authorities.r2.listJobs().catch(() => null)
+                ? (this.authorities.r2.listJobsForArtifacts?.(releaseArtifactIds) ?? this.authorities.r2.listJobs()).catch(() => null)
                 : Promise.resolve([]),
         ])
         const pendingByJobId = new Map<string, PendingQueueOutputTransaction[]>()
@@ -497,7 +509,7 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
     }
 }
 
-/** Runtime entry point backing generation.getRun; the query is intentionally UI-triggered, not polled. */
+/** Shared runtime read; visible monitoring uses bounded batches and indexed upload lookups. */
 export function getRuntimeGenerationRun(runId: string): Promise<GenerationFulfillmentProjection | null> {
     return getGenerationRun(new IndexedDbGenerationRunReader(), runId)
 }

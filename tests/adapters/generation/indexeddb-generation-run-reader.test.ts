@@ -294,6 +294,30 @@ function providerAttempt(dispatchState: 'possibly-dispatched' | 'result-spooled'
 }
 
 describe('IndexedDbGenerationRunReader', () => {
+    it('uses artifact-index and exact journal reads when runtime ports provide them', async () => {
+        const queued = job()
+        const withRelease = { ...queued, snapshot: { ...queued.snapshot,
+            parameters: { mainWorkflow: { metadataMode: 'strip-and-sidecar', output: { autoR2UploadProfileId: 'profile-1' } } } } }
+        const ports = authorities(withRelease)
+        const scoped = vi.fn(async () => [])
+        const exact = vi.fn(async () => null)
+        const reader = new IndexedDbGenerationRunReader({ ...ports,
+            r2: { ...ports.r2, listJobsForArtifacts: scoped }, output: { ...ports.output, inspectQueueTransaction: exact } })
+        await reader.readGenerationRunFacts('batch-1')
+        expect(scoped).toHaveBeenCalledWith(['artifact:job-1', 'job-1:release-image', 'job-1:release-sidecar'])
+        expect(ports.r2.listJobs).not.toHaveBeenCalled()
+        expect(exact).toHaveBeenCalledWith('transaction-1')
+        expect(ports.output.inspectPendingQueueTransactions).not.toHaveBeenCalled()
+    })
+
+    it('still discovers unrecorded journals before offering recovery for a failed job', async () => {
+        const ports = authorities(job({ state: 'failed', outputTransactionId: null, artifactReference: null }))
+        const exact = vi.fn(async () => null)
+        await new IndexedDbGenerationRunReader({ ...ports, output: { ...ports.output, inspectQueueTransaction: exact } }).readGenerationRunFacts('batch-1')
+        expect(ports.output.inspectPendingQueueTransactions).toHaveBeenCalledOnce()
+        expect(exact).not.toHaveBeenCalled()
+    })
+
     it('joins a Queue output commit with its ArtifactRecord without leaking source payloads', async () => {
         const result = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(job())), 'batch-1')
 

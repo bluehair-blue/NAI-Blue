@@ -1,6 +1,12 @@
 {
     "folderWorkbench": {
         "composer": {
+            "missingTemplate": "저장한 생성 설정을 찾지 못했어요. 기본 설정이나 다른 설정을 골라 주세요.",
+            "unavailableTemplate": "찾을 수 없는 설정",
+            "draftSaved": "이 폴더의 초안을 저장했어요. 닫아도 이어서 쓸 수 있어요.",
+            "draftAutoSave": "작성 중인 내용은 이 기기에 자동으로 저장돼요.",
+            "draftFailed": "초안을 저장하지 못했어요. 화면을 닫기 전에 입력을 복사해 주세요.",
+            "discardDraft": "초안 버리기",
             "asset": "이미지 {{number}}",
             "remove": "이미지 {{number}} 삭제",
             "prompt": "그림 설명",
@@ -160,6 +166,7 @@
             "limit": "한 번에 2,400개까지 추가할 수 있습니다."
         },
         "design": {
+            "viewSaveFailed": "현재 보기와 선택을 저장하지 못했어요. 다시 열면 복구되지 않을 수 있어요.",
             "allImages": "모든 이미지",
             "unfiled": "폴더 없는 이미지",
             "imageWorkspace": "이미지 작업 공간",
@@ -1926,6 +1933,23 @@
         }
     },
     "queue": {
+        "monitor": {
+            "title": "생산 결과",
+            "wait": "앱이 생성과 저장을 진행합니다. 결과는 자동으로 갱신됩니다.",
+            "paused": "일시정지 중입니다. 계속하려면 위의 재개 버튼을 누르세요.",
+            "complete": "요청한 생성·저장·업로드가 끝났습니다. 폴더에서 결과 이미지를 확인하세요.",
+            "recovery": "확인이 필요한 항목이 있습니다. 아래 상세 결과에서 가능한 복구 작업을 확인하세요.",
+            "uncertain": "결과가 불확실한 항목이 있습니다. 다시 생성하기 전에 아래 상세 결과를 확인하세요.",
+            "inspect": "완료하지 못했거나 확인이 필요한 항목이 있습니다. 아래 상세 결과와 작업 목록을 확인하세요.",
+            "generated": "생성 확인",
+            "stored": "저장 확인",
+            "uploaded": "업로드 확인",
+            "foreground": "생성 중에는 NAI Blue를 실행해 두세요.",
+            "copied": "상태를 복사했어요",
+            "copyFailed": "복사 실패 · 다시 시도",
+            "copy": "작업 상태 복사",
+            "notRequested": "요청 없음"
+        },
         "r2ReadinessPause": "필수 R2 전달 설정 또는 인증을 확인해야 합니다. R2 설정에서 연결을 복구한 뒤 이 작업 그룹을 재개해 주세요.",
         "r2Requirement": { "required": "필수 전달", "best-effort": "가능하면 전달", "disabled": "전달 안 함" },
         "r2Source": { "folder": "선택 폴더", "ancestor": "상위 폴더", "workspace": "기본 프로필", "cleared": "상속 해제", "profile-snapshot": "선택 프로필", "legacy-output": "기존 출력 설정" },
