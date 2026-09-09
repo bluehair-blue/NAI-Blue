@@ -12,7 +12,7 @@ await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve))
 const port = socket.address().port
 await new Promise(resolve => socket.close(resolve))
 const base = `http://127.0.0.1:${port}`
-const output = path.resolve('artifacts/production-requests/ui')
+const output = path.resolve(process.env.PRODUCTION_REQUEST_QA_OUTPUT ?? 'artifacts/production-requests/ui')
 await mkdir(output, { recursive: true })
 const report = { startedAt: new Date().toISOString(), node: process.version, base, checks: [], pageErrors: [], blockedRequests: [], limitations: [
     'Fresh browser IndexedDB fixtures; no installed Windows app or native output verification.',

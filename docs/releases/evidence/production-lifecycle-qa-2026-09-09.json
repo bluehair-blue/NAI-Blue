@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-09T05:56:01.8292335Z",
+  "baseCommit": "1f9b18069eae370defbd91dd7e5f75f4becef6fe",
+  "status": "bounded-lifecycle-and-contract-QA-passed; live-generation-awaiting-policy-decision; live-R2-awaiting-test-profile",
+  "scope": "Current Windows debug QA app with registered Production QA client; existing 1-image saved production. No new client, global Codex MCP registration, model subagent, installer, release or remote push.",
+  "changes": "Allow a separate output directory for repeated browser production QA, preserving earlier hashed evidence.",
+  "checks": {
+    "focusedContracts": {
+      "passed": 245,
+      "files": 21,
+      "failed": 0,
+      "node": "24.19.0",
+      "workers": 2,
+      "scope": "Agent parsing/authentication/MCP contracts, 2400-image production bounds, saved production repository, execution coordinator, cancellation/storage retry and Queue production binding."
+    },
+    "deliveryContracts": {
+      "passed": 83,
+      "files": 12,
+      "failed": 0,
+      "scope": "R2 scheduler/adapters, Provider result spool, Scene save and agent Scene preview integration. External Provider/R2 ports are fixtures."
+    },
+    "browserUi": {
+      "passed": 6,
+      "failed": 0,
+      "pageErrors": 0,
+      "viewportWidths": [
+        1440,
+        390
+      ],
+      "scope": "101-image saved production split 100+1, draft/selection persistence, explicit budget, disabled browser execution and no overflow. Local Chromium; no external requests allowed."
+    },
+    "windowsNative": {
+      "passed": 24,
+      "failed": 0,
+      "groups": {
+        "inboxAndVault": 4,
+        "naiTransport": 5,
+        "r2Native": 14,
+        "noReplaceOutput": 1
+      },
+      "python": "3.12.14",
+      "scope": "Actual Windows private files/vault/auth/signing, no-replace local output, loopback native transport and signed fake-R2 requests/multipart recovery. No real NAI or R2."
+    },
+    "codexHost": {
+      "version": "0.153.2",
+      "status": "passed-host-discovery-and-guide",
+      "toolCount": 16,
+      "guideRead": true,
+      "guideDeliveredToCurrentAssistant": true,
+      "modelTurnsStarted": 0,
+      "globalConfigurationChanged": false,
+      "scope": "Installed Codex app-server discovers actual stdio MCP tools and reads the workflow guide with process-scoped config; guide text returned to this task. No separately running model or native model tool-call turn was tested.",
+      "initialFailure": "Partial overrides retained an incompatible inherited cua_repl transport. A complete process-scoped MCP table passed; user config preserved."
+    },
+    "minimizedReads": {
+      "status": "passed-bounded-minimized-observation",
+      "durationSeconds": 67.895,
+      "reads": 14,
+      "maxElapsedMs": 1221.0,
+      "scope": "Window minimized through UI before seven concurrent read pairs spaced by 10 seconds; restored after completion. Bounded observation, not overnight or app-closed execution proof."
+    },
+    "appOff": {
+      "status": "passed",
+      "checksPassed": 9,
+      "accepted": false,
+      "scope": "Static guide readable, empty live tool discovery, new read accepted:false and ready file retained until restart."
+    },
+    "recovery": {
+      "readRecoveredWithoutResubmission": true,
+      "pendingMutationPreserved": true,
+      "readyFilesRetired": true
+    },
+    "preExecution": {
+      "userRegisteredNaiToken": true,
+      "tokenValueRecorded": false,
+      "productionId": "production-316930ca8319f38e756157628c2acf67f1da30219c5779e962430d9f1602375c",
+      "revision": 2,
+      "imageCount": 1,
+      "estimatedAnlas": 29,
+      "planId": "sha256:62ec99042956ccf9ec62ea11c68ef355c68b86f54174b5dddab958862117e7e6",
+      "requestId": "qa-final-37991bf6-cd08-4862-beef-66ea3404b4f9",
+      "receiptState": "needs-input",
+      "code": "AGENT_APPROVAL_REQUIRED",
+      "issueCodes": [
+        "AGENT_RUN_LIMIT"
+      ],
+      "compatibility": "synthetic-only, as shown by the approval UI",
+      "queueCounts": {
+        "batches": 0,
+        "jobs": 0,
+        "attempts": 0,
+        "output-reservations": 0,
+        "output-reservation-claims": 0
+      },
+      "scope": "Fresh plan after user token registration and QA output-directory selection. Actual generation.enqueue reaches durable approval but cannot spend; no policy or compatibility allowlist changes made."
+    },
+    "r2Readiness": {
+      "nativeMcpProfiles": 0,
+      "liveUploadPerformed": false
+    }
+  },
+  "pending": [
+    "Await the user decision on a 1-image QA policy adjustment: 29 Anlas and explicit synthetic-only compatibility for current NAI V5, or test within the existing policy. Do not infer this decision from token registration or retry the pending mutation under a new ID.",
+    "Approve the existing request in the app after allowed policy settings; inspect the same receipt, child run, Provider evidence, full local output commit, Scene preview and final production fulfillment. Unknown Provider outcomes must reconcile without replacement generation.",
+    "R2 live upload, URL fetch and recovery require an explicit test profile/destination; the QA app currently lists no profiles.",
+    "Native model tool invocation/host UX, user-first usability, long-duration operation and any unimplemented wakeup or automatic next-child features remain distinct from these bounded passing checks."
+  ],
+  "retainedState": {
+    "appIdentifier": "blue.bluehair.naiblue.productionqa",
+    "clientLabel": "Production QA",
+    "savedRequests": 2,
+    "sceneCount": 1,
+    "pendingEnqueueRequestId": "qa-final-37991bf6-cd08-4862-beef-66ea3404b4f9",
+    "executionPolicyChanged": false,
+    "naiToken": "Registered by user in QA app native vault; retained.",
+    "outputDirectory": "E:/AI_Project_Library/projects/nais/NAI-Blue/artifacts/production-final-qa/output"
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/production-final-qa/focused-tests.log",
+      "sha256": "551cc583ed38cf175dc0715474f2c3008cb99ce2b69db3c63dc759636728feca"
+    },
+    {
+      "path": "artifacts/production-final-qa/delivery-tests.log",
+      "sha256": "9f8c66dd8ace2789a04cbf3cfaec0b97f09747a0f37cd9a38911df45b921e1c3"
+    },
+    {
+      "path": "artifacts/production-final-qa/browser-ui/qa-report.json",
+      "sha256": "a29611caa3f5a62223ddf80bee93d83effc921c1c6549304781c7a2f6ecce011"
+    },
+    {
+      "path": "artifacts/production-final-qa/browser-ui/restored-1440.png",
+      "sha256": "d1c14e50bcb0d80ae69121fece05901cfca75fcedf7207113c8b2f78b5408c48"
+    },
+    {
+      "path": "artifacts/production-final-qa/browser-ui/restored-390.png",
+      "sha256": "0de5e22d3d45e544925a1ed3e6b4278f401b3d71c937fd31900c4ea55568633c"
+    },
+    {
+      "path": "artifacts/production-final-qa/rust-agent_commands-native-tests.log",
+      "sha256": "4b56a1244622f369ca21ec24ee4b5ee7066cff3d0d668666fb93b7c4319efc8d"
+    },
+    {
+      "path": "artifacts/production-final-qa/rust-no_replace_output_tests.log",
+      "sha256": "d358f56ec8062060678a3032ddb977dac39f45553466a60beeb8f109a7fc90a6"
+    },
+    {
+      "path": "artifacts/production-final-qa/rust-nai_transport-tests.log",
+      "sha256": "5698f827afcd00c98ce34af90c2c2d1dad7d288716d3b86bdae8451491a4e7ff"
+    },
+    {
+      "path": "artifacts/production-final-qa/rust-r2_native.log",
+      "sha256": "2b23be90f7a99aed1fbb51f56b6fe982b33efc5e62f128aecc0594bbf34a27b4"
+    },
+    {
+      "path": "artifacts/production-final-qa/codex-host.mjs",
+      "sha256": "5866c5d3093a00a49b0ef91bf7eb03ac4bd12ebf5857c7bece7a0764498a3782"
+    },
+    {
+      "path": "artifacts/production-final-qa/codex-host-inherited-config-red.json",
+      "sha256": "aaf161a366c2d34223923a38bdc8bb6c89de241def15fb5cc73da1e428ed5567"
+    },
+    {
+      "path": "artifacts/production-final-qa/codex-host.json",
+      "sha256": "10167b53339895293eb79bdce6ca663c4aa0dfda196467714ccb54c3722ddefc"
+    },
+    {
+      "path": "artifacts/production-final-qa/background-read.mjs",
+      "sha256": "808257c2e70081b8172fd3faaee0f456d8bbc273fcfe2611a6605e9c571e93c2"
+    },
+    {
+      "path": "artifacts/production-final-qa/background-read.json",
+      "sha256": "dfb5dc74226e893763c1b33d75e714a1a030e968a6360a0d6cd7e2ee29a9ac66"
+    },
+    {
+      "path": "artifacts/production-final-qa/app-off.json",
+      "sha256": "232ecea7bc95a77c4ca292823701e26e1e688382e6e2609be6daf2a0341cbfa2"
+    },
+    {
+      "path": "artifacts/production-final-qa/restart-recovery.json",
+      "sha256": "e68e2b5bb0f205bc061763c516361a63f1c26532859ca07fea2b28e46c7c6e6f"
+    },
+    {
+      "path": "artifacts/production-final-qa/restart-production.result.json",
+      "sha256": "9e905412bc8e381c10dc7b399cc8f291590d5fe894ee041aabf75e74de7feece"
+    },
+    {
+      "path": "artifacts/production-final-qa/live-plan.result.json",
+      "sha256": "b900312c0c78df05374a01d98aa1c81c54e4a5f53c477abdfb9af74bb2329f13"
+    },
+    {
+      "path": "artifacts/production-final-qa/live-enqueue.request.json",
+      "sha256": "ae5bfd1318bbc83801e701ce6f8837ef61f3c69072e9c521ce90f562873741cf"
+    },
+    {
+      "path": "artifacts/production-final-qa/live-enqueue.result.json",
+      "sha256": "d9cb458e5bd7febb36cab7275718d8dfa32164e8cbc9ed26ed3b860c1c8e18ac"
+    },
+    {
+      "path": "artifacts/production-final-qa/r2-readiness.result.json",
+      "sha256": "6fe58be8789f0ca6ba6525df8c69b84559e8c0c227eebf91f8d1f22b097bc2b1"
+    },
+    {
+      "path": "artifacts/production-final-qa/read-queue.mjs",
+      "sha256": "0228effbcb81522bebb6a4c18167ef842af3faa49fa31c1a687d555fd1702823"
+    },
+    {
+      "path": "artifacts/production-final-qa/queue-before-approval.json",
+      "sha256": "0307eba817f02b2fb4bc6e82b7b770dab13c447346274636b3a3e2d0b6b0b120"
+    },
+    {
+      "path": "artifacts/production-final-qa/native-session.mjs",
+      "sha256": "8907549344a33e1445c9581163164188cf600553ef993a7294392b3e97f14513"
+    },
+    {
+      "path": "artifacts/production-final-qa/native-call.mjs",
+      "sha256": "fdaf3ba1f0dd8fca15de7e40346bb8398c7f262ce3c412eb58bb039f4b7f84ec"
+    }
+  ]
+}
