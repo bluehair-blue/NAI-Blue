@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { FolderAssetComposer } from '@/components/folders/FolderAssetComposer'
 import { FolderTreePanel } from '@/components/folders/FolderTreePanel'
 import { FolderAssetDetailDialog } from '@/components/folders/FolderAssetDetailDialog'
+import { FolderProductionRequests } from '@/components/folders/FolderProductionRequests'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { GenerationFolderManagerDialog } from '@/components/generation-folders/GenerationFolderManagerDialog'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
@@ -21,7 +22,7 @@ import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, folderAssetProductionCount, type FolderAssetInput, UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
 import { useFolderQueueActivity } from '@/presentation/folders/folder-queue-activity'
 import { emptyFolderView, loadFolderWorkbenchView, saveFolderWorkbenchView, type FolderView } from '@/presentation/folders/folder-workbench-draft'
-import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type PreparedSceneQueueReview, type SceneQueueSubmission } from '@/services/queue/scene-queue-adapter'
+import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type PreparedSceneQueueReview, type SceneQueueSubmission, type SceneQueueTarget } from '@/services/queue/scene-queue-adapter'
 import { resolveScenePrompts, type SceneFolderTemplate, useSceneStore } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useQueueStore } from '@/stores/queue-store'
@@ -64,6 +65,7 @@ export default function FolderWorkbench() {
     const [success, setSuccess] = useState<string | null>(null)
     const [queued, setQueued] = useState(false)
     const [prepared, setPrepared] = useState<PreparedSceneQueueReview | null>(null)
+    const [productionTargets, setProductionTargets] = useState<SceneQueueTarget[] | null>(null)
     const contentRef = useRef<HTMLDivElement>(null)
     const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     // Scroll writes are coalesced; navigation/pagehide flush the latest position before this view disappears.
@@ -143,8 +145,9 @@ export default function FolderWorkbench() {
     const selected = filtered.filter(row => selectedKeys.has(row.key))
     const imageCount = selected.reduce((sum, row) => sum + folderAssetProductionCount(row.scene), 0)
     const invalidCount = selected.some(row => !Number.isInteger(folderAssetProductionCount(row.scene)) || folderAssetProductionCount(row.scene) < 1 || folderAssetProductionCount(row.scene) > 999)
-    const imageLimit = runtimeCapabilities.generationPublication.generationLimits?.maxJobsPerAtomicBatch ?? null
-    const overImageLimit = imageLimit !== null && imageCount > imageLimit
+    const imageLimit = runtimeCapabilities.generationPublication.generationLimits?.maxJobsPerAtomicBatch ?? 100
+    const overImageLimit = imageCount > imageLimit
+    const overProductionLimit = imageCount > 2400
     const executionUnavailable = !runtimeCapabilities.generationPublication.supported
     const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
     const page = Math.min(view.page, pageCount - 1)
@@ -238,6 +241,12 @@ export default function FolderWorkbench() {
     const composer = <FolderAssetComposer key={scopeKey} folderId={scopeKey} busy={busy} disabled={!sceneAuthorityReady || !concreteFolder}
         error={error} templates={templates} onSubmit={addAssets} />
     const canReview = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overImageLimit && !executionUnavailable
+    const canSaveProduction = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overProductionLimit
+    // Snapshot the explicit filtered selection at dialog entry, independent of later workbench draft changes.
+    const openProduction = () => setProductionTargets(selected.map(row => ({
+        presetId: row.presetId, sceneId: row.scene.id, count: folderAssetProductionCount(row.scene),
+        ...(row.scene.queuedFileNames === undefined ? {} : { fileNames: row.scene.queuedFileNames.slice(0, folderAssetProductionCount(row.scene)) }),
+    })))
 
     return (
         <div className="fb-workspace" data-testid="folder-workbench">
@@ -264,9 +273,10 @@ export default function FolderWorkbench() {
                             </div>
                         </div>
                         {rows.length > 0 ? <div className="fb-action-row">
-                            <Button className="fb-button fb-primary" disabled={!canReview} onClick={() => { void reviewSelection() }}>
-                                {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}<ArrowRight aria-hidden="true" />
+                            <Button className="fb-button fb-primary" disabled={overImageLimit ? !canSaveProduction : !canReview} onClick={() => { if (overImageLimit) openProduction(); else void reviewSelection() }}>
+                                {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : overImageLimit ? t('productionRequests.save') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}<ArrowRight aria-hidden="true" />
                             </Button>
+                            {!overImageLimit && selected.length > 0 && <Button variant="outline" className="fb-button fb-secondary" disabled={!canSaveProduction} onClick={openProduction}>{t('productionRequests.save')}</Button>}
                             {concreteFolder && <Button variant="outline" className="fb-button fb-secondary" disabled={busy || !sceneAuthorityReady} onClick={() => { setError(null); setComposerOpen(true) }}><Plus aria-hidden="true" />{t('folderWorkbench.design.addImages', '이미지 추가')}</Button>}
                             <Button variant="ghost" className="fb-button fb-quiet" onClick={() => setSettingsOpen(true)}><Settings2 aria-hidden="true" />{t('folderWorkbench.design.folderSettings', '폴더 설정')}</Button>
                             <p className="fb-action-hint">{selected.length > 0
@@ -278,12 +288,14 @@ export default function FolderWorkbench() {
                             <li><span>3</span>{t('folderWorkbench.design.make', '만들기')}</li>
                         </ol>}
                         {selected.length > 0 && executionUnavailable && <p className="fb-notice">{t('folderWorkbench.design.desktopHint', '이미지를 만들려면 Windows 앱에서 열어 주세요. 여기서는 설명과 장수를 저장할 수 있어요.')}</p>}
-                        {overImageLimit && <p className="fb-error" role="alert">{t('folderWorkbench.imageLimit', '현재 한 번에 {{count}}장까지 실행할 수 있습니다. 선택 항목이나 수량을 줄여 주세요.', { count: imageLimit })}</p>}
+                        {overImageLimit && !overProductionLimit && <p className="fb-notice">{t('productionRequests.splitHint', { count: imageLimit })}</p>}
+                        {overProductionLimit && <p className="fb-error" role="alert">{t('productionRequests.limit')}</p>}
                         {invalidCount && <p className="fb-error" role="alert">{t('folderWorkbench.design.countHint', '장수는 1부터 999까지 적어 주세요.')}</p>}
                         {error && rows.length > 0 && !composerOpen && <p className="fb-error" role="alert">{error}</p>}
                         {success && <p role="status" className={queued ? 'fb-notice' : 'sr-only'}>{success} {queued && <Link className="underline" to="/queue">{t('folderWorkbench.design.openHistory', '작업 기록 보기')}</Link>}</p>}
                         {queueActivityUnavailable && <p role="status" className="fb-notice">{t('folderWorkbench.design.statusUnavailable', '작업 상태를 확인하지 못했어요.')} <Link className="underline" to="/queue">{t('folderWorkbench.design.openHistory', '작업 기록 보기')}</Link></p>}
                     </header>
+                    <FolderProductionRequests targets={productionTargets} defaultTitle={scopeName} onClose={() => setProductionTargets(null)} disabled={busy || !sceneAuthorityReady} canExecute={!executionUnavailable} />
                     {rows.length === 0 ? <div className="fb-empty-workspace">
                         {concreteFolder ? <>
                             <div className="fb-composer-heading"><h2>{t('folderWorkbench.design.whatToMake', '어떤 이미지를 만들까요?')}</h2><p>{t('folderWorkbench.design.descriptionHint', '이미지마다 설명을 하나씩 적어 주세요. 이름은 나중에 정해도 돼요.')}</p></div>

@@ -10,6 +10,10 @@ const plan = (): JsonObject => ({ source: { kind: 'workflow-draft', draftId: 'ì 
     count: 1, seedPolicy: { kind: 'random' }, budget: { maxImages: 100, maxAnlas: 1.25 } })
 const digest = `sha256:${'a'.repeat(64)}`
 const fixtures: Partial<Record<AgentCommandName, { valid: JsonObject[]; invalid: unknown[] }>> = {
+    'production.create': { valid: [{ title: 'Batch', source: { kind: 'preset', presetId: 'preset-1', expectedRevision: 0 }, seedPolicy: { kind: 'random' }, budget: { maxImages: 2400, maxAnlas: 10 } }], invalid: [{}] },
+    'production.list': { valid: [{}], invalid: [{ extra: true }] },
+    'production.get': { valid: [{ productionId: 'production-1' }], invalid: [{ productionId: '../bad' }] },
+    'production.plan_next': { valid: [{ productionId: 'production-1', expectedRevision: 0 }], invalid: [{ productionId: 'production-1' }] },
     'scene.resolve_many': { valid: [{ targets: [{ presetId: 'preset-1', sceneId: 'scene-1' }] }], invalid: [{ targets: [] }] },
     'scene.patch_many': { valid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', prompts: { base: 'rainy street' }, generation: { cfgScale: 4.5 } }] }],
         invalid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', artifactRefs: [] }] }] },

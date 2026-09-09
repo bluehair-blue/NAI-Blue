@@ -99,6 +99,16 @@ function deepFreeze<T>(value: T): T {
 
 export function assertGenerationJobSnapshotSafe(snapshot: unknown): void {
     assertSafeValue(snapshot, [], new Set())
+    if (snapshot !== null && typeof snapshot === 'object' && 'productionBinding' in snapshot) {
+        const binding = snapshot.productionBinding as GenerationJobSnapshot['productionBinding']
+        if (!binding || Object.keys(binding).sort().join() !== 'index,planHash,planId,productionId'
+            || typeof binding.productionId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(binding.productionId)
+            || !Number.isSafeInteger(binding.index) || binding.index < 0 || binding.index >= 24
+            || typeof binding.planId !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(binding.planId)
+            || binding.planHash !== binding.planId) {
+            throw new QueueSnapshotError('Snapshot has an invalid production binding')
+        }
+    }
     if (snapshot !== null && typeof snapshot === 'object' && 'agentExecutionBinding' in snapshot) {
         const binding = snapshot.agentExecutionBinding as GenerationJobSnapshot['agentExecutionBinding']
         if (!binding || Object.keys(binding).sort().join() !== 'grantHash,planHash,planId,scopeId'

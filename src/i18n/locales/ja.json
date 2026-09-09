@@ -1,4 +1,52 @@
 {
+    "productionRequests": {
+        "errors": {
+            "PRODUCTION_NOT_FOUND": "保存したリクエストが見つかりません。リストを更新してください。",
+            "PRODUCTION_CHILD_NOT_FOUND": "保存したリクエストが見つかりません。リストを更新してください。",
+            "PRODUCTION_CHANGED": "リクエストの状態が変わりました。更新して次のバッチを再確認してください。",
+            "PRODUCTION_ID_CONFLICT": "リクエストの状態が変わりました。更新して次のバッチを再確認してください。",
+            "PRODUCTION_SOURCE_CHANGED": "対象の説明や設定が変わりました。現在の対象で新しいリクエストを保存してください。",
+            "PRODUCTION_PREVIOUS_CHILD_NOT_COMPLETE": "前のバッチの生成・保存・指定されたアップロードが完了すると、次のバッチを確認できます。",
+            "PRODUCTION_BUDGET_EXCEEDED": "予想費用がAnlasの合計上限を超えています。費用と枚数を確認し、新しいリクエストを保存してください。",
+            "PRODUCTION_SUBMISSION_UNKNOWN": "キューへの追加を確認できませんでした。再実行せず、作業履歴を確認してください。",
+            "PRODUCTION_QUEUE_BINDING_CONFLICT": "キューへの追加を確認できませんでした。再実行せず、作業履歴を確認してください。",
+            "PRODUCTION_CHILD_NEEDS_ATTENTION": "現在のバッチに確認が必要な結果があります。作業履歴で生成・保存・アップロードの状態を確認してください。",
+            "PRODUCTION_REVIEW_CHANGED": "確認内容が変わりました。現在の費用と保存先を再確認してください。",
+            "PRODUCTION_PLAN_CONFLICT": "確認内容が変わりました。現在の費用と保存先を再確認してください。",
+            "PRODUCTION_PLAN_UNAVAILABLE": "現在の設定ではバッチを準備できませんでした。生成設定と保存先を確認してください。",
+            "PRODUCTION_UNAVAILABLE": "現在の設定ではバッチを準備できませんでした。生成設定と保存先を確認してください。",
+            "PRODUCTION_SUBMISSION_ALREADY_RESERVED": "このバッチは処理中、またはキューに追加済みです。作業履歴を確認してください。",
+            "PRODUCTION_ALREADY_ADMITTED": "このバッチは処理中、またはキューに追加済みです。作業履歴を確認してください。"
+        },
+        "heading": "保存した制作リクエスト ({{count}})",
+        "description": "対象と枚数を保存し、各バッチの現在の費用と保存先を確認します。バッチごとに確認と承認が必要です。",
+        "save": "制作リクエストとして保存",
+        "title": "リクエスト名",
+        "maxAnlas": "Anlasの合計上限",
+        "budgetHint": "予想費用の合計が上限を超える場合、次のバッチは開始できません。保存するだけでは生成は始まりません。",
+        "selection": "合計{{images}}枚 · 最大100枚ずつ{{batches}}バッチ",
+        "summary": "合計{{images}}枚 · {{batches}}バッチ · キューに追加済み{{admitted}}枚",
+        "counts": "生成{{generated}}枚 · 保存{{stored}}枚 · アップロード{{uploaded}} / {{uploadRequested}}枚",
+        "budget": "予約済みの予想費用 {{reserved}} / {{max}} Anlas",
+        "refresh": "更新",
+        "showStatus": "進行状況を確認",
+        "review": "次のバッチを確認",
+        "openQueue": "作業履歴を見る",
+        "empty": "選択した画像を制作リクエストとして保存すると、ここから続けられます。",
+        "saved": "制作リクエストを保存しました。進行状況から次のバッチを確認してください。",
+        "queued": "承認したバッチをキューに追加しました。保存とアップロードの結果を確認してから次のバッチに進めます。",
+        "failed": "制作リクエストを確認できませんでした。更新して状態を確認してください。",
+        "cancel": "キャンセル",
+        "saving": "保存中…",
+        "splitHint": "制作リクエストとして保存すると、最大{{count}}枚ずつ確認・承認して進められます。",
+        "limit": "制作リクエストは最大2,400枚です。選択する画像や枚数を減らしてください。",
+        "next": {
+            "review-next-batch": "次のバッチを確認できます。",
+            "wait": "現在のバッチの完了を待っています。",
+            "check-results": "作業履歴で生成・保存・アップロードの結果を確認してください。",
+            "complete": "全バッチの生成・保存・指定されたアップロードが完了しました。"
+        }
+    },
     "folderWorkbench": {
         "composer": {
             "missingTemplate": "保存した生成設定が見つかりません。標準設定または別の設定を選んでください。",

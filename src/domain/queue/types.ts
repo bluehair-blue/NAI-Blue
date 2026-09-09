@@ -140,6 +140,13 @@ export interface GenerationSnapshotResource {
 
 export interface GenerationJobSnapshot {
     readonly schemaVersion: 1
+    /** Parent review association travels atomically with Queue jobs for restart reconciliation. */
+    readonly productionBinding?: {
+        readonly productionId: string
+        readonly index: number
+        readonly planId: `sha256:${string}`
+        readonly planHash: `sha256:${string}`
+    }
     /** Atomic command-to-Queue association; its digest covers the full approved grant. */
     readonly agentExecutionBinding?: {
         readonly scopeId: string

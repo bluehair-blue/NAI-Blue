@@ -1,6 +1,7 @@
 import { agentAuthoringInputContracts, workspaceSnapshotInputContract, type AgentCommandInputContract } from './agent-authoring-input'
 import type { JsonObject } from '@/domain/composition/types'
 import { AgentCommandError, type AgentCommandName } from './agent-command-contract'
+import { agentProductionInputContracts } from './agent-production-input'
 
 export type { AgentCommandInputContract } from './agent-authoring-input'
 
@@ -85,6 +86,7 @@ const contracts: Partial<Record<AgentCommandName, AgentCommandInputContract>> = 
     'system.describe_capabilities': empty,
     'workspace.get_snapshot': workspaceSnapshotInputContract,
     ...agentAuthoringInputContracts,
+    ...agentProductionInputContracts,
     'generation.get_run': run,
     'generation.cancel': run,
     'generation.retry_storage': referenceContract({ jobId: identifier, runId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),

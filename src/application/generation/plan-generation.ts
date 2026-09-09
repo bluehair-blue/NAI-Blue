@@ -155,8 +155,8 @@ function validateInput<TPrepared>(input: PlanGenerationInput<TPrepared>): readon
     if (!Number.isSafeInteger(input.budget.maxImages) || input.budget.maxImages < 0) {
         issues.push(issue('invalid-image-budget', 'budget.maxImages', 'Image budget must be a non-negative safe integer.'))
     }
-    if (!Number.isSafeInteger(input.budget.maxAnlas) || input.budget.maxAnlas < 0) {
-        issues.push(issue('invalid-anlas-budget', 'budget.maxAnlas', 'Anlas budget must be a non-negative safe integer.'))
+    if (!Number.isFinite(input.budget.maxAnlas) || input.budget.maxAnlas < 0 || input.budget.maxAnlas > Number.MAX_SAFE_INTEGER) {
+        issues.push(issue('invalid-anlas-budget', 'budget.maxAnlas', 'Anlas budget must be finite, non-negative and within the safe numeric range.'))
     }
     if (input.seedPolicy.kind === 'fixed' && !isSeed(input.seedPolicy.seed)) {
         issues.push(issue('invalid-seed', 'seedPolicy.seed', 'Seed must be an unsigned 32-bit integer.'))

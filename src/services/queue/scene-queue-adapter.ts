@@ -168,6 +168,12 @@ export interface SceneQueueAgentExecution {
     readonly budget: { readonly maxImages: number; readonly maxAnlas: number }
 }
 
+/** Parent bookkeeping is reserved only after review validation, immediately before the existing Queue commit. */
+export interface SceneQueueProductionExecution {
+    readonly binding: NonNullable<GenerationJobSnapshot['productionBinding']>
+    readonly reserve: (runId: string) => Promise<void>
+}
+
 interface ResolvedSceneQueueTarget {
     readonly target: SceneQueueTarget
     readonly preset: ScenePreset
@@ -819,6 +825,8 @@ export function getSceneQueuePlanningFacts(submission: SceneQueueSubmission) {
     const data = sceneQueueSubmissions.get(submission)
     if (data === undefined) throw new TypeError('Scene Queue review is unavailable')
     return structuredClone({
+        batchId: data.batchId,
+        review: data.review,
         replayIdentity: data.replayIdentity,
         folderBinding: data.folderBinding,
         prepared: data.prepared,
@@ -832,6 +840,7 @@ export function getSceneQueuePlanningFacts(submission: SceneQueueSubmission) {
 export function enqueueReviewedSceneQueue(
     submission: SceneQueueSubmission,
     agent?: SceneQueueAgentExecution,
+    production?: SceneQueueProductionExecution,
 ): Promise<CreateBatchAndEnqueueResult> {
     const data = sceneQueueSubmissions.get(submission)
     if (data === undefined || data.submission.reviewId !== submission.reviewId) {
@@ -846,20 +855,22 @@ export function enqueueReviewedSceneQueue(
         || new Date(agent.approvedAt).toISOString() !== agent.approvedAt
         || agent.imageCount !== data.review.imageCount || agent.estimatedAnlas !== data.review.estimatedAnlas
         || !Number.isSafeInteger(agent.budget.maxImages) || agent.budget.maxImages < agent.imageCount
-        || !Number.isSafeInteger(agent.budget.maxAnlas) || agent.budget.maxAnlas < agent.estimatedAnlas
+        || !Number.isFinite(agent.budget.maxAnlas) || agent.budget.maxAnlas > Number.MAX_SAFE_INTEGER
+        || agent.budget.maxAnlas < agent.estimatedAnlas
     )) return Promise.reject(new TypeError('Scene Queue grant does not match the reviewed budget and identity'))
-    const approvalIdentity = canonicalSerialize(agent ?? null)
+    const approvalIdentity = canonicalSerialize({ agent: agent ?? null, production: production?.binding ?? null })
     const previous = sceneQueueApprovalBindings.get(submission)
     if (previous !== undefined && previous !== approvalIdentity) {
         return Promise.reject(new TypeError('Scene Queue review is already bound to another approval'))
     }
     sceneQueueApprovalBindings.set(submission, approvalIdentity)
-    return sceneQueueApprovals.run(submission, () => enqueueReviewedSceneQueueOnce(data, agent))
+    return sceneQueueApprovals.run(submission, () => enqueueReviewedSceneQueueOnce(data, agent, production))
 }
 
 async function enqueueReviewedSceneQueueOnce(
     data: SceneQueueSubmissionData,
     agent?: SceneQueueAgentExecution,
+    production?: SceneQueueProductionExecution,
 ): Promise<CreateBatchAndEnqueueResult> {
     const requestIdentity = agent?.binding.scopeId ?? data.requestIdentity
     const batchId = `scene-batch-${requestIdentity}`
@@ -1030,6 +1041,7 @@ async function enqueueReviewedSceneQueueOnce(
                         snapshot: bindOutputReservationSnapshot({
                             ...encoded.snapshot,
                             ...(agent === undefined ? {} : { agentExecutionBinding: agent.binding }),
+                            ...(production === undefined ? {} : { productionBinding: production.binding }),
                             ...(data.intentAssessment === undefined ? {} : { intentAssessment: {
                                 ...data.intentAssessment, runId: batchId,
                             } }),
@@ -1040,6 +1052,7 @@ async function enqueueReviewedSceneQueueOnce(
                     })
                     reservations.push(reservation)
                 })
+                await production?.reserve(batchId)
                 return getRuntimeQueueRepository().createBatchAndEnqueue({
                     batch: {
                         id: batchId,

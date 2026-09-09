@@ -58,7 +58,7 @@ describe('agent command wire boundary', () => {
     })
     it('limits random identifier allowance to named protocol references without bypassing forbidden material', () => {
         const randomId = 'client-e363a1741656e987c2ca6535a258533e'
-        for (const field of ['clientId', 'workspaceId', 'correlationId', 'idempotencyKey', 'draftId', 'runId', 'jobId']) {
+        for (const field of ['clientId', 'workspaceId', 'correlationId', 'idempotencyKey', 'draftId', 'runId', 'jobId', 'productionId']) {
             expect(() => assertAgentPublicValue({ [field]: randomId })).not.toThrow()
             for (const forbidden of [
                 'sk-proj-abcdefgh12345678', 'ghp_abcdefgh12345678',
@@ -70,6 +70,7 @@ describe('agent command wire boundary', () => {
         for (const field of ['message', 'payload', 'unregisteredId']) {
             expect(() => assertAgentPublicValue({ [field]: randomId })).toThrow()
         }
+        expect(() => assertAgentPublicValue({ productionId: `production-${agentRequestHash(unsigned()).slice(7)}` })).not.toThrow()
         const nativeIds = { workspaceId: 'workspace-7fd51b694896777c32f9a6a2c33e16c4', clientId: randomId,
             idempotencyKey: 'request-e363a1741656e987c2ca6535a258533e',
             correlationId: 'correlation-e363a1741656e987c2ca6535a258533e' }

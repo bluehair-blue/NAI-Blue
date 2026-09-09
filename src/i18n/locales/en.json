@@ -1,4 +1,52 @@
 {
+    "productionRequests": {
+        "errors": {
+            "PRODUCTION_NOT_FOUND": "This saved request was not found. Refresh the list.",
+            "PRODUCTION_CHILD_NOT_FOUND": "This saved request was not found. Refresh the list.",
+            "PRODUCTION_CHANGED": "The request changed. Refresh and review the next batch again.",
+            "PRODUCTION_ID_CONFLICT": "The request changed. Refresh and review the next batch again.",
+            "PRODUCTION_SOURCE_CHANGED": "The selected source content or settings changed. Save a new request with the current selection.",
+            "PRODUCTION_PREVIOUS_CHILD_NOT_COMPLETE": "Complete generation, storage and requested uploads for the previous batch before reviewing the next one.",
+            "PRODUCTION_BUDGET_EXCEEDED": "The estimated cost exceeds the total Anlas limit. Check costs and quantities, then save a new request.",
+            "PRODUCTION_SUBMISSION_UNKNOWN": "Queue submission could not be confirmed. Check job history before taking further action; do not submit again.",
+            "PRODUCTION_QUEUE_BINDING_CONFLICT": "Queue submission could not be confirmed. Check job history before taking further action; do not submit again.",
+            "PRODUCTION_CHILD_NEEDS_ATTENTION": "The current batch needs attention. Check generation, storage and upload results in job history.",
+            "PRODUCTION_REVIEW_CHANGED": "The review changed. Review current costs and output locations again.",
+            "PRODUCTION_PLAN_CONFLICT": "The review changed. Review current costs and output locations again.",
+            "PRODUCTION_PLAN_UNAVAILABLE": "The batch could not be prepared with current settings. Check generation settings and output locations.",
+            "PRODUCTION_UNAVAILABLE": "The batch could not be prepared with current settings. Check generation settings and output locations.",
+            "PRODUCTION_SUBMISSION_ALREADY_RESERVED": "This batch is already being processed or queued. Check job history.",
+            "PRODUCTION_ALREADY_ADMITTED": "This batch is already being processed or queued. Check job history."
+        },
+        "heading": "Saved production requests ({{count}})",
+        "description": "Save the selected images and quantities, then review current costs and output locations for each batch. Every batch needs your review and approval.",
+        "save": "Save production request",
+        "title": "Request name",
+        "maxAnlas": "Total Anlas limit",
+        "budgetHint": "The next batch cannot start if the combined estimated cost exceeds this limit. Saving does not start generation.",
+        "selection": "{{images}} images · {{batches}} batches of up to 100",
+        "summary": "{{images}} images · {{batches}} batches · {{admitted}} images added to queue",
+        "counts": "Generated {{generated}} · Stored {{stored}} · Uploaded {{uploaded}} / {{uploadRequested}}",
+        "budget": "Reserved estimated cost {{reserved}} / {{max}} Anlas",
+        "refresh": "Refresh",
+        "showStatus": "Check progress",
+        "review": "Review next batch",
+        "openQueue": "View job history",
+        "empty": "Save selected images as a production request to continue here.",
+        "saved": "Production request saved. Check progress to review the next batch.",
+        "queued": "Approved batch added to the queue. Confirm storage and upload results before reviewing the next batch.",
+        "failed": "Could not load the production request. Refresh to check its status.",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "splitHint": "Save a production request to review and approve batches of up to {{count}} images.",
+        "limit": "A production request can contain up to 2,400 images. Reduce the selection or quantities.",
+        "next": {
+            "review-next-batch": "Ready to review the next batch.",
+            "wait": "Waiting for the current batch to finish.",
+            "check-results": "Check generation, storage and upload results in job history.",
+            "complete": "All batches are generated, stored and uploaded where requested."
+        }
+    },
     "folderWorkbench": {
         "composer": {
             "missingTemplate": "The saved generation settings could not be found. Choose the defaults or another setting.",

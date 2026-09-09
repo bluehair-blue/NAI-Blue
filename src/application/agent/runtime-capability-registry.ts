@@ -20,6 +20,10 @@ export const AGENT_COMMAND_EFFECTS: Readonly<Record<AgentCommandName, 'read' | '
     'folder.plan_changes': 'plan',
     'folder.apply_changes': 'mutation',
     'r2.get_readiness': 'read',
+    'production.create': 'plan',
+    'production.list': 'read',
+    'production.get': 'read',
+    'production.plan_next': 'plan',
 })
 
 export interface AgentCommandHandler {

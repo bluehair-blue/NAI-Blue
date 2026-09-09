@@ -23,6 +23,7 @@
 | `nai-blue-settings` | 사용자 설정과 출력 정책 기본값 | 경로는 플랫폼 capability와 OutputWriter에서 재검증한다. |
 | `nai-blue-agent-command-receipt:<requestId>` | 인증된 command의 claim·완료 결과·digest | strict read와 원자적 CAS. result 파일은 projection이며 replay authority가 아니다. 미확정 accepted는 재실행하지 않는다. 설정 backup/restore·자동 삭제 대상에서 제외한다. [ADR-004](ADR-004-phase9-authenticated-inbox-core.md) 참고. |
 | `nai-blue-generation-plan:<digest>` | immutable 내부 GenerationPlan과 전체 checksum | strict read/CAS, JSON-only 8 MiB 한도. prepared 내부 경로가 포함될 수 있어 public result와 backup에 넣지 않는다. overwrite·자동 삭제하지 않고 enqueue 전 authoritative replay를 요구한다. [ADR-004](ADR-004-phase9-authenticated-inbox-core.md) 참고. |
+| `nai-blue-production-requests:v1` | 대상·수량·저작 hash·seed·총예산과 묶음 검토/등록 연결 | 기존 strict KV/CAS, 32개 요청/전체 8 MiB checksum 한도. 실행 권한은 기존 Queue/승인 ledger에 남는다. 불확실한 등록을 자동 재시도하지 않으며 backup·동기화 대상에는 추가하지 않는다. [ADR-015](ADR-015-production-requests-and-mcp-guidance.md) 참고. |
 | `nai-blue-auth` | vault reference, slot 상태, 비밀이 아닌 표시 정보 | critical. raw token/password를 저장하거나 backup projection으로 내보내지 않는다. |
 | `nai-blue-scenes` | Scene authoring state | durable job과 ArtifactRecord를 복제하지 않는다. |
 | `nai-blue-character-rotation` | rotation 계획과 재개 snapshot | worker controller 자체는 저장하지 않고 재개 가능한 계획만 저장한다. |

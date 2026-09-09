@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "implementationSlice": "saved-production-request-per-child-review-and-on-demand-mcp-guidance",
+  "recordedAt": "2026-09-09T04:25:58.3639930Z",
+  "baseCommit": "be5fb23a9745955b1d33c0d6691da07d0b85aa91",
+  "status": "validated-scoped",
+  "sourceScope": "The local implementation commit containing this record identifies the source, tests and QA script. Artifact hashes use original bytes; artifacts remain local.",
+  "contract": "docs/architecture/ADR-015-production-requests-and-mcp-guidance.md",
+  "commands": [
+    "production.create",
+    "production.list",
+    "production.get",
+    "production.plan_next"
+  ],
+  "scope": [
+    "Save exact Scene IDs, source authoring hashes, counts, materialized seeds, optional explicit filenames and total Anlas ceiling for at most 2400 images; split into children of at most 100 jobs.",
+    "Use the existing strict IndexedDB KV authority with checksum/CAS and bounded 32-request, 8-MiB storage. Do not create a second execution Queue.",
+    "Fresh review and existing human approval are required for each child. Current output settings, destinations and prices are recomputed per child; future full execution inputs are not frozen at parent creation.",
+    "Existing generation.enqueue, execution policy, rolling limits, output reservations and Queue remain authoritative. Parent cost reservation occurs immediately before Queue commit after review validation.",
+    "Reconcile lost parent acknowledgement only against exact persisted Queue IDs, ordinals, idempotency, production binding, stored plan, provider semantic intent and output filename. Unknown or mismatched results do not retry.",
+    "Aggregate actual generated, stored and upload counts from existing run fulfillment. Queue admission or command completion alone cannot complete production.",
+    "Folder workbench provides save, restore, manual aggregate refresh and next-child review using the same production authority as MCP.",
+    "MCP initialize provides short guidance; tool descriptions provide local instructions; the versioned full guide is read on demand and works without inbox submission while the app is off."
+  ],
+  "automatedTests": {
+    "node": "v24.19.0",
+    "command": "node24 node_modules/vitest/vitest.mjs run --maxWorkers=2 --reporter=json --outputFile=artifacts/production-requests/validation/composition.json",
+    "exitCode": 0,
+    "success": true,
+    "files": 345,
+    "passed": 2540,
+    "failed": 0,
+    "skipped": 4
+  },
+  "focusedEvidence": [
+    "Core persistence tests cover 101/2400 image boundaries, offsets, seeds, filenames, reopen, corruption, CAS, review replacement, unknown submission and aggregate decimal budget.",
+    "Runtime integration admits 101 images as 100+1 using real IndexedDB Queue and plan/production repositories, with mocked native/provider facts and simulated prior-child fulfillment.",
+    "Runtime integration covers duplicate approval, incomplete prior child, output-only revision advancement, authoring conflict, recoverable precommit review conflict, lost acknowledgement and same-count Queue binding corruption.",
+    "Signed MCP SDK integration uses real HMAC verification, dispatcher, durable approval/receipts/plans/production repositories and real Queue: no admission before human approval, exact once afterward, shared monitoring and rolling-limit rejection. Decimal Anlas 100.5 is preserved.",
+    "MCP protocol tests cover initialize instructions, metadata-only resource listing, explicit guide reads without app/inbox activity, unknown guide version and oversized production input rejection.",
+    "Production IDs remain typed opaque identifiers under payload safety; credential/path/image and high-entropy checks for other fields remain active."
+  ],
+  "browserQa": {
+    "node": "v24.19.0",
+    "script": "scripts/qa-production-requests.mjs",
+    "passed": true,
+    "checksPassed": 6,
+    "pageErrors": 0,
+    "viewports": [
+      390,
+      1440
+    ],
+    "scope": "Fresh isolated browser IndexedDB, 101-image selected Scene, explicit title/budget, 100+1 split, save/reload, selected request and composer draft restoration, no horizontal overflow and visible next action.",
+    "externalRequestsBlocked": true,
+    "queueAdmissions": 0
+  },
+  "checks": {
+    "typecheck": "passed",
+    "viteBuild": "passed",
+    "eslint": "passed with zero warnings",
+    "architecture": "passed: 646 modules, 3620 dependencies",
+    "secretRedaction": "17 passed",
+    "diffWhitespace": "passed"
+  },
+  "intermediateFailuresResolved": [
+    "Review found precommit source/folder conflict could reserve parent too early; moved reservation after validation immediately before Queue commit.",
+    "Review found recovery required persisted exact production binding; preserved binding through Queue codec/hash and verify identity and semantic/output facts before attribution.",
+    "Browser QA found mobile save-dialog clipping; reused existing composer dialog styling and verified both viewport widths.",
+    "Signed SDK test found generated productionId rejected by payload safety; added only productionId to existing typed opaque identifier fields.",
+    "Decimal budget test found legacy integer-only monetary checks; aligned public schema, production core, generic planner and Scene enqueue on finite non-negative safe-range monetary values.",
+    "Windows stdio fixture could replace an identical receipt while SDK was reading it; fixture skips byte-identical publication only and preserves atomic replacement for changed content.",
+    "Intermediate full suite had 2539 passing tests and one stale expected-output failure after productionId alias was added; updated fixture, then final full suite passed."
+  ],
+  "notVerified": [
+    "Actual Codex/Claude host registration and model use of MCP guidance",
+    "Installed Windows app and native output commit",
+    "Real NAI generation or cost",
+    "Real R2 upload and final public URL",
+    "Physical process crash recovery",
+    "Actual 2400-image end-to-end production",
+    "First-time human usability"
+  ],
+  "remaining": [
+    "Automatic next-child dispatch from one whole-request consent",
+    "Full immutable execution input capture for future children",
+    "Whole-request pause/cancel and feedback revision workflow",
+    "Durable production events and stall monitoring",
+    "Continuous output numbering and final URL export",
+    "Agent wakeup integration"
+  ],
+  "artifacts": [
+    {
+      "path": "artifacts/production-requests/validation/composition.json",
+      "sha256": "b7b756fd190c9fe328f7dceed4a445d1fb3090e853cb3c815b55db4e42dcb25c"
+    },
+    {
+      "path": "artifacts/production-requests/validation/composition-intermediate-red.json",
+      "sha256": "4f8e8f04b5bb6f7eefcd1d21e01aaeab5a671a4be04cfbe014bc30652c8cd58a"
+    },
+    {
+      "path": "artifacts/production-requests/validation/typecheck.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/production-requests/validation/build.log",
+      "sha256": "376b4a07729022136eafc94ff3af90a66587ec7f15c399a9053a6c08015b5ad6"
+    },
+    {
+      "path": "artifacts/production-requests/validation/lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/production-requests/validation/architecture.log",
+      "sha256": "22ee88281f7d6e249b26051becc4c227f0e4afdf3ad60821f659cb31f3272563"
+    },
+    {
+      "path": "artifacts/production-requests/validation/secret-redaction.log",
+      "sha256": "995cc0e8adec8426b4462bed07fba75a68e05411ccc50e7e8755fbd8ff6a330b"
+    },
+    {
+      "path": "artifacts/production-requests/ui/qa-report.json",
+      "sha256": "04560334bacbbd81b51b93dbd9f5a084640371332386749e5a00aaf6ed344dff"
+    },
+    {
+      "path": "artifacts/production-requests/ui/save-dialog-390.png",
+      "sha256": "4eee714d4e091ec0a9fe4d1b67268c428b164ed42cb36bcc4c881bcf0e14f2bc"
+    },
+    {
+      "path": "artifacts/production-requests/ui/save-dialog-1440.png",
+      "sha256": "598f8a32b5ed36043f4eddac6e2e566e193ad24b736d368c3227d1486828b6ee"
+    },
+    {
+      "path": "artifacts/production-requests/ui/restored-390.png",
+      "sha256": "0de5e22d3d45e544925a1ed3e6b4278f401b3d71c937fd31900c4ea55568633c"
+    },
+    {
+      "path": "artifacts/production-requests/ui/restored-1440.png",
+      "sha256": "d1c14e50bcb0d80ae69121fece05901cfca75fcedf7207113c8b2f78b5408c48"
+    },
+    {
+      "path": "artifacts/production-requests/ui/next-step-390.png",
+      "sha256": "100aab82ae8e5f5954ad7585086dd7e88485e365ffa2e5a826aaff7b26c2b7f9"
+    },
+    {
+      "path": "artifacts/production-requests/ui/next-step-1440.png",
+      "sha256": "d1c14e50bcb0d80ae69121fece05901cfca75fcedf7207113c8b2f78b5408c48"
+    }
+  ]
+}

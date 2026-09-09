@@ -22,6 +22,7 @@ import { createAgentGenerationStorageRetryPort } from './agent-generation-storag
 import { isAgentExecutionPolicyUpdatePending, useSettingsStore } from '@/stores/settings-store'
 import { createRuntimeAgentAuthoring, createAgentAuthoringReadHandlers, getAgentAuthoringSnapshot } from './agent-authoring'
 import { createAgentSceneGenerationPlanHandler } from './agent-scene-generation-plan'
+import { createProductionRequestHandlers } from './production-requests'
 
 const receipts = new IndexedDbCommandReceiptRepository()
 
@@ -63,7 +64,7 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
             if (run === null) return { found: false }
             return projectGenerationRunStatus(run)
         },
-    }, ...createAgentAuthoringReadHandlers()]
+    }, ...createAgentAuthoringReadHandlers(), ...createProductionRequestHandlers()]
 }
 
 /** Singleton is shared by Data Hub and post-recovery startup; no second Queue or credential authority. */

@@ -68,9 +68,23 @@ async function appFixture(heldRequestId?: string) {
         handlers, runtime: () => ({ ready: true, mode: 'suggest', globalPause: false }) })
     let online = true, pumping = false, stopped = false
     const errors: unknown[] = []
+    const identicalPublications: string[] = []
     const publish = async (directory: string, id: string, value: unknown) => {
         const destination = path.join(root, directory, `${id}.json`)
-        await writeFile(`${destination}.partial`, canonicalSerialize(value))
+        const serialized = canonicalSerialize(value)
+        // Same-ID replay republishes the durable receipt. Avoid a redundant Node
+        // rename over a file the Windows sidecar may be reading; changed results
+        // still publish atomically, while rejection evidence remains no-replace.
+        try {
+            if (await readFile(destination, 'utf8') === serialized) {
+                identicalPublications.push(id)
+                return
+            }
+            if (directory === 'rejections') throw new Error('Fixture rejection evidence conflict')
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+        await writeFile(`${destination}.partial`, serialized)
         await rename(`${destination}.partial`, destination)
     }
     const timer = setInterval(() => {
@@ -94,7 +108,7 @@ async function appFixture(heldRequestId?: string) {
         await vi.waitFor(() => expect(pumping).toBe(false), { timeout: 3000, interval: 10 })
         expect(errors).toEqual([])
     })
-    return { root, dispatcher, receipts, executions, releaseHeld, setOnline: (value: boolean) => { online = value },
+    return { root, dispatcher, receipts, executions, identicalPublications, releaseHeld, setOnline: (value: boolean) => { online = value },
         archive: (id: string) => readFile(path.join(root, 'inbox', `${id}.submitted.json`), 'utf8'),
         hasReady: (id: string) => existsSync(path.join(root, 'inbox', `${id}.ready.json`)) }
 }
@@ -181,6 +195,10 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         expect(await app.archive('crash-replay')).toBe(archived)
         expect(await app.receipts.get('crash-replay')).toEqual(receipt)
         expect(app.executions.filter(item => item.requestId === 'crash-replay')).toHaveLength(1)
+        await vi.waitFor(() => {
+            expect(app.identicalPublications).toContain('crash-replay')
+            expect(app.hasReady('crash-replay')).toBe(false)
+        }, { timeout: 3000, interval: 10 })
         const changed = await restarted.client.callTool({ ...call, arguments: { ...call.arguments, input: { runId: 'different-run' } } })
         expect(changed).toMatchObject({ isError: true, structuredContent: { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED' } })
         expect(await app.archive('crash-replay')).toBe(archived)

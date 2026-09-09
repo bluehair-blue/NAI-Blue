@@ -25,6 +25,14 @@ export interface AgentSceneGenerationInput {
 interface SceneReplay {
     readonly input: AgentSceneGenerationInput
     readonly identity: SceneQueueReplayIdentity
+    readonly production?: ProductionSceneReplay
+}
+
+/** Internal parent reference, never accepted as a public generation.plan parameter. */
+export interface ProductionSceneReplay {
+    readonly productionId: string
+    readonly index: number
+    readonly fileNames: readonly (readonly string[] | null)[]
 }
 
 /** Only hashes and replay identity persist. Rebuilt Scene preparation owns resources and Queue snapshots. */
@@ -62,7 +70,7 @@ function previewText(value: string, limit: number): string | null {
 }
 
 /** A bounded public sample identifies reviewed work without exporting local paths or resource bytes. */
-function publicPreview(plan: GenerationPlan<AgentScenePreparedJob>, submission: SceneQueueSubmission): JsonObject {
+export function publicAgentScenePreview(plan: GenerationPlan<AgentScenePreparedJob>, submission: SceneQueueSubmission): JsonObject {
     const facts = getSceneQueuePlanningFacts(submission)
     const targets = plan.jobs[0].prepared.replay!.input.source.targets
     const sources = targets.slice(0, 20).map(target => ({ ...target,
@@ -90,6 +98,7 @@ function publicPreview(plan: GenerationPlan<AgentScenePreparedJob>, submission: 
 export async function planAgentSceneGeneration(
     inputValue: AgentSceneGenerationInput,
     identity?: SceneQueueReplayIdentity,
+    production?: ProductionSceneReplay,
 ): Promise<{ result: PlanGenerationResult<AgentScenePreparedJob>; submission: SceneQueueSubmission }> {
     const input = validatedInput(inputValue)
     const count = input.source.targets.reduce((sum, target) => sum + target.count, 0)
@@ -98,11 +107,13 @@ export async function planAgentSceneGeneration(
         ? [...globalThis.crypto.getRandomValues(new Uint32Array(count))]
         : Array.from({ length: count }, (_, ordinal) => policy.kind === 'fixed'
             ? policy.seed : (policy.firstSeed + ordinal) >>> 0))
-    const replay: SceneReplay = { input, identity: identity ?? {
+    const replay: SceneReplay = { input, ...(production === undefined ? {} : { production }), identity: identity ?? {
         reviewId: `scene-review-${globalThis.crypto.randomUUID()}`,
         reviewedAt: new Date().toISOString(), materializedSeeds,
     } }
-    const review = await prepareSceneQueueReview(input.source.targets, { replayIdentity: replay.identity })
+    const review = await prepareSceneQueueReview(input.source.targets.map((target, index) => ({ ...target,
+        ...(production?.fileNames[index] == null ? {} : { fileNames: production.fileNames[index]! }),
+    })), { replayIdentity: replay.identity })
     if (review === null) throw new TypeError('Scene plan must contain at least one image')
     const facts = getSceneQueuePlanningFacts(review.submission)
     const pricingBasis = facts.prepared[0].prepared.costEstimate.pricingBasis
@@ -175,7 +186,7 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
                     status: result.status, planId: result.plan.planId, planHash: result.plan.planHash,
                     jobCount: result.plan.jobs.length, estimatedAnlas: result.plan.estimatedAnlas,
                     requiredApprovals: result.plan.requiredApprovals.map(item => ({ ...item })),
-                    review: publicPreview(result.plan, submission),
+                    review: publicAgentScenePreview(result.plan, submission),
                 }
                 return { status: result.status, issueCodes: 'issues' in result
                     ? result.issues.map(issue => issue.code) : ['scene-source-changed'] }
@@ -190,13 +201,17 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
 async function rebuild(plan: GenerationPlan): Promise<SceneQueueSubmission | null> {
     const replay = replayOf(plan)
     if (replay === null || plan.requiredApprovals.length !== 0 || plan.jobs.length > 100) return null
-    const rebuilt = await planAgentSceneGeneration(replay.input, replay.identity)
+    const rebuilt = await planAgentSceneGeneration(replay.input, replay.identity, replay.production)
     return rebuilt.result.status === 'ready' && compareGenerationPlans(plan, rebuilt.result.plan) === null
         ? rebuilt.submission : null
 }
 
 export async function validateAgentSceneGenerationPlan(plan: GenerationPlan): Promise<boolean> {
-    try { return await rebuild(plan) !== null } catch { return false }
+    try {
+        const production = replayOf(plan)?.production
+        if (production && !await (await import('./production-request-state')).validateRuntimeProductionPlan(production, plan.planId)) return false
+        return await rebuild(plan) !== null
+    } catch { return false }
 }
 
 /** The existing coordinator supplies the grant; this adapter only binds it to the existing Scene Queue. */
@@ -210,12 +225,21 @@ export async function enqueueAgentSceneGenerationPlan(plan: GenerationPlan, gran
     let submission: SceneQueueSubmission | null
     try { submission = await rebuild(plan) } catch { submission = null }
     if (submission === null) return { status: 'conflict', issueCodes: ['reviewed-scene-source-conflict'] }
+    const production = replayOf(plan)?.production
     const queued = await enqueueReviewedSceneQueue(submission, {
         binding: { scopeId: grant.scopeId, planId: grant.planId, planHash: grant.planHash,
             grantHash: `sha256:${hashCanonicalValue(grant)}` },
         approvedAt: grant.consentedAt, actor: { kind: grant.actorKind, id: `client:${grant.clientId}` },
         imageCount: grant.imageCount, estimatedAnlas: grant.estimatedAnlas, budget: plan.budget,
+    }, production === undefined ? undefined : {
+        binding: { productionId: production.productionId, index: production.index, planId: plan.planId, planHash: plan.planHash },
+        reserve: async runId => (await import('./production-request-state')).reserveRuntimeProductionChild(
+            production.productionId, production.index, plan.planId, runId,
+        ),
     })
+    if (production) await (await import('./production-request-state')).acknowledgeRuntimeProductionChild(
+        production.productionId, production.index, queued.batch.id,
+    )
     return { status: 'ready', batchId: queued.batch.id, runId: queued.batch.id,
         jobIds: [...queued.jobs].sort((left, right) => left.ordinal - right.ordinal).map(job => job.id) }
 }

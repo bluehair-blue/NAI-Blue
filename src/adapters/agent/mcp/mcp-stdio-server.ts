@@ -7,6 +7,7 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import { assertSyncPayloadSafe } from '@/domain/sync/payload-safety'
 import { isAgentInboxRejectionCode } from '@/adapters/agent/inbox/process-agent-inbox-file'
+import { AGENT_MCP_INSTRUCTIONS, AGENT_TOOL_DESCRIPTIONS, AGENT_WORKFLOW_GUIDE, AGENT_WORKFLOW_GUIDE_URI } from './agent-workflow-guide'
 
 /** The Node entry owns signing/file I/O; application commands still own all business decisions. */
 export interface McpAgentInbox {
@@ -82,10 +83,7 @@ function capabilityDescriptors(value: unknown): RuntimeCapabilityDescriptor[] {
 export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     const server = new Server({ name: 'nai-blue-agent-spike', version: '0.1.0' }, {
         capabilities: { tools: {}, resources: {} },
-        instructions: 'Local foreground inbox. Keep the same requestId after timeout or restart. '
-            + 'Receipt completion is command completion; inspect its result for Queue/run state. '
-            + 'Authoring uses existing folder IDs and safe child folder segments; absolute storage paths are unsupported. '
-            + 'R2 preferences do not prove readiness or upload completion. Human approval happens in NAI Blue. Transport cancellation only stops waiting.',
+        instructions: AGENT_MCP_INSTRUCTIONS,
     })
 
     async function freshCapabilities(signal: AbortSignal) {
@@ -122,7 +120,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const snapshot = await freshCapabilities(context.mcpReq.signal)
         return { tools: snapshot.available.map(descriptor => ({
             name: descriptor.command,
-            description: `${descriptor.command}. Foreground app required. ${descriptor.requiresHumanApproval ? 'Human approval required in NAI Blue.' : 'Input-specific policy limits still apply.'} Preserve requestId across retries.`,
+            description: `${AGENT_TOOL_DESCRIPTIONS[descriptor.command]} Foreground app required. ${descriptor.requiresHumanApproval ? 'Human approval required in NAI Blue.' : 'Input-specific policy limits still apply.'}`,
             inputSchema: { type: 'object' as const, properties: { requestId: requestIdSchema,
                 input: getAgentCommandInputContract(descriptor.command)!.schema },
                 required: ['requestId', 'input'], additionalProperties: false },
@@ -156,13 +154,20 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
 
     server.setRequestHandler('resources/list', async () => ({ resources: [{ uri: capabilitiesUri,
         name: 'Current foreground capabilities', mimeType: 'application/json',
-        description: 'A fresh application probe; unavailable reasons are returned when no current receipt is obtained.' }] }))
+        description: 'A fresh application probe; unavailable reasons are returned when no current receipt is obtained.' }, {
+        uri: AGENT_WORKFLOW_GUIDE_URI, name: 'Agent workflow guide v1', mimeType: 'text/markdown',
+        description: 'On-demand authoring, production, receipt replay, approval and recovery workflow. Static guidance, not live capability evidence.',
+    }] }))
     server.setRequestHandler('resources/templates/list', async () => ({ resourceTemplates: [{
         uriTemplate: `${requestUriPrefix}{requestId}`, name: 'Saved command receipt', mimeType: 'application/json',
         description: 'Historical receipt for this configured client. Reading does not replay a command or prove current app readiness.',
     }] }))
     server.setRequestHandler('resources/read', async (request, context) => {
         try {
+            // Guide discovery/read must work without a native inbox or foreground app probe.
+            if (request.params.uri === AGENT_WORKFLOW_GUIDE_URI) return { contents: [{
+                uri: AGENT_WORKFLOW_GUIDE_URI, mimeType: 'text/markdown', text: AGENT_WORKFLOW_GUIDE,
+            }] }
             let result: JsonObject
             if (request.params.uri === capabilitiesUri) {
                 const { available: _available, ...snapshot } = await freshCapabilities(context.mcpReq.signal)

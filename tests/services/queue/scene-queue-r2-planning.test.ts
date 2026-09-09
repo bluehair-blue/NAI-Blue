@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { createAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 
@@ -9,12 +9,13 @@ import type { OutputCommitSetPlanningRequest } from '@/services/queue/main-queue
 
 const runtime = vi.hoisted(() => ({
     folder: vi.fn(), scene: vi.fn(), profile: vi.fn(), readiness: vi.fn(), allocation: vi.fn(), enqueue: vi.fn(),
-    build: vi.fn(), dehydrate: vi.fn(),
+    build: vi.fn(), dehydrate: vi.fn(), getBatch: vi.fn(), listJobs: vi.fn(), fulfillment: vi.fn(),
 }))
 vi.mock('@/adapters/folder/indexeddb-generation-folder-repository', () => ({
     IndexedDbGenerationFolderRepository: class { getDocument = runtime.folder },
 }))
 vi.mock('@/lib/scene-migration-startup', () => ({ getRuntimeSceneRepository: () => ({ getDocument: runtime.scene }) }))
+vi.mock('@/lib/scene-authority-runtime', () => ({ flushSceneAuthorityRuntime: async () => undefined }))
 vi.mock('@/stores/auth-store', () => ({ selectActiveCredentialsAreOpus: () => true, useAuthStore: { getState: () => ({}) } }))
 vi.mock('@/stores/character-store', () => ({ useCharacterStore: { getState: () => ({ releaseImageData: () => undefined }) } }))
 vi.mock('@/stores/character-rotation-store', () => ({ useRotationStore: { getState: () => ({ active: false }) } }))
@@ -49,8 +50,9 @@ vi.mock('@/services/queue/main-queue-runtime-dependencies', () => ({ getRuntimeM
 }) }))
 vi.mock('@/services/queue/indexeddb-queue-repository', () => ({
     assertGenerationAtomicBatchAvailable: () => undefined,
-    getRuntimeQueueRepository: () => ({ createBatchAndEnqueue: runtime.enqueue }),
+    getRuntimeQueueRepository: () => ({ createBatchAndEnqueue: runtime.enqueue, getBatch: runtime.getBatch, listJobs: runtime.listJobs }),
 }))
+vi.mock('@/adapters/generation/indexeddb-generation-run-reader', () => ({ getRuntimeGenerationRun: runtime.fulfillment }))
 vi.mock('@/services/queue/queue-resource-materializer', () => ({
     getRuntimeQueueResourceMaterializer: () => ({}), dehydrateGenerationParams: runtime.dehydrate,
 }))
@@ -64,13 +66,19 @@ import type { AgentExecutionGrant } from '@/application/agent/agent-execution-re
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { createAgentMcpServer } from '@/adapters/agent/mcp/mcp-stdio-server'
 import { AgentCommandDispatcher } from '@/application/agent/agent-command-dispatcher'
-import { agentRequestHash, type AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
+import { agentRequestHash, canonicalAgentSigningPayload, type AgentCommandEnvelope, type AgentCommandName } from '@/application/agent/agent-command-contract'
+import { WebCryptoAgentAuthentication } from '@/adapters/agent/webcrypto-agent-authentication'
 import { createAgentExecutionCoordinator } from '@/application/agent/agent-execution-coordinator'
 import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execution-policy'
 import { IndexedDbCommandReceiptRepository } from '@/adapters/agent/indexeddb-command-receipt-repository'
 import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
 import { createAgentSceneGenerationPlanHandler } from '@/composition-root/agent-scene-generation-plan'
 import type { JsonObject } from '@/domain/composition/types'
+import { resetIndexedDBConnectionForRetry } from '@/lib/indexed-db'
+import { IndexedDbProductionRequestRepository } from '@/adapters/generation/indexeddb-production-request-repository'
+import { createRuntimeProductionRequest, prepareRuntimeProductionChild, enqueueRuntimeProductionChild,
+    getRuntimeProductionStatus, createProductionRequestHandlers } from '@/composition-root/production-requests'
+import { deriveGenerationFulfillment } from '@/application/generation/generation-fulfillment'
 
 const selected = createR2ProfileV2({
     id: 'profile-1', name: 'Profile', accountId: 'account', jurisdiction: null, endpoint: null,
@@ -442,4 +450,230 @@ describe('Scene Queue R2 reviewed planning', () => {
             expect(hashes[0]).not.toBe(hashes[1])
         } finally { vi.useRealTimers() }
     })
+})
+
+describe('saved production requests with actual IndexedDB Queue and plan repositories', () => {
+    const queues: { close(): void }[] = []
+    beforeEach(() => {
+        vi.restoreAllMocks()
+        resetIndexedDBConnectionForRetry()
+        vi.stubGlobal('indexedDB', new IDBFactory())
+        vi.stubGlobal('IDBKeyRange', IDBKeyRange)
+        runtime.folder.mockResolvedValue(folder({ autoUpload: false }))
+        runtime.build.mockImplementation(async (_scene, options) => ({ success: true, params: { ...params, seed: options.seed },
+            finalPrompt: 'A room', mimeType: 'image/png', sequenceCommitProposal: null, planHash: null,
+            mode: 'legacy', warnings: [], errors: [] }))
+    })
+    afterEach(() => {
+        queues.splice(0).forEach(queue => queue.close())
+        vi.restoreAllMocks()
+        resetIndexedDBConnectionForRetry()
+        vi.unstubAllGlobals()
+    })
+
+    async function productionFixture(count = 101) {
+        const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
+        const factory = new IDBFactory(), databaseName = `production-integration-${crypto.randomUUID()}`
+        const queue = new IndexedDBQueueRepository({ factory, keyRange: IDBKeyRange, databaseName,
+            generationLimits: { maxJobsPerAtomicBatch: 100, maxOutputClaimsPerAtomicBatch: 400,
+                measuredAt: new Date().toISOString(), evidenceId: 'simulated-production-test' } })
+        queues.push(queue)
+        runtime.enqueue.mockImplementation(input => queue.createBatchAndEnqueue(input))
+        runtime.getBatch.mockImplementation(id => queue.getBatch(id))
+        runtime.listJobs.mockImplementation(input => queue.listJobs(input))
+        const fulfilled = new Set<string>()
+        // Fulfillment is simulated explicitly; Queue identity/binding validation and
+        // every admission/CAS below are real. No Provider, output or R2 runner starts.
+        runtime.fulfillment.mockImplementation(async (runId: string) => {
+            const jobs = (await queue.listJobs({ batchId: runId, limit: 100 })).items
+            const complete = fulfilled.has(runId)
+            const fact = { source: 'simulated-fulfillment', referenceId: runId,
+                observedAt: new Date().toISOString(), kind: 'direct' as const, state: 'succeeded' as const }
+            return deriveGenerationFulfillment({ batchId: runId, queueState: complete ? 'completed' : 'active',
+                jobs: jobs.map(job => ({ jobId: job.id, queueState: complete ? 'succeeded' : 'queued',
+                    ...(complete ? { interpretation: fact, provider: fact, storage: fact } : {}),
+                    release: { policy: 'not-required' as const }, acceptance: { required: false } })) })
+        })
+        const request = await createRuntimeProductionRequest({ title: 'Production integration', targets: [{
+            presetId: 'preset', sceneId: 'scene', expectedRevision: 2, count,
+        }], seedPolicy: { kind: 'increment', firstSeed: 10 }, budget: { maxImages: count, maxAnlas: 10000 } })
+        return { request, queue, factory, databaseName, fulfilled, repository: new IndexedDbProductionRequestRepository() }
+    }
+
+    it('runs production APIs through signed SDK commands, retains human approval and rolling limits, and reports the actual parent monitor', async () => {
+        const f = await productionFixture(1)
+        const { createAgentGenerationExecutionPort } = await import('@/composition-root/agent-generation-execution')
+        const plans = new IndexedDbGenerationPlanRepository(), receipts = new IndexedDbCommandReceiptRepository()
+        const ledger = new IndexedDbAgentExecutionRepository()
+        const startedAt = new Date().toISOString(), expiresAt = new Date(Date.now() + 3_600_000).toISOString()
+        const policy = { ...structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), mode: 'suggest' as const,
+            rollingLimits: { ...DEFAULT_AGENT_EXECUTION_POLICY.rollingLimits, maxImagesPerHour: 1 },
+            generation: { ...DEFAULT_AGENT_EXECUTION_POLICY.generation,
+                allowedCompatibilityStatuses: ['captured-pass', 'live-canary-pass', 'synthetic-only'] as const } }
+        const coordinator = createAgentExecutionCoordinator({ workspaceId: 'workspace', repository: ledger, receipts, plans,
+            getPolicy: () => policy, isClientAuthorized: async () => true,
+            ports: createAgentGenerationExecutionPort({ repository: f.queue }) })
+        // Public fixture HMAC material, actual signature verification. Native credential
+        // lookup/inbox files and Provider fulfillment remain outside this SDK test.
+        const key = await crypto.subtle.importKey('raw', Uint8Array.from({ length: 32 }, (_, index) => index),
+            { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
+        const authentication = new WebCryptoAgentAuthentication(async (clientId, keyId) =>
+            clientId === 'client' && keyId === 'fixture-key'
+                ? { clientId, keyId, actorKind: 'agent', revokedAt: null, key } : null)
+        const dispatcher = new AgentCommandDispatcher({ workspaceId: 'workspace', receipts, authentication,
+            handlers: [...createProductionRequestHandlers(), coordinator.handler],
+            runtime: () => ({ ready: true, mode: policy.mode, globalPause: false }) })
+        const server = createAgentMcpServer({
+            invoke: async (command, requestId) => {
+                const envelope: AgentCommandEnvelope = { schemaVersion: 1, requestId, requestHash: `sha256:${'a'.repeat(64)}`,
+                    submittedAt: startedAt, expiresAt, command,
+                    context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'workspace', clientId: 'client',
+                        actor: { kind: 'agent' }, idempotencyKey: requestId },
+                    authentication: { scheme: 'hmac-sha256', keyId: 'fixture-key', signature: `hmac-sha256:${'0'.repeat(64)}` } }
+                const hashed = { ...envelope, requestHash: agentRequestHash(envelope) }
+                const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(canonicalAgentSigningPayload(hashed)))
+                const receipt = await dispatcher.dispatch({ ...hashed, authentication: { ...hashed.authentication,
+                    signature: `hmac-sha256:${Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, '0')).join('')}` } })
+                return { status: 'application-receipt', requestId, requiresAppProcess: true, receipt } as unknown as JsonObject
+            },
+            inspect: async requestId => ({ status: 'application-receipt', requestId, requiresAppProcess: true,
+                receipt: await receipts.get(requestId) }) as unknown as JsonObject,
+        })
+        const client = new Client({ name: 'production-sdk-integration', version: '1.0.0' })
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+        async function call(name: AgentCommandName, requestId: string, input: JsonObject) {
+            const response = await client.callTool({ name, arguments: { requestId, input } })
+            expect(response.isError, JSON.stringify(response)).toBe(false)
+            return (response.structuredContent!.receipt as JsonObject).result as JsonObject
+        }
+        try {
+            await server.connect(serverTransport)
+            await client.connect(clientTransport)
+            expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+                'production.create', 'production.list', 'production.get', 'production.plan_next', 'generation.enqueue',
+            ]))
+            const input = { title: 'SDK production', source: { kind: 'scene', targets: [{ presetId: 'preset', sceneId: 'scene', expectedRevision: 2, count: 1 }] },
+                seedPolicy: { kind: 'fixed', seed: 7 }, budget: { maxImages: 1, maxAnlas: 100.5 } }
+            const created = await call('production.create', 'sdk-create', input)
+            expect(created).toMatchObject({ found: true, totalImages: 1, admittedImages: 0, nextAction: 'review-next-batch' })
+            expect(runtime.enqueue).not.toHaveBeenCalled()
+            const productionId = String(created.id)
+            const planned = await call('production.plan_next', 'sdk-plan', { productionId, expectedRevision: created.revision })
+            expect(planned).toMatchObject({ status: 'ready', productionId, review: {
+                sources: [{ presetId: 'preset', sceneId: 'scene', count: 1 }],
+                jobs: [{ prompt: 'A room', seed: 7 }],
+            } })
+            const enqueueInput = { planId: planned.planId, planHash: planned.planHash }
+            expect(await call('generation.enqueue', 'sdk-enqueue', enqueueInput)).toMatchObject({ code: 'AGENT_APPROVAL_REQUIRED' })
+            expect(runtime.enqueue).not.toHaveBeenCalled()
+            const [review] = await coordinator.pending()
+            expect(await coordinator.approve(review.requestId, review)).toMatchObject({ status: 'ready' })
+            expect(await call('generation.enqueue', 'sdk-enqueue', enqueueInput)).toMatchObject({ status: 'ready' })
+            expect(await coordinator.approve(review.requestId, review)).toEqual({ code: 'AGENT_APPROVAL_UNAVAILABLE' })
+            const jobs = (await f.queue.listJobs()).items
+            expect(jobs).toHaveLength(1)
+            expect(jobs[0].snapshot).toMatchObject({ productionBinding: { productionId, index: 0, planId: planned.planId },
+                agentExecutionBinding: { planId: planned.planId, planHash: planned.planHash } })
+            expect((await f.repository.get(productionId))!.children[0].submission).toMatchObject({ status: 'queued', runId: jobs[0].batchId })
+            expect((await ledger.get('workspace'))!.records[0]).toMatchObject({ state: 'completed', grant: { authorization: 'human', imageCount: 1 } })
+            const status = await call('production.get', 'sdk-status', { productionId })
+            expect(status).toEqual({ found: true, productionId, ...await getRuntimeProductionStatus(productionId) })
+            expect(status).toMatchObject({ maxAnlas: 100.5, admittedImages: 1, nextAction: 'wait', counts: { generated: 0, stored: 0 } })
+            expect((await call('production.list', 'sdk-list', {})).requests).toEqual(expect.arrayContaining([expect.objectContaining({ productionId })]))
+            const second = await call('production.create', 'sdk-create-two', input)
+            const secondPlan = await call('production.plan_next', 'sdk-plan-two', { productionId: second.id, expectedRevision: second.revision })
+            await call('generation.enqueue', 'sdk-enqueue-two', { planId: secondPlan.planId, planHash: secondPlan.planHash })
+            const limitReview = (await coordinator.pending()).find(item => item.requestId === 'sdk-enqueue-two')!
+            expect(await coordinator.approve(limitReview.requestId, limitReview)).toMatchObject({ code: 'AGENT_APPROVAL_REQUIRED', issueCodes: ['AGENT_ROLLING_LIMIT'] })
+            expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+            expect((await f.repository.get(String(second.id)))!.children[0].submission).toBeNull()
+        } finally { await client.close(); await server.close() }
+    }, 20000)
+
+    it('splits 101 into 100+1, persists exact child binding once, waits for fulfillment and accepts output-only revision before the next saved seed', async () => {
+        const f = await productionFixture()
+        expect(f.request.children.map(child => child.seeds.length)).toEqual([100, 1])
+        expect((await f.queue.listJobs()).items).toHaveLength(0)
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+        const first = await prepareRuntimeProductionChild(f.request.id, f.request.revision)
+        const queued = await enqueueRuntimeProductionChild(f.request.id, 0, first.prepared.submission)
+        await enqueueRuntimeProductionChild(f.request.id, 0, first.prepared.submission)
+        expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+        const jobs = (await f.queue.listJobs({ batchId: queued.batch.id, limit: 100 })).items
+        expect(jobs).toHaveLength(100)
+        expect(jobs.every(job => job.snapshot.productionBinding?.productionId === f.request.id
+            && job.snapshot.productionBinding.index === 0
+            && job.snapshot.productionBinding.planId === first.request.children[0].review!.planId)).toBe(true)
+        let saved = (await f.repository.get(f.request.id))!
+        expect(await getRuntimeProductionStatus(f.request.id)).toMatchObject({ nextAction: 'wait', admittedImages: 100 })
+        await expect(prepareRuntimeProductionChild(f.request.id, saved.revision)).rejects.toThrow('PRODUCTION_PREVIOUS_CHILD_NOT_COMPLETE')
+        f.fulfilled.add(queued.batch.id)
+        const source = await runtime.scene()
+        runtime.scene.mockResolvedValue({ ...source, revision: 3, scenes: source.scenes.map((scene: JsonObject) => ({ ...scene,
+            artifactRefs: [{ artifactId: 'simulated-result', attachedAt: '2026-09-09T00:00:00.000Z' }] })) })
+        // Reopen both default IndexedDB repositories: progression uses persisted state.
+        resetIndexedDBConnectionForRetry()
+        saved = (await new IndexedDbProductionRequestRepository().get(f.request.id))!
+        const second = await prepareRuntimeProductionChild(f.request.id, saved.revision)
+        expect(second.index).toBe(1)
+        expect(second.prepared.review.imageCount).toBe(1)
+        const plan = await new IndexedDbGenerationPlanRepository().get(second.request.children[1].review!.planId)
+        expect(plan!.materializedSeedTrace.seeds).toEqual([110])
+        expect(plan!.sourceBindings.find(binding => binding.resourceType === 'scene-document')!.revision).toBe(3)
+        expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+        const changed = await runtime.scene()
+        runtime.scene.mockResolvedValue({ ...changed, revision: 4, scenes: changed.scenes.map((scene: JsonObject) => ({ ...scene, scenePrompt: 'Authoring changed' })) })
+        await expect(prepareRuntimeProductionChild(f.request.id, second.request.revision)).rejects.toThrow('PRODUCTION_SOURCE_CHANGED')
+    }, 20000)
+
+    it('leaves the parent unreserved on ordinary folder review conflict and permits an explicit replan', async () => {
+        const f = await productionFixture(1)
+        const first = await prepareRuntimeProductionChild(f.request.id, 0)
+        runtime.folder.mockResolvedValue({ ...folder({ autoUpload: false }), revision: 4 })
+        await expect(enqueueRuntimeProductionChild(f.request.id, 0, first.prepared.submission)).rejects.toThrow()
+        const saved = (await f.repository.get(f.request.id))!
+        expect(saved.children[0].submission).toBeNull()
+        expect((await f.queue.listJobs()).items).toHaveLength(0)
+        const replan = await prepareRuntimeProductionChild(f.request.id, saved.revision)
+        await enqueueRuntimeProductionChild(f.request.id, 0, replan.prepared.submission)
+        expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+    })
+
+    it('recovers a lost parent acknowledgement from the exact committed child without requeue, and rejects equal-count conflicting binding', async () => {
+        const f = await productionFixture()
+        const first = await prepareRuntimeProductionChild(f.request.id, 0)
+        const compareAndSet = IndexedDbProductionRequestRepository.prototype.compareAndSet
+        const failure = vi.spyOn(IndexedDbProductionRequestRepository.prototype, 'compareAndSet')
+            .mockImplementationOnce(function (previous, next) { return compareAndSet.call(this, previous, next) })
+            .mockRejectedValueOnce(new Error('simulated-parent-ack-failure'))
+        await expect(enqueueRuntimeProductionChild(f.request.id, 0, first.prepared.submission)).rejects.toThrow('simulated-parent-ack-failure')
+        failure.mockRestore()
+        resetIndexedDBConnectionForRetry()
+        const saved = (await new IndexedDbProductionRequestRepository().get(f.request.id))!
+        expect(saved.children[0].submission?.status).toBe('submitting')
+        const runId = saved.children[0].submission!.runId
+        expect((await f.queue.listJobs({ batchId: runId, limit: 100 })).items).toHaveLength(100)
+        f.fulfilled.add(runId)
+        const next = await prepareRuntimeProductionChild(f.request.id, saved.revision)
+        expect(next.index).toBe(1)
+        expect(next.request.children[0].submission?.status).toBe('queued')
+        expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+        // Corrupt one persisted binding without changing run/job IDs or counts.
+        const job = (await f.queue.listJobs({ batchId: runId, limit: 100 })).items[0]
+        await new Promise<void>((resolve, reject) => {
+            const opening = f.factory.open(f.databaseName)
+            opening.onerror = () => reject(opening.error)
+            opening.onsuccess = () => {
+                const database = opening.result, transaction = database.transaction('jobs', 'readwrite')
+                transaction.objectStore('jobs').put({ ...job, snapshot: { ...job.snapshot,
+                    productionBinding: { ...job.snapshot.productionBinding!, productionId: 'different-production' } } })
+                transaction.oncomplete = () => { database.close(); resolve() }
+                transaction.onerror = () => { database.close(); reject(transaction.error) }
+            }
+        })
+        expect(await getRuntimeProductionStatus(f.request.id)).toMatchObject({ nextAction: 'check-results',
+            issue: 'PRODUCTION_QUEUE_BINDING_CONFLICT', children: [{ status: 'binding-conflict' }, { status: 'reviewed' }] })
+        await expect(prepareRuntimeProductionChild(f.request.id, next.request.revision)).rejects.toThrow('PRODUCTION_PREVIOUS_CHILD_NOT_COMPLETE')
+        expect(runtime.enqueue).toHaveBeenCalledTimes(1)
+    }, 20000)
 })

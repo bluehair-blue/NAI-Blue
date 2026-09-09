@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { createAgentMcpServer, type McpAgentInbox } from '@/adapters/agent/mcp/mcp-stdio-server'
+import { AGENT_MCP_INSTRUCTIONS, AGENT_WORKFLOW_GUIDE, AGENT_WORKFLOW_GUIDE_URI } from '@/adapters/agent/mcp/agent-workflow-guide'
 import { AGENT_COMMAND_NAMES, type AgentCommand, type AgentCommandName } from '@/application/agent/agent-command-contract'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import { AGENT_COMMAND_EFFECTS, describeAgentCommandCapabilities, type AgentCommandHandler } from '@/application/agent/runtime-capability-registry'
@@ -58,6 +59,38 @@ async function fixture(overrides: Partial<McpAgentInbox> = {}) {
 }
 
 describe('Phase 10 official SDK server with simulated inbox', () => {
+    it('rejects production total overflow before submitting to the authenticated inbox', async () => {
+        const f = await fixture()
+        const result = await f.client.callTool({ name: 'production.create', arguments: { requestId: 'production-invalid', input: {
+            title: 'Overflow', source: { kind: 'scene', targets: [
+                { presetId: 'preset-1', sceneId: 'scene-1', expectedRevision: 0, count: 2400 },
+                { presetId: 'preset-1', sceneId: 'scene-2', expectedRevision: 0, count: 1 },
+            ] }, seedPolicy: { kind: 'random' }, budget: { maxImages: 2400, maxAnlas: 10 },
+        } } })
+        expect(result.isError).toBe(true)
+        expect(f.invokes).toEqual([])
+    })
+
+    it('delivers bounded handshake guidance and reads the versioned manual only on demand, even with the app off', async () => {
+        const f = await fixture({ invoke: async () => { throw new Error('app off') },
+            inspect: async () => { throw new Error('no saved receipt') } })
+        expect(f.client.getInstructions()).toBe(AGENT_MCP_INSTRUCTIONS)
+        expect(f.client.getInstructions()!.length).toBeLessThan(700)
+        expect(f.client.getInstructions()).toContain(AGENT_WORKFLOW_GUIDE_URI)
+        expect(f.client.getInstructions()).not.toContain(AGENT_WORKFLOW_GUIDE)
+        const listed = await f.client.listResources()
+        expect(listed.resources).toContainEqual(expect.objectContaining({ uri: AGENT_WORKFLOW_GUIDE_URI, mimeType: 'text/markdown' }))
+        expect(JSON.stringify(listed)).not.toContain(AGENT_WORKFLOW_GUIDE)
+        const guide = await f.client.readResource({ uri: AGENT_WORKFLOW_GUIDE_URI })
+        expect(guide.contents).toEqual([{ uri: AGENT_WORKFLOW_GUIDE_URI, mimeType: 'text/markdown', text: AGENT_WORKFLOW_GUIDE }])
+        expect(AGENT_WORKFLOW_GUIDE).toContain('100 images total')
+        expect(AGENT_WORKFLOW_GUIDE).toContain('monitor.complete')
+        expect(AGENT_WORKFLOW_GUIDE).toContain('COMMAND_OUTCOME_UNKNOWN')
+        expect(f.invokes).toEqual([])
+        expect(f.inspections).toEqual([])
+        await expect(f.client.readResource({ uri: 'nai-blue://guides/agent-workflow/v999' })).rejects.toThrow('Agent resource is unavailable.')
+    })
+
     it('returns shared production counts and storage-only recovery through generation.get_run', async () => {
         const fact = { source: 'fixture', referenceId: 'result-1', observedAt: '2026-09-09T00:00:00.000Z', kind: 'direct' as const }
         const status = projectGenerationRunStatus(deriveGenerationFulfillment({ batchId: 'run-1', queueState: 'active', jobs: [{
