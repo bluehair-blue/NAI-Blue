@@ -74,6 +74,7 @@ export interface DurableQueueCoordinatorOptions {
     now?: () => string
     leaseTtlMs?: number
     startup?: () => Promise<unknown>
+    generationDelayMs?: () => number
 }
 
 interface ActiveExecution {
@@ -203,10 +204,12 @@ export class DurableQueueCoordinator {
     private readonly now: () => string
     private readonly leaseTtlMs: number
     private readonly startup: () => Promise<unknown>
+    private readonly generationDelayMs: () => number
     private readonly ownerPrefix: string
     private readonly active = new Map<string, ActiveExecution>()
     private drainPromise: Promise<void> | null = null
     private polling = false
+    private stopped = false
     private pollTimer: ReturnType<typeof setTimeout> | null = null
 
     constructor(options: DurableQueueCoordinatorOptions) {
@@ -216,6 +219,7 @@ export class DurableQueueCoordinator {
         this.now = options.now ?? (() => new Date().toISOString())
         this.leaseTtlMs = options.leaseTtlMs ?? 60_000
         this.startup = options.startup ?? (() => this.repository.initialize())
+        this.generationDelayMs = options.generationDelayMs ?? (() => 0)
         this.ownerPrefix = `queue-worker:${globalThis.crypto?.randomUUID?.() ?? Date.now()}`
     }
 
@@ -281,6 +285,7 @@ export class DurableQueueCoordinator {
 
     start(pollIntervalMs = 750): void {
         if (this.polling) return
+        this.stopped = false
         this.polling = true
         const poll = async (): Promise<void> => {
             if (!this.polling) return
@@ -292,6 +297,7 @@ export class DurableQueueCoordinator {
     }
 
     stop(): void {
+        this.stopped = true
         this.polling = false
         if (this.pollTimer !== null) clearTimeout(this.pollTimer)
         this.pollTimer = null
@@ -305,6 +311,7 @@ export class DurableQueueCoordinator {
         await this.startup()
         let cycles = 0
         while (cycles < 100_000) {
+            if (this.stopped) return
             cycles += 1
             await this.scheduleAvailable()
             if (this.active.size === 0) return
@@ -429,8 +436,23 @@ export class DurableQueueCoordinator {
         this.active.set(job.id, active)
         active.promise = this.executeClaimed(job, slot, owner, controller, executionMode)
             .catch(() => undefined)
-            .finally(() => {
-                this.active.delete(job.id)
+            .finally(async () => {
+                // Retain the token slot between requests so ordered work cannot
+                // skip the user's pacing delay. Storage-only recovery needs no wait.
+                try {
+                    const delay = this.generationDelayMs()
+                    if (executionMode === 'provider' && Number.isFinite(delay) && delay > 0 && !controller.signal.aborted) {
+                        await new Promise<void>(resolve => {
+                            const finish = () => {
+                                clearTimeout(timer)
+                                controller.signal.removeEventListener('abort', finish)
+                                resolve()
+                            }
+                            const timer = setTimeout(finish, Math.min(5_000, delay))
+                            controller.signal.addEventListener('abort', finish, { once: true })
+                        })
+                    }
+                } finally { this.active.delete(job.id) }
             })
     }
 

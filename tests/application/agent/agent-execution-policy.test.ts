@@ -11,7 +11,7 @@ describe('human execution policy authority', () => {
             { ...defaults, generation: { ...defaults.generation, maxImagesPerRun: 1.5 } },
             { ...defaults, output: { ...defaults.output, allowOverwrite: true } },
             { ...defaults, r2: { ...defaults.r2, allowOverwrite: true } },
-            { ...defaults, rollingLimits: { ...defaults.rollingLimits, maxAnlasPerDay: Infinity } },
+            { ...defaults, rollingLimits: { maxAnlasPerDay: Infinity } },
             { ...defaults, generation: { ...defaults.generation, allowedCompatibilityStatuses: ['unchecked'] } },
             { ...defaults, mode: 'bounded-auto' },
         ]) {
@@ -39,9 +39,19 @@ describe('human execution policy authority', () => {
 })
 
 
-it('migrates a valid pre-authoring policy without granting Scene editing or revoking existing bounded generation', () => {
-    const { authoring: _authoring, ...legacy } = { ...structuredClone(defaults),
-        revision: 7, mode: 'bounded-auto' as const, boundedAutoExpiresAt: '2026-09-08T12:00:00.000Z' }
-    expect(normalizeAgentExecutionPolicy(legacy)).toEqual({ ...legacy, authoring: { allowSceneChanges: false } })
-    expect(normalizeAgentExecutionPolicy({ ...legacy, extraAuthority: true })).toMatchObject({ mode: 'observe', globalPause: true })
+it('retires valid v1 quotas, preserves authority and advances the approval revision exactly once', () => {
+    const expected = { ...structuredClone(defaults), revision: 8, mode: 'bounded-auto' as const,
+        boundedAutoExpiresAt: '2026-09-08T12:00:00.000Z', authoring: { allowSceneChanges: true } }
+    const legacy = { ...expected, schemaVersion: 1, revision: 7,
+        generation: { ...expected.generation, maxImagesPerRun: 1, maxAnlasPerRun: 0, maxConcurrentJobs: 1 },
+        rollingLimits: { maxRunsPerHour: 0, maxImagesPerHour: 0, maxAnlasPerHour: 0, maxAnlasPerDay: 0, maxOutstandingRequestsPerClient: 1 } }
+    const migrated = normalizeAgentExecutionPolicy(legacy)
+    expect(migrated).toEqual(expected)
+    expect(normalizeAgentExecutionPolicy(migrated)).toEqual(expected)
+    const { authoring: _authoring, ...preAuthoring } = legacy
+    expect(normalizeAgentExecutionPolicy(preAuthoring)).toEqual({ ...expected, authoring: { allowSceneChanges: false } })
+    for (const invalid of [{ ...legacy, extraAuthority: true }, { ...legacy, output: { ...legacy.output, allowOverwrite: true } },
+        { ...legacy, rollingLimits: { ...legacy.rollingLimits, maxAnlasPerDay: Infinity } }]) {
+        expect(normalizeAgentExecutionPolicy(invalid)).toMatchObject({ mode: 'observe', globalPause: true })
+    }
 })

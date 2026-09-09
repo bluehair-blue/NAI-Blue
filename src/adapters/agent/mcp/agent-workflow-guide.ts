@@ -16,7 +16,7 @@ export const AGENT_TOOL_DESCRIPTIONS: Record<AgentCommandName, string> = {
     'scene.retry_link': 'Retry Scene linking only when advertised available; capability discovery remains authoritative.',
     'output.abandon_reservation': 'Abandon an output reservation only when advertised available.',
     'scene.resolve_many': 'Resolve existing preset/Scene targets and revisions for an explicit edit or production plan.',
-    'scene.patch_many': 'Patch existing Scenes at the expected preset revision; no generation is started.',
+    'scene.patch_many': 'Upsert up to 100 Scenes at the expected preset revision. New Scenes require caller-owned IDs and names; a new preset also needs presetName and revision 0. Does not generate.',
     'folder.plan_changes': 'Preview folder changes using known parent IDs and safe child path segments.',
     'folder.apply_changes': 'Apply the exact previewed folder changes with expectedRevision and expectedPlanHash.',
     'r2.get_readiness': 'Inspect R2 readiness; configured preferences are not proof of upload completion.',
@@ -41,7 +41,7 @@ Request identity and observation
 
 Discover, author, preview
 1. Read workspace.get_snapshot (offset/limit pagination) for existing IDs and revisions. Resolve selected preset/Scene pairs through scene.resolve_many. Never invent IDs or expected revisions.
-2. If edits are requested, use scene.patch_many for existing Scenes. Folder changes use folder.plan_changes then folder.apply_changes with the exact previewed changes, expectedRevision and expectedPlanHash. Use parent folder IDs and safe child path segments; absolute storage paths are unsupported. Re-read after changes or revision conflicts.
+2. Use scene.patch_many to edit or add Scenes at the current preset revision. New Scenes require unique caller-owned sceneIds and names. To create a new preset, also supply a new presetId, presetName and expectedRevision: 0. Existing IDs/revisions must come from the workspace. Folder changes use folder.plan_changes then folder.apply_changes with the exact previewed changes, expectedRevision and expectedPlanHash. Use parent folder IDs and safe child path segments; absolute storage paths are unsupported. Re-read after changes or revision conflicts.
 3. Check r2.get_readiness when upload is requested. Folder R2 preferences and autoUpload express intent only; they do not prove credentials, destination readiness or completed delivery.
 4. Use generation.plan with an existing workflow-draft and count, or Scene targets containing presetId, sceneId, expectedRevision and count. Supply seedPolicy and budget explicitly. The current generation plan limit is 100 images total across all targets; budget.maxImages is at most 100. For a larger saved Scene production request use the bounded workflow below.
 
@@ -49,7 +49,7 @@ Saved production requests (only when advertised available)
 - production.create saves title, source, seedPolicy and total budget. Scene source uses up to 100 unique presetId/sceneId targets with expectedRevision and count; preset source uses presetId and expectedRevision and captures all saved Scenes and counts. The production total and budget.maxImages are at most 2400. This captures exact targets, counts, seeds and source hashes; it does not enqueue or authorize all children.
 - Use production.list to find saved requests, then production.get with a fresh requestId for the latest revision, totalImages, childCount, admittedImages, estimatedAnlasReserved, maxAnlas, children and nextAction. Observe wait/check-results; only complete means the production is fulfilled.
 - For review-next-batch, call production.plan_next with productionId and the latest expectedRevision. Review its child plan (at most 100 images) and submit the returned planId/planHash through generation.enqueue with existing approval. Read production.get again after planning/enqueue and use generation.get_run to inspect the child.
-- Plan the next child only after the previous child's full fulfillment. There is no automatic next-child dispatch. Source authoring changes stop progression; result-only Scene revisions can replan only when the captured semantic source hash still matches. Unknown Provider outcomes require reconciliation, never replacement generation. Total budget reservation and existing per-child approval both remain enforced.
+- Plan the next child only after the previous child's full fulfillment. There is no automatic next-child dispatch. Source authoring changes stop progression; result-only Scene revisions can replan only when the captured semantic source hash still matches. Unknown Provider outcomes require reconciliation, never replacement generation. Total production budget and existing per-child approval remain enforced. There are no separate agent per-run, hourly, daily or concurrency quotas; the Queue owns token scheduling and the configured delay between generations.
 
 Approve, enqueue, observe
 5. Review the plan result and submit its exact planId and planHash with generation.enqueue. Existing application policy and durable approval own permission. If the receipt needs input or approval, surface that state and wait for the user in NAI Blue; do not manufacture approval or treat a successful transport response as approval.

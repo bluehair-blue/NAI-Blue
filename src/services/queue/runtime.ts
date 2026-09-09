@@ -18,6 +18,7 @@ let runtimeDependencies: RuntimeQueueDependencies | null = null
 
 export interface RuntimeQueueDependencies {
     readonly tokenProvider: QueueTokenProvider
+    readonly generationDelayMs?: () => number
     readonly mainQueue: RuntimeMainQueueDependencies
     readonly sceneQueue: {
         readonly presentation: SceneResultPresentationPort
@@ -51,6 +52,7 @@ export function getRuntimeDurableQueueCoordinator(): DurableQueueCoordinator {
             providerResultSpool: dependencies.mainQueue.providerResultSpool,
         }),
         tokenProvider: () => dependencies.tokenProvider.getActiveTokenSlots(),
+        generationDelayMs: dependencies.generationDelayMs,
         executor: {
             execute: async (job, context) => {
                 if (job.workflow === 'scene') {

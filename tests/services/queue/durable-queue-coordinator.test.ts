@@ -194,6 +194,7 @@ function coordinator(
         { slotId: 'slot-1', token: 'runtime-token-one' },
         { slotId: 'slot-2', token: 'runtime-token-two' },
     ],
+    generationDelayMs?: () => number,
 ): DurableQueueCoordinator {
     return new DurableQueueCoordinator({
         repository: queue,
@@ -203,6 +204,7 @@ function coordinator(
         },
         now,
         leaseTtlMs: 60_000,
+        generationDelayMs,
     })
 }
 
@@ -215,6 +217,48 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 }
 
 describe('durable queue coordinator', () => {
+    it('interrupts pacing on shutdown without dispatching the next queued image', async () => {
+        const queue = repository('stop-during-pacing')
+        await enqueueWorkflowBatch(queue, 'batch:stop-pacing', 'scene', [0, 1].map(ordinal => workflowJob({
+            id: `job:stop-pacing-${ordinal}`, batchId: 'batch:stop-pacing', workflow: 'scene', ordinal,
+        })))
+        const started: string[] = []
+        let waiting = false
+        const runtime = coordinator(queue, async (context, jobId) => {
+            started.push(jobId)
+            await commit(context, jobId)
+        }, () => NOW, [{ slotId: 'slot-1', token: 'one-provider-account' }], () => { waiting = true; return 5_000 })
+        const draining = runtime.drain()
+        await waitUntil(() => waiting)
+        runtime.stop()
+        await draining
+        expect(started).toEqual(['job:stop-pacing-0'])
+        expect(await queue.getJob('job:stop-pacing-1')).toMatchObject({ state: 'queued', attemptCount: 0 })
+        expect(runtime.activeCount).toBe(0)
+        queue.close()
+    })
+    it('dispatches one-token work in saved order and waits the current generation delay after each result', async () => {
+        const queue = repository('ordered-pacing')
+        await enqueueWorkflowBatch(queue, 'batch:paced', 'scene', [2, 0, 1].map(ordinal => workflowJob({
+            id: `job:paced-${ordinal}`, batchId: 'batch:paced', workflow: 'scene', ordinal,
+        })))
+        let delay = 40
+        const starts: { id: string; at: number }[] = []
+        const completed: number[] = []
+        const runtime = coordinator(queue, async (context, jobId) => {
+            starts.push({ id: jobId, at: performance.now() })
+            await commit(context, jobId)
+            completed.push(performance.now())
+            delay = completed.length === 1 ? 40 : completed.length === 2 ? 80 : 0
+        }, () => NOW, [{ slotId: 'slot-1', token: 'one-provider-account' }], () => delay)
+        await runtime.drain()
+        expect(starts.map(row => row.id)).toEqual(['job:paced-0', 'job:paced-1', 'job:paced-2'])
+        expect(starts[1].at - completed[0]).toBeGreaterThanOrEqual(35)
+        expect(starts[2].at - completed[1]).toBeGreaterThanOrEqual(75)
+        expect(runtime.activeCount).toBe(0)
+        expect((await queue.listJobs()).items.every(job => job.state === 'succeeded' && job.attemptCount === 1)).toBe(true)
+        queue.close()
+    })
     it('uses two free token slots for overlapping Main and Scene work', async () => {
         const queue = repository('mixed-workflow-overlap')
         await enqueueWorkflowBatch(queue, 'batch:main', 'main', [workflowJob({

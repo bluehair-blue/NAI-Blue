@@ -525,8 +525,7 @@ describe('saved production requests with actual IndexedDB Queue and plan reposit
         const plans = new IndexedDbGenerationPlanRepository(), receipts = new IndexedDbCommandReceiptRepository()
         const ledger = new IndexedDbAgentExecutionRepository()
         const startedAt = new Date().toISOString(), expiresAt = new Date(Date.now() + 3_600_000).toISOString()
-        const policy = { ...structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), mode: 'suggest' as const,
-            rollingLimits: { ...DEFAULT_AGENT_EXECUTION_POLICY.rollingLimits, maxImagesPerHour: 1 },
+        let policy = { ...structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), mode: 'suggest' as const,
             generation: { ...DEFAULT_AGENT_EXECUTION_POLICY.generation,
                 allowedCompatibilityStatuses: ['captured-pass', 'live-canary-pass', 'synthetic-only'] as const } }
         const coordinator = createAgentExecutionCoordinator({ workspaceId: 'workspace', repository: ledger, receipts, plans,
@@ -601,9 +600,10 @@ describe('saved production requests with actual IndexedDB Queue and plan reposit
             expect((await call('production.list', 'sdk-list', {})).requests).toEqual(expect.arrayContaining([expect.objectContaining({ productionId })]))
             const second = await call('production.create', 'sdk-create-two', input)
             const secondPlan = await call('production.plan_next', 'sdk-plan-two', { productionId: second.id, expectedRevision: second.revision })
+            policy = { ...policy, revision: 1, globalPause: true }
             await call('generation.enqueue', 'sdk-enqueue-two', { planId: secondPlan.planId, planHash: secondPlan.planHash })
             const limitReview = (await coordinator.pending()).find(item => item.requestId === 'sdk-enqueue-two')!
-            expect(await coordinator.approve(limitReview.requestId, limitReview)).toMatchObject({ code: 'AGENT_APPROVAL_REQUIRED', issueCodes: ['AGENT_ROLLING_LIMIT'] })
+            expect(await coordinator.approve(limitReview.requestId, limitReview)).toMatchObject({ code: 'AGENT_APPROVAL_REQUIRED', issueCodes: ['AGENT_GLOBAL_PAUSE'] })
             expect(runtime.enqueue).toHaveBeenCalledTimes(1)
             expect((await f.repository.get(String(second.id)))!.children[0].submission).toBeNull()
         } finally { await client.close(); await server.close() }

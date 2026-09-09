@@ -242,6 +242,7 @@ export function initializeCoreRuntime(): void {
     if (initialized) return
     configureRuntimeQueueDependencies({
         tokenProvider: queueTokenProvider,
+        generationDelayMs: () => useSettingsStore.getState().generationDelay,
         mainQueue: {
             providerResultSpool: new DesktopProviderResultSpool(),
             planner: createZustandMainBatchPlanner(),

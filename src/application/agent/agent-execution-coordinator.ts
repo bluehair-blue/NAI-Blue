@@ -102,7 +102,7 @@ const approval = (reason?: string): JsonObject => ({ code: 'AGENT_APPROVAL_REQUI
 const unknown = (): JsonObject => ({ code: 'AGENT_EXECUTION_UNKNOWN' })
 const failure = (code: string): JsonObject => ({ code })
 const adjustablePolicyIssue = (code: string | null): boolean => code !== null
-    && ['AGENT_RUN_LIMIT', 'AGENT_CONCURRENCY_LIMIT', 'AGENT_COMPATIBILITY_DENIED', 'AGENT_R2_DENIED'].includes(code)
+    && ['AGENT_COMPATIBILITY_DENIED', 'AGENT_R2_DENIED'].includes(code)
 
 function receiptState(result: JsonObject): 'completed' | 'needs-input' | 'rejected' {
     return result.code === 'AGENT_APPROVAL_REQUIRED' || result.code === 'AGENT_EXECUTION_UNKNOWN' ? 'needs-input'
@@ -164,8 +164,6 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
     function planIssue(plan: GenerationPlan, current: AgentExecutionPolicy): string | null {
         if (plan.jobs.length > plan.budget.maxImages || plan.estimatedAnlas > plan.budget.maxAnlas
             || plan.requiredApprovals.length > 0) return 'AGENT_REPLAN_REQUIRED'
-        if (plan.jobs.length > current.generation.maxImagesPerRun || plan.estimatedAnlas > current.generation.maxAnlasPerRun) return 'AGENT_RUN_LIMIT'
-        if (plan.executionPolicy.maxConcurrency > current.generation.maxConcurrentJobs) return 'AGENT_CONCURRENCY_LIMIT'
         if (plan.jobs.some(job => !current.generation.allowedCompatibilityStatuses.includes(job.compatibility.status as 'captured-pass'))) {
             return 'AGENT_COMPATIBILITY_DENIED'
         }
@@ -193,7 +191,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         return result
     }
     /** Every supported mutation shares operation identity and durable history capacity. */
-    async function storePending(record: AgentExecutionRecord, current: AgentExecutionPolicy): Promise<string | null> {
+    async function storePending(record: AgentExecutionRecord): Promise<string | null> {
         const envelope = record.envelope
         let code = 'AGENT_EXECUTION_EXISTS'
         const created = await change(records => {
@@ -204,12 +202,6 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             }
             // Keep replay history; full local history requires explicit maintenance.
             if (records.length >= 1_000) { code = 'AGENT_EXECUTION_CAPACITY'; return null }
-            // Reaching generation exposure limits must never prevent asking to stop that generation.
-            if (isAgentGenerationRecord(record) && records.filter(isAgentGenerationRecord).filter(item => item.envelope.context.clientId === envelope.context.clientId
-                && ((item.state === 'pending' && Date.parse(item.expiresAt) > Date.parse(now()))
-                    || (item.grant && item.exposureSettledAt === null))).length >= current.rollingLimits.maxOutstandingRequestsPerClient) {
-                code = 'AGENT_OUTSTANDING_LIMIT'; return null
-            }
             return [...records, record]
         })
         return created ? null : code
@@ -293,7 +285,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             policyRevision: current.revision, consentedAt: now(), authorization: human ? 'human' : 'bounded-auto',
             estimatedAnlas: record.estimatedAnlas, imageCount: record.imageCount })
         await refreshExposure()
-        let budgetCode: string | null = null
+        let authorityCode: string | null = null
         const reserved: AgentGenerationExecutionRecord = { ...record, state: 'reserved', grant, result: unknown() }
         const didReserve = await change(records => {
             const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
@@ -301,26 +293,13 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             const latest = policy()
             if (canonicalSerialize(latest) !== canonicalSerialize(current)
                 || Date.parse(record.expiresAt) <= Date.parse(now()) || (!human && latest.mode !== 'bounded-auto')) {
-                budgetCode = 'AGENT_AUTHORITY_CHANGED'; return null
+                authorityCode = 'AGENT_AUTHORITY_CHANGED'; return null
             }
-            const consumed = records.filter(isAgentGenerationRecord).filter(item => item.grant !== null)
-            const hour = consumed.filter(item => item.exposureSettledAt === null || Date.parse(item.exposureSettledAt) > Date.parse(now()) - 3_600_000)
-            const day = consumed.filter(item => item.exposureSettledAt === null || Date.parse(item.exposureSettledAt) > Date.parse(now()) - 86_400_000)
-            const sum = (items: readonly AgentGenerationExecutionRecord[], key: 'estimatedAnlas' | 'imageCount') => items.reduce((total, item) => total + item[key], 0)
-            const active = consumed.filter(item => item.exposureSettledAt === null)
-            const limits = latest.rollingLimits
-            if (hour.length + 1 > limits.maxRunsPerHour || sum(hour, 'imageCount') + record.imageCount > limits.maxImagesPerHour
-                || sum(hour, 'estimatedAnlas') + record.estimatedAnlas > limits.maxAnlasPerHour
-                || sum(day, 'estimatedAnlas') + record.estimatedAnlas > limits.maxAnlasPerDay) budgetCode = 'AGENT_ROLLING_LIMIT'
-            else if (sum(active, 'imageCount') + Math.min(record.imageCount, eligible.plan!.executionPolicy.maxConcurrency)
-                > latest.generation.maxConcurrentJobs) budgetCode = 'AGENT_CONCURRENCY_LIMIT'
-            else if (active.filter(item => item.envelope.context.clientId === grant.clientId).length
-                + records.filter(isAgentGenerationRecord).filter(item => item !== saved && item.state === 'pending' && item.envelope.context.clientId === grant.clientId
-                    && Date.parse(item.expiresAt) > Date.parse(now())).length + 1 > limits.maxOutstandingRequestsPerClient) budgetCode = 'AGENT_OUTSTANDING_LIMIT'
-            if (budgetCode) return null
+            // Queue scheduling owns parallelism and pacing; the reviewed plan owns
+            // its budget. Admission only reserves this exact authorized operation.
             return records.map(item => item === saved ? reserved : item)
         })
-        if (!didReserve) return budgetCode ? settle(record, approval(budgetCode), 'pending') : unknown()
+        if (!didReserve) return authorityCode ? settle(record, approval(authorityCode), 'pending') : unknown()
         // Authority can change while IndexedDB is committing. The grant is consumed but no Queue call follows stale consent.
         const stillAuthorized = await options.isClientAuthorized(record.envelope)
         if (!stillAuthorized || canonicalSerialize(policy()) !== canonicalSerialize(current)
@@ -349,7 +328,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             if (checked.code && !adjustablePolicyIssue(checked.code)) return failure(checked.code)
             if (checked.code) record = { ...record, result: approval(checked.code) }
             await refreshExposure()
-            const createIssue = await storePending(record, current)
+            const createIssue = await storePending(record)
             if (createIssue) return failure(createIssue)
             return current.mode === 'bounded-auto' && !checked.code ? execute(record, false) : record.result
         },
@@ -382,7 +361,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 if (target.runId !== input.runId || target.jobId !== input.jobId) return failure('AGENT_STORAGE_TARGET_CHANGED')
                 record = { ...authority, command, target: structuredClone(target) }
             }
-            const createIssue = await storePending(record, current)
+            const createIssue = await storePending(record)
             // Bounded automatic generation is never consent for these local human actions.
             return createIssue ? failure(createIssue) : record.result
         },
@@ -449,7 +428,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             const record: AgentAuthoringRecord = { command, envelope: structuredClone(envelope), target: structuredClone(target),
                 originalPolicyRevision: current.revision, policyRevision: current.revision, expiresAt: envelope.expiresAt,
                 state: 'pending', grant: null, result: approval() }
-            const createIssue = await storePending(record, current)
+            const createIssue = await storePending(record)
             if (createIssue) return failure(createIssue)
             return current.mode === 'bounded-auto' && !authoringIssue(record, current, false) ? executeAuthoring(record, false) : record.result
         },

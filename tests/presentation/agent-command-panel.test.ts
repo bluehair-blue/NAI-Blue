@@ -29,13 +29,15 @@ describe('human execution controls in the existing inbox panel', () => {
             'agentInbox.approveOnce', 'agentInbox.rejectApproval', 'agentInbox.reviewCost', 'agentInbox.outputLocal', 'batch-existing', 'href="/queue"']) expect(html).toContain(fact)
         expect(html).toContain('value="suggest" selected=""')
         expect(html).not.toContain('type="datetime-local"')
+        expect(html).not.toContain('type="number"')
+        expect(html).toContain('agentInbox.queuePacing')
         expect(decideApproval).not.toHaveBeenCalled()
     })
     it('keeps all inbox policy and approval messages available in Korean, English and Japanese', () => {
         expect(Object.keys(ko.agentInbox).sort()).toEqual(Object.keys(en.agentInbox).sort())
         expect(Object.keys(ja.agentInbox).sort()).toEqual(Object.keys(en.agentInbox).sort())
         for (const locale of [ko, en, ja]) {
-            for (const key of ['approveOnce', 'rejectApproval', 'autoExpiry', 'policySaveFailed', 'maxAnlasPerDay', 'unavailableChanges', 'cancelAction', 'cancelEffect', 'cancelRequested', 'storageAction', 'storageEffect', 'storageRegistered'] as const) {
+            for (const key of ['approveOnce', 'rejectApproval', 'autoExpiry', 'policySaveFailed', 'queuePacing', 'unavailableChanges', 'cancelAction', 'cancelEffect', 'cancelRequested', 'storageAction', 'storageEffect', 'storageRegistered'] as const) {
                 expect(locale.agentInbox[key].length).toBeGreaterThan(0)
             }
         }

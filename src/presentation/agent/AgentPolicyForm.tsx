@@ -27,12 +27,6 @@ export function AgentPolicyForm({ policy, disabled, onSave }: {
     const selectProfile = (id: string, checked: boolean) => setDraft(previous => ({ ...previous, r2: { ...previous.r2,
         allowedProfileIds: checked ? [...new Set([...previous.r2.allowedProfileIds, id])]
             : previous.r2.allowedProfileIds.filter(selected => selected !== id) } }))
-    const number = (group: 'generation' | 'rollingLimits', key: string, max: number, min = 0) =>
-        <label key={key} className="space-y-1 text-xs">{t(`agentInbox.${key}`)}
-            <Input type="number" min={min} max={max} step={1} required disabled={disabled}
-                value={draft[group][key as keyof typeof draft[typeof group]] as number}
-                onChange={event => setDraft({ ...draft, [group]: { ...draft[group], [key]: event.target.valueAsNumber } })} />
-        </label>
     return <form className="space-y-3 rounded-panel border p-3" aria-label={t('agentInbox.executionPolicy')}
         onSubmit={event => {
             event.preventDefault(); setError(false)
@@ -60,11 +54,7 @@ export function AgentPolicyForm({ policy, disabled, onSave }: {
                 value={draft.boundedAutoExpiresAt ? new Date(Date.parse(draft.boundedAutoExpiresAt) - new Date(draft.boundedAutoExpiresAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : ''}
                 onChange={event => setDraft({ ...draft, boundedAutoExpiresAt: event.target.value ? new Date(event.target.value).toISOString() : null })} />
         </label>}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {number('generation', 'maxImagesPerRun', 1_000, 1)}
-            {number('generation', 'maxAnlasPerRun', 1_000_000)}
-            {number('generation', 'maxConcurrentJobs', 2, 1)}
-        </div>
+        <p className="text-xs text-muted-foreground">{t('agentInbox.queuePacing')}</p>
         <fieldset className="space-y-2 text-xs"><legend>{t('agentInbox.authoringPermissions', '저장 데이터 편집 권한')}</legend>
             <label className="flex items-center gap-2"><input type="checkbox" disabled={disabled} checked={draft.authoring.allowSceneChanges}
                 onChange={event => setDraft({ ...draft, authoring: { allowSceneChanges: event.target.checked } })} />{t('agentInbox.allowSceneChanges', '제한 자동 모드에서 에셋 설정 편집 허용')}</label>
@@ -94,14 +84,7 @@ export function AgentPolicyForm({ policy, disabled, onSave }: {
                     onChange={event => selectProfile(id, event.target.checked)} />{t('agentInbox.r2ProfileMissing', '이전에 선택한 연결 {{count}} (현재 목록에 없음)', { count: index + 1 })}</label>)}
             <p className="text-muted-foreground">{t('agentInbox.r2UploadScope', '연결 선택만으로 파일이 업로드되지는 않습니다. 실제 업로드는 폴더 설정과 연결 준비 상태, 실행 정책을 함께 확인합니다.')}</p>
         </fieldset>
-        <details><summary className="cursor-pointer text-xs font-medium">{t('agentInbox.advancedLimits')}</summary>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {number('rollingLimits', 'maxRunsPerHour', 10_000)}
-                {number('rollingLimits', 'maxImagesPerHour', 100_000)}
-                {number('rollingLimits', 'maxAnlasPerHour', 10_000_000)}
-                {number('rollingLimits', 'maxAnlasPerDay', 100_000_000)}
-                {number('rollingLimits', 'maxOutstandingRequestsPerClient', 100, 1)}
-            </div>
+        <details><summary className="cursor-pointer text-xs font-medium">{t('agentInbox.allowedCompatibility')}</summary>
             <fieldset className="mt-3 space-y-2 text-xs"><legend>{t('agentInbox.allowedCompatibility')}</legend>
                 {(['captured-pass', 'live-canary-pass', 'synthetic-only'] as const).map(status => <label key={status} className="flex items-center gap-2">
                     <input type="checkbox" disabled={disabled} checked={draft.generation.allowedCompatibilityStatuses.includes(status)} onChange={event => setDraft({ ...draft,

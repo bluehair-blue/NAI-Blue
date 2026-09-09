@@ -28,7 +28,7 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
     const facts = new Map<string, JsonObject>()
     const enqueue = vi.fn(async (_plan, grant) => {
         const batchId = `main-batch-${grant.scopeId}`
-        const result = { status: 'ready', batchId, runId: batchId, jobIds: [`${batchId}:0`] }
+        const result = { status: 'ready', batchId, runId: batchId, jobIds: _plan.jobs.map((_: unknown, index: number) => `${batchId}:${index}`) }
         facts.set(grant.scopeId, result)
         return result
     })
@@ -159,15 +159,14 @@ describe('durable agent execution authority', () => {
         expect((await f.coordinator.approve(review.requestId, review)).status).toBe('ready')
         expect(f.enqueue).toHaveBeenCalledTimes(1)
     })
-    it.each(['run-cap', 'synthetic'])('keeps %s pending until a revised human policy and a fresh single-use review approve it', async kind => {
+    it('keeps synthetic compatibility pending until a revised policy and a fresh single-use review approve it', async () => {
         const f = fixture('bounded-auto')
         const initial = f.getPolicy()
-        if (kind === 'run-cap') f.setPolicy({ ...initial, generation: { ...initial.generation, maxAnlasPerRun: 0 } })
-        else (f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
-        const envelope = f.request(`adjust-${kind}`)
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        const envelope = f.request('adjust-synthetic')
         expect((await f.dispatcher.dispatch(envelope)).state).toBe('needs-input')
         const [oldReview] = await f.coordinator.pending()
-        expect(oldReview.reasons).toEqual([kind === 'run-cap' ? 'AGENT_RUN_LIMIT' : 'AGENT_COMPATIBILITY_DENIED'])
+        expect(oldReview.reasons).toEqual(['AGENT_COMPATIBILITY_DENIED'])
         f.setPolicy({ ...initial, revision: 1, generation: { ...initial.generation,
             allowedCompatibilityStatuses: ['captured-pass', 'synthetic-only'] } })
         const [fresh] = await f.coordinator.pending()
@@ -186,17 +185,14 @@ describe('durable agent execution authority', () => {
             expect(() => assertAgentPublicValue({ jobIds: [value] })).toThrow()
         }
     })
-    it.each(['maxRunsPerHour', 'maxImagesPerHour', 'maxAnlasPerHour', 'maxAnlasPerDay'] as const)('atomically reserves workspace exposure across clients for %s', async limit => {
+    it('admits reviewed work across clients without artificial rolling quotas', async () => {
         const f = fixture('bounded-auto')
-        const policy = f.getPolicy()
-        f.setPolicy({ ...policy, rollingLimits: { ...policy.rollingLimits, [limit]: limit.includes('Anlas') ? 7 : 1 } })
         await Promise.all([f.dispatcher.dispatch(f.request('budget-a', 'client-a')), f.reopen().dispatcher.dispatch(f.request('budget-b', 'client-b'))])
-        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
         const rows = (await f.opts.repository.get('workspace-1'))!.records
-        expect(rows.filter(row => row.grant)).toHaveLength(1)
-        expect(rows.some(row => row.state === 'pending' && (row.result.issueCodes as string[])?.includes('AGENT_ROLLING_LIMIT'))).toBe(true)
+        expect(rows.filter(row => row.grant)).toHaveLength(2)
     })
-    it.each(['expired-auto', 'pause', 'synthetic', 'run-images', 'run-anlas', 'concurrency', 'observe'])('fails closed or asks the human for %s', async kind => {
+    it.each(['expired-auto', 'pause', 'synthetic', 'run-images', 'observe'])('fails closed or asks the human for %s', async kind => {
         const f = fixture('bounded-auto')
         const policy = f.getPolicy()
         if (kind === 'expired-auto') f.setTime('2026-09-05T01:00:01.000Z')
@@ -204,8 +200,6 @@ describe('durable agent execution authority', () => {
         if (kind === 'observe') f.setPolicy({ ...policy, mode: 'observe' })
         if (kind === 'synthetic') (f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
         if (kind === 'run-images') (f.plan.jobs as unknown[]).push(structuredClone(f.plan.jobs[0]))
-        if (kind === 'run-anlas') f.setPolicy({ ...policy, generation: { ...policy.generation, maxAnlasPerRun: 0 } })
-        if (kind === 'concurrency') (f.plan.executionPolicy as { maxConcurrency: number }).maxConcurrency = 3
         const result = await f.dispatcher.dispatch(f.request(`gate-${kind}`))
         expect(f.enqueue).not.toHaveBeenCalled()
         if (kind === 'expired-auto' || kind === 'pause') expect(result.state).toBe('needs-input')
@@ -252,53 +246,37 @@ describe('durable agent execution authority', () => {
         expect(f.enqueue).toHaveBeenCalledTimes(1)
         expect((await f.opts.repository.get('workspace-1'))!.records[0].grant).not.toBeNull()
     })
-    it('never ages unknown rolling exposure without exact Queue settlement', async () => {
+    it('admits a reviewed 50-image plan once without per-run or concurrency policy caps', async () => {
         const f = fixture('bounded-auto')
-        const policy = f.getPolicy()
-        f.setPolicy({ ...policy, rollingLimits: { ...policy.rollingLimits, maxAnlasPerHour: 7 } })
-        f.enqueue.mockRejectedValueOnce(new Error('unknown queue outcome'))
-        await f.dispatcher.dispatch(f.request('retained-first'))
-        expect(await f.reopen().dispatcher.dispatch(f.request('retained-second'))).toMatchObject({ state: 'needs-input', result: { issueCodes: ['AGENT_ROLLING_LIMIT'] } })
+        Object.assign(f.plan, { jobs: Array.from({ length: 50 }, (_, ordinal) => ({ ...structuredClone(f.plan.jobs[0]), ordinal })),
+            estimatedAnlas: 1467, budget: { maxImages: 50, maxAnlas: 1500 }, executionPolicy: { maxConcurrency: 2 } })
+        const request = f.request('fifty-reviewed')
+        expect((await f.dispatcher.dispatch(request)).state).toBe('completed')
+        expect((await f.reopen().dispatcher.dispatch(request)).state).toBe('completed')
         expect(f.enqueue).toHaveBeenCalledTimes(1)
-        f.setTime('2026-09-05T01:01:00.000Z')
-        f.setPolicy({ ...f.getPolicy(), boundedAutoExpiresAt: '2026-09-05T02:00:00.000Z' })
-        expect((await f.reopen().dispatcher.dispatch(f.request('retained-third'))).state).toBe('needs-input')
-        expect((await f.opts.repository.get('workspace-1'))!.records.filter(row => row.grant)).toHaveLength(1)
-        expect((await f.opts.repository.get('workspace-1'))!.records[0].exposureSettledAt).toBeNull()
+        expect((await f.opts.repository.get('workspace-1'))!.records[0].grant).toMatchObject({ imageCount: 50, estimatedAnlas: 1467 })
     })
-    it('retains a Queue blocked for 25 hours, then starts full hourly/day windows at the first observed settlement', async () => {
+    it('records exact Queue settlement after a long delay without dispatching again', async () => {
         const f = fixture('bounded-auto')
         f.isOutstanding.mockResolvedValue(true)
-        const policy = f.getPolicy()
-        f.setPolicy({ ...policy, rollingLimits: { ...policy.rollingLimits, maxAnlasPerHour: 7, maxAnlasPerDay: 7 } })
         await f.dispatcher.dispatch(f.request('delayed-original'))
-        const fresh = (id: string, timestamp: string) => {
-            f.setTime(timestamp)
-            const expiresAt = new Date(Date.parse(timestamp) + 7_200_000).toISOString()
-            f.setPolicy({ ...f.getPolicy(), revision: f.getPolicy().revision + 1, boundedAutoExpiresAt: expiresAt })
-            const envelope = { ...f.request(id), submittedAt: timestamp, expiresAt }
-            return { ...envelope, requestHash: agentRequestHash(envelope) }
-        }
         const settledAt = '2026-09-06T01:00:01.000Z'
-        expect((await f.reopen().dispatcher.dispatch(fresh('delayed-new', settledAt))).state).toBe('needs-input')
-        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        f.setTime(settledAt)
+        await f.reopen().coordinator.recover()
+        expect((await f.opts.repository.get('workspace-1'))!.records[0].exposureSettledAt).toBeNull()
         f.isOutstanding.mockResolvedValue(false)
         await f.reopen().coordinator.recover()
         expect((await f.opts.repository.get('workspace-1'))!.records[0].exposureSettledAt).toBe(settledAt)
-        expect((await f.reopen().dispatcher.dispatch(fresh('settled-hour', '2026-09-06T02:01:01.000Z'))).state).toBe('needs-input')
-        expect((await f.reopen().dispatcher.dispatch(fresh('settled-day', '2026-09-07T01:01:01.000Z'))).state).toBe('completed')
-        expect(f.enqueue).toHaveBeenCalledTimes(2)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
     })
-    it('bounds pending approvals and rejects a human decision without creating Queue work', async () => {
+    it('keeps independent pending approvals and rejects only the selected request without Queue work', async () => {
         const f = fixture()
-        const policy = f.getPolicy()
-        f.setPolicy({ ...policy, rollingLimits: { ...policy.rollingLimits, maxOutstandingRequestsPerClient: 1 } })
         await f.dispatcher.dispatch(f.request('pending-first'))
-        expect(await f.dispatcher.dispatch(f.request('pending-second'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
+        expect(await f.dispatcher.dispatch(f.request('pending-second'))).toMatchObject({ state: 'needs-input' })
         const [review] = await f.coordinator.pending()
         await f.coordinator.reject(review.requestId, review)
         expect(await f.dispatcher.dispatch(f.request('pending-first'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_HUMAN_REJECTED' } })
-        expect(await f.coordinator.pending()).toEqual([])
+        expect(await f.coordinator.pending()).toEqual([expect.objectContaining({ requestId: 'pending-second' })])
         expect(f.enqueue).not.toHaveBeenCalled()
     })
     it('does not resume legacy accepted, unknown-outcome, or non-public receipts as human approvals', async () => {
@@ -334,9 +312,8 @@ describe('durable agent execution authority', () => {
         await expect(f.coordinator.recover()).rejects.toMatchObject({ code: 'INVALID_EXECUTION_STORE' })
         expect(f.enqueue).not.toHaveBeenCalled()
     })
-    it('shares enqueue/cancel operation identity and preserves generation exposure even at its outstanding limit', async () => {
+    it('shares enqueue/cancel operation identity and preserves the original generation record', async () => {
         const f = fixture('bounded-auto')
-        f.setPolicy({ ...f.getPolicy(), rollingLimits: { ...f.getPolicy().rollingLimits, maxOutstandingRequestsPerClient: 1 } })
         f.isOutstanding.mockResolvedValue(true)
         const generated = await f.dispatcher.dispatch(f.request('generation-operation'))
         const originalRecord = (await f.opts.repository.get('workspace-1'))!.records[0]
@@ -359,12 +336,11 @@ describe('durable agent execution authority', () => {
         await active.coordinator.recover()
         expect(cancel).toHaveBeenCalledTimes(1)
         expect((await f.opts.repository.get('workspace-1'))!.records[0]).toEqual(originalRecord)
-        expect(await active.dispatcher.dispatch(f.request('after-stop'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
-        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(await active.dispatcher.dispatch(f.request('after-stop'))).toMatchObject({ state: 'completed' })
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
     })
     it('keeps legacy enqueue exposure and cross-command operation identity intact after storage registration', async () => {
         const f = fixture('bounded-auto')
-        f.setPolicy({ ...f.getPolicy(), rollingLimits: { ...f.getPolicy().rollingLimits, maxOutstandingRequestsPerClient: 1 } })
         f.isOutstanding.mockResolvedValue(true)
         const generated = await f.dispatcher.dispatch(f.request('generation-operation'))
         const originalRecord = (await f.opts.repository.get('workspace-1'))!.records[0]
@@ -386,8 +362,8 @@ describe('durable agent execution authority', () => {
         await active.coordinator.recover()
         expect(retry).toHaveBeenCalledTimes(1)
         expect((await f.opts.repository.get('workspace-1'))!.records[0]).toEqual(originalRecord)
-        expect(await active.dispatcher.dispatch(f.request('after-registration'))).toMatchObject({ state: 'rejected', result: { code: 'AGENT_OUTSTANDING_LIMIT' } })
-        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(await active.dispatcher.dispatch(f.request('after-registration'))).toMatchObject({ state: 'completed' })
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
     })
 })
 
