@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-09T05:21:09.4337523Z",
+  "baseCommit": "b75212fbfdf9225b484fcda9bf7059e0dc2988b4",
+  "status": "native-production-saved-and-planned; execution-not-tested",
+  "sourceScope": "The containing local commit identifies the source fix and regression. QA binary uses the previously verified frontend from 11372ab and the updated native receiver.",
+  "registration": {
+    "authorization": "User explicitly approved the proposed one-client registration in this task.",
+    "label": "Production QA",
+    "clientId": "client-7c4bd6d0f6e95724c25d2c04d4a02066",
+    "appIdentifier": "blue.bluehair.naiblue.productionqa",
+    "credentialPath": "Windows Credential Manager through existing native authority and real Python CredReadW",
+    "retained": true,
+    "hostMcpConfigurationChanged": false
+  },
+  "fix": {
+    "symptom": "Live receiver became unavailable with ready requests left in the native inbox.",
+    "cause": "Exclusive native read/retire handles rejected concurrent read-only MCP observer handles.",
+    "change": "Allow FILE_SHARE_READ only; retain existing read/delete access, write/delete sharing denial, pinned handle validation, owner/private ACL/link checks, HMAC and digest-bound retirement.",
+    "regression": "Node-style read observer stays open across native validation and retirement; writer with cooperative sharing still fails."
+  },
+  "checks": {
+    "rustRed": {
+      "failed": 1,
+      "code": "AGENT_FILE_UNAVAILABLE",
+      "externalPythonSigner": "Not enabled for RED; the deterministic held-reader assertion failed."
+    },
+    "rustGreen": {
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "python": "3.12.14",
+      "scope": "Real Windows inbox/ACL/retirement, external signer with isolated native vault key, native keyring roundtrip, exact authentication and production command admission."
+    },
+    "nativeBuild": {
+      "passed": true,
+      "mode": "debug --no-bundle",
+      "warning": "Existing scrypt profile package mismatch warning."
+    },
+    "interruptedReadRecovery": {
+      "completed": 4,
+      "readyRetired": 4,
+      "resubmitted": false
+    },
+    "nativeMcp": {
+      "status": "passed",
+      "checksPassed": 12,
+      "reads": [
+        {
+          "command": "workspace.get_snapshot",
+          "isError": false,
+          "status": "application-receipt",
+          "receiptState": "completed"
+        },
+        {
+          "command": "generation.get_run",
+          "isError": false,
+          "status": "application-receipt",
+          "receiptState": "completed"
+        },
+        {
+          "command": "production.list",
+          "isError": false,
+          "status": "application-receipt",
+          "receiptState": "completed"
+        },
+        {
+          "command": "production.get",
+          "isError": false,
+          "status": "application-receipt",
+          "receiptState": "completed"
+        }
+      ],
+      "guidance": {
+        "uri": "nai-blue://guides/agent-workflow/v1",
+        "instructionCharacters": 487,
+        "guideSha256": "sha256:f14371315ac07e39dea16cfe8b99c7334356068bf869f0f695d49449509975bd",
+        "hostModelReadVerified": false
+      },
+      "scope": "Official SDK, real stdio runner, Windows signer, native inbox and application receipts; final live check with QA app explicitly foreground."
+    },
+    "budgetGuard": {
+      "productionId": "production-979f81df25f04d1a3837bed01bb1c69689345dbf9253e8b030f08bc105733f19",
+      "maxAnlas": 20,
+      "estimatedAnlas": 29,
+      "result": "PRODUCTION_BUDGET_EXCEEDED",
+      "admittedImages": 0,
+      "reservedAnlas": 0
+    },
+    "productionPlan": {
+      "status": "passed-through-plan",
+      "commands": [
+        "workspace.get_snapshot",
+        "generation.plan",
+        "production.create",
+        "production.list",
+        "production.get",
+        "production.plan_next",
+        "production.get"
+      ],
+      "productionId": "production-316930ca8319f38e756157628c2acf67f1da30219c5779e962430d9f1602375c",
+      "revision": 1,
+      "jobCount": 1,
+      "estimatedAnlas": 29,
+      "planId": "sha256:e597bbca93537f1cf9ca96748b2bf112824ee047d00992eb58258380f6c8aa9f",
+      "planHash": "sha256:e597bbca93537f1cf9ca96748b2bf112824ee047d00992eb58258380f6c8aa9f",
+      "nextAction": "generation.enqueue",
+      "admittedImages": 0,
+      "reservedAnlas": 0,
+      "providerCalls": 0
+    },
+    "humanUi": {
+      "manuallySavedScenes": 1,
+      "visibleRequests": 2,
+      "selectedTitle": "Native MCP plan review",
+      "observed": "After navigating back, expanded saved requests and checked progress: one image, zero admitted/generated/stored/uploaded, 0 / 29 Anlas, next-batch review action. Queue Center showed zero jobs.",
+      "scope": "Operator inspection in the isolated Windows app, not first-user usability testing."
+    },
+    "scriptSyntax": "passed",
+    "diffWhitespace": "passed",
+    "fullRegression": "Not repeated: no frontend runtime code changed; focused native tests and live MCP boundary cover the fix."
+  },
+  "limitations": [
+    "An intermediate live read harness run failed after the native sharing fix although all four native receipts later completed. Initial response status was not retained; cause remains unconfirmed. Added safe status observations; final foreground run passed. No background longevity claim.",
+    "Saved-production list updates on manual refresh or remount; whole-production live feedback and automatic continuation remain future work.",
+    "No Codex/Claude model connection or model guidance-use proof.",
+    "No execution approval, Queue admission, real NAI generation/charges, generated output commit or R2 upload.",
+    "No installed-app update, remote push or release."
+  ],
+  "retainedQaState": {
+    "clientCount": 1,
+    "sceneCount": 1,
+    "productionRequestCount": 2,
+    "purpose": "Continue the approved isolated QA workflow; no credentials in public connection metadata or evidence."
+  },
+  "artifacts": [
+    {
+      "path": "artifacts/production-native/reader-sharing-red.log",
+      "sha256": "c4e4f3c2787d8aaaea4aff472c3185811e609d4a7cd938328d4075ab5ad9f63f"
+    },
+    {
+      "path": "artifacts/production-native/native-sharing-green.log",
+      "sha256": "0803aa10d1f38398b145b73eca136da5892c3dd350771f99b266e65ed56ddba3"
+    },
+    {
+      "path": "artifacts/production-native/build-sharing-fix.log",
+      "sha256": "86262f1b88839a217f306f45ed48984a38af0782d2bca0596796c12a2829b5f4"
+    },
+    {
+      "path": "artifacts/production-native/live-registered.json",
+      "sha256": "705e18cb678cae5d304c7d117873f78bb2d790e3a6d0c8b267fec099ecae85e6"
+    },
+    {
+      "path": "artifacts/production-native/recovered-reads.json",
+      "sha256": "db850782194bbc624fc123ad508dc409e68426f6aa754b7a0fff20131979a1ae"
+    },
+    {
+      "path": "artifacts/production-native/live-sharing-fixed.json",
+      "sha256": "d288e9cefffc53939a34e99a2ea96dee8ea1d24831d92f9467c90adfc3a6f442"
+    },
+    {
+      "path": "artifacts/production-native/live-observed.json",
+      "sha256": "6ebc7a5da03aa1de09e97b4c6bbfd568685e96896d9056986ce1a67b733108bd"
+    },
+    {
+      "path": "artifacts/production-native/production-smoke.mjs",
+      "sha256": "ec044112ef3254584367a06ee81e6180fe33d2b72cdcb03dc1027b425ef2cd85"
+    },
+    {
+      "path": "artifacts/production-native/production-smoke-requests.json",
+      "sha256": "6acc43e1ef8469752a3fdf72d8d3550377f87d5fd77c38d31ac91b306e27eb0e"
+    },
+    {
+      "path": "artifacts/production-native/production-smoke.json",
+      "sha256": "2b2e66caa2d51a8baabe8f2daf4d2c5e23be8342e60bbf0025557a7a5ee707c3"
+    },
+    {
+      "path": "artifacts/production-native/production-costed-plan.mjs",
+      "sha256": "8b29fbdbe11bebfd79e6ae94a7cde7bf6f63fc7074bbb5ef6a90c178398e3846"
+    },
+    {
+      "path": "artifacts/production-native/production-costed-plan-requests.json",
+      "sha256": "6a5425f15f4040259df0a37f72da4232a195e197e34a6901d75c9b30103b1821"
+    },
+    {
+      "path": "artifacts/production-native/production-costed-plan.json",
+      "sha256": "19ac69d443a2c4c63a3750cb56533cf2b7e0782e5ede880a95626184fa08bc75"
+    },
+    {
+      "path": "artifacts/production-native/production-monitor-uia.txt",
+      "sha256": "11d7e82fb1918a9c454ae878d62c401bab4cbda929163f1ad4bca39d350ed520"
+    },
+    {
+      "path": "artifacts/production-native/production-monitor.png",
+      "sha256": "03e508704e8a9e54b37da267b1dbb8cc6bec3397f24acecf6cba61dbc3b43793"
+    },
+    {
+      "path": "artifacts/production-native/tauri.qa.json",
+      "sha256": "6fc795a71cfa8fa98de186b650d21fe2a76001defe6e9f7fbd86974094223973"
+    },
+    {
+      "path": "src-tauri/target/debug/NAI-Blue.exe",
+      "sha256": "e2e415fe962e9c82879dcf22f55f38e964fca8990ca7d8f45c40939d506b8d63"
+    }
+  ]
+}

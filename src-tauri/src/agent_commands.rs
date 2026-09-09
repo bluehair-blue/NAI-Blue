@@ -701,7 +701,9 @@ mod native {
         let file = OpenOptions::new()
             .read(true)
             .access_mode(FILE_GENERIC_READ | DELETE)
-            .share_mode(0)
+            // Read-only MCP observation cannot mutate the pinned request. Keep
+            // write/delete sharing denied through validation and ticket capture.
+            .share_mode(FILE_SHARE_READ)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(root.join("inbox").join(format!("{request_id}.ready.json")))
             .map_err(|_| fail("AGENT_FILE_UNAVAILABLE"))?;
@@ -767,7 +769,9 @@ mod native {
                 let file = OpenOptions::new()
                     .read(true)
                     .access_mode(FILE_GENERIC_READ | DELETE)
-                    .share_mode(0)
+                    // Compatible observers may finish reading; no writer or
+                    // replacement can race the digest check and handle deletion.
+                    .share_mode(FILE_SHARE_READ)
                     .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
                     .open(root.join("inbox").join(format!("{request_id}.ready.json")))
                     .map_err(|_| fail("AGENT_FILE_UNAVAILABLE"))?;
@@ -1313,6 +1317,35 @@ assert result["accepted"] is False and result["status"] == "submitted-to-inbox"
             read_ready(&token, "request-test", LIMIT).unwrap();
             retire_ready(&token, "request-test").unwrap();
             assert!(!ready.exists());
+
+            // Node's MCP observer keeps short-lived read handles open. Admission
+            // and retirement must coexist with them while still denying writes.
+            let observed_ready = root.join("inbox/observed.ready.json");
+            atomic_write(&observed_ready, b"{}", false, &user).unwrap();
+            let observer = OpenOptions::new()
+                .read(true)
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+                .open(&observed_ready)
+                .unwrap();
+            assert_eq!(read_ready(&token, "observed", LIMIT).unwrap(), "{}");
+            retire_ready(&token, "observed").unwrap();
+            drop(observer);
+            assert!(!observed_ready.exists());
+
+            // A writer remains incompatible even if it cooperatively shares.
+            atomic_write(&observed_ready, b"{}", false, &user).unwrap();
+            let writer = OpenOptions::new()
+                .write(true)
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+                .open(&observed_ready)
+                .unwrap();
+            assert_eq!(
+                read_ready(&token, "observed", LIMIT).unwrap_err(),
+                "AGENT_FILE_UNAVAILABLE"
+            );
+            drop(writer);
+            read_ready(&token, "observed", LIMIT).unwrap();
+            retire_ready(&token, "observed").unwrap();
 
             // Real hard links and permissive DACLs are rejected on opened files.
             atomic_write(&ready, b"{}", false, &user).unwrap();

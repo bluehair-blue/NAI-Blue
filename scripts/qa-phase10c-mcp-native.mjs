@@ -132,6 +132,9 @@ async function main() {
 
             report.phase = 'concurrent-read-correlation'
             const results = await Promise.all(requests.map(call))
+            report.observations = results.map((result, index) => ({ command: requests[index].name,
+                isError: result.isError === true, status: result.structuredContent?.status,
+                receiptState: result.structuredContent?.receipt?.state }))
             report.reads = []
             for (const [index, result] of results.entries()) {
                 const request = requests[index], requestId = request.arguments.requestId
