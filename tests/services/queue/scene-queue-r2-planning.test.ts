@@ -327,6 +327,25 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
 })
 
 describe('Scene Queue R2 reviewed planning', () => {
+    it('allows immediate leasing after approval instead of scheduling the hash-derived planning time', async () => {
+        const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
+        const reviewedAt = '2026-09-09T00:00:00.000Z'
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date(reviewedAt))
+        const queue = new IndexedDBQueueRepository({ factory: new IDBFactory(), keyRange: IDBKeyRange,
+            databaseName: 'scene-immediate-lease', generationLimits: { maxJobsPerAtomicBatch: 100,
+                maxOutputClaimsPerAtomicBatch: 400, measuredAt: reviewedAt, evidenceId: 'scene-lease-test' } })
+        runtime.enqueue.mockImplementationOnce(input => queue.createBatchAndEnqueue(input))
+        try {
+            const prepared = await prepareSceneQueueReview([{ ...target, r2Requirement: { mode: 'disabled' } }])
+            const result = await enqueueReviewedSceneQueue(prepared!.submission)
+            const job = result.jobs[0]
+            expect(await queue.acquireLease({ jobId: job.id, owner: 'qa-slot', now: reviewedAt, ttlMs: 30_000 })).not.toBeNull()
+            expect(job.createdAt).toBe(reviewedAt)
+            expect(job.readyAt).toBe(reviewedAt)
+        } finally { queue.close(); vi.useRealTimers() }
+    })
+
     it('restores one human assessment binding across selected preset outputs after Queue reopen', async () => {
         const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
         const options = {

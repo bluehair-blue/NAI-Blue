@@ -1,0 +1,453 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-09T06:31:36.519680+00:00",
+  "baseCommit": "abb72273d43cbc6f74145d33e7f7b6c6236848ea",
+  "status": "bounded-real-NAI-generation-and-feedback-QA-passed; two-live-defects-fixed; live-R2-unconfigured",
+  "authorization": "User authorized real generation at 28 steps within Normal preset resolutions. No new installation, remote publication or token extraction.",
+  "runtime": {
+    "identifier": "blue.bluehair.naiblue.productionqa",
+    "node": "24.19.0",
+    "python": "3.12.14",
+    "build": {
+      "observedAt": "2026-09-09T06:25:13.1558943Z",
+      "pid": 42160,
+      "path": "E:\\AI_Project_Library\\projects\\nais\\NAI-Blue\\src-tauri\\target\\debug\\NAI-Blue.exe",
+      "binarySha256": "aa7cdde9b959ad5ff497c0beba66db538da3c061f3db5821e25351c726b32e95"
+    },
+    "installedUserApplicationUpdated": false,
+    "policy": {
+      "mode": "suggest",
+      "maxAnlasPerRun": 29,
+      "syntheticOnlyAllowed": true,
+      "r2UploadAllowed": false
+    }
+  },
+  "actualGeneration": {
+    "provider": "NovelAI",
+    "model": "nai-diffusion-5-full",
+    "successfulImages": 3,
+    "actualAttempts": 3,
+    "steps": 28,
+    "resolutions": [
+      [
+        832,
+        1216
+      ],
+      [
+        1024,
+        1024
+      ]
+    ],
+    "outputs": [
+      {
+        "file": "artifacts/production-final-qa/output/qa_square_369907907.png",
+        "width": 1024,
+        "height": 1024,
+        "steps": 28,
+        "seed": 369907907,
+        "byteLength": 694008,
+        "sha256": "sha256:71d4fbfe5965137e9c6e2b62a9ae474f3fa8f8adad7a28acd3b46fb08883577b",
+        "providerSha256": "sha256:4e3fa5dbf9dd65023b2bd917ed7e0d90aeeb0b90486b10c033053449275b9224",
+        "pixelsMatchProviderSpool": true
+      },
+      {
+        "file": "artifacts/production-final-qa/output/qa_square_3338628407.png",
+        "width": 1024,
+        "height": 1024,
+        "steps": 28,
+        "seed": 3338628407,
+        "byteLength": 966484,
+        "sha256": "sha256:7db001c2c2fe17ba9f022dc3fd8526ef16cbe9cc24923273d4a0ee3a76b4ebea",
+        "providerSha256": "sha256:6ea151a1e866b4d8fae74688757b08058e88a3a8346695f1d42524f9b6608213",
+        "pixelsMatchProviderSpool": true
+      },
+      {
+        "file": "artifacts/production-final-qa/output/asset_001_42.png",
+        "width": 832,
+        "height": 1216,
+        "steps": 28,
+        "seed": 42,
+        "byteLength": 728445,
+        "sha256": "sha256:7afb3eae9d5bfcf5368d90eeb341cdfe99a8214194aa6badc544bf04077edc5b",
+        "providerSha256": "sha256:470745357a1d0da4f22e990c7372ed70822c36e558d455f881fc0eafaa464fe2",
+        "pixelsMatchProviderSpool": true
+      }
+    ],
+    "successfulProductions": [
+      {
+        "id": "production-316930ca8319f38e756157628c2acf67f1da30219c5779e962430d9f1602375c",
+        "images": 1,
+        "entry": "native signed MCP and UI approval"
+      },
+      {
+        "id": "production-4211acff-d98c-4bf5-9164-7e8caf011a90",
+        "images": 2,
+        "entry": "human UI save, plan review and approval"
+      }
+    ],
+    "estimatedAnlasForSuccessfulRuns": 89,
+    "actualAccountCharge": "not measured; planning estimates are not billing evidence",
+    "cancelledTest": {
+      "productionId": "production-7aea45e6-7f50-4c54-9b17-32213e98f765",
+      "jobs": 2,
+      "providerAttempts": 0,
+      "reason": "future readyAt defect; cancelled via existing UI before creating the fixed-build test"
+    }
+  },
+  "workflowChecks": {
+    "nativeMcpSubmitApproveGenerateStoreLinkComplete": true,
+    "sameIdReplayNoDuplicate": true,
+    "nativeMcpReadEditApproveReadback": true,
+    "manualUiSaveReviewApproveComplete": true,
+    "allThreeOutputPixelsMatchSpool": true,
+    "allThreeArtifactIdsReadable": true,
+    "restart": {
+      "observedAt": "2026-09-09T06:29:22.677Z",
+      "sameJobs": true,
+      "sameAttempts": true,
+      "sameReservations": true,
+      "sameClaims": true,
+      "completedProduction": true,
+      "threeResultLinks": true,
+      "sameEnqueueReceiptOnReplay": true
+    }
+  },
+  "defects": [
+    {
+      "issue": "RESULT_NOT_PUBLIC on ordinary sentence prompt and long Artifact ID list",
+      "fix": "Recognize English A/I as natural prose and artifactIds as the same public identifier family as artifactId; retain credential/path/image checks.",
+      "red": "scene-read-red.log",
+      "green": "public-payload-green.log",
+      "nativeGreen": "fixed-scene-read.result.json"
+    },
+    {
+      "issue": "Scene Queue used hash-derived planning time as createdAt/default readyAt, delaying work until a future time today",
+      "observedReadyAt": "2026-09-09T23:44:20.056Z",
+      "fix": "Persist real reviewedAt as Queue createdAt; deterministic generation planning unchanged.",
+      "red": "queue-ready-red.log",
+      "green": "queue-ready-green.log",
+      "nativeGreen": "final-square-start.json",
+      "existingData": "No automatic timestamp migration. The isolated QA jobs were explicitly cancelled before dispatch."
+    }
+  ],
+  "checks": {
+    "agentAndSanitizer": {
+      "passed": 236,
+      "files": 15,
+      "log": "public-payload-green.log"
+    },
+    "syncAndExecution": {
+      "passed": 250,
+      "files": 17,
+      "log": "sync-and-execution-green.log"
+    },
+    "sceneQueueAndProduction": {
+      "passed": 45,
+      "files": 5,
+      "log": "queue-ready-green.log"
+    },
+    "countNote": "Groups overlap; counts must not be added as unique tests.",
+    "typecheck": "passed",
+    "frontendBuild": "passed",
+    "nativeDebugBuild": "passed",
+    "changedFileLint": "passed"
+  },
+  "harnessCorrection": "Initial output check wrongly equated transport digest with final PNG bytes. Existing OutputWriter metadata changes bytes. Corrected verification compares decoded pixels and separately records both checksums; no application digest guard was relaxed.",
+  "limitations": [
+    "Real R2 upload remains untested because the QA application has no R2 profile.",
+    "No 2400-image real run, long-duration reliability, forced-crash unknown-outcome QA, installer/release, or Claude host test.",
+    "Generated image semantic quality was not accepted: simple-shape prompts also produced decorative objects. Prompt delivery and file/link integrity were verified.",
+    "V5 global compatibility evidence was not automatically promoted by these three images.",
+    "Automatic next-child progression, whole-production controls and agent wakeup remain outside this completed slice."
+  ],
+  "sources": [
+    {
+      "path": "src/domain/sync/payload-safety.ts",
+      "sha256Lf": "1e9ed41e7a8f04275f35ff880d245e2418467699ac1f1d0c03776fd987f737f4"
+    },
+    {
+      "path": "src/services/queue/scene-queue-adapter.ts",
+      "sha256Lf": "c5b7c909c5521527269510591d435ccb5a76efb701929da6da3f778a676826c3"
+    },
+    {
+      "path": "tests/services/agent/agent-authoring-read-handlers.test.ts",
+      "sha256Lf": "8e718ede9f6ba4b78f2cb56afef79c3089f8c03cf56edfacf226641975484c68"
+    },
+    {
+      "path": "tests/services/queue/scene-queue-r2-planning.test.ts",
+      "sha256Lf": "9ccea8e55b04158324b9f21d2a90937d3274f7983f2b7de362cc69b92f1263c1"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "artifacts/production-live-qa/enqueue-replay.json",
+      "bytes": 2188,
+      "sha256": "ba67b3e7972a23ffe15bb3c66307f899e413b1652a64ae552549612d541ad2b4"
+    },
+    {
+      "path": "artifacts/production-live-qa/first-delivered.result.json",
+      "bytes": 1962,
+      "sha256": "21f201f72ec8d355ccfb0a738ee63ccfc060e8a84e07736f9fd082976f03bdd0"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-after-admission.json",
+      "bytes": 6756,
+      "sha256": "6d8a8ebb93822a3c5014c5a3bdd26b467b8e0350869a2de7d3c16b9a51fc4c37"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-after-replay.json",
+      "bytes": 6756,
+      "sha256": "8fac06ddcc559848fe672b54d7980dd0e906415f0cff3250f1981fbca33ee9b7"
+    },
+    {
+      "path": "artifacts/production-live-qa/restart-exit.json",
+      "bytes": 141,
+      "sha256": "0b38c8ef265d7bd5b4a4bc02ece459ccae92b5904ef0859f17926ebb349826c1"
+    },
+    {
+      "path": "artifacts/production-live-qa/restart-launch.json",
+      "bytes": 174,
+      "sha256": "8f6dca503a13c37b556f5134331d64792899ba197a824e2dfa60529642a21d77"
+    },
+    {
+      "path": "artifacts/production-live-qa/restart-receipt.json",
+      "bytes": 1148,
+      "sha256": "9599eb961f18b2c3689f86d37f90749787eb6d6de17f7ec1eb4fb32f73b291f6"
+    },
+    {
+      "path": "artifacts/production-live-qa/after-restart.result.json",
+      "bytes": 1960,
+      "sha256": "37461162ebb3041c0a26b99571c2b3c4006f5ff288a6e4ceb07803ffd4b0842f"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-after-restart.json",
+      "bytes": 6756,
+      "sha256": "804ebf146ec7a806038c0c7935160ca2ca4a5e62d11a6edc7deb23ce81982aef"
+    },
+    {
+      "path": "artifacts/production-live-qa/after-restart-scene.result.json",
+      "bytes": 1236,
+      "sha256": "690c4c710cedb246a8f171e83bf8234062927e074ec36db87838b7e46095367e"
+    },
+    {
+      "path": "artifacts/production-live-qa/scene-public-diagnosis.json",
+      "bytes": 1383,
+      "sha256": "06790cc5239e1ac4d99d8207b2c579ff5784f2ee33b83e325e48b6850388974f"
+    },
+    {
+      "path": "artifacts/production-live-qa/scene-read-red.log",
+      "bytes": 1575,
+      "sha256": "f41b7d9e4512d1826528ebe64290df675750f54ec7b693f2be305acc35e50c87"
+    },
+    {
+      "path": "artifacts/production-live-qa/public-payload-green.log",
+      "bytes": 247,
+      "sha256": "41f3321d6b249e3bdaa7d8e23102e5cbba2edfbad8c7ee541b0cfddb1e896ee0"
+    },
+    {
+      "path": "artifacts/production-live-qa/sync-and-execution-green.log",
+      "bytes": 246,
+      "sha256": "6cf7c10dea1dead3dfbf3303b26d8a5ca3c2b35e426865af77aad75321661109"
+    },
+    {
+      "path": "artifacts/production-live-qa/fixed-scene-read.result.json",
+      "bytes": 2630,
+      "sha256": "ba01cf0c3525e55fbae4429f15d1d137db9780e08f83c62b5d7f45f0907bf21b"
+    },
+    {
+      "path": "artifacts/production-live-qa/square-feedback.request.json",
+      "bytes": 764,
+      "sha256": "d6f57d454830244bbb55837260dc493c1df3818c4b14fd596e6f8acaab35fea1"
+    },
+    {
+      "path": "artifacts/production-live-qa/square-feedback-approved.json",
+      "bytes": 803,
+      "sha256": "cfd8aa504495a13ca627d3000efd7c255f7c151638ddbcb8d3a0f67e7134d97e"
+    },
+    {
+      "path": "artifacts/production-live-qa/square-settings-read.result.json",
+      "bytes": 2671,
+      "sha256": "aaa88976f602f4b759b00f6555838d9a76263199769b34cf33db14258b385f0b"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-stall-diagnosis.json",
+      "bytes": 9825,
+      "sha256": "15e5012777678fdd7e766f3b7b6242e63bf5ff88d3d74949c9231ebdcb451c3a"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-ready-red.log",
+      "bytes": 1382,
+      "sha256": "29b7842e52e47ff689b5abf8052dd5cb99570774f1935008b98e43ad67aa9450"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-ready-green.log",
+      "bytes": 242,
+      "sha256": "3b635d1ea7b4c51cbd12728040999223aba3c42092fb269a34ab56a05baa6f62"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-cancelled-before-dispatch.json",
+      "bytes": 9833,
+      "sha256": "164fa4b5a61b929a4290b7fca75cd07d17271633e2d76ed8f2f38df0bfeae490"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-launch.json",
+      "bytes": 261,
+      "sha256": "696aca5cc6e8cccd72411feb8135af90f45ae806f17712d8b825291945e8fafe"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-square-start.json",
+      "bytes": 13938,
+      "sha256": "cd33940e06839b0e3196274c2d0804528312717688270592d5ad1f013d5ecacb"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-square-completed.json",
+      "bytes": 22839,
+      "sha256": "e15f197535f81341a018cae68a4cb92500d123f71f11b01e176bbb0d05af531b"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-square-status.result.json",
+      "bytes": 1876,
+      "sha256": "2a31154a7999f0f45c9ecc94aed6755b5de32503cb951b8e752ecaf6b14e2fa6"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-scene-status.result.json",
+      "bytes": 2875,
+      "sha256": "708fcd24415a59b1555677095294ab341d07f07a6057340df38abc0227902bb8"
+    },
+    {
+      "path": "artifacts/production-live-qa/all-output-checks.json",
+      "bytes": 1262,
+      "sha256": "4e046d12372f915b703e0bb254a3e5675416dc5af52d996ad31c11e9ac527525"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-checks.json",
+      "bytes": 250,
+      "sha256": "3c5923cec43df4507e9f3e0fc1de1fd5e62f68f775a7c74f7e60703b3f4eaf9b"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-restart.json",
+      "bytes": 226,
+      "sha256": "c73bd81f1eae3b7620a70de780e2c4212e25ab278774fa819baf2262368f3f1e"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-queue-restarted.json",
+      "bytes": 22839,
+      "sha256": "ec34c84d07009fb9d156a5f92177d1982d15a47fcb5860ed9bea7185b2da8ef2"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-restart-checks.json",
+      "bytes": 237,
+      "sha256": "0fa2067ef66921fe2b392db32034a42f307681889a22bb9fc7c62b7689b44d73"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-restarted-production.result.json",
+      "bytes": 1883,
+      "sha256": "05c52ccb5726dc98a0c5f4ff76a6e7aaa982e788a78b86d00051b4b4f4a45700"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-restarted-scene.result.json",
+      "bytes": 2878,
+      "sha256": "e15654b1a98605bad807e9666261d154a093389c3bc620134881f3c7eace32db"
+    },
+    {
+      "path": "artifacts/production-live-qa/typecheck-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/production-live-qa/frontend-build-final.log",
+      "bytes": 14974,
+      "sha256": "2ee439e6fcaafe0966cdf92a82eaebde7b4460c8061c53cbcb7cf4c25e51c19e"
+    },
+    {
+      "path": "artifacts/production-live-qa/native-build-final.log",
+      "bytes": 438,
+      "sha256": "d8583e5ca04dcffc2b603c601db513f26fcff771934e6c50d63f80373ddfd932"
+    },
+    {
+      "path": "artifacts/production-live-qa/lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/production-live-qa/queue-delivered.png",
+      "bytes": 99063,
+      "sha256": "52932934f9833c746c2092d7b287a1f7067984c834165934d83b011dd7363704"
+    },
+    {
+      "path": "artifacts/production-live-qa/scene-preview.png",
+      "bytes": 74064,
+      "sha256": "51a0740b3c19a8fa4dc44f4b0a23da66a6fe673f56fad62765df3af61cb24db8"
+    },
+    {
+      "path": "artifacts/production-live-qa/production-complete.png",
+      "bytes": 89185,
+      "sha256": "12d2970e5fed9cc00a218b1659721b745ac9c5444567de158eef23667e09d97c"
+    },
+    {
+      "path": "artifacts/production-live-qa/square-ui-review.png",
+      "bytes": 104425,
+      "sha256": "79d9272052d521dd9d0290f61b9472148dc8cb85ce59640eaa5982bde990818a"
+    },
+    {
+      "path": "artifacts/production-live-qa/square-queued.png",
+      "bytes": 105279,
+      "sha256": "9033821d1f3c9dcc05be47700c4fca1ecd3dd34b68194369ba9c24d0184b71da"
+    },
+    {
+      "path": "artifacts/production-live-qa/square-cancelled.png",
+      "bytes": 109635,
+      "sha256": "822ac5d6c17351582d858db26a0497cc471bfefbf95043cc2973178bce4c1f81"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-production-complete.png",
+      "bytes": 87862,
+      "sha256": "caae1840a90dfaa9bb2b30824e3d4deb43ab89e8d86dd49bfbae24b28f5447b7"
+    },
+    {
+      "path": "artifacts/production-live-qa/final-square-preview.png",
+      "bytes": 73541,
+      "sha256": "1dcb905f2380122eb23c95349dd9e7493f1c317954b1441a035d28e73f19fca0"
+    },
+    {
+      "path": "artifacts/production-live-qa/first-output-verified.json",
+      "bytes": 795,
+      "sha256": "5cd566bb5ba23124aa0b6ca8df23d050e961835e081947886e454766d574c8e5"
+    },
+    {
+      "path": "artifacts/production-live-qa/native-session.mjs",
+      "bytes": 2860,
+      "sha256": "8907549344a33e1445c9581163164188cf600553ef993a7294392b3e97f14513"
+    },
+    {
+      "path": "artifacts/production-live-qa/read-queue.mjs",
+      "bytes": 2753,
+      "sha256": "a10b7ad316a266caa510382e7dc54e9a42e208a1e254594e5f1ad5e411dfeb5f"
+    },
+    {
+      "path": "artifacts/production-live-qa/verify-first.mjs",
+      "bytes": 1958,
+      "sha256": "342080b6b0587e05eefc848beb08b91ebb153485bb1e61fb0a285d070efe7c71"
+    },
+    {
+      "path": "artifacts/production-live-qa/verify-output.py",
+      "bytes": 1730,
+      "sha256": "af5d377f9d4690fe2b49e750a3c10a8a989275791ed69ef9aa36130a9664f44b"
+    },
+    {
+      "path": "artifacts/production-live-qa/verify-final.mjs",
+      "bytes": 1927,
+      "sha256": "329d0d955279ff3761ceba902d8a6aaddc331764d40f710a50a242e71cbec005"
+    },
+    {
+      "path": "artifacts/production-live-qa/verify-all-outputs.py",
+      "bytes": 2095,
+      "sha256": "a869cb066fec86fc51ce2c1bef881b614c3a26ad01522841386ba441f67fece4"
+    },
+    {
+      "path": "artifacts/production-live-qa/verify-final-restart.mjs",
+      "bytes": 1812,
+      "sha256": "6796a1e584981e153ae00119eac67a111145e03894a27eff53f14c0e6d04baa0"
+    }
+  ]
+}

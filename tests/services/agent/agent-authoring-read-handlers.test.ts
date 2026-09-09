@@ -62,4 +62,26 @@ describe('agent Scene read pagination', () => {
         expect(refs[0].artifactId).toBe('artifact-0')
         assertAgentPublicValue(result)
     })
+
+    it('exposes a generated native Scene with sentence prompts and durable Artifact IDs', async () => {
+        const artifactId = 'artifact:scene-job-agent-2173702dcd6cdff0c1997cb0637de986fabc967a57f9fc9401d3d1dd98efb148-0'
+        const prompt = 'A simple blue circle on a plain white background, clean flat illustration'
+        runtime.getDocument.mockResolvedValue({ presetId: 'preset-a', revision: 3,
+            scenes: [scene('generated', { prompts: { additional: prompt }, artifactRefs: [
+                { artifactId, favorite: false, createdAt: context.observedAt },
+            ] })] })
+        const result = await read(['generated'])
+        expect(result).toMatchObject({ results: [{ revision: 3, prompts: { additional: prompt },
+            artifactIds: [artifactId], totalArtifactCount: 1 }] })
+        assertAgentPublicValue(result)
+    })
+
+    it('keeps credential, image and local-path rejection in Artifact ID lists', () => {
+        for (const artifactId of ['Bearer credential-canary', 'iVBORw0KGgoAAAAA', 'E:/private/output.png']) {
+            expect(() => assertAgentPublicValue({ artifactIds: [artifactId] })).toThrow()
+        }
+        for (const prompt of ['A c2Vj cmV0 LWNh bmFy eQ== end', 'I iVBO Rw0K Ggo= end']) {
+            expect(() => assertAgentPublicValue({ prompt })).toThrow()
+        }
+    })
 })

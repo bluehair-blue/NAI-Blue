@@ -149,6 +149,8 @@ function looksLikeWhitespaceSeparatedProse(value: string): boolean {
     const trimmed = value.trim()
     return /\s/.test(trimmed) && trimmed.split(/\s+/).every(part => (
         /^[a-z]+$/.test(part)
+        // English sentence starters are prose; encoded text/image checks still inspect every candidate.
+        || /^[AI]$/.test(part)
         || /^[A-Z][a-z]+$/.test(part)
         || /^[A-Z]{2,5}$/.test(part)
         || /^[0-9]+$/.test(part)
@@ -399,7 +401,7 @@ const OPAQUE_IDENTIFIER_FIELDS = new Set([
     'clientid', 'workspaceid', 'correlationid', 'idempotencykey', 'draftid', 'runid', 'batchid', 'jobid', 'jobids',
     'previouslystoppedjobids', 'productionid',
     'outputtransactionid',
-    'id', 'actionid', 'activeprofileid', 'artifactid', 'baseopid', 'bookmarkid', 'characterid', 'characterids',
+    'id', 'actionid', 'activeprofileid', 'artifactid', 'artifactids', 'baseopid', 'bookmarkid', 'characterid', 'characterids',
     'defaultparamspresetid', 'defaultrecipeid', 'deviceid', 'documentid', 'entityid', 'fromid', 'libraryimageid',
     'maskresourceid', 'moduleid', 'moduleids', 'opid', 'paramspresetid', 'paramspresetids', 'parentid', 'planid',
     'preferredid', 'presetid', 'profileid', 'randomruleid', 'randomruleids', 'recipeid', 'recipeids', 'requestid',

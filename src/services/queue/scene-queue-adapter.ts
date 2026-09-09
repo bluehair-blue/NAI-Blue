@@ -674,7 +674,9 @@ async function prepareSceneQueueReviewOnce(
         }
         const requestIdentity = canonicalRequestHash.slice('sha256:'.length)
         const batchId = `scene-batch-${requestIdentity}`
-        const createdAt = planningNow.toISOString()
+        // Queue defaults readyAt to createdAt. The deterministic planning clock can be
+        // later today, so persist the real review instant for immediate execution.
+        const createdAt = reviewedAt
         const dependencies = getRuntimeMainQueueDependencies()
         const generationLimits = runtimeCapabilities.generationPublication.generationLimits
         const plannedClaimCount = prepared.reduce((total, item) => total + generationOutputClaimKinds({
