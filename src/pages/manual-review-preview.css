@@ -3,8 +3,9 @@
     isolation: isolate;
     perspective: 1200px;
     transform-style: preserve-3d;
-    overflow: hidden;
-    padding-block: 0.75rem;
+    overflow-x: clip;
+    overflow-y: visible;
+    padding: 0.75rem 0 7rem;
 }
 
 .manual-review-center {
@@ -13,6 +14,28 @@
     width: 82%;
     margin-inline: auto;
     transform-style: preserve-3d;
+}
+
+.manual-review-center::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0.2rem;
+    top: calc(100% + 0.55rem);
+    height: 6rem;
+    border-top: 1px solid oklch(var(--border) / 0.24);
+    border-radius: var(--radius-panel);
+    background: linear-gradient(
+        to bottom,
+        oklch(var(--card) / 0.4),
+        oklch(var(--primary) / 0.1) 38%,
+        transparent
+    );
+    box-shadow: 0 -8px 22px oklch(var(--primary) / 0.08);
+    transform: perspective(42rem) rotateX(5deg) scaleY(0.76);
+    transform-origin: top center;
+    filter: blur(1.2px);
+    mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+    pointer-events: none;
 }
 
 .manual-review-side {
