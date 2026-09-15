@@ -300,7 +300,7 @@ export function MetadataDialog({ open, onOpenChange, initialImage }: MetadataDia
                                 <div className="space-y-4">
                                     {/* Prompt */}
                                     <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
+                                        <div className="choice-control-line">
                                             <Checkbox
                                                 id="opt-prompts"
                                                 checked={loadOptions.prompts}
@@ -341,7 +341,7 @@ export function MetadataDialog({ open, onOpenChange, initialImage }: MetadataDia
 
                                     {/* Parameters */}
                                     <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
+                                        <div className="choice-control-line">
                                             <Checkbox
                                                 id="opt-params"
                                                 checked={loadOptions.parameters}
@@ -404,7 +404,7 @@ export function MetadataDialog({ open, onOpenChange, initialImage }: MetadataDia
 
                                     {/* Resolution */}
                                     <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
+                                        <div className="choice-control-line">
                                             <Checkbox
                                                 id="opt-resolution"
                                                 checked={loadOptions.resolution}
@@ -424,7 +424,7 @@ export function MetadataDialog({ open, onOpenChange, initialImage }: MetadataDia
 
                                     {/* Seed */}
                                     <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
+                                        <div className="choice-control-line">
                                             <Checkbox
                                                 id="opt-seed"
                                                 checked={loadOptions.seed}
@@ -442,7 +442,7 @@ export function MetadataDialog({ open, onOpenChange, initialImage }: MetadataDia
                                     {/* Character Prompts */}
                                     {metadata.v4_prompt?.caption?.char_captions && metadata.v4_prompt.caption.char_captions.length > 0 && (
                                         <div className="space-y-2">
-                                            <div className="flex items-center gap-2">
+                                            <div className="choice-control-line">
                                                 <Checkbox
                                                     id="opt-char-prompts"
                                                     checked={loadOptions.characterPrompts}
@@ -472,7 +472,7 @@ export function MetadataDialog({ open, onOpenChange, initialImage }: MetadataDia
                                     {/* Warnings / Vibe Transfer Info */}
                                     {metadata.hasVibeTransfer && (
                                         <div className="space-y-2">
-                                            <div className="flex items-center gap-2">
+                                            <div className="choice-control-line">
                                                 <Checkbox
                                                     id="opt-vibe"
                                                     checked={loadOptions.vibeTransfer}

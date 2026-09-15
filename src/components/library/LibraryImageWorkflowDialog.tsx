@@ -243,7 +243,7 @@ export function LibraryImageWorkflowDialog({
                                         : t('library.workflow.convertMetadata', '같은 형식은 유지 · 변환 시 sidecar 보존')}</span></div>
                             </div>
                             <div className={cn('rounded-panel border border-border p-4', !r2Ready && 'bg-muted/45 opacity-70')}>
-                                <label className="flex min-h-11 items-start gap-3">
+                                <label className="choice-row flex min-h-11 items-start gap-3">
                                     <Checkbox
                                         checked={r2Ready && autoUpload}
                                         disabled={!r2Ready}

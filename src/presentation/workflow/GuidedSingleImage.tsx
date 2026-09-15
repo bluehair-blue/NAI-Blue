@@ -676,7 +676,7 @@ function SettingsStep({
                         checked={draft.payload.generation.transparentBackground ?? false}
                         disabled={disabled}
                         onChange={event => onPatch({ transparentBackground: event.target.checked })}
-                        className="mt-0.5 h-4 w-4 accent-[oklch(var(--primary))]"
+                        className="choice-checkbox mt-0.5 h-4 w-4 accent-[oklch(var(--primary))]"
                     />
                     <span>
                         <span className="block text-sm font-semibold">
@@ -875,7 +875,7 @@ function ReviewStep({
                         type="checkbox"
                         checked={consented}
                         onChange={event => onConsentChange(event.target.checked)}
-                        className="mt-0.5 h-4 w-4 accent-[oklch(var(--primary))]"
+                        className="choice-checkbox mt-0.5 h-4 w-4 accent-[oklch(var(--primary))]"
                     />
                     <span>
                         <span className="block text-sm font-semibold">

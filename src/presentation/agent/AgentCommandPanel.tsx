@@ -81,9 +81,8 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
             </div>
             <CardDescription>{t('agentInbox.description')}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-6">
             {state.workspaceId && <div className="flex flex-wrap items-center gap-3">
-                <span className="break-all text-xs text-muted-foreground">{t('agentInbox.workspace', '작업공간 ID')}: {state.workspaceId}</span>
                 <Button variant="outline" size="sm" disabled={state.changingClient || state.changingExecution || !['ready', 'stopped'].includes(state.status)} onClick={() => void toggle()}>
                     {state.status === 'stopped' ? t('agentInbox.resume', '수신 재개') : t('agentInbox.pause', '수신 중지')}
                 </Button>
@@ -94,7 +93,11 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                 <Button disabled={!ready || !label.trim()} type="submit">{t('agentInbox.register', 'AI 접속 등록')}</Button>
             </form>
             <p className="text-xs leading-5 text-muted-foreground">{t('agentInbox.registrationScope')}</p>
-            <p className="text-xs leading-5 text-muted-foreground">{t('agentInbox.keyStorage', '비밀키는 Windows 자격 증명 저장소에 보관됩니다. 접속 정보를 복사해 외부 제출 도구에 전달할 수 있으며, 키 교체 후에는 새 접속 정보를 사용해야 합니다.')}</p>
+            <details className="choice-details">
+                <summary>{t('readableChoices.connectionDetails')}</summary>
+                {state.workspaceId && <p className="mb-3 break-all text-sm text-muted-foreground">{t('agentInbox.workspace', '작업공간 ID')}: {state.workspaceId}</p>}
+                <p className="choice-help">{t('agentInbox.keyStorage', '비밀키는 Windows 자격 증명 저장소에 보관됩니다. 접속 정보를 복사해 외부 제출 도구에 전달할 수 있으며, 키 교체 후에는 새 접속 정보를 사용해야 합니다.')}</p>
+            </details>
             {message && <p role="status" className="text-sm">{message}</p>}
             <ul className="space-y-3" aria-label={t('agentInbox.clients', '등록된 AI 접속')}>
                 {state.clients.map(client => <li key={client.clientId} className="flex flex-wrap items-center justify-between gap-3 rounded-panel border p-3">
@@ -162,7 +165,7 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                     </div>
                 </li>)}</ul>
             </div>
-            <details><summary className="cursor-pointer text-sm font-medium">{t('agentInbox.capabilities', '요청별 지원 상태')}</summary>
+            <details className="choice-details"><summary>{t('agentInbox.capabilities', '요청별 지원 상태')}</summary>
                 <ul className="mt-3 space-y-2">{state.capabilities.map(capability => <li key={capability.command} className="flex flex-wrap justify-between gap-2 text-xs">
                     <code>{capability.command}</code><span>{capability.available ? t('agentInbox.available', '사용 가능') : t('agentInbox.notAvailable', '현재 사용 불가')}</span>
                 </li>)}</ul>

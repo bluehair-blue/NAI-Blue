@@ -208,8 +208,8 @@ export function NovelAiV5UsageLimit({
                         </div>
                     ))}
                 </div>
-                <label className="flex items-center gap-2 text-xs">
-                    <input
+                <label className="choice-row flex items-center gap-2 text-xs">
+                    <input className="choice-checkbox"
                         type="checkbox"
                         checked={alwaysShow}
                         onChange={event => setAlwaysShow(event.currentTarget.checked)}

@@ -43,13 +43,15 @@ describe('Primary navigation contract', () => {
         expect(layout).not.toContain("path: '/prompts'")
     })
 
-    it('only condenses navigation below the large desktop layout', async () => {
-        const navigation = await source('src/components/layout/AnimatedNavBar.tsx')
-
-        expect(navigation).toContain("items.map(item => renderItem(item, 'activeTab-desktop', true))")
-        expect(navigation).toContain('min-[2200px]:flex')
-        expect(navigation).toContain('lg:hidden')
-        expect(navigation).toContain('forceCondensed')
+    it('uses the same labelled navigation on all category routes', async () => {
+        const layout = await source('src/components/layout/ThreeColumnLayout.tsx')
+        expect(layout).not.toContain('<AnimatedNavBar')
+        expect(layout).toContain('workspace-shell')
+        expect(layout).toContain('fb-app-navigation')
+        expect(layout).toContain('aria-current={folderWorkbenchOpen')
+        expect(layout).toContain("aria-current={location.pathname === '/queue'")
+        expect(layout).toContain('navItems.filter')
+        expect(layout).toContain('returnFocusRef={workbenchToolsRef}')
     })
 
     it('removes Discord community shortcuts from settings', async () => {

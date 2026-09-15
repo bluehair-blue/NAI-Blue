@@ -532,7 +532,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
             onDrop={onFileDrop}
         >
             {/* Header */}
-            <div className="z-10 flex min-h-14 w-full shrink-0 items-center border-b bg-background px-3 py-2 sm:px-4 lg:px-6">
+            <div className="workspace-library-header z-10 flex min-h-14 w-full shrink-0 items-center border-b">
                 {isEditMode ? (
                     /* Edit Mode Header */
                     <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -615,11 +615,11 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                                         <ArrowLeft className="h-4 w-4 shrink-0 sm:mr-2" />
                                         <span className="sr-only sm:not-sr-only">{t('actions.back', '뒤로')}</span>
                                     </Button>
-                                    <h2 className="min-w-0 truncate text-lg font-semibold tracking-tight" title={currentStack?.name}>{currentStack?.name}</h2>
+                                    <h1 className="workspace-title min-w-0 truncate" title={currentStack?.name}>{currentStack?.name}</h1>
                                 </>
                             ) : (
                                 <>
-                                    <h2 className="min-w-0 truncate text-lg font-semibold tracking-tight">{t('library.title', '라이브러리')}</h2>
+                                    <h1 className="workspace-title min-w-0 truncate">{t('library.title', '라이브러리')}</h1>
                                     <select
                                         value={folderFilter}
                                         onChange={event => setFolderFilter(event.target.value)}

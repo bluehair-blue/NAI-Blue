@@ -1,0 +1,117 @@
+.manual-review-deck {
+    position: relative;
+    isolation: isolate;
+    perspective: 1200px;
+    transform-style: preserve-3d;
+    overflow: hidden;
+    padding-block: 0.75rem;
+}
+
+.manual-review-center {
+    position: relative;
+    z-index: 2;
+    width: 82%;
+    margin-inline: auto;
+    transform-style: preserve-3d;
+}
+
+.manual-review-side {
+    position: absolute;
+    z-index: 0;
+    inset-block: 1.5rem;
+    width: 72%;
+    overflow: hidden;
+    border: 1px solid oklch(var(--border));
+    border-radius: var(--radius-panel);
+    background: oklch(var(--secondary));
+    color: oklch(var(--secondary-foreground));
+    pointer-events: none;
+    transform-style: preserve-3d;
+    opacity: 0.82;
+}
+
+.manual-review-side--previous {
+    left: 0;
+    transform: translate3d(-24%, 0, -120px) rotateY(27deg) scale(0.82);
+    transform-origin: right center;
+}
+
+.manual-review-side--next {
+    right: 0;
+    transform: translate3d(24%, 0, -120px) rotateY(-27deg) scale(0.82);
+    transform-origin: left center;
+}
+
+.manual-review-side-copy {
+    padding: 1.25rem;
+    max-width: 18rem;
+}
+
+.manual-review-side--next .manual-review-side-copy {
+    margin-left: auto;
+    text-align: right;
+}
+
+.manual-review-deck--reduced {
+    perspective: none;
+    transform-style: flat;
+}
+
+.manual-review-deck--reduced .manual-review-side {
+    display: none;
+}
+
+.manual-review-deck--reduced .manual-review-center {
+    width: 100%;
+    transform-style: flat;
+}
+
+@media (max-width: 720px) {
+    .manual-review-deck {
+        perspective: 850px;
+    }
+
+    .manual-review-center {
+        width: 76%;
+    }
+
+    .manual-review-side {
+        width: 68%;
+        inset-block: 1.75rem;
+        opacity: 0.7;
+    }
+
+    .manual-review-side--previous {
+        transform: translate3d(-35%, 0, -100px) rotateY(19deg) scale(0.78);
+    }
+
+    .manual-review-side--next {
+        transform: translate3d(35%, 0, -100px) rotateY(-19deg) scale(0.78);
+    }
+}
+
+@media (max-width: 420px) {
+    .manual-review-center {
+        width: 78%;
+    }
+
+    .manual-review-side {
+        width: 72%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .manual-review-deck {
+        perspective: none;
+        transform-style: flat;
+    }
+
+    .manual-review-side {
+        display: none;
+    }
+
+    .manual-review-center {
+        width: 100%;
+        transform-style: flat;
+    }
+}

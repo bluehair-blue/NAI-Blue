@@ -1,0 +1,61 @@
+/* Shared category rhythm follows the asset workbench. Page classes are explicit
+   so editor canvases, user-sized prompt text and portalled dialogs keep ownership. */
+.workspace-shell {
+  --text-xs: 0.875rem;
+  --text-sm: 1rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --radius-panel: 0px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.workspace-shell :is(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid oklch(var(--ring));
+  outline-offset: 3px;
+}
+.workspace-shell .fb-app-tools[data-active],
+.workspace-shell [role="menuitem"][aria-current="page"] {
+  background: oklch(var(--muted));
+  color: oklch(var(--foreground));
+}
+.workspace-editor-actions { display: flex; gap: 8px; margin-left: 24px; }
+.workspace-editor-actions button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: 4px; color: oklch(var(--muted-foreground)); }
+.workspace-editor-actions button:hover { background: oklch(var(--accent)); }
+.workspace-editor-actions svg { width: 18px; height: 18px; }
+.workspace-content-inset { padding: 24px 32px; }
+.workspace-page { width: 100%; min-width: 0; max-width: 1280px; margin-inline: auto; }
+.workspace-page-inset { padding: 24px 32px 32px; }
+.workspace-heading { min-width: 0; margin-bottom: 24px; }
+.workspace-heading h1, h1.workspace-title { font-size: 36px; line-height: 1.2; font-weight: 700; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.workspace-heading p { max-width: 65ch; margin-top: 12px; color: oklch(var(--muted-foreground)); font-size: 16px; line-height: 1.5; }
+.workspace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.workspace-disclosure { min-width: 0; border-block: 1px solid oklch(var(--border) / .6); }
+.workspace-disclosure > summary { min-height: 44px; padding: 10px 0; color: oklch(var(--muted-foreground)); cursor: pointer; font-size: 14px; }
+.workspace-disclosure > summary:hover { color: oklch(var(--foreground)); }
+.workspace-disclosure[open] > summary { margin-bottom: 8px; }
+.workspace-tabs[role="tablist"] { height: auto; min-height: 48px; padding: 0; border-radius: 0; background: transparent; border-bottom: 1px solid oklch(var(--border)); }
+.workspace-tabs > [role="tab"] { min-width: 0; min-height: 48px; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; white-space: normal; }
+.workspace-tabs > [role="tab"][data-state="active"] { border-bottom-color: oklch(var(--primary)); background: oklch(var(--accent) / .45); color: oklch(var(--foreground)); }
+.workspace-empty { display: flex; min-height: 240px; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px; text-align: center; color: oklch(var(--muted-foreground)); }
+.workspace-empty h2 { color: oklch(var(--foreground)); font-size: 22px; font-weight: 600; }
+.workspace-empty p { max-width: 48ch; }
+.workspace-settings-rail { width: 248px; border-right: 1px solid oklch(var(--border) / .6); background: oklch(var(--background)); }
+.workspace-settings-content { padding: 24px 32px 32px; }
+.workspace-settings-content > div > section > div:first-child > h3 { font-size: 22px; line-height: 1.4; }
+.workspace-library-header { padding: 24px 32px; background: oklch(var(--background)); }
+/* The queue page scrolls when warnings expand, preserving room for its virtual job list. */
+.workspace-queue-header { padding: 24px 32px; border-bottom: 1px solid oklch(var(--border) / .6); }
+.workspace-queue-header .workspace-heading { margin-bottom: 20px; }
+.workspace-queue-header .workspace-disclosure { margin-top: 16px; }
+.workspace-queue-header select { max-width: 100%; }
+.workspace-queue-header .workspace-disclosure .workspace-toolbar { padding-bottom: 16px; }
+@media (max-width: 1023px) {
+  .workspace-editor-actions { margin-left: 8px; }
+  .workspace-editor-actions span { display: none; }
+}
+@media (max-width: 639px) {
+  .workspace-content-inset, .workspace-page-inset, .workspace-settings-content, .workspace-library-header, .workspace-queue-header { padding: 20px 16px; }
+  .workspace-heading h1, h1.workspace-title { font-size: 30px; }
+  .workspace-heading { margin-bottom: 20px; }
+  .workspace-editor-actions { display: none; } /* Labelled Prompt/History entries remain in Tools. */
+}

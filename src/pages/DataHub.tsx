@@ -13,7 +13,6 @@ import {
     CircleAlert,
     CircleCheck,
     ClipboardCopy,
-    DatabaseZap,
     FileJson,
     FileSpreadsheet,
     FolderOpen,
@@ -885,19 +884,31 @@ export default function DataHub() {
 
     return (
         <div className="h-full min-h-0 overflow-y-auto bg-canvas">
-            <div className="mx-auto w-full max-w-7xl space-y-5 p-3 sm:p-5 lg:p-7" data-testid="data-hub-page">
-                <header className="flex items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-primary/10 text-primary">
-                        <DatabaseZap className="h-5 w-5" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0">
-                        <h1 className="text-xl font-semibold">{t('dataHub.title', '데이터 허브')}</h1>
-                        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                            {t('dataHub.description', '기기 간 데이터 이동, 여러 이미지의 생성 정보 확인, AI 에이전트 편집을 한곳에서 관리합니다.')}
-                        </p>
-                    </div>
+            <div className="workspace-page workspace-page-inset space-y-6" data-testid="data-hub-page">
+                <header className="workspace-heading">
+                    <h1>{t('dataHub.title', '데이터 허브')}</h1>
+                    <p>{t('workspace.dataHint', '이미지 정보를 확인하거나, AI 편집과 기기 연결을 시작하세요.')}</p>
                 </header>
 
+                <Tabs value={activeTab} onValueChange={selectTab} className="min-w-0 space-y-4">
+                    <TabsList className="workspace-tabs grid w-full grid-cols-3">
+                        <TabsTrigger value="metadata" className="min-h-11 gap-2 rounded-control px-2">
+                            <ImageIcon className="hidden h-4 w-4 shrink-0 sm:block" /><span className="truncate">{t('dataHub.tabs.metadata', '이미지 정보')}</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="agent" className="min-h-11 gap-2 rounded-control px-2">
+                            <Bot className="hidden h-4 w-4 shrink-0 sm:block" /><span className="truncate">{t('dataHub.tabs.agent', 'AI 편집')}</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="sync" className="min-h-11 gap-2 rounded-control px-2">
+                            <Cable className="hidden h-4 w-4 shrink-0 sm:block" /><span className="truncate">{t('dataHub.tabs.sync', '기기 연결')}</span>
+                        </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="metadata"><MetadataWorkspace /></TabsContent>
+                    <TabsContent value="agent"><AgentCommandPanel /><AgentWorkspacePanel /></TabsContent>
+                    <TabsContent value="sync"><DeviceConnectionPanel /></TabsContent>
+                </Tabs>
+
+                <details className="workspace-disclosure">
+                    <summary>{t('dataHub.overview', '기능 상태')}</summary>
                 <div className="grid gap-2 sm:grid-cols-3" aria-label={t('dataHub.overview', '기능 상태')}>
                     {[
                         [Cable, t('dataHub.overviewSync', '기기 연결'), runtimeCapabilities.secureLanSyncTransport.supported ? t('dataHub.statusReady', '사용 가능') : t('dataHub.statusBackup', '백업으로 이동')],
@@ -917,22 +928,7 @@ export default function DataHub() {
                     })}
                 </div>
 
-                <Tabs value={activeTab} onValueChange={selectTab} className="min-w-0 space-y-4">
-                    <TabsList className="grid h-auto w-full grid-cols-3 rounded-panel bg-muted/60 p-1">
-                        <TabsTrigger value="metadata" className="min-h-11 gap-2 rounded-control px-2">
-                            <ImageIcon className="hidden h-4 w-4 shrink-0 sm:block" /><span className="truncate">{t('dataHub.tabs.metadata', '이미지 정보')}</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="agent" className="min-h-11 gap-2 rounded-control px-2">
-                            <Bot className="hidden h-4 w-4 shrink-0 sm:block" /><span className="truncate">{t('dataHub.tabs.agent', 'AI 편집')}</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="sync" className="min-h-11 gap-2 rounded-control px-2">
-                            <Cable className="hidden h-4 w-4 shrink-0 sm:block" /><span className="truncate">{t('dataHub.tabs.sync', '기기 연결')}</span>
-                        </TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="metadata"><MetadataWorkspace /></TabsContent>
-                    <TabsContent value="agent"><AgentCommandPanel /><AgentWorkspacePanel /></TabsContent>
-                    <TabsContent value="sync"><DeviceConnectionPanel /></TabsContent>
-                </Tabs>
+                </details>
 
                 <footer className="flex items-center gap-2 pb-2 text-xs text-muted-foreground">
                     <KeyRound className="h-3.5 w-3.5" />

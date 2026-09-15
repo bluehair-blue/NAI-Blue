@@ -613,7 +613,7 @@ export default function Settings({ guidedSection }: SettingsProps = {}) {
                 </div>
             </header>}
 
-            {!guidedSection && <aside className="hidden w-56 shrink-0 flex-col bg-card p-3 lg:flex">
+            {!guidedSection && <aside className="workspace-settings-rail hidden shrink-0 flex-col p-4 lg:flex">
                 <h2 className="mb-3 px-2 text-lg font-semibold">{t('settingsPage.title')}</h2>
                 <nav className="space-y-1" aria-label={t('settingsPage.title')}>
                     {SECTIONS.map((section) => (
@@ -637,8 +637,12 @@ export default function Settings({ guidedSection }: SettingsProps = {}) {
             </aside>}
 
             {/* The content pane owns scrolling; the shell and mobile selector remain stable. */}
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
-                <div className="mx-auto max-w-4xl space-y-6">
+            <div className="workspace-settings-content min-h-0 min-w-0 flex-1 overflow-y-auto">
+                <div className="mx-auto max-w-4xl space-y-8">
+                    {!guidedSection && <header className="workspace-heading hidden lg:block">
+                        <h1>{t('settingsPage.title')}</h1>
+                        <p>{t('workspace.settingsHint', '언어와 화면, 저장 위치를 내 작업에 맞게 조정하세요.')}</p>
+                    </header>}
                     {/* General Section */}
                     {activeSection === 'general' && (
                         <section className="space-y-4">

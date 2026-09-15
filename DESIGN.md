@@ -8,7 +8,7 @@ capabilities are presented.
 
 ## 1. Atmosphere / Signature
 
-**Cobalt Editorial Instrument** is a matte graphite image-production cockpit. Boundaries
+**Cobalt Editorial Instrument** is a matte ink-blue image-production workspace. Boundaries
 disappear into three deliberate tones (`background -> canvas -> card`) so prompts
 and generated images remain the visual priority. One restrained cobalt marks
 selection, focus, and the next meaningful action. Borders are reserved for form
@@ -20,11 +20,11 @@ cards, and every Advanced surface remain flat. `DESIGN_VARIANCE = 3`,
 
 ## 2. Color
 
-### Folder workbench, September 2026
+### Shared workspaces, September 2026
 
-The `/folders` workspace uses an ink-blue local palette in `folder-workbench.css`.
-These values override the shared semantic tokens only while this route is open,
-including its portalled dialogs. The existing theme store remains authoritative.
+The asset workbench palette is the shared semantic palette in `globals.css`,
+including portalled dialogs and direct entry into every category. Route changes
+must never switch palettes. The existing theme store remains authoritative.
 The central folder title and adjacent next action form one visual focus; navigation
 and settings have lower contrast. Settings open on demand to preserve image space.
 Background lightness is restrained in both themes, with enough blue chroma to avoid
@@ -48,7 +48,7 @@ the matching `color-scheme`. All color declarations consume OKLCH channel tokens
 | border | `0.820 0.025 265` | `0.380 0.041 265` |
 | input | `0.735 0.035 265` | `0.475 0.047 265` |
 
-Workbench type: title `36px/1.2` desktop and `30px/1.2` mobile; section
+Shared category type: title `36px/1.2` desktop and `30px/1.2` mobile; section
 heading `22px/1.4`; navigation, controls and descriptions `16px/1.5`; quiet
 metadata `14px/1.5`. Controls have at least a 44px target. A 248px folder rail
 docks from 1024px; below that width a labelled folder button opens the same tree.
@@ -61,34 +61,11 @@ All CSS values are OKLCH channels consumed as `oklch(var(--token) / alpha)`.
 `--brand-core: 0.316 0.1719 263.65` is the requested anchor. Interactive primary
 tokens move lighter in dark mode so text, icons, and focus states remain legible.
 
-| Semantic token | Light channels | Dark channels | Role |
-| --- | --- | --- | --- |
-| `--brand-core` | `0.316 0.1719 263.65` | `0.316 0.1719 263.65` | Immutable NAI Blue anchor |
-| `--background` | `0.975 0.006 264` | `0.130 0.012 262` | App frame |
-| `--foreground` | `0.190 0.025 262` | `0.940 0.012 260` | Primary text |
-| `--canvas` | `0.955 0.009 264` | `0.110 0.010 262` | Image/work canvas |
-| `--card` | `0.995 0.002 260` | `0.165 0.014 262` | Docked panel surface |
-| `--card-foreground` | `0.190 0.025 262` | `0.940 0.012 260` | Text on panel |
-| `--popover` | `1 0 0` | `0.190 0.018 262` | Menus and dialogs |
-| `--popover-foreground` | `0.190 0.025 262` | `0.940 0.012 260` | Text on overlays |
-| `--primary` | `0.420 0.170 263.65` | `0.640 0.150 263.65` | Main action and active state |
-| `--primary-foreground` | `0.985 0.005 260` | `0.130 0.020 262` | Content on primary |
-| `--secondary` | `0.935 0.014 262` | `0.225 0.020 262` | Secondary controls |
-| `--secondary-foreground` | `0.250 0.030 262` | `0.910 0.014 260` | Content on secondary |
-| `--muted` | `0.945 0.010 262` | `0.205 0.016 262` | Quiet fill |
-| `--muted-foreground` | `0.490 0.030 262` | `0.680 0.025 260` | Secondary text |
-| `--accent` | `0.910 0.035 263.65` | `0.230 0.040 263.65` | Hover and selected tonal fill |
-| `--accent-foreground` | `0.280 0.120 263.65` | `0.870 0.080 263.65` | Content on accent |
-| `--destructive` | `0.550 0.215 26` | `0.640 0.205 25` | Destructive and error |
-| `--destructive-foreground` | `0.985 0.005 260` | `0.985 0.005 260` | Content on destructive |
-| `--border` | `0.875 0.018 262` | `0.285 0.020 262` | Hairlines and separation |
-| `--input` | `0.845 0.020 262` | `0.320 0.024 262` | Form boundaries |
-| `--ring` | `0.500 0.170 263.65` | `0.680 0.140 263.65` | Keyboard focus |
-| `--success` | `0.520 0.140 150` | `0.690 0.160 150` | Success and verified |
-| `--warning` | `0.700 0.140 75` | `0.780 0.140 75` | Cost and caution |
-| `--info` | `0.520 0.160 250` | `0.720 0.150 250` | Informational state |
-| `--scrim` | `0.100 0.010 262` | `0.080 0.008 262` | Modal overlay at 72% alpha |
-| `--welcome-ambient` | `0.540 0.190 263.65` | `0.600 0.170 263.65` | Guided welcome background only |
+Status colors (`success`, `warning`, `destructive`, `info`), scrim, charts and
+Guided welcome ambient tokens retain their definitions in `globals.css`.
+`--radius-control = 4px`; docked panels have no radius. The category shell uses
+16px body/control text and 14px metadata; user-selected prompt text sizes remain
+owned by the prompt editor.
 
 Charts use `--chart-1` through `--chart-5`; their OKLCH values are defined in
 `globals.css`. No raw hex, named Tailwind hue, or feature-specific accent may be
@@ -103,11 +80,11 @@ token with alpha.
   Roboto are not defaults.
 - Mono stack: `JetBrains Mono`, `D2Coding`, `Consolas`, `monospace`, reserved for
   seeds, balances, paths, dimensions, and job timing.
-- Page title: mobile `20px / 650 / 1.25`; desktop `24px / 650 / 1.25`.
+- Category page title: mobile `30px / 700 / 1.2`; desktop `36px / 700 / 1.2`.
 - Guided display: `clamp(32px, 4vw, 56px) / 700 / 1.08`, `-0.035em` tracking.
 - Guided question: mobile `26–30px`; desktop `30–36px`; at most `32ch`.
-- Section title: `16px / 600 / 1.35`.
-- Control/body: `14px / 450 / 1.5`.
+- Category section title: `22px / 600 / 1.4`.
+- Category control/body: `16px / 450 / 1.5`.
 - Label: `12px / 550 / 1.35`.
 - Metadata: `11px / 500 / 1.35`; never use below `11px`.
 - Prompt text: user-configurable `12–24px`; shell default `14px / 400 / 1.5`.
@@ -134,12 +111,11 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   padding is reserved for repeated data rows, not shell-level panels.
 - Section rhythm: `32px` between major regions. Related controls may use `8px`
   or `12px` internal gaps.
-- Below `640px`: four primary destinations plus an accessible overflow menu;
-  Prompt and History remain dedicated actions. No horizontal navigation scroll.
+- Below `640px`: two primary destinations, labelled Tools menu and theme toggle.
+  Prompt and History remain named menu actions. No horizontal navigation scroll.
 - `640–1535px`: center workspace remains primary; Prompt opens as a non-modal,
   horizontally resizable panel without a scrim, while History remains a sheet.
-- `1536px+`: Prompt is a persistent left rail on Main and Scene. History may
-  dock where the page does not already own a result-side rail.
+- `1536px+`: Prompt is a persistent left rail on Main and Scene. History opens on demand in a sheet.
 - Scene grids render one column below `640px`, at most two below `1024px`, and
   honor the stored column preference on desktop.
 - Fixed overlays never cover system bars. Text, toolbars, and pages must not
@@ -147,14 +123,38 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
 
 ## 5. Components and Information Architecture
 
-- **Workspace shell:** canvas first, no border, and no panel radius. Navigation is a
-  five-control rail (four primary destinations plus overflow), not a floating
-  pill. Active state uses `--accent` plus primary icon/text; inactive controls
-  remain neutral.
-- **Buttons:** control radius `6–8px`. Primary is a flat `--primary` fill; hover
+- **Workspace shell:** every category shares the workbench header: Create images,
+  Job history, Tools and theme. Tools lists named specialist destinations and
+  marks the active route. Prompt and History remain directly available on
+  desktop authoring screens and in the labelled Tools menu at compact widths.
+  Prompt docks only for Main/Scene at 1536px; utility categories do not mount
+  unrelated authoring/history rails. The header spans the whole viewport.
+- **Category rhythm:** title, one short next-step description, then the task.
+  Use 32px horizontal insets (16px mobile), 24px heading separation, and flat
+  canvas/card tones. `workspace.css` owns this shared geometry; page classes
+  are explicit so image canvases and user-sized prompt editors stay independent.
+- **Progressive disclosure:** initial views expose the frequent next action;
+  labelled disclosures contain execution policies, capability summaries and
+  comparison statistics. Active progress, errors, cancellation and consent stay
+  visible. Empty Queue links to the workbench; empty Style Lab links to artist
+  preparation. Mobile Style Lab uses a labelled selector for all eight sections.
+  Reference: [NN/g, Progressive Disclosure](https://www.nngroup.com/articles/progressive-disclosure/),
+  consulted 2026-09-09. Local browser checks verify layout and navigation, not
+  real-user usability or native Provider/storage operation.
+- **Buttons:** control radius `4px`. Primary is a flat `--primary` fill; hover
   changes tone, active uses a slight opacity/transform response, focus uses a
   2px `--ring`, and disabled retains its footprint at 45% opacity. No gradient.
-- **Inputs/selects/textareas:** `6–8px` radius, input border, canvas/card surface,
+- **Checkbox choices:** use a 24px control with a 2px visible unchecked boundary.
+  Permission, consent and selection rows have a 56px minimum height, 12px gap
+  between control and copy, and 8px between repeated permission rows. The whole
+  label is clickable; adjacent actions remain outside it. Titles use 16px,
+  short scope descriptions 14px. Existing larger Guided rows keep their spacing.
+  `choices.css` owns the shared row styling, including portalled dialogs. Native
+  checkboxes retain input semantics and use system appearance in forced colors.
+  Never shorten away permission scope, data destinations, costs or destructive
+  conditions. Separate execution mode, edit permissions and upload permissions;
+  show two columns only when the form itself is at least 880px wide.
+- **Inputs/selects/textareas:** `4px` radius, input border, canvas/card surface,
   44px touch height on coarse pointers, blue focus ring, readable disabled state.
 - **Panels:** page, panel, section, and repeated settings-group radius is `0`.
   Popovers and dialogs may use up to `8px`; repeated rows use dividers or tonal

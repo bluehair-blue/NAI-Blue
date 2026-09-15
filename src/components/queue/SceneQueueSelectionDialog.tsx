@@ -189,7 +189,7 @@ export function SceneQueueSelectionDialog({
                                             const key = selectionKey(preset.id, scene.id)
                                             const target = selected[key]
                                             return (
-                                                <div key={key} className="flex items-center gap-3 rounded-control bg-muted/30 px-2 py-2">
+                                                <div key={key} className="flex min-h-16 items-center gap-3 border-b border-border/60 px-3 py-3">
                                                     <Checkbox
                                                         id={`queue-scene-${key}`}
                                                         checked={target !== undefined}
@@ -197,7 +197,7 @@ export function SceneQueueSelectionDialog({
                                                         onCheckedChange={value => toggleScene(preset.id, scene.id, value === true)}
                                                         aria-label={scene.name}
                                                     />
-                                                    <label htmlFor={`queue-scene-${key}`} className="min-w-0 flex-1 cursor-pointer truncate text-sm">
+                                                    <label htmlFor={`queue-scene-${key}`} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center break-words text-sm">
                                                         {scene.name}
                                                     </label>
                                                     {target !== undefined && (

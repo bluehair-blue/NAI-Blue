@@ -317,7 +317,7 @@ export function GenerationFolderManagerDialog({
                                             </select>
                                         </label>
                                         {parentId === null ? (
-                                            <label className="grid gap-2 text-xs font-medium">
+                                            <label className="choice-row grid gap-2 text-xs font-medium">
                                                 <span>{t('generationFolders.manager.rootPath', '실제 저장 위치')}</span>
                                                 <div className="flex gap-2">
                                                     <Input value={rootDirectory} onChange={event => setRootDirectory(event.target.value)} placeholder="NAI_Blue_Output" />
@@ -353,7 +353,7 @@ export function GenerationFolderManagerDialog({
                                                 <summary className="cursor-pointer text-sm font-semibold">{t('generationFolders.manager.transferTitle', '이 설명을 안쪽 폴더에도 복사하기')}</summary>
                                                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                                     {transferOptions.map(row => (
-                                                        <label key={row.folder.id} className="flex min-h-9 items-center gap-2 text-xs">
+                                                        <label key={row.folder.id} className="choice-row flex min-h-9 items-center gap-2 text-xs">
                                                             <Checkbox checked={transferTargets.includes(row.folder.id)} onCheckedChange={checked => setTransferTargets(current => checked === true ? [...current, row.folder.id] : current.filter(id => id !== row.folder.id))} />
                                                             <span className="truncate">{row.folder.name}</span>
                                                         </label>
@@ -373,7 +373,7 @@ export function GenerationFolderManagerDialog({
                                             <p className="mt-1 text-sm text-muted-foreground">{t('generationFolders.manager.r2Help', '폴더마다 켜거나 끌 수 있습니다.')}</p>
                                         </div>
                                         <div className={cn('rounded-panel border border-border p-4', !r2Ready && 'bg-muted/45 opacity-70')}>
-                                            <label className="flex min-h-11 items-start gap-3 text-sm font-medium">
+                                            <label className="choice-row flex min-h-11 items-start gap-3 text-sm font-medium">
                                                 <Checkbox checked={autoUpload} disabled={!r2Ready} onCheckedChange={checked => setAutoUpload(checked === true)} />
                                                 <span>{t('generationFolders.manager.autoUpload', '이 폴더에서 만든 이미지를 자동으로 올리기')}<span className="mt-1 block text-xs font-normal text-muted-foreground">{t('generationFolders.manager.autoUploadHelp', '하위 폴더는 각자 따로 선택합니다.')}</span></span>
                                             </label>

@@ -3,6 +3,7 @@ import { toNativeAssetUrl } from '@/platform/asset-url'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import {
+    FlaskConical,
     BarChart3,
     ChevronLeft,
     ChevronRight,
@@ -13,7 +14,6 @@ import {
     Equal,
     FileImage,
     FolderHeart,
-    FlaskConical,
     ImagePlus,
     ListPlus,
     Lock,
@@ -1261,20 +1261,21 @@ export default function StyleLab() {
     const latestGenerationIds = combinations.filter(combo => combo.generation === latestGeneration).map(combo => combo.id)
 
     return (
-        <div className="min-w-0 space-y-4 pb-8">
-            <Card className="min-w-0 border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card">
-                <CardHeader className="pb-4">
+        <div className="workspace-page min-w-0 space-y-6 pb-8">
+            <header className="workspace-heading">
+                <div>
                     <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <div className="min-w-0">
-                            <CardTitle className="flex min-w-0 items-center gap-2 text-xl leading-tight sm:text-2xl">
-                                <FlaskConical className="h-6 w-6 text-primary" />
-                                <span className="min-w-0 truncate">{t('styleLab.title')}</span>
-                            </CardTitle>
-                            <CardDescription className="mt-2 text-sm leading-5">
-                                {t('styleLab.description')}
-                            </CardDescription>
+                            <h1>
+                                <span>{t('styleLab.title')}</span>
+                            </h1>
+                            <p>
+                                {t('workspace.styleHint', '작가 조합을 준비하고, 두 그림을 비교하며 좋아하는 그림체를 찾아보세요.')}
+                            </p>
                         </div>
-                        <div className="grid w-full grid-cols-1 gap-2 text-center text-sm sm:min-w-[360px] sm:grid-cols-3 lg:w-auto">
+                        <details className="workspace-disclosure shrink-0">
+                            <summary>{t('workspace.styleMetrics', '비교 통계')}</summary>
+                            <div className="grid grid-cols-3 gap-4 text-center text-sm">
                             <div className="min-w-0 rounded-xl bg-background/60 p-3">
                                 <div className="text-muted-foreground">{t('styleLab.metrics.combinations')}</div>
                                 <div className="text-xl font-bold">{combinations.length}</div>
@@ -1287,7 +1288,8 @@ export default function StyleLab() {
                                 <div className="text-muted-foreground">{t('styleLab.metrics.averageUncertainty')}</div>
                                 <div className="text-xl font-bold">{projectionsReady ? stats.averageUncertainty.toFixed(2) : '—'}</div>
                             </div>
-                        </div>
+                            </div>
+                        </details>
                     </div>
                     {isPreviewQueueRunning && (
                         <div className="mt-4 rounded-xl border border-primary/20 bg-background/60 p-3">
@@ -1306,15 +1308,23 @@ export default function StyleLab() {
                             </div>
                         </div>
                     )}
-                </CardHeader>
-            </Card>
+                </div>
+            </header>
 
             <Tabs
                 value={activeTab}
                 onValueChange={value => setActiveTab(value as StyleLabTab)}
                 className="min-w-0 space-y-4 @container"
             >
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-0 rounded-none border-y border-border/70 bg-transparent p-0 @min-[36rem]:grid-cols-4 @min-[64rem]:grid-cols-8">
+                <label className="block sm:hidden">
+                    <span className="sr-only">{t('nav.styleLab')}</span>
+                    <select className="min-h-11 w-full rounded-control border border-input bg-background px-3"
+                        value={activeTab} onChange={event => setActiveTab(event.target.value as StyleLabTab)}>
+                        {(['battle', 'market', 'collection', 'manage', 'evolve', 'analyze', 'stats', 'settings'] as const).map((tab, index) =>
+                            <option key={tab} value={tab}>{t(`styleLab.tabs.${['arena', 'market', 'collection', 'manage', 'evolve', 'analyze', 'stats', 'template'][index]}`)}</option>)}
+                    </select>
+                </label>
+                <TabsList className="workspace-tabs hidden w-full gap-0 sm:grid sm:grid-cols-4 @min-[64rem]:grid-cols-8">
                     <TabsTrigger value="battle" className="min-h-11 min-w-0 gap-1 rounded-none border-b-2 border-transparent px-2 text-sm whitespace-normal break-keep data-[state=active]:border-primary data-[state=active]:bg-primary/[0.05]"><Swords className="h-4 w-4 shrink-0" /><span className="min-w-0 text-center leading-snug">{t('styleLab.tabs.arena')}</span></TabsTrigger>
                     <TabsTrigger value="market" className="min-h-11 min-w-0 gap-1 rounded-none border-b-2 border-transparent px-2 text-sm whitespace-normal break-keep data-[state=active]:border-primary data-[state=active]:bg-primary/[0.05]"><Store className="h-4 w-4 shrink-0" /><span className="min-w-0 text-center leading-snug">{t('styleLab.tabs.market')}</span></TabsTrigger>
                     <TabsTrigger value="collection" className="min-h-11 min-w-0 gap-1 rounded-none border-b-2 border-transparent px-2 text-sm whitespace-normal break-keep data-[state=active]:border-primary data-[state=active]:bg-primary/[0.05]"><FolderHeart className="h-4 w-4 shrink-0" /><span className="min-w-0 text-center leading-snug">{t('styleLab.tabs.collection')}</span></TabsTrigger>
@@ -1326,6 +1336,7 @@ export default function StyleLab() {
                 </TabsList>
 
                 <TabsContent value="battle" className="min-w-0 space-y-4">
+                    {combinations.length >= 2 && (
                     <Card className="min-w-0">
                         <CardContent className="flex min-w-0 flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
                             <div className="min-w-0 space-y-1">
@@ -1336,14 +1347,14 @@ export default function StyleLab() {
                                 {(['all', 'favorites'] as StyleLabLeague[]).map(league => (
                                     <Button
                                         key={league}
-                                        variant={settings.battleLeague === league ? 'default' : 'outline'}
+                                        variant={settings.battleLeague === league ? 'secondary' : 'ghost'}
                                         className="min-w-[120px] rounded-xl whitespace-normal"
                                         onClick={() => setBattleLeague(league)}
                                     >
                                         {league === 'all' ? t('styleLab.arena.allLeague') : t('styleLab.arena.favoritesLeague')}
                                     </Button>
                                 ))}
-                                <Button className="min-w-[140px] rounded-xl whitespace-normal" onClick={handlePickBattle} disabled={isArenaUpdating}>
+                                <Button variant={battlePoolCount < 2 ? "secondary" : "default"} className="min-w-[140px] whitespace-normal" onClick={handlePickBattle} disabled={isArenaUpdating || battlePoolCount < 2}>
                                     <Dice5 className="mr-1.5 h-4 w-4" />{t('styleLab.arena.pickBattle')}
                                 </Button>
                                 {battlePair && (
@@ -1364,6 +1375,7 @@ export default function StyleLab() {
                             </div>
                         </CardContent>
                     </Card>
+                    )}
 
                     {battlePair && (
                         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -1435,6 +1447,9 @@ export default function StyleLab() {
                                 <div>
                                     <p className="font-medium text-foreground">{t('styleLab.arena.emptyTitle')}</p>
                                     <p className="text-sm">{t('styleLab.arena.emptyDesc')}</p>
+                                    {battlePoolCount < 2 && <Button className="mt-4 min-h-11" onClick={() => setActiveTab('manage')}>
+                                        {t('workspace.prepareStyles', '작가 조합 준비하기')}
+                                    </Button>}
                                 </div>
                             </CardContent>
                         </Card>
@@ -1843,13 +1858,13 @@ export default function StyleLab() {
                                                         const key = `${tag.kind}:${tag.tag.toLowerCase()}`
                                                         const checked = draft.includedTagKeys.includes(key)
                                                         return (
-                                                            <label key={key} className={cn(
-                                                                'inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-1 text-xs',
-                                                                checked ? 'bg-primary/10 text-foreground' : 'opacity-50',
-                                                            )}>
+                                                            <label key={key} className={"choice-row " + (cn(
+                                                                'w-full',
+                                                                checked ? 'bg-primary/10 text-foreground' : 'text-foreground',
+                                                            ))}>
                                                                 <input
                                                                     type="checkbox"
-                                                                    className="h-3 w-3"
+                                                                    className="choice-checkbox h-3 w-3"
                                                                     checked={checked}
                                                                     onChange={() => toggleImportTag(draft.id, key)}
                                                                 />

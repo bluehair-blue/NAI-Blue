@@ -26,11 +26,10 @@ describe('Queue Center 10,000-job UI contract', () => {
     })
 
     it('uses revision-gated viewport projections, fixed virtualization, ARIA positions, and keyboard focus', async () => {
-        const [page, app, layout, nav] = await Promise.all([
+        const [page, app, layout] = await Promise.all([
             source('src/pages/QueueCenter.tsx'),
             source('src/App.tsx'),
             source('src/components/layout/ThreeColumnLayout.tsx'),
-            source('src/components/layout/AnimatedNavBar.tsx'),
         ])
         expect(page).toContain('getBatchProjectionMeta')
         expect(page).toContain('listJobProjectionWindow')
@@ -55,7 +54,7 @@ describe('Queue Center 10,000-job UI contract', () => {
         expect(page).toContain('min-h-11')
         expect(app).toContain('path="/queue"')
         expect(layout).toContain("path: '/queue'")
-        expect(nav).toContain("const MOBILE_PRIMARY_PATHS = new Set(['/folders', '/advanced', '/scenes', '/queue'])")
+        expect(layout).toContain('to="/queue"')
     })
 
     it('exposes every required state plus pause, cancel, skip, retry, policy, progress, ETA, and diagnostics', async () => {

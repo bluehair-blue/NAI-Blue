@@ -308,7 +308,7 @@ export const useSettingsStore = create<SettingsState>()(
             detailPromptCollapsed: false, // Default: expanded
             negativePromptCollapsed: false, // Default: expanded
             useStreaming: true, // Default: enabled
-            generationDelay: 500, // Default: 500ms delay between batch generations
+            generationDelay: 1000, // Default: 1s delay between batch generations
             geminiApiKey: '', // Default: empty
             libraryPath: 'NAI_Blue_Library', // Default: relative to Pictures folder
             useAbsoluteLibraryPath: false, // Default: relative to Pictures folder

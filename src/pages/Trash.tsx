@@ -208,10 +208,9 @@ export default function Trash() {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 py-2 sm:px-6">
-                <div className="min-w-0">
+            <header className="workspace-page-inset flex shrink-0 flex-wrap items-center justify-between gap-3 border-b">
+                <div className="workspace-heading !mb-0">
                     <h1 className="flex items-center gap-2 text-lg font-semibold">
-                        <Trash2 className="h-5 w-5 text-destructive" />
                         {t('trash.title', '휴지통')}
                     </h1>
                     <p className="mt-0.5 text-xs text-muted-foreground">

@@ -24,6 +24,7 @@ const R2Upload = lazy(() => import('@/pages/R2Upload'))
 const Trash = lazy(() => import('@/pages/Trash'))
 const DataHub = lazy(() => import('@/pages/DataHub'))
 const GuidedPreview = lazy(() => import('@/presentation/workflow/GuidedPreview'))
+const ManualReviewPreview = lazy(() => import('@/pages/ManualReviewPreview'))
 
 function RouteLoadingFallback() {
     return (
@@ -68,6 +69,7 @@ function AppContent() {
                     <Route path="/tools" element={<ToolsMode />} />
                     <Route path="/style-lab" element={<StyleLab />} />
                     <Route path="/queue" element={<QueueCenter />} />
+                    <Route path="/review-queue-preview" element={<ManualReviewPreview />} />
                     <Route path="/r2" element={<R2Upload />} />
                     <Route path="/trash" element={<Trash />} />
                     <Route path="/data" element={<DataHub />} />

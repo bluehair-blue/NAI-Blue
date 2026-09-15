@@ -73,8 +73,8 @@ export function HumanAssessmentSetup({ count, value, onChange, onValidityChange 
 
     return (
         <section className="space-y-3 rounded-panel border border-border p-3 text-sm" data-testid="human-assessment-setup">
-            <label className="flex items-center gap-2">
-                <input type="checkbox" checked={draft.enabled} onChange={event => update({ enabled: event.target.checked })} />
+            <label className="choice-row flex items-center gap-2">
+                <input className="choice-checkbox" type="checkbox" checked={draft.enabled} onChange={event => update({ enabled: event.target.checked })} />
                 <span>{t('assessment.enable', 'Assess request fulfillment after generation')}</span>
             </label>
             {draft.enabled && <div className="space-y-3">
@@ -87,8 +87,8 @@ export function HumanAssessmentSetup({ count, value, onChange, onValidityChange 
                     <span>{t('assessment.requiredCount', 'Required accepted images (1–{{count}})', { count })}</span>
                     <Input id={`${id}-required`} type="number" min={1} max={count} step={1} value={draft.required} onChange={event => update({ required: event.target.value })} />
                 </label>
-                <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={draft.softEnabled} onChange={event => update({ softEnabled: event.target.checked })} />
+                <label className="choice-row flex items-center gap-2">
+                    <input className="choice-checkbox" type="checkbox" checked={draft.softEnabled} onChange={event => update({ softEnabled: event.target.checked })} />
                     <span>{t('assessment.enableSoft', 'Add a scored criterion')}</span>
                 </label>
                 {draft.softEnabled && <div className="space-y-2">

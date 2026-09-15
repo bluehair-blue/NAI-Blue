@@ -254,24 +254,26 @@ export function CharacterRotationDialog({ open, onOpenChange }: CharacterRotatio
                                 <div
                                     key={character.id}
                                     className={cn(
-                                        'flex items-center gap-3 rounded-xl border border-border/60 bg-card/40 px-3 py-2',
+                                        'flex min-h-16 items-center gap-4 border-b border-border/60 px-3 py-3',
                                         isSelected && 'border-primary/50 bg-primary/5',
                                         isPinned && 'border-warning/50 bg-warning/5'
                                     )}
                                 >
                                     <Checkbox
+                                        id={`rotation-character-${character.id}`}
+                                        aria-label={characterLabel(character)}
                                         checked={isSelected}
                                         disabled={active || isPinned}
                                         onCheckedChange={() => toggleSelected(character.id)}
                                     />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-sm font-medium">{characterLabel(character)}</div>
+                                    <label htmlFor={`rotation-character-${character.id}`} className="flex min-h-11 min-w-0 flex-1 cursor-pointer flex-col justify-center">
+                                        <span className="text-sm font-medium break-words">{characterLabel(character)}</span>
                                         {character.name && character.prompt && (
-                                            <div className="truncate text-xs text-muted-foreground">
+                                            <span className="truncate text-xs text-muted-foreground">
                                                 {character.prompt.slice(0, 80)}
-                                            </div>
+                                            </span>
                                         )}
-                                    </div>
+                                    </label>
                                     <Button
                                         type="button"
                                         variant={isPinned ? 'secondary' : 'outline'}

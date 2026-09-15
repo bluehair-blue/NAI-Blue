@@ -1062,12 +1062,12 @@ function GuidedStyleLabTask() {
                         maxAnlas={estimatedAnlas}
                         className="mt-4"
                     />
-                    <label className="mt-4 flex min-h-11 cursor-pointer items-start gap-3 text-sm leading-6">
+                    <label className="choice-row mt-4 flex min-h-11 cursor-pointer items-start gap-3 text-sm leading-6">
                         <input
                             type="checkbox"
                             checked={costConsented}
                             onChange={event => setCostConsented(event.target.checked)}
-                            className="mt-1 h-4 w-4 accent-primary"
+                            className="choice-checkbox mt-1 h-4 w-4 accent-primary"
                         />
                         <span>{t('guided.promptTasks.style.preview.consent', '두 후보 생성에 최대 {{cost}} Anlas가 사용될 수 있음을 확인했어요.', { cost: estimatedAnlas.toLocaleString() })}</span>
                     </label>

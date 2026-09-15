@@ -23,17 +23,17 @@ export function RemoteImageProcessingConsent({ className }: RemoteImageProcessin
     const accepted = consentVersion >= REMOTE_IMAGE_PROCESSING_POLICY_VERSION
 
     return (
-        <div className={cn('rounded-control border border-border bg-muted/25 p-3', className)} role="note">
-            <div className="flex items-start gap-2.5">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                <div className="min-w-0 space-y-2">
+        <div className={cn('border-y border-border bg-transparent py-4', className)} role="note">
+            <div className="space-y-3">
+                <ShieldCheck className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                <div className="min-w-0 space-y-4">
                     <div>
                         <p className="text-sm font-medium">{t('smartTools.remoteProcessingTitle')}</p>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                             {t('smartTools.remoteProcessingDescription')}
                         </p>
                     </div>
-                    <label htmlFor={checkboxId} className="flex min-h-11 cursor-pointer items-center gap-2 text-xs leading-relaxed">
+                    <label htmlFor={checkboxId} className="choice-row flex min-h-11 cursor-pointer items-center gap-2 text-xs leading-relaxed">
                         <Checkbox
                             id={checkboxId}
                             checked={accepted}

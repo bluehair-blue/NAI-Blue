@@ -397,7 +397,7 @@ export function StructuredPromptModuleLibrary({
                     <DialogHeader><DialogTitle>{t('promptModuleLibrary.newModule', '모듈 추가')}</DialogTitle><DialogDescription>{t('promptModuleLibrary.newModuleHelp', '현재 작업을 가져오거나 빈 모듈로 시작할 수 있어요.')}</DialogDescription></DialogHeader>
                     <Input value={createName} onChange={event => setCreateName(event.target.value)} placeholder={t('promptModuleLibrary.name', '모듈 이름')} autoFocus />
                     <Input value={createFolder} onChange={event => setCreateFolder(event.target.value)} placeholder={t('promptModuleLibrary.folderPath', '폴더/하위 폴더')} />
-                    <label className="flex min-h-11 items-center gap-3 text-sm"><Checkbox checked={useCurrent} onCheckedChange={checked => setUseCurrent(checked === true)} />{t('promptModuleLibrary.useCurrent', '현재 작업의 프롬프트를 파트로 가져오기')}</label>
+                    <label className="choice-row flex min-h-11 items-center gap-3 text-sm"><Checkbox checked={useCurrent} onCheckedChange={checked => setUseCurrent(checked === true)} />{t('promptModuleLibrary.useCurrent', '현재 작업의 프롬프트를 파트로 가져오기')}</label>
                     {createError && <p className="text-sm text-destructive" role="alert">{createError}</p>}
                     <DialogFooter><Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>{t('common.cancel', '취소')}</Button><Button type="button" onClick={() => {
                         try {

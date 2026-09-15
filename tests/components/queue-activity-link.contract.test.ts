@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const source = (path: string) => readFile(resolve(process.cwd(), path), 'utf8')
 
 describe('History Queue activity entry contract', () => {
-    it('keeps the Queue summary in the visible History sidebar instead of the global header', async () => {
+    it('mounts the Queue summary only in the requested History surface', async () => {
         const [layout, history] = await Promise.all([
             source('src/components/layout/ThreeColumnLayout.tsx'),
             source('src/components/layout/HistoryPanel.tsx'),
@@ -14,8 +14,7 @@ describe('History Queue activity entry contract', () => {
         expect(layout).not.toContain("import { QueueActivityLink } from './QueueActivityLink'")
         expect(history).toContain("import { QueueActivityLink } from './QueueActivityLink'")
         expect(history).toContain('<QueueActivityLink />')
-        expect(layout).toContain('historyPanelIsDocked = isDesktopShell && !compositionWorkspaceOwnsRails')
-        expect(layout).toContain('historyPanelIsDocked && rightSidebarVisible && <HistoryPanel />')
+        expect(layout).not.toContain('id="nai-blue-history-dock"')
         expect(layout).toContain('rightSheetOpen && <HistoryPanel />')
     })
 

@@ -140,6 +140,21 @@ describe('Main application generation command', () => {
         expect(request.idempotencyScope).toBe('main:test-action')
     })
 
+    it('persists a single-attempt policy for one-card manual review requests', async () => {
+        await enqueuePreparedMainGeneration({ ...commandInput(), maxAttempts: 1 })
+
+        const request = runtime.enqueueReviewed.mock.calls[0][0]
+        expect(request.dependencies.executionPolicy.maxAttempts).toBe(1)
+        expect(request.input.source.capture.executionPolicy.maxAttempts).toBe(1)
+    })
+
+    it('rejects invalid attempt limits before Queue persistence', async () => {
+        const result = await enqueuePreparedMainGeneration({ ...commandInput(), maxAttempts: 0 })
+
+        expect(result).toMatchObject({ status: 'invalid', issues: [{ code: 'invalid-max-attempts' }] })
+        expect(runtime.enqueueReviewed).not.toHaveBeenCalled()
+    })
+
     it.each([
         [{ collisionPolicy: 'overwrite' as const }, 'unsupported-collision-policy'],
         [{ deleteOriginalAfterRelease: true }, 'r2-delete-original-unsupported'],

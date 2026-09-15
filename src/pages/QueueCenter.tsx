@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     Activity,
     AlertCircle,
+    Eye,
     EllipsisVertical,
     KeyRound,
     ListPlus,
@@ -12,6 +13,7 @@ import {
     XCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -586,21 +588,23 @@ export default function QueueCenter() {
 
     return (
         <main
-            className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+            className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto bg-background"
             style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
             data-testid="queue-center-ready"
         >
-            <header className="shrink-0 border-b border-border px-3 py-3 sm:px-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
+            <header className="workspace-queue-header shrink-0">
+                <div className="space-y-4">
+                    <div className="workspace-heading">
                         <h1 className="text-xl font-semibold">{t('queue.title', 'Queue Center')}</h1>
-                        <p className="text-xs text-muted-foreground">
-                            {executionAuthority === 'durable'
-                                ? t('queue.executionCurrent', 'Durable queue')
-                                : t('queue.executionPrevious', 'Existing Scene queue')}
-                        </p>
+                        <p>{t('workspace.queueHint', '진행 상황을 확인하고, 완료된 이미지와 확인이 필요한 작업을 살펴보세요.')}</p>
+                        <Button asChild variant="outline" className="mt-3">
+                            <Link to="/review-queue-preview">
+                                <Eye className="mr-2 h-4 w-4" />한 장씩 검토 후 생성
+                            </Link>
+                        </Button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    {(batches.length > 0 || legacyQueueCount > 0 || scenePresets.some(preset => preset.scenes.length > 0)) && (
+                    <div className="workspace-toolbar">
                         <Button
                             variant="outline"
                             disabled={busy || scenePresets.every(preset => preset.scenes.length === 0)}
@@ -609,18 +613,6 @@ export default function QueueCenter() {
                             <ListPlus className="mr-2 h-4 w-4" />
                             {t('queue.selectScenes', 'Select scenes from folders')}
                         </Button>
-                        <label className="text-xs text-muted-foreground">
-                            <span className="sr-only">{t('queue.executionMode', 'Execution method')}</span>
-                            <select
-                                value={executionAuthority}
-                                onChange={event => setExecutionAuthority(event.target.value as 'durable' | 'legacy')}
-                                className="min-h-11 rounded-control border border-input bg-canvas px-3 text-sm text-foreground"
-                                aria-label={t('queue.executionMode', 'Execution method')}
-                            >
-                                <option value="durable">{t('queue.executionCurrent', 'Durable queue')}</option>
-                                <option value="legacy">{t('queue.executionPrevious', 'Existing Scene queue')}</option>
-                            </select>
-                        </label>
                         <select
                             value={selectedBatchId ?? ''}
                             onChange={event => setSelectedBatchId(event.target.value || null)}
@@ -629,26 +621,6 @@ export default function QueueCenter() {
                         >
                             {batches.length === 0 && <option value="">{t('queue.noBatches', 'No job groups')}</option>}
                             {batches.map(batch => <option key={batch.id} value={batch.id}>{batch.id}</option>)}
-                        </select>
-                        <select
-                            value={selectedBatch?.failurePolicy ?? 'continue'}
-                            disabled={selectedBatch === null || busy}
-                            onChange={event => {
-                                if (selectedBatch === null) return
-                                void runAction(() => repository.setBatchControl({
-                                    batchId: selectedBatch.id,
-                                    state: selectedBatch.state,
-                                    now: new Date().toISOString(),
-                                    reason: selectedBatch.pauseReason,
-                                    failurePolicy: event.target.value as QueueFailurePolicy,
-                                }))
-                            }}
-                            className="min-h-11 rounded-control border border-input bg-canvas px-3 text-sm"
-                            aria-label={t('queue.failurePolicy', 'Error handling')}
-                        >
-                            <option value="continue">{t('queue.continueOnError', 'Continue after errors')}</option>
-                            <option value="pause-on-fatal">{t('queue.pauseOnFatal', 'Pause on critical error')}</option>
-                            <option value="stop-on-first-error">{t('queue.stopOnFirstError', 'Stop on first error')}</option>
                         </select>
                         <Button
                             variant="outline"
@@ -678,7 +650,46 @@ export default function QueueCenter() {
                             <XCircle className="mr-2 h-4 w-4" />{t('queue.cancelAll', 'Cancel all')}
                         </Button>
                     </div>
+                    )}
                 </div>
+                <details className="workspace-disclosure">
+                    <summary>{t('workspace.queueOptions', '실행 방식 · 오류 처리')}</summary>
+                    <div className="workspace-toolbar">
+                        <label className="text-xs text-muted-foreground">
+                            <span className="sr-only">{t('queue.executionMode', 'Execution method')}</span>
+                            <select
+                                value={executionAuthority}
+                                onChange={event => setExecutionAuthority(event.target.value as 'durable' | 'legacy')}
+                                className="min-h-11 rounded-control border border-input bg-canvas px-3 text-sm text-foreground"
+                                aria-label={t('queue.executionMode', 'Execution method')}
+                            >
+                                <option value="durable">{t('queue.executionCurrent', 'Durable queue')}</option>
+                                <option value="legacy">{t('queue.executionPrevious', 'Existing Scene queue')}</option>
+                            </select>
+                        </label>
+                        {selectedBatch !== null && (
+                        <select
+                            value={selectedBatch.failurePolicy}
+                            disabled={busy}
+                            onChange={event => {
+                                void runAction(() => repository.setBatchControl({
+                                    batchId: selectedBatch.id,
+                                    state: selectedBatch.state,
+                                    now: new Date().toISOString(),
+                                    reason: selectedBatch.pauseReason,
+                                    failurePolicy: event.target.value as QueueFailurePolicy,
+                                }))
+                            }}
+                            className="min-h-11 rounded-control border border-input bg-canvas px-3 text-sm"
+                            aria-label={t('queue.failurePolicy', 'Error handling')}
+                        >
+                            <option value="continue">{t('queue.continueOnError', 'Continue after errors')}</option>
+                            <option value="pause-on-fatal">{t('queue.pauseOnFatal', 'Pause on critical error')}</option>
+                            <option value="stop-on-first-error">{t('queue.stopOnFirstError', 'Stop on first error')}</option>
+                        </select>
+                        )}
+                    </div>
+                </details>
             </header>
 
             {selectedBatch?.pauseReason === 'r2-readiness' && (
@@ -734,20 +745,19 @@ export default function QueueCenter() {
                 </section>
             )}
 
+            {selectedBatchId !== null && (
             <section
                 className="shrink-0 border-b border-border px-3 py-3 sm:px-5"
                 aria-label={t('queue.summary', 'Queue summary')}
             >
-                <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-xs sm:grid-cols-6 lg:grid-cols-10">
-                    {(['queued', 'running', 'succeeded', 'failed', 'cancelled', 'skipped', 'blocked'] as const).map(state => (
+                <dl className="grid grid-cols-4 gap-3 text-xs">
+                    {(['queued', 'running', 'succeeded'] as const).map(state => (
                         <div key={state} className="min-w-0">
-                            <dt className="truncate text-muted-foreground">{statusLabel(state)}</dt>
+                            <dt className="text-muted-foreground">{statusLabel(state)}</dt>
                             <dd className="font-mono text-sm font-semibold">{visibleSummary.states[state]}</dd>
                         </div>
                     ))}
                     <div><dt className="text-muted-foreground">{t('queue.progress', 'Progress')}</dt><dd className="font-mono text-sm">{progressPercent}%</dd></div>
-                    <div><dt className="text-muted-foreground">{t('queue.speed', 'Processing speed')}</dt><dd className="font-mono text-sm">{t('queue.ratePerMinute', '{{rate}}/min', { rate: rate.throughput.toFixed(1) })}</dd></div>
-                    <div><dt className="text-muted-foreground">{t('queue.remainingTime', 'Time remaining')}</dt><dd className="font-mono text-sm">{formatEta(rate.eta)}</dd></div>
                 </dl>
                 <div
                     className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"
@@ -771,7 +781,21 @@ export default function QueueCenter() {
                         })}
                     </Button>
                 )}
+                <details className="workspace-disclosure mt-2">
+                    <summary>{t('workspace.queueMetrics', '처리 속도 · 상세 현황')}</summary>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 pb-3 text-xs sm:grid-cols-5">
+                    {(['cancelled', 'skipped', 'blocked'] as const).map(state => (
+                        <div key={state} className="min-w-0">
+                            <dt className="truncate text-muted-foreground">{statusLabel(state)}</dt>
+                            <dd className="font-mono text-sm font-semibold">{visibleSummary.states[state]}</dd>
+                        </div>
+                    ))}
+                    <div><dt className="text-muted-foreground">{t('queue.speed', 'Processing speed')}</dt><dd className="font-mono text-sm">{t('queue.ratePerMinute', '{{rate}}/min', { rate: rate.throughput.toFixed(1) })}</dd></div>
+                    <div><dt className="text-muted-foreground">{t('queue.remainingTime', 'Time remaining')}</dt><dd className="font-mono text-sm">{formatEta(rate.eta)}</dd></div>
+                </dl>
+                </details>
             </section>
+            )}
 
             {fulfillment !== null && fulfillment.runId === selectedBatchId && !fulfillmentError
                 && <GenerationRunSummary key={`monitor:${fulfillment.runId}`} run={fulfillment} />}
@@ -893,14 +917,18 @@ export default function QueueCenter() {
 
             <div
                 ref={viewportRef}
-                className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+                className="min-h-64 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
                 onScroll={event => setScrollTop(event.currentTarget.scrollTop)}
                 role="list"
                 aria-label={t('queue.jobsList', 'Generation jobs')}
             >
                 {filteredTotal === 0 ? (
-                    <div className="flex min-h-48 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                        {t('queue.empty', 'No jobs match this view.')}
+                    <div className="workspace-empty">
+                        <h2>{batches.length === 0 ? t('workspace.queueEmpty', '아직 시작한 작업이 없어요.') : t('queue.empty', 'No jobs match this view.')}</h2>
+                        {batches.length === 0 && <>
+                            <p>{t('workspace.queueStartHint', '에셋 작업대에서 만들 이미지를 준비하면 진행 상황이 여기에 표시돼요.')}</p>
+                            <Button asChild className="min-h-11"><Link to="/folders">{t('workspace.goWorkbench', '에셋 작업대에서 시작하기')}</Link></Button>
+                        </>}
                     </div>
                 ) : (
                     <div className="relative w-full" style={{ height: filteredTotal * QUEUE_ROW_HEIGHT }}>

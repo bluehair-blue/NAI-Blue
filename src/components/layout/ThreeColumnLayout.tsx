@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { PromptPanel } from './PromptPanel'
 import { HistoryPanel } from './HistoryPanel'
-import { AnimatedNavBar } from './AnimatedNavBar'
+import '@/styles/folder-workbench.css'
+import '@/styles/workspace.css'
 import { CustomTitleBar } from './CustomTitleBar'
 import { PresetDropdown } from '@/components/preset/PresetDropdown'
 import { PresetDraftControls } from '@/components/preset/PresetDraftControls'
@@ -50,7 +51,6 @@ import {
     CloudUpload,
     Trash2,
     DatabaseZap,
-    BriefcaseBusiness,
     FolderTree,
     ChevronDown,
     Moon,
@@ -119,10 +119,8 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const { anlas, isVerified, anlas2, isVerified2, slot2Enabled, refreshAnlas, setSlotEnabled, getActiveTokens, requestTokenEntry } = useAuthStore()
     const {
         leftSidebarVisible,
-        rightSidebarVisible,
         supportSheet,
         toggleLeftSidebar,
-        toggleRightSidebar,
         setLeftSidebarVisible,
         openSupportSheet,
         closeSupportSheet,
@@ -130,15 +128,22 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const isDesktopShell = useMediaQuery('(min-width: 1536px)')
     const folderWorkbenchOpen = location.pathname === '/folders'
     const workbenchToolsRef = useRef<HTMLButtonElement>(null)
-    const leftSheetOpen = supportSheet === 'prompt' && (!isDesktopShell || folderWorkbenchOpen)
+    const supportReturnFocusRef = useRef<HTMLElement | null>(null)
+    // Menu items unmount before their sheet closes; return to Tools if the
+    // original control no longer exists, while direct editor buttons retain focus.
+    const rememberSupportFocus = () => {
+        supportReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    }
+    const restoreSupportFocus = (event: Event) => {
+        event.preventDefault()
+        const target = supportReturnFocusRef.current
+        ;(target?.isConnected ? target : workbenchToolsRef.current)?.focus()
+    }
+    const editorOpen = location.pathname === '/advanced' || location.pathname === '/scenes' || location.pathname.startsWith('/scenes/')
+    const promptPanelIsDocked = isDesktopShell && editorOpen
+    const leftSheetOpen = supportSheet === 'prompt' && !promptPanelIsDocked
     const rightSheetOpen = supportSheet === 'history'
     const activitySheetOpen = supportSheet === 'activity'
-    const compositionWorkspaceOwnsRails = location.pathname === '/advanced'
-        || location.pathname === '/folders'
-        || location.pathname === '/scenes'
-        || location.pathname.startsWith('/scenes/')
-    const promptPanelIsDocked = isDesktopShell && !folderWorkbenchOpen
-    const historyPanelIsDocked = isDesktopShell && !compositionWorkspaceOwnsRails
     const mainIsGenerating = useGenerationStore(state => state.isGenerating)
     const sceneIsGenerating = useSceneStore(state => state.isGenerating)
 
@@ -240,6 +245,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     }
 
     const handleLeftPanelToggle = () => {
+        rememberSupportFocus()
         if (promptPanelIsDocked) {
             toggleLeftSidebar()
         } else {
@@ -248,11 +254,8 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     }
 
     const handleRightPanelToggle = () => {
-        if (historyPanelIsDocked) {
-            toggleRightSidebar()
-        } else {
-            openSupportSheet('history')
-        }
+        rememberSupportFocus()
+        openSupportSheet('history')
     }
 
     const promptPanelContent = (
@@ -333,7 +336,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     return (
         <div
             className={cn(
-                "flex h-screen flex-col overflow-hidden bg-background",
+                "workspace-shell flex h-screen flex-col overflow-hidden bg-background",
                 folderWorkbenchOpen && "folder-workbench-shell",
                 isAndroidRuntime && "android-landscape-safe-inline",
             )}
@@ -352,180 +355,110 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             {/* Custom Title Bar - Only show on Windows (Mac uses native decorations) */}
             {!isMac && !isMobileRuntime && <CustomTitleBar />}
 
+            <header className="fb-app-header z-10 flex min-w-0 shrink-0 items-center gap-1 border-b border-border/45 bg-card px-2 py-2 sm:px-3 lg:pl-0">
+                <div className="fb-app-brand hidden shrink-0 items-center px-5 text-lg font-semibold tracking-tight sm:flex lg:w-[232px]">
+                    NAI <span className="ml-1 text-primary">Blue</span>
+                </div>
+                <nav
+                    aria-label={t('folderWorkbench.navigation.label', '작업대 탐색')}
+                    className="fb-app-navigation flex min-w-0 items-center gap-1"
+                >
+                <Link
+                    to="/folders"
+                    aria-current={folderWorkbenchOpen ? 'page' : undefined}
+                    className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                >
+                    {t('folderWorkbench.design.navCreate', '이미지 만들기')}
+                </Link>
+                <Link
+                    to="/queue"
+                    aria-current={location.pathname === '/queue' ? 'page' : undefined}
+                    className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                >
+                    {t('folderWorkbench.design.navHistory', '작업 기록')}
+                </Link>
+                </nav>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button
+                            ref={workbenchToolsRef}
+                            data-active={!folderWorkbenchOpen && location.pathname !== '/queue' || undefined}
+                            type="button"
+                            className="fb-app-tools inline-flex min-h-11 shrink-0 items-center gap-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3"
+                        >
+                            {t('folderWorkbench.navigation.tools', '도구')}
+                            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]">
+                        {navItems.filter(item => item.path !== '/folders' && item.path !== '/queue').map(item => (
+                            <DropdownMenuItem key={item.path} asChild className="min-h-11 rounded-[4px]">
+                                <Link to={item.path} aria-current={location.pathname === item.path || location.pathname.startsWith(item.path + '/') ? 'page' : undefined}>
+                                    <item.icon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                                    {t(item.labelKey, item.fallbackLabel ?? item.labelKey)}
+                                </Link>
+                            </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'} onSelect={handleLeftPanelToggle}>
+                            {t('prompt.title', '프롬프트')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls="nai-blue-history-sheet" onSelect={handleRightPanelToggle}>
+                            {t('history.title', '기록')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="min-h-11 rounded-[4px]" data-testid="open-my-work-activity" onSelect={() => { rememberSupportFocus(); openSupportSheet('activity') }}>
+                            {t('guided.activity.title', '내 작업')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => openProductGuidance()}>
+                            {t('productGuidance.trigger')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => useDiagnosticsStore.getState().openDrawer()}>
+                            {t('diagnosticDrawer.open')}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                {editorOpen && <div className="workspace-editor-actions">
+                    <button type="button" onClick={handleLeftPanelToggle} aria-label={t('prompt.title', '프롬프트')}
+                        aria-expanded={promptPanelIsDocked ? leftSidebarVisible : leftSheetOpen}
+                        aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'}>
+                        <PanelLeft aria-hidden="true" /><span>{t('prompt.title', '프롬프트')}</span>
+                    </button>
+                    <button type="button" onClick={handleRightPanelToggle} aria-label={t('history.title', '기록')}
+                        aria-expanded={rightSheetOpen} aria-controls="nai-blue-history-sheet">
+                        <PanelRight aria-hidden="true" /><span>{t('history.title', '기록')}</span>
+                    </button>
+                </div>}
+                <WorkbenchThemeToggle />
+            </header>
+
             {/* Three opaque surface tones carry the workspace hierarchy; only form controls draw edges. */}
-            <div className={cn('flex min-w-0 flex-1 overflow-hidden', folderWorkbenchOpen ? 'gap-0' : 'gap-3 p-3')}>
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <aside
                     id="nai-blue-prompt-dock"
                     className={cn(
-                        "hidden min-h-0 w-[420px] flex-shrink-0 flex-col overflow-hidden border-y border-border/45 bg-card/80 2xl:flex min-[1800px]:w-[500px]",
-                        (!leftSidebarVisible || folderWorkbenchOpen) && "2xl:hidden"
+                        "hidden min-h-0 w-[420px] flex-shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background 2xl:flex min-[1800px]:w-[500px]",
+                        (!leftSidebarVisible || !promptPanelIsDocked) && "2xl:hidden"
                     )}
                 >
-                    {!folderWorkbenchOpen && promptPanelContent}
+                    {promptPanelIsDocked && leftSidebarVisible && promptPanelContent}
                 </aside>
 
-                <div className={cn('flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas', !folderWorkbenchOpen && 'border-y border-border/45')}>
-                    {/* The workbench names the two primary tasks; secondary routes reuse the existing navigation and support-sheet authorities. */}
-                    {folderWorkbenchOpen ? (
-                        <header className="fb-app-header z-10 flex min-w-0 shrink-0 items-center gap-1 border-b border-border/45 bg-card px-2 py-2 sm:px-3 lg:pl-0">
-                            <div className="fb-app-brand hidden shrink-0 items-center px-5 text-lg font-semibold tracking-tight sm:flex lg:w-[232px]">
-                                NAI <span className="ml-1 text-primary">Blue</span>
-                            </div>
-                            <nav
-                                aria-label={t('folderWorkbench.navigation.label', '작업대 탐색')}
-                                className="fb-app-navigation flex min-w-0 items-center gap-1"
-                            >
-                            <Link
-                                to="/folders"
-                                aria-current="page"
-                                className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control bg-primary/10 px-2 text-base font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
-                            >
-                                {t('folderWorkbench.design.navCreate', '이미지 만들기')}
-                            </Link>
-                            <Link
-                                to="/queue"
-                                className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
-                            >
-                                {t('folderWorkbench.design.navHistory', '작업 기록')}
-                            </Link>
-                            </nav>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <button
-                                        ref={workbenchToolsRef}
-                                        type="button"
-                                        className="fb-app-tools inline-flex min-h-11 shrink-0 items-center gap-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3"
-                                    >
-                                        {t('folderWorkbench.navigation.tools', '도구')}
-                                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                                    </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]">
-                                    {navItems.filter(item => item.path !== '/folders' && item.path !== '/queue').map(item => (
-                                        <DropdownMenuItem key={item.path} asChild className="min-h-11 rounded-[4px]">
-                                            <Link to={item.path}>
-                                                <item.icon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
-                                                {t(item.labelKey, item.fallbackLabel ?? item.labelKey)}
-                                            </Link>
-                                        </DropdownMenuItem>
-                                    ))}
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={handleLeftPanelToggle}>
-                                        {t('prompt.title', '프롬프트')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={handleRightPanelToggle}>
-                                        {t('history.title', '기록')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" data-testid="open-my-work-activity" onSelect={() => openSupportSheet('activity')}>
-                                        {t('guided.activity.title', '내 작업')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => openProductGuidance()}>
-                                        {t('productGuidance.trigger')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => useDiagnosticsStore.getState().openDrawer()}>
-                                        {t('diagnosticDrawer.open')}
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <WorkbenchThemeToggle />
-                        </header>
-                    ) : (
-                    /* Utility dialogs wrap below the legacy navigation on other routes. */
-                    <div className="z-10 flex shrink-0 flex-wrap items-center gap-2 bg-card px-3 py-2 sm:flex-nowrap">
-                        <Tip content={t('layout.toggleLeftSidebar', 'Toggle Left Sidebar')}>
-                            <button
-                                type="button"
-                                onClick={handleLeftPanelToggle}
-                                className={cn(
-                                    "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control transition-colors duration-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                                    "text-muted-foreground hover:bg-accent hover:text-foreground",
-                                    promptPanelIsDocked && !leftSidebarVisible && "opacity-50"
-                                )}
-                                aria-label={t('layout.toggleLeftSidebar', 'Toggle Left Sidebar')}
-                                aria-expanded={promptPanelIsDocked ? leftSidebarVisible : leftSheetOpen}
-                                aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'}
-                            >
-                                <PanelLeft className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                        </Tip>
-                        <div className="flex min-w-0 flex-1 items-center">
-                            {/* Both 2xl docks reduce the center header below the icon-row
-                                width. The nav depends on those dock projections and moves
-                                secondary routes into More so neither panel toggle overlaps. */}
-                            <AnimatedNavBar
-                                items={navItems}
-                                forceCondensed={isDesktopShell
-                                    && leftSidebarVisible
-                                    && historyPanelIsDocked
-                                    && rightSidebarVisible}
-                            />
-                        </div>
-                        <Tip content={t('layout.toggleRightSidebar', 'Toggle Right Sidebar')}>
-                            <button
-                                type="button"
-                                onClick={handleRightPanelToggle}
-                                className={cn(
-                                    "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control transition-colors duration-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-                                    "text-muted-foreground hover:bg-accent hover:text-foreground",
-                                    historyPanelIsDocked && !rightSidebarVisible && "opacity-50"
-                                )}
-                                aria-label={t('layout.toggleRightSidebar', 'Toggle Right Sidebar')}
-                                aria-expanded={historyPanelIsDocked ? rightSidebarVisible : rightSheetOpen}
-                                aria-controls={historyPanelIsDocked ? 'nai-blue-history-dock' : 'nai-blue-history-sheet'}
-                            >
-                                <PanelRight className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                        </Tip>
-                        <div className="ml-auto flex basis-full shrink-0 items-center justify-end gap-2 sm:basis-auto">
-                            <Tip content={t('guided.activity.title', '내 작업')}>
-                                <button
-                                    type="button"
-                                    onClick={() => openSupportSheet('activity')}
-                                    data-testid="open-my-work-activity"
-                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors duration-standard hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card min-[1180px]:w-auto min-[1180px]:gap-2 min-[1180px]:px-3"
-                                    aria-label={t('guided.activity.title', '내 작업')}
-                                    aria-expanded={activitySheetOpen}
-                                    aria-controls="nai-blue-activity-sheet"
-                                >
-                                    <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
-                                    <span className="hidden text-sm font-medium min-[1180px]:inline">
-                                        {t('guided.activity.title', '내 작업')}
-                                    </span>
-                                </button>
-                            </Tip>
-                            <ProductGuidance />
-                            <DiagnosticDrawer />
-                        </div>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+                    {/* Dialog owners stay mounted after their menu trigger closes. */}
+                    <div className="[&>button]:hidden">
+                        <ProductGuidance returnFocusRef={workbenchToolsRef} />
+                        <DiagnosticDrawer />
                     </div>
-                    )}
-                    {/* Keep dialog owners mounted when the menu closes; only their legacy triggers are hidden on the workbench. */}
-                    {folderWorkbenchOpen && (
-                        <div className="[&>button]:hidden">
-                            <ProductGuidance returnFocusRef={workbenchToolsRef} />
-                            <DiagnosticDrawer />
-                        </div>
-                    )}
 
                     {/* Page Content */}
                     <main className={cn(
-                        "relative min-h-0 min-w-0 flex-1",
-                        (location.pathname === '/advanced' || location.pathname === '/library' || location.pathname === '/folders') ? "p-0 overflow-hidden" : "overflow-y-auto p-2 sm:p-4"
+                        "workspace-content relative min-h-0 min-w-0 flex-1",
+                        ['/advanced', '/library', '/folders', '/settings', '/queue', '/data', '/trash'].includes(location.pathname) ? 'p-0 overflow-hidden' : 'workspace-content-inset overflow-y-auto'
                     )}>
                         {children}
                     </main>
                 </div>
 
-                <aside
-                    id="nai-blue-history-dock"
-                    className={cn(
-                        "hidden min-h-0 w-[280px] flex-shrink-0 overflow-hidden border-y border-border/45 bg-card/80 2xl:block",
-                        (!rightSidebarVisible || compositionWorkspaceOwnsRails) && "2xl:hidden"
-                    )}
-                >
-                    {/* Only the visible History surface mounts its disk scan and
-                        queue-summary poller; the responsive Sheet owns the other case. */}
-                    {historyPanelIsDocked && rightSidebarVisible && <HistoryPanel />}
-                </aside>
             </div>
 
             <Sheet
@@ -535,6 +468,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             >
                 <SheetContent
                     id="nai-blue-prompt-sheet"
+                    onCloseAutoFocus={restoreSupportFocus}
                     side="left"
                     showOverlay={false}
                     closeLabel={t('common.close', '닫기')}
@@ -562,6 +496,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             >
                 <SheetContent
                     id="nai-blue-history-sheet"
+                    onCloseAutoFocus={restoreSupportFocus}
                     side="right"
                     closeLabel={t('common.close', '닫기')}
                     className="flex !w-full !max-w-none flex-col gap-0 sm:!w-[400px] sm:!max-w-[400px]"
@@ -587,6 +522,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             >
                 <SheetContent
                     id="nai-blue-activity-sheet"
+                    onCloseAutoFocus={restoreSupportFocus}
                     side="right"
                     closeLabel={t('common.close', '닫기')}
                     className="flex !w-full !max-w-none flex-col gap-0 sm:!w-[400px] sm:!max-w-[400px]"

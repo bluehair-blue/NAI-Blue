@@ -147,7 +147,9 @@ async function collectVisibleCtaReport(page, rootSelector = 'body') {
         }
         const isRendered = (element, rect) => {
             const style = getComputedStyle(element)
-            return !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
+            // Closed native details retain descendant rectangles in Chromium.
+            // checkVisibility excludes those unpainted controls without weakening overlap checks.
+            return element.checkVisibility() && !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
                 style.display !== 'none' &&
                 style.visibility !== 'hidden' &&
                 style.visibility !== 'collapse' &&
@@ -877,10 +879,13 @@ async function closeBrowser(browser) {
 }
 
 async function main() {
-    const server = run(npmCommand, ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(port), '--strictPort'])
+    // Reuse a prepared preview when supplied, which also supports restricted runners that cannot bind a port.
+    const server = process.env.RESPONSIVE_CONTRACT_URL
+        ? null
+        : run(npmCommand, ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(port), '--strictPort'])
 
     try {
-        await waitForReady(server)
+        if (server) await waitForReady(server)
 
         const browser = await chromium.launch()
         try {
@@ -925,7 +930,8 @@ async function main() {
                         })
                     })
                     if (route === '/style-lab') {
-                        await page.locator('[role="tab"]').last().click()
+                        if (viewport.width < 640) await page.locator('select').filter({ has: page.locator('option[value="settings"]') }).selectOption('settings')
+                        else await page.locator('[role="tab"]').last().click()
                     }
 
                     const report = await page.evaluate(() => {
@@ -958,7 +964,7 @@ async function main() {
                                 }
                             })
 
-                        const navTargets = Array.from(document.querySelectorAll(document.querySelector('.folder-workbench-shell')
+                        const navTargets = Array.from(document.querySelectorAll(document.querySelector('.workspace-shell')
                             ? '.fb-app-navigation a' : 'nav a, nav button'))
                             .filter((target) => {
                                 const rect = target.getBoundingClientRect()
@@ -1010,9 +1016,9 @@ async function main() {
                     assertVisibleCtaLayout(ctaReport, `${route} @ ${viewport.width}px`)
 
                     // The workbench names two destinations; Tools and theme are adjacent header controls.
-                    // other expert routes retain the five-destination primary nav.
+                    // Every specialist category now shares the same labelled primary navigation.
                     if (route !== '/guided-preview') {
-                        assert.ok(report.navTargets.length >= (route === '/folders' ? 2 : 5), `${route} @ ${viewport.width}px should expose primary navigation`)
+                        assert.ok(report.navTargets.length >= 2, `${route} @ ${viewport.width}px should expose primary navigation`)
                         for (const [index, target] of report.navTargets.entries()) {
                             assert.ok(
                                 target.width >= 40 && target.height >= 40,
@@ -1194,7 +1200,8 @@ async function main() {
                         assert.ok(report.mainDock.actionHeight >= 44, `/ @ ${viewport.width}px generate action is below 44px`)
 
                         if (viewport.width === 390) {
-                            await page.locator('button[aria-controls="nai-blue-prompt-sheet"]').click()
+                            await page.locator('.fb-app-tools').click()
+                            await page.locator('[role="menuitem"][aria-controls="nai-blue-prompt-sheet"]').click()
                             const promptSheet = page.locator('#nai-blue-prompt-sheet')
                             await promptSheet.waitFor({ state: 'visible' })
                             const promptReport = await promptSheet.evaluate((sheet) => {
@@ -1222,7 +1229,8 @@ async function main() {
                             await page.keyboard.press('Escape')
                             await promptSheet.waitFor({ state: 'hidden' })
 
-                            await page.locator('button[aria-controls="nai-blue-history-sheet"]').click()
+                            await page.locator('.fb-app-tools').click()
+                            await page.locator('[role="menuitem"][aria-controls="nai-blue-history-sheet"]').click()
                             const historySheet = page.locator('#nai-blue-history-sheet')
                             await historySheet.waitFor({ state: 'visible' })
                             const historyReport = await historySheet.evaluate((sheet) => {

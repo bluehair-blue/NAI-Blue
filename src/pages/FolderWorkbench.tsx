@@ -28,7 +28,6 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useQueueStore } from '@/stores/queue-store'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { toNativeAssetUrl } from '@/platform/asset-url'
-import '@/styles/folder-workbench.css'
 
 const PAGE_SIZE = 60
 
@@ -320,7 +319,7 @@ export default function FolderWorkbench() {
                                 </div>
                             </div>
                             <div className="fb-selection-row">
-                                <label className="fb-check-label"><input type="checkbox" checked={pageSelected} disabled={busy || pageRows.length === 0} onChange={event => selectPage(event.target.checked)} />{t('folderWorkbench.design.selectPage', '이 페이지 선택')}</label>
+                                <label className="fb-check-label"><input className="choice-checkbox" type="checkbox" checked={pageSelected} disabled={busy || pageRows.length === 0} onChange={event => selectPage(event.target.checked)} />{t('folderWorkbench.design.selectPage', '이 페이지 선택')}</label>
                                 {filtered.length > PAGE_SIZE && <Button variant="ghost" className="fb-button fb-text-button" disabled={busy} onClick={() => updateView({ selected: filtered.map(row => row.key) })}>{t('folderWorkbench.design.selectAll', '찾은 {{count}}개 모두 선택', { count: filtered.length })}</Button>}
                                 {selected.length > 0 && <Button variant="ghost" className="fb-button fb-text-button" disabled={busy} onClick={() => updateView({ selected: [] })}>{t('folderWorkbench.clearSelection', '선택 해제')}</Button>}
                                 {selected.length > 1 && <details className="fb-bulk-count">
@@ -353,7 +352,7 @@ export default function FolderWorkbench() {
                                         const imageUrl = !lastImage || lastImage.url.startsWith('data:') ? lastImage?.url : toNativeAssetUrl(lastImage.url)
                                         return <li key={row.key} data-preset-id={row.presetId} data-scene-id={row.scene.id} className={`fb-asset-card ${selectedKeys.has(row.key) ? 'is-selected' : ''}`}>
                                             <div className="fb-card-media">
-                                                <label className="fb-card-select"><input type="checkbox" checked={selectedKeys.has(row.key)} disabled={busy}
+                                                <label className="fb-card-select"><input className="choice-checkbox" type="checkbox" checked={selectedKeys.has(row.key)} disabled={busy}
                                                     aria-label={t('folderWorkbench.selectAsset', '{{name}} 선택', { name: row.scene.name })}
                                                     onChange={event => updateView({ selected: event.target.checked ? [...view.selected, row.key] : view.selected.filter(key => key !== row.key) })} /><span className="sr-only">{row.scene.name}</span></label>
                                                 <button type="button" className="fb-open-preview" onClick={() => setDetailKey(row.key)} aria-label={t('folderWorkbench.design.openImage', '{{name}} 이미지와 설명 보기', { name: row.scene.name })}>
@@ -392,7 +391,7 @@ export default function FolderWorkbench() {
                         <Button asChild variant="outline" className="fb-button fb-secondary"><Link to="/r2">{t('folderWorkbench.design.uploadSettings', '올리기 설정')}</Link></Button>
                         {profile?.publicBaseUrl && <p className="fb-path">{profile.publicBaseUrl}</p>}
                     </section>
-                    {concreteFolder && folders.some(folder => folder.parentId === concreteFolder.id) && <label className="fb-check-label"><input type="checkbox" checked={view.includeChildren} onChange={event => updateView({ includeChildren: event.target.checked, page: 0 })} />{t('folderWorkbench.design.includeChildren', '안쪽 폴더 이미지도 보기')}</label>}
+                    {concreteFolder && folders.some(folder => folder.parentId === concreteFolder.id) && <label className="fb-check-label"><input className="choice-checkbox" type="checkbox" checked={view.includeChildren} onChange={event => updateView({ includeChildren: event.target.checked, page: 0 })} />{t('folderWorkbench.design.includeChildren', '안쪽 폴더 이미지도 보기')}</label>}
                     <Button variant="outline" className="fb-button fb-secondary" onClick={() => { setSettingsOpen(false); setManagerOpen(true) }}>{t('folderWorkbench.design.changeFolderSettings', '저장 위치와 설명 바꾸기')}</Button>
                 </div>
             </SheetContent></Sheet>

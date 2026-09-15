@@ -47,6 +47,8 @@ export interface EnqueuePreparedMainGenerationInput {
     readonly approvedAt: string
     readonly credentialReadinessFingerprint: Sha256Digest
     readonly folderBinding: OutputReservationFolderBinding
+    /** Lets a deliberate single-image action disable automatic Provider retries. */
+    readonly maxAttempts?: number
 }
 
 function issue(code: string, fieldPath: string, message: string): PlanIssue {
@@ -63,7 +65,7 @@ function unsupportedLocalOutput(prepared: readonly PreparedMainGeneration[]): Pl
     return null
 }
 
-function dependencies(pricingBasis: AnlasPricingBasis): PlanGenerationDependencies<PreparedMainGeneration> {
+function dependencies(pricingBasis: AnlasPricingBasis, maxAttempts: number): PlanGenerationDependencies<PreparedMainGeneration> {
     const value: PlanGenerationDependencies<PreparedMainGeneration> = {
         // Detached planning never calls these legacy source ports. Keeping them
         // explicit makes an accidental regression fail closed.
@@ -72,7 +74,7 @@ function dependencies(pricingBasis: AnlasPricingBasis): PlanGenerationDependenci
         executionPolicy: {
             failurePolicy: 'continue',
             retryPolicyId: CURRENT_MAIN_QUEUE_POLICY.retryPolicyId,
-            maxAttempts: 3,
+            maxAttempts,
             maxConcurrency: CURRENT_MAIN_QUEUE_POLICY.maxConcurrency,
             pricingBasis,
         },
@@ -103,6 +105,13 @@ function dependencies(pricingBasis: AnlasPricingBasis): PlanGenerationDependenci
 export async function enqueuePreparedMainGeneration(
     input: EnqueuePreparedMainGenerationInput,
 ): Promise<MainApplicationGenerationCommandResult> {
+    const maxAttempts = input.maxAttempts ?? 3
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 3) {
+        return Object.freeze({
+            status: 'invalid',
+            issues: Object.freeze([issue('invalid-max-attempts', 'maxAttempts', 'Maximum attempts must be an integer from 1 to 3.')]),
+        })
+    }
     if (input.prepared.length === 0) {
         return Object.freeze({
             status: 'invalid',
@@ -173,7 +182,7 @@ export async function enqueuePreparedMainGeneration(
         })
     }
 
-    const replan = dependencies(input.pricingBasis)
+    const replan = dependencies(input.pricingBasis, maxAttempts)
     const estimatedAnlas = preparedJobs.reduce((sum, prepared) => sum + calculateAnlasCost({
         model: prepared.params.model,
         width: prepared.params.width,
@@ -190,7 +199,7 @@ export async function enqueuePreparedMainGeneration(
         executionPolicy: {
             failurePolicy: 'continue',
             retryPolicyId: CURRENT_MAIN_QUEUE_POLICY.retryPolicyId,
-            maxAttempts: 3,
+            maxAttempts,
             maxConcurrency: CURRENT_MAIN_QUEUE_POLICY.maxConcurrency,
             credentialDispatch: { kind: 'auto' },
             pricingBasis: input.pricingBasis,

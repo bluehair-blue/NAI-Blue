@@ -1,48 +1,4 @@
-/* DESIGN.md defines this route's palette. Scoping at body also reaches Radix
-   portals; leaving /folders restores the shared app palette and theme authority. */
-body:has(.folder-workbench-shell), .folder-workbench-surface {
-  color-scheme: light;
-  --background: 0.945 0.014 265;
-  --canvas: 0.915 0.021 265;
-  --card: 0.975 0.007 265;
-  --popover: 0.975 0.007 265;
-  --foreground: 0.255 0.045 265;
-  --card-foreground: 0.255 0.045 265;
-  --popover-foreground: 0.255 0.045 265;
-  --primary: 0.505 0.195 264;
-  --ring: 0.505 0.195 264;
-  --primary-foreground: 0.985 0.004 265;
-  --secondary: 0.895 0.025 265;
-  --muted: 0.895 0.025 265;
-  --secondary-foreground: 0.330 0.045 265;
-  --muted-foreground: 0.475 0.035 265;
-  --accent: 0.875 0.050 265;
-  --accent-foreground: 0.345 0.130 264;
-  --border: 0.820 0.025 265;
-  --input: 0.735 0.035 265;
-  --radius-control: 4px;
-}
-.dark body:has(.folder-workbench-shell), .dark .folder-workbench-surface {
-  color-scheme: dark;
-  --background: 0.225 0.037 265;
-  --canvas: 0.195 0.032 265;
-  --card: 0.270 0.044 265;
-  --popover: 0.270 0.044 265;
-  --foreground: 0.950 0.008 265;
-  --card-foreground: 0.950 0.008 265;
-  --popover-foreground: 0.950 0.008 265;
-  --primary: 0.700 0.155 264;
-  --ring: 0.700 0.155 264;
-  --primary-foreground: 0.170 0.038 265;
-  --secondary: 0.300 0.045 265;
-  --muted: 0.300 0.045 265;
-  --secondary-foreground: 0.915 0.014 265;
-  --muted-foreground: 0.750 0.030 265;
-  --accent: 0.315 0.077 264;
-  --accent-foreground: 0.895 0.050 264;
-  --border: 0.380 0.041 265;
-  --input: 0.475 0.047 265;
-}
+/* Workbench geometry; the shared semantic palette lives in globals.css. */
 .folder-workbench-shell, .folder-workbench-surface { font-size: 16px; line-height: 1.5; }
 .folder-workbench-shell :is(button, input, textarea, select), .folder-workbench-surface :is(button, input, textarea, select) { font: inherit; }
 .folder-workbench-shell :is(button, a, input, summary):focus-visible, .folder-workbench-surface :is(button, a, input, textarea, summary):focus-visible { outline: 2px solid oklch(var(--ring)); outline-offset: 3px; }

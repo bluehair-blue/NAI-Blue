@@ -12,6 +12,8 @@
     "dev:mobile": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "qa:category-design": "node scripts/qa-category-design.mjs",
+    "qa:readable-choices": "node scripts/qa-readable-choices.mjs",
     "test:responsive-layout": "node scripts/verify-responsive-layout-contract.mjs",
     "test:remote-runtime-removal": "node scripts/verify-remote-runtime-removal.mjs",
     "test:smart-tools": "node scripts/test-smart-tools-contract.mjs",

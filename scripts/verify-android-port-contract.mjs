@@ -264,7 +264,6 @@ const sheet = read('src/components/ui/sheet.tsx')
 const localTagger = read('src/services/local-tagger-server.ts')
 const shortcuts = read('src/hooks/useShortcuts.ts')
 const promptGenerator = read('src/components/prompt/PromptGeneratorDialog.tsx')
-const animatedNavBar = read('src/components/layout/AnimatedNavBar.tsx')
 const settingsPage = read('src/pages/Settings.tsx')
 const autoBackup = read('src/lib/auto-backup.ts')
 const storeSnapshots = read('src/lib/store-snapshots.ts')
@@ -321,10 +320,12 @@ assert.ok(
     'sheet close controls must remain below the mobile status bar',
 )
 assert.ok(
-    animatedNavBar.includes('PRIMARY_PATHS') &&
-        animatedNavBar.includes('overflowItems') &&
-        animatedNavBar.includes('h-11 min-h-11 w-11 min-w-11'),
-    'mobile navigation must expose four primary routes, overflow, and stable touch targets',
+    threeColumnLayout.includes('fb-app-navigation') &&
+        threeColumnLayout.includes('to="/folders"') &&
+        threeColumnLayout.includes('to="/queue"') &&
+        threeColumnLayout.includes('navItems.filter') &&
+        threeColumnLayout.includes('min-h-11'),
+    'mobile navigation must expose two labelled primary routes, Tools, and stable touch targets',
 )
 for (const symbol of [
     'MEDIA_STORAGE_BASE_DIRECTORY',

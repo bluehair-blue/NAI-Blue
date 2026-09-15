@@ -543,7 +543,7 @@ function PromptStep({
                         checked={draft.payload.generation.transparentBackground ?? false}
                         disabled={disabled}
                         onChange={event => onTransparentBackground(event.target.checked)}
-                        className="mt-0.5 h-4 w-4 accent-[oklch(var(--primary))]"
+                        className="choice-checkbox mt-0.5 h-4 w-4 accent-[oklch(var(--primary))]"
                     />
                     <span>
                         <span className="block text-sm font-semibold">
@@ -844,8 +844,8 @@ function ReviewStep({ draft, activeTokenCount, estimatedAnlas, consented, submit
                 </span>
             </div>
             {estimatedAnlas > 0 && (
-                <label className="flex cursor-pointer items-start gap-3 border-y border-primary/35 py-5">
-                    <input type="checkbox" checked={consented} onChange={event => onConsent(event.target.checked)} className="mt-1 h-4 w-4 accent-primary" />
+                <label className="choice-row flex cursor-pointer items-start gap-3 border-y border-primary/35 py-5">
+                    <input type="checkbox" checked={consented} onChange={event => onConsent(event.target.checked)} className="choice-checkbox mt-1 h-4 w-4 accent-primary" />
                     <span className="min-w-0 text-sm leading-6">
                         <span className="block font-semibold">{t('guided.batch.review.costConsent', '최대 {{cost}} Anlas 사용에 동의해요.', { cost: estimatedAnlas.toLocaleString() })}</span>
                     </span>

@@ -236,10 +236,10 @@ export function GuidedDeliveryStep({
     return (
         <div className="divide-y divide-border/70 border-y border-border/70">
             <section className={cn('py-5', r2State.status !== 'ready' && 'text-muted-foreground')}>
-                <label className={cn(
+                <label className={"choice-row " + (cn(
                     'flex min-h-11 items-start gap-3 px-2 text-sm font-medium sm:px-3',
                     r2State.status !== 'ready' && 'cursor-not-allowed opacity-55',
-                )}>
+                ))}>
                     <Checkbox
                         className="mt-0.5"
                         checked={autoUpload}

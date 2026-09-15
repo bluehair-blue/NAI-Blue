@@ -17,7 +17,7 @@ export type MainGenerationStartOutcome = 'started' | 'low-quality-steps'
 
 let mainApplicationEnqueueInFlight: Promise<string> | null = null
 
-function credentialReadinessFingerprint(auth: ReturnType<typeof useAuthStore.getState>): Sha256Digest {
+export function credentialReadinessFingerprint(auth: ReturnType<typeof useAuthStore.getState>): Sha256Digest {
     return `sha256:${hashCanonicalValue({
         initialized: auth.isCredentialStateInitialized,
         slots: [

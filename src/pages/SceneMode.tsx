@@ -1168,7 +1168,7 @@ export default function SceneMode() {
                 </div>
             ) : (
                 <div className="flex min-w-0 items-center gap-2">
-                    <h1 className="min-w-0 flex-1 truncate text-xl font-semibold sm:text-2xl">{t('scene.title')}</h1>
+                    <h1 className="workspace-title min-w-0 flex-1 truncate">{t('scene.title')}</h1>
                     <input
                         ref={fileInputRef}
                         type="file"

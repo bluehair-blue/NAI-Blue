@@ -1,6 +1,7 @@
 /* Tailwind v4 uses the Vite integration, while @config preserves the shared
    design tokens and animation utilities used by both desktop and Android. */
 @import "tailwindcss";
+@import "./choices.css";
 @config "../../tailwind.config.js";
 @plugin "tailwindcss-animate";
 
@@ -39,34 +40,35 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --brand-core: 0.316 0.1719 263.65;
-    --background: 0.975 0.006 264;
-    --foreground: 0.190 0.025 262;
-    --canvas: 0.955 0.009 264;
-    --card: 0.995 0.002 260;
-    --card-foreground: 0.190 0.025 262;
-    --popover: 1 0 0;
-    --popover-foreground: 0.190 0.025 262;
-    --primary: 0.420 0.170 263.65;
-    --primary-foreground: 0.985 0.005 260;
-    --secondary: 0.935 0.014 262;
-    --secondary-foreground: 0.250 0.030 262;
-    --muted: 0.945 0.010 262;
-    --muted-foreground: 0.490 0.030 262;
-    --accent: 0.910 0.035 263.65;
-    --accent-foreground: 0.280 0.120 263.65;
+    --background: 0.945 0.014 265;
+    --foreground: 0.255 0.045 265;
+    --canvas: 0.915 0.021 265;
+    --card: 0.975 0.007 265;
+    --card-foreground: 0.255 0.045 265;
+    --popover: 0.975 0.007 265;
+    --popover-foreground: 0.255 0.045 265;
+    --primary: 0.505 0.195 264;
+    --primary-foreground: 0.985 0.004 265;
+    --secondary: 0.895 0.025 265;
+    --secondary-foreground: 0.330 0.045 265;
+    --muted: 0.895 0.025 265;
+    --muted-foreground: 0.475 0.035 265;
+    --accent: 0.875 0.050 265;
+    --accent-foreground: 0.345 0.130 264;
     --destructive: 0.550 0.215 26;
     --destructive-foreground: 0.985 0.005 260;
-    --border: 0.875 0.018 262;
-    --input: 0.845 0.020 262;
-    --ring: 0.500 0.170 263.65;
+    --border: 0.820 0.025 265;
+    --input: 0.735 0.035 265;
+    --ring: 0.505 0.195 264;
     --success: 0.520 0.140 150;
     --warning: 0.700 0.140 75;
     --info: 0.520 0.160 250;
     --scrim: 0.100 0.010 262;
     --welcome-ambient: 0.540 0.190 263.65;
     --radius: 0.75rem;
-    --radius-control: 0.625rem;
+    --radius-control: 4px;
     --radius-panel: 0.875rem;
     --touch-target: 2.75rem;
     --space-1: 0.25rem;
@@ -93,26 +95,27 @@
   }
 
   .dark {
-    --background: 0.130 0.012 262;
-    --foreground: 0.940 0.012 260;
-    --canvas: 0.110 0.010 262;
-    --card: 0.165 0.014 262;
-    --card-foreground: 0.940 0.012 260;
-    --popover: 0.190 0.018 262;
-    --popover-foreground: 0.940 0.012 260;
-    --primary: 0.640 0.150 263.65;
-    --primary-foreground: 0.130 0.020 262;
-    --secondary: 0.225 0.020 262;
-    --secondary-foreground: 0.910 0.014 260;
-    --muted: 0.205 0.016 262;
-    --muted-foreground: 0.680 0.025 260;
-    --accent: 0.230 0.040 263.65;
-    --accent-foreground: 0.870 0.080 263.65;
+    color-scheme: dark;
+    --background: 0.225 0.037 265;
+    --foreground: 0.950 0.008 265;
+    --canvas: 0.195 0.032 265;
+    --card: 0.270 0.044 265;
+    --card-foreground: 0.950 0.008 265;
+    --popover: 0.270 0.044 265;
+    --popover-foreground: 0.950 0.008 265;
+    --primary: 0.700 0.155 264;
+    --primary-foreground: 0.170 0.038 265;
+    --secondary: 0.300 0.045 265;
+    --secondary-foreground: 0.915 0.014 265;
+    --muted: 0.300 0.045 265;
+    --muted-foreground: 0.750 0.030 265;
+    --accent: 0.315 0.077 264;
+    --accent-foreground: 0.895 0.050 264;
     --destructive: 0.640 0.205 25;
     --destructive-foreground: 0.985 0.005 260;
-    --border: 0.285 0.020 262;
-    --input: 0.320 0.024 262;
-    --ring: 0.680 0.140 263.65;
+    --border: 0.380 0.041 265;
+    --input: 0.475 0.047 265;
+    --ring: 0.700 0.155 264;
     --success: 0.690 0.160 150;
     --warning: 0.780 0.140 75;
     --info: 0.720 0.150 250;

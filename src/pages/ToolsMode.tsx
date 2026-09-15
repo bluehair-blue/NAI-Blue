@@ -370,12 +370,17 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
     return (
         <div
             data-local-file-drop
-            className="relative flex h-full min-h-0 flex-col gap-4 md:flex-row"
+            className="relative flex h-full min-h-0 flex-col gap-6"
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
         >
+            {!guided && <header className="workspace-heading !mb-0 shrink-0">
+                <h1>{t('smartTools.title', '스마트 툴')}</h1>
+                <p>{t('workspace.toolsHint', '이미지를 열고, 배경 제거·보정 등 필요한 작업을 선택하세요.')}</p>
+            </header>}
+            <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
             {/* Drag overlay */}
             {isDragOver && (
                 <div className="absolute inset-0 z-50 bg-scrim/72 flex items-center justify-center rounded-panel">
@@ -402,7 +407,7 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
                 </div>
             )}
             {/* Left: Image Workspace */}
-            <div className="relative flex min-h-[15rem] flex-[0_0_42%] flex-col overflow-hidden rounded-xl border border-border bg-muted/20 md:min-h-0 md:flex-1" ref={containerRef}>
+            <div className="relative flex min-h-[18rem] flex-[0_0_42%] flex-col overflow-hidden bg-canvas md:min-h-0 md:flex-1" ref={containerRef}>
                 {processedImage ? (
                     <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
                         <img
@@ -437,7 +442,8 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
                         <p className="mb-4 text-xs opacity-60 sm:mb-6 sm:text-sm">{t('smartTools.supportedFormats', 'PNG, JPG, WEBP 지원')}</p>
                         <Button
                             type="button"
-                            variant="outline"
+                            variant="default"
+                            className="min-h-11"
                             onClick={() => fileInputRef.current?.click()}
                         >
                             {t('smartTools.openImage', '이미지 열기')}
@@ -469,7 +475,7 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
             </div>
 
             {/* Right: Tools Options */}
-            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card md:w-[320px] md:flex-none">
+            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-card md:w-[320px] md:flex-none">
                 <div className="p-4 border-b border-border bg-muted/30">
                     <h2 className="font-semibold flex items-center gap-2">
                         <Wand2 className="h-4 w-4 text-primary" />
@@ -478,6 +484,7 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
                 </div>
 
                 <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+                    {processedImage ? <>
                     <RemoteImageProcessingConsent />
 
                     {/* Background Removal */}
@@ -711,7 +718,17 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
                             {t('smartTools.runDeclutter', '정리 실행')}
                         </Button>
                     </ToolCard>
+                    </> : <div className="space-y-4 text-muted-foreground">
+                        <p>{t('workspace.toolsStartHint', '이미지를 열면 사용할 수 있는 도구가 표시돼요.')}</p>
+                        <ul className="space-y-3 text-sm">
+                            <li>{t('smartTools.rembg', '배경 제거')}</li>
+                            <li>{t('smartTools.kaloscopeStyle', '스타일 분석')}</li>
+                            <li>{t('smartTools.declutter', '이미지 정리')}</li>
+                        </ul>
+                    </div>}
                 </div>
+            </div>
+
             </div>
 
             <TagAnalysisDialog
@@ -767,7 +784,7 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
 
 function ToolCard({ children, icon: Icon, color, title, disabled }: any) {
     return (
-        <div className={cn("p-4 border rounded-xl bg-card hover:border-primary/50 transition-colors", disabled && "opacity-50 pointer-events-none")}>
+        <div className={cn("py-4 border-b border-border/60 bg-transparent", disabled && "opacity-50 pointer-events-none")}>
             <div className="flex items-center gap-3 mb-3">
                 <Icon className={cn("h-5 w-5", color)} />
                 <span className="font-medium">{title}</span>
