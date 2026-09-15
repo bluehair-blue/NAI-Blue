@@ -334,7 +334,9 @@
             "light": "Light",
             "dark": "Dark",
             "navCreate": "Make images",
-            "navHistory": "Work history"
+            "navHistory": "Work history",
+            "navCreateCompact": "Create",
+            "navHistoryCompact": "History"
         }
     },
     "app": {

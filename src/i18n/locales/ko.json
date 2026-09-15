@@ -334,7 +334,9 @@
             "light": "밝게",
             "dark": "어둡게",
             "navCreate": "이미지 만들기",
-            "navHistory": "작업 기록"
+            "navHistory": "작업 기록",
+            "navCreateCompact": "만들기",
+            "navHistoryCompact": "기록"
         }
     },
     "app": {

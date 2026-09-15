@@ -334,7 +334,9 @@
             "light": "明るく",
             "dark": "暗く",
             "navCreate": "画像を作る",
-            "navHistory": "作業の記録"
+            "navHistory": "作業の記録",
+            "navCreateCompact": "作成",
+            "navHistoryCompact": "履歴"
         }
     },
     "app": {

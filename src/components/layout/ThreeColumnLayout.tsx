@@ -52,6 +52,7 @@ import {
     Trash2,
     DatabaseZap,
     FolderTree,
+    History,
     ChevronDown,
     Moon,
     Sun,
@@ -366,16 +367,26 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                 <Link
                     to="/folders"
                     aria-current={folderWorkbenchOpen ? 'page' : undefined}
-                    className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                    aria-label={t('folderWorkbench.design.navCreate', '이미지 만들기')}
+                    className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
                 >
-                    {t('folderWorkbench.design.navCreate', '이미지 만들기')}
+                    <span className="inline-flex items-center gap-2">
+                        <Images className="h-4 w-4 shrink-0 sm:hidden" aria-hidden="true" />
+                        <span className="sm:hidden">{t('folderWorkbench.design.navCreateCompact', 'Create')}</span>
+                        <span className="hidden sm:inline">{t('folderWorkbench.design.navCreate', '이미지 만들기')}</span>
+                    </span>
                 </Link>
                 <Link
                     to="/queue"
                     aria-current={location.pathname === '/queue' ? 'page' : undefined}
-                    className="fb-app-nav-link inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+                    aria-label={t('folderWorkbench.design.navHistory', '작업 기록')}
+                    className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
                 >
-                    {t('folderWorkbench.design.navHistory', '작업 기록')}
+                    <span className="inline-flex items-center gap-2">
+                        <History className="h-4 w-4 shrink-0 sm:hidden" aria-hidden="true" />
+                        <span className="sm:hidden">{t('folderWorkbench.design.navHistoryCompact', 'History')}</span>
+                        <span className="hidden sm:inline">{t('folderWorkbench.design.navHistory', '작업 기록')}</span>
+                    </span>
                 </Link>
                 </nav>
                 <DropdownMenu>
