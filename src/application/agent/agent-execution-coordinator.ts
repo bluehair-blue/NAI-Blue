@@ -1,7 +1,7 @@
 import { assertAgentAuthoringTarget, isAgentAuthoringResult, type AgentAuthoringCommand, type AgentAuthoringPort } from './agent-authoring-contract'
 import { isAgentAuthoringRecord, type AgentAuthoringRecord } from './agent-execution-repository'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
-import type { JsonObject } from '@/domain/composition/types'
+import type { JsonObject, JsonValue } from '@/domain/composition/types'
 import type { GenerationPlan, Sha256Digest } from '@/application/generation/generation-plan-contract'
 import type { GenerationPlanRepository } from '@/application/generation/generation-plan-repository'
 import { AgentCommandError, assertAgentPublicValue, type AgentCommandEnvelope } from './agent-command-contract'
@@ -26,6 +26,17 @@ export interface AgentGenerationExecutionReview extends AgentGenerationApprovalB
     readonly expiresAt: string
     readonly estimatedAnlas: number
     readonly imageCount: number
+    readonly previewJobs: readonly {
+        readonly ordinal: number
+        readonly prompt: string
+        readonly negativePrompt: string
+        readonly model: string
+        readonly width: number
+        readonly height: number
+        readonly steps: number
+        readonly seed: number
+        readonly generationParameters: JsonValue
+    }[]
     readonly compatibilityStatuses: readonly string[]
     readonly sourceIds: readonly string[]
     readonly outputEffect: 'local-output' | 'local-output-and-r2'
@@ -511,6 +522,10 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                     clientId: record.envelope.context.clientId, planId: plan.planId, planHash: plan.planHash,
                     policyRevision: record.policyRevision, expiresAt: record.expiresAt,
                     estimatedAnlas: record.estimatedAnlas, imageCount: record.imageCount,
+                    previewJobs: plan.jobs.map(job => ({ ordinal: job.ordinal, prompt: job.semantic.prompt,
+                        negativePrompt: job.semantic.negativePrompt, model: job.semantic.model, width: job.semantic.width,
+                        height: job.semantic.height, steps: job.semantic.steps, seed: job.semantic.seed,
+                        generationParameters: structuredClone(job.semantic.generationParameters) })),
                     compatibilityStatuses: [...new Set(plan.jobs.map(job => job.compatibility.status))],
                     sourceIds: plan.sourceBindings.map(source => source.resourceId),
                     outputEffect: plan.jobs.some(job => job.destination.r2) ? 'local-output-and-r2' : 'local-output',

@@ -10,7 +10,7 @@
     "x86_64"
   ],
   "versionCodeScheme": "explicit-monotonic",
-  "versionCode": 2011014,
+  "versionCode": 2011015,
   "signing": {
     "keyAlias": "release",
     "certificateSha256": "6E20E7607AD38F1FC94619007BB3C59D19F088B23D91559A99EEAA7C6DE41A65"

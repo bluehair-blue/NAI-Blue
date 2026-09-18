@@ -21,7 +21,11 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
         boundedAutoExpiresAt: mode === 'bounded-auto' ? '2026-09-05T01:00:00.000Z' : null }
     const plan = { schemaVersion: 1, planId: digest, planHash: digest, semanticPlanHash: digest,
         sourceBindings: [], materializedSeedTrace: { source: 'fixed', traceId: null, seeds: [1] },
-        jobs: [{ ordinal: 0, estimatedAnlas: 7, compatibility: { status: 'captured-pass', compatibilityProfileId: 'captured' },
+        jobs: [{ ordinal: 0, estimatedAnlas: 7, semantic: { prompt: 'rainy bookshop', negativePrompt: 'blur', model: 'nai-diffusion-5-full',
+            width: 832, height: 1216, steps: 28, seed: 1, generationParameters: { cfgScale: 5, cfgRescale: 0,
+                sampler: 'k_euler_ancestral', scheduler: 'native', smea: false, smeaDyn: false, variety: false,
+                characterPrompts: [{ prompt: 'reader by window', negative: 'extra fingers', enabled: true, position: { x: 0.5, y: 0.58 } }] },
+            resourceDigest: digest }, compatibility: { status: 'captured-pass', compatibilityProfileId: 'captured' },
             destination: { collisionPolicy: 'fail' }, prepared: { privateSpool: 'E:\\private\\secret.bin' } }],
         estimatedAnlas: 7, issues: [], requiredApprovals: [], executionPolicy: { maxConcurrency: 1 },
         budget: { maxImages: 1, maxAnlas: 10 } } as unknown as GenerationPlan
@@ -84,6 +88,9 @@ describe('durable agent execution authority', () => {
         const reopened = f.reopen()
         const [review] = await reopened.coordinator.pending()
         expect(JSON.stringify(review)).not.toContain('privateSpool')
+        expect(review).toMatchObject({ previewJobs: [{ prompt: 'rainy bookshop', negativePrompt: 'blur', model: 'nai-diffusion-5-full',
+            width: 832, height: 1216, steps: 28, seed: 1, generationParameters: { cfgScale: 5,
+                characterPrompts: [{ prompt: 'reader by window', negative: 'extra fingers', enabled: true }] } }] })
         await Promise.all([reopened.coordinator.approve(review.requestId, review), f.reopen().coordinator.approve(review.requestId, review)])
         expect(f.enqueue).toHaveBeenCalledTimes(1)
         expect(await reopened.dispatcher.dispatch(envelope)).toMatchObject({ state: 'completed', result: { status: 'ready' } })

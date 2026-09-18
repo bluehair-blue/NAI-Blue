@@ -16,6 +16,7 @@ import {
 import type { GenerationParams } from '@/services/novelai-types'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useSettingsStore } from '@/stores/settings-store'
+import { AgentCommandPanel } from '@/presentation/agent/AgentCommandPanel'
 
 import './manual-review-preview.css'
 
@@ -355,6 +356,16 @@ export default function ManualReviewPreview() {
                         <Eye className="h-4 w-4" />예시 모듈 · 클릭당 한 장
                     </span>
                 </header>
+
+                <section aria-label="파일 기반 에이전트 생성 연결" className="rounded-panel border bg-card px-4 py-3 sm:px-5">
+                    <details data-testid="manual-review-agent-connection">
+                        <summary className="cursor-pointer font-medium">파일 에이전트 요청과 생성 설정 검토</summary>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            파일 요청에서 만들어진 동일한 생성 계획을 확인하고 승인하면 Main Queue가 실행합니다. 승인된 배치와 결과 프리뷰는 큐 센터에서 확인할 수 있습니다.
+                        </p>
+                        <div className="mt-4"><AgentCommandPanel /></div>
+                    </details>
+                </section>
 
                 <section aria-label="생성 진행 상태" className="space-y-3">
                     <div className="flex items-center justify-between gap-4 text-sm">

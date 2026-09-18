@@ -7,9 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { runtimeAgentCommands } from '@/composition-root/runtime-agent-commands'
 import type { ForegroundAgentCommandRuntime } from '@/composition-root/foreground-agent-command-runtime'
-import type { AgentExecutionReview } from '@/application/agent/agent-execution-coordinator'
+import type { AgentExecutionReview, AgentGenerationExecutionReview } from '@/application/agent/agent-execution-coordinator'
 import { useQueueStore } from '@/stores/queue-store'
-import type { JsonValue } from '@/domain/composition/types'
+import type { JsonObject, JsonValue } from '@/domain/composition/types'
 import { AgentPolicyForm } from './AgentPolicyForm'
 
 /** Show every signed input field for review; display labels never alter the consent binding. */
@@ -19,14 +19,70 @@ function authoringRows(value: JsonValue, prefix = ''): { label: string; value: s
         base: '기본', additional: '추가', character: '캐릭터', negative: '제외', characterNegative: '캐릭터 제외',
         generation: '생성 설정', model: '모델', steps: '단계', cfgScale: '프롬프트 강도', cfgRescale: '강도 보정', sampler: '샘플러',
         scheduler: '노이즈 일정', smea: 'SMEA', smeaDyn: '동적 SMEA', variety: '다양성', qualityToggle: '품질 태그',
+        strength: '강도', noise: '노이즈', characterStrength: '캐릭터 강도', characterFidelity: '캐릭터 충실도',
+        characterReferenceType: '캐릭터 참조 방식', characterPositionEnabled: '캐릭터 위치 사용', imageFormat: '이미지 형식',
+        upscaledEnhance: '업스케일 보정', transparentBackground: '투명 배경',
         ucPreset: '제외 프리셋', seed: '시드', seedLocked: '시드 고정', width: '너비', height: '높이', generationFolderId: '저장 폴더 ID',
         productionCount: '생성 수량', filenameTemplate: '파일 이름 규칙', op: '작업', folderId: '폴더 ID', parentId: '상위 폴더 ID',
         displayName: '폴더 이름', pathSegment: '저장 폴더 이름', commonPrompt: '공통 프롬프트', autoUpload: 'R2 자동 업로드 설정',
+        prompt: '프롬프트', position: '위치', x: '가로', y: '세로', enabled: '활성화',
         r2ProfilePolicy: 'R2 프로필', r2BucketPolicy: 'R2 버킷', r2PrefixPolicy: 'R2 저장 위치', mode: '적용 방식', value: '설정값' }
     if (Array.isArray(value)) return value.flatMap((item, index) => authoringRows(item, `${prefix} ${index + 1}`))
     if (value !== null && typeof value === 'object') return Object.entries(value).flatMap(([key, item]) =>
         authoringRows(item, [prefix, labels[key] ?? key].filter(Boolean).join(' · ')))
     return [{ label: prefix, value: value === null ? '없음' : typeof value === 'boolean' ? value ? '켜짐' : '꺼짐' : String(value) }]
+}
+
+const visibleGenerationSettings = new Set([
+    'cfgScale', 'cfgRescale', 'sampler', 'scheduler', 'smea', 'smeaDyn', 'variety', 'strength', 'noise',
+    'characterStrength', 'characterFidelity', 'characterReferenceType', 'characterPositionEnabled',
+    'imageFormat', 'upscaledEnhance', 'qualityToggle', 'ucPreset', 'transparentBackground',
+])
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+    return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function generationSettingsRows(value: JsonValue): { label: string; value: string }[] {
+    if (!isJsonObject(value)) return []
+    const settings = Object.fromEntries(Object.entries(value).filter(([key]) => visibleGenerationSettings.has(key))) as JsonObject
+    return authoringRows(settings)
+}
+
+function renderGenerationPreview(item: AgentGenerationExecutionReview) {
+    return <details className="rounded-control border px-3 py-2">
+        <summary className="cursor-pointer font-medium">프롬프트와 생성 설정 확인 · {item.previewJobs.length}장</summary>
+        <div className="mt-3 max-h-[32rem] space-y-3 overflow-y-auto pr-1">
+            {item.previewJobs.map(job => {
+                const parameters = isJsonObject(job.generationParameters) ? job.generationParameters : {}
+                const characters = Array.isArray(parameters.characterPrompts)
+                    ? parameters.characterPrompts.filter(isJsonObject)
+                    : []
+                return <article key={job.ordinal} className="space-y-3 rounded-control border bg-muted/20 p-3">
+                    <div>
+                        <p className="font-medium">이미지 {job.ordinal + 1} · {job.model}</p>
+                        <p className="mt-1 text-muted-foreground">{job.width} × {job.height} · Steps {job.steps} · Seed {job.seed}</p>
+                    </div>
+                    <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                        {generationSettingsRows(job.generationParameters).map((row, index) => <div key={`${row.label}-${index}`} className="min-w-0">
+                            <dt className="text-muted-foreground">{row.label}</dt><dd className="break-words">{row.value}</dd>
+                        </div>)}
+                    </dl>
+                    <section><h4 className="font-medium">전체 프롬프트</h4><p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{job.prompt || '없음'}</p></section>
+                    <section><h4 className="font-medium">제외 프롬프트</h4><p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{job.negativePrompt || '없음'}</p></section>
+                    {characters.map((character, index) => {
+                        const position = isJsonObject(character.position) ? character.position : {}
+                        return <section key={index} className="border-t pt-2">
+                            <h4 className="font-medium">캐릭터 프롬프트 {index + 1}{character.enabled === false ? ' · 꺼짐' : ''}</h4>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">{typeof character.prompt === 'string' ? character.prompt : '없음'}</p>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">제외 요소: {typeof character.negative === 'string' && character.negative ? character.negative : '없음'}</p>
+                            <p className="mt-1 text-muted-foreground">위치: {typeof position.x === 'number' ? position.x.toFixed(2) : '—'}, {typeof position.y === 'number' ? position.y.toFixed(2) : '—'}</p>
+                        </section>
+                    })}
+                </article>
+            })}
+        </div>
+    </details>
 }
 
 /** Human registration controls share the live dispatcher's capabilities, never its secret keys. */
@@ -155,6 +211,7 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                         <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
                         <p>{t('agentInbox.outputEffect')}: {t(item.outputEffect === 'local-output-and-r2' ? 'agentInbox.outputLocalR2' : 'agentInbox.outputLocal')}</p>
                         <p>{t('agentInbox.allowedCompatibility')}: {item.compatibilityStatuses.join(', ')}</p>
+                        {renderGenerationPreview(item)}
                     </>}
                     <p>{t('agentInbox.approvalExpiry')}: <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p>
                     <p>{t('agentInbox.approvalReasons')}: {item.reasons.map(reason => t(`agentInbox.reason_${reason}`, { defaultValue: reason })).join(', ')}</p>

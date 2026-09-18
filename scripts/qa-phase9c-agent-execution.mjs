@@ -46,7 +46,12 @@ try {
         const plan = { schemaVersion: 1, planId: digest, planHash: digest, semanticPlanHash: digest,
             sourceBindings: [{ resourceType: 'workflow-draft', resourceId: 'qa-reviewed-source', revision: 1, contentHash: digest }],
             materializedSeedTrace: { source: 'fixed', traceId: null, seeds: [1] },
-            jobs: [{ ordinal: 0, estimatedAnlas: 7, compatibility: { status: 'captured-pass', compatibilityProfileId: 'qa-captured' },
+            jobs: [{ ordinal: 0, estimatedAnlas: 7, semantic: { prompt: 'QA portrait prompt', negativePrompt: 'blur',
+                model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, seed: 1,
+                generationParameters: { cfgScale: 5, cfgRescale: 0, sampler: 'k_euler_ancestral', scheduler: 'native',
+                    smea: false, smeaDyn: false, variety: false, characterPrompts: [{ prompt: 'QA character', negative: 'extra fingers',
+                        enabled: true, position: { x: 0.5, y: 0.5 } }] }, resourceDigest: digest },
+                compatibility: { status: 'captured-pass', compatibilityProfileId: 'qa-captured' },
                 destination: { collisionPolicy: 'fail' }, prepared: { fixtureOnly: true } }],
             estimatedAnlas: 7, issues: [], requiredApprovals: [], executionPolicy: { maxConcurrency: 1 }, budget: { maxImages: 1, maxAnlas: 10 } }
         let owner = null, timeOffset = 0, enqueueCount = 0, cancelCount = 0, storageCount = 0, runtime, mountRevision = 0
@@ -127,7 +132,8 @@ try {
     await row('qa-approve').getByText('검토한 원본: qa-reviewed-source', { exact: true }).waitFor()
     report.checks.push('Suggest enqueue is durably pending after ready-file retirement; zero Queue-port calls and reviewed source/cost/output are visible')
     await page.screenshot({ path: path.join(output, '01-suggest-review.png'), fullPage: true })
-    await panel.getByRole('spinbutton', { name: '실행당 Anlas', exact: true }).fill('21'); await save()
+    // Policy v2 removes the per-run Anlas quota; saving the current form still verifies durable revision updates.
+    await save()
     assert.equal((await facts('qa-approve')).policy.revision, 1)
     assert.equal((await facts('qa-approve')).pending[0].policyRevision, 1)
     await row('qa-approve').getByRole('button', { name: '이번 요청 승인', exact: true }).click()

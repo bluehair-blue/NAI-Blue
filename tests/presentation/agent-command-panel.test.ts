@@ -20,6 +20,12 @@ describe('human execution controls in the existing inbox panel', () => {
             pendingApprovals: [{ requestId: 'request-review', clientId: 'client-human', requestHash: `sha256:${'1'.repeat(64)}`,
                 planHash: `sha256:${'2'.repeat(64)}`, planId: `sha256:${'2'.repeat(64)}`, policyRevision: 0,
                 expiresAt: '2099-01-01T00:00:00.000Z', estimatedAnlas: 12, imageCount: 2,
+                previewJobs: [{ ordinal: 0, prompt: 'rainy bookshop', negativePrompt: 'blur', model: 'nai-diffusion-5-full',
+                    width: 832, height: 1216, steps: 28, seed: 1, generationParameters: { cfgScale: 5, cfgRescale: 0,
+                        sampler: 'k_euler_ancestral', scheduler: 'native', smea: false, smeaDyn: false, variety: false,
+                        characterPrompts: [{ prompt: 'reader by window', negative: 'extra fingers', enabled: true, position: { x: 0.5, y: 0.58 } }] } },
+                { ordinal: 1, prompt: 'evening greenhouse', negativePrompt: 'oversaturated', model: 'nai-diffusion-5-full',
+                    width: 1024, height: 1024, steps: 30, seed: 2, generationParameters: { cfgScale: 5.5, sampler: 'k_euler_ancestral', scheduler: 'native' } }],
                 sourceIds: ['reviewed-source'], compatibilityStatuses: ['captured-pass'], outputEffect: 'local-output', reasons: ['AGENT_APPROVAL_REQUIRED'] }],
         }
         const decideApproval = vi.fn()
@@ -27,6 +33,8 @@ describe('human execution controls in the existing inbox panel', () => {
         const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(AgentCommandPanel, { runtime })))
         for (const fact of ['request-review', 'client-human', 'reviewed-source', 'captured-pass', '2099-01-01',
             'agentInbox.approveOnce', 'agentInbox.rejectApproval', 'agentInbox.reviewCost', 'agentInbox.outputLocal', 'batch-existing', 'href="/queue"']) expect(html).toContain(fact)
+        for (const fact of ['rainy bookshop', 'evening greenhouse', 'nai-diffusion-5-full', 'Steps 28', '프롬프트 강도',
+            'reader by window', 'extra fingers', '프롬프트와 생성 설정 확인']) expect(html).toContain(fact)
         expect(html).toContain('value="suggest" selected=""')
         expect(html).not.toContain('type="datetime-local"')
         expect(html).not.toContain('type="number"')

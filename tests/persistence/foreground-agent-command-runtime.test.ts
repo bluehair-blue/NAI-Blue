@@ -65,7 +65,9 @@ async function fixture() {
 async function executionFixture(command?: 'generation.cancel' | 'generation.retry_storage') {
     const f = await fixture()
     const digest = `sha256:${'a'.repeat(64)}` as const
-    const plan = { planId: digest, planHash: digest, jobs: [{ compatibility: { status: 'captured-pass' },
+    const plan = { planId: digest, planHash: digest, jobs: [{ semantic: { prompt: 'agent-approved prompt', negativePrompt: 'blur',
+        model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, seed: 1,
+        generationParameters: { cfgScale: 5, sampler: 'k_euler_ancestral', characterPrompts: [] } }, compatibility: { status: 'captured-pass' },
         destination: { collisionPolicy: 'fail' } }], estimatedAnlas: 7, requiredApprovals: [],
         sourceBindings: [{ resourceId: 'draft-1' }], budget: { maxImages: 1, maxAnlas: 7 },
         executionPolicy: { maxConcurrency: 1 } } as unknown as GenerationPlan
