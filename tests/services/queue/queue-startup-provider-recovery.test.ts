@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
     reconcileStyleLab: vi.fn(),
     reconcileSceneLinks: vi.fn(),
     recoverR2: vi.fn(),
+    reportDiagnostic: vi.fn(),
+    addDiagnosticBreadcrumb: vi.fn(),
 }))
 
 vi.mock('@/services/queue/indexeddb-queue-repository', () => ({
@@ -37,9 +39,13 @@ vi.mock('@/application/scene/link-scene-artifact', () => ({
 }))
 vi.mock('@/lib/scene-migration-startup', () => ({ getRuntimeSceneRepository: () => ({}) }))
 vi.mock('@/services/organizer/runtime', () => ({ getRuntimeArtifactRepository: () => ({}) }))
-vi.mock('@/services/diagnostics/error-registry', () => ({ reportDiagnostic: vi.fn() }))
+vi.mock('@/services/diagnostics/error-registry', () => ({
+    reportDiagnostic: mocks.reportDiagnostic,
+    addDiagnosticBreadcrumb: mocks.addDiagnosticBreadcrumb,
+}))
 vi.mock('@/services/queue/queue-r2-release-recovery', () => ({ recoverQueueR2Release: mocks.recoverR2 }))
 
+import { QueueExecutionError } from '@/services/queue/durable-queue-coordinator'
 import {
     initializeQueueAfterRestart,
     resetQueueStartupForTests,
@@ -177,6 +183,39 @@ describe('Queue startup Provider reconciliation', () => {
         expect(result.sceneLinks).toEqual([])
         expect(result.r2ReleaseJobs).toBe(0)
         expect(mocks.reconcileStyleLab).toHaveBeenCalledOnce()
+    })
+
+    it('keeps the inbox ready when a terminal legacy job has an undecodable R2 snapshot', async () => {
+        mocks.listJobs
+            .mockResolvedValueOnce({ items: [], nextCursor: null })
+            .mockResolvedValueOnce({
+                items: [{
+                    id: 'legacy-succeeded',
+                    workflow: 'main',
+                    state: 'succeeded',
+                    artifactReference: {
+                        kind: 'output-writer',
+                        artifactId: 'artifact:legacy',
+                        digest: `sha256:${'a'.repeat(64)}`,
+                    },
+                }],
+                nextCursor: null,
+            })
+            .mockResolvedValueOnce({ items: [], nextCursor: null })
+        mocks.recoverR2.mockRejectedValueOnce(
+            new QueueExecutionError('fatal', 'Main queue snapshot parameters are invalid'),
+        )
+
+        const result = await initializeQueueAfterRestart({ providerResultSpool: spool([]) })
+
+        expect(result.inboxReady).toBe(true)
+        expect(result.recoveryIssues).toEqual([])
+        expect(mocks.reportDiagnostic).toHaveBeenCalledWith(expect.any(QueueExecutionError), expect.objectContaining({
+            stage: 'r2-release-reconcile-skipped',
+            category: 'r2_upload',
+            severity: 'warning',
+            recoverable: true,
+        }))
     })
 
     it.each([false, true])('reports unresolved spool corruption with explicit details=%s', async explicit => {

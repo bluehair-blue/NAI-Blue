@@ -9,6 +9,7 @@ import { DEFAULT_AGENT_EXECUTION_POLICY, effectiveAgentExecutionPolicy, type Age
 import type { AgentApprovalExpectation, AgentExecutionCoordinator, AgentPendingApproval } from '@/application/agent/agent-execution-coordinator'
 import type { AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
 import type { AgentCommandReceipt } from '@/application/agent/command-receipt-repository'
+import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 
 export interface ForegroundAgentSnapshot {
     readonly status: 'unsupported' | 'starting' | 'ready' | 'busy' | 'app-unavailable' | 'stopping' | 'stopped'
@@ -101,6 +102,12 @@ export class ForegroundAgentCommandRuntime {
         if (this.running || recovery === null) return Promise.resolve()
         this.stopRequested = false
         this.recovery = recovery
+        const reportStartupFailure = (stage: string, error: unknown): void => {
+            reportDiagnostic(error, {
+                operation: 'startup.agent-commands', stage, category: 'persistence',
+                severity: 'error', recoverable: true,
+            })
+        }
         // Attach immediately: Queue failure must not become an unhandled rejection
         // while native metadata initialization is still pending.
         const recovered = recovery.then(value => value.inboxReady, () => false)
@@ -109,57 +116,80 @@ export class ForegroundAgentCommandRuntime {
             const native = this.dependencies.native
             const result = await initializeAgentCommandRuntime({
                 migrate: async () => {
-                    const workspace = await native.initialize()
-                    this.update({ workspaceId: workspace.workspaceId, clients: workspace.clients })
+                    try {
+                        const workspace = await native.initialize()
+                        this.update({ workspaceId: workspace.workspaceId, clients: workspace.clients })
+                    } catch (error) {
+                        reportStartupFailure('native-initialize', error)
+                        throw error
+                    }
                 },
                 recover: async () => ({ ready: await recovered }),
                 hydrate: async () => {
-                    const workspaceId = this.snapshot.workspaceId!
-                    const handlers = await this.dependencies.createHandlers(workspaceId)
-                    const authentication = native.authentication(() => {
-                        if (this.owner === null) throw new Error('Agent inbox has no owner')
-                        return this.owner
-                    })
-                    this.execution = await this.dependencies.createExecution?.(workspaceId, async envelope => {
-                        // Stop/revoke cannot open a new execution after the final asynchronous authorization check.
-                        if (!this.running || this.stopRequested || this.dependencies.policy?.isSaving()) return false
-                        try {
-                            const identity = await authentication.authenticate(envelope, new Date().toISOString(), { allowExpiredReplay: true })
-                            return this.running && !this.stopRequested && !this.dependencies.policy?.isSaving()
-                                && identity.clientId === envelope.context.clientId
-                                && identity.actor.kind === envelope.context.actor.kind && identity.actor.id === `client:${identity.clientId}`
-                        } catch { return false }
-                    }) ?? null
-                    this.dispatcher = new AgentCommandDispatcher({ workspaceId,
-                        handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler]),
-                            ...(this.execution?.cancelHandler === undefined ? [] : [this.execution.cancelHandler]),
-                            ...(this.execution?.storageRetryHandler === undefined ? [] : [this.execution.storageRetryHandler]),
-                            ...(this.execution?.authoringHandlers ?? [])],
-                        authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
-                    })
-                    this.unsubscribePolicy?.()
-                    this.unsubscribePolicy = this.dependencies.policy?.subscribe(() => this.update({})) ?? null
+                    try {
+                        const workspaceId = this.snapshot.workspaceId!
+                        const handlers = await this.dependencies.createHandlers(workspaceId)
+                        const authentication = native.authentication(() => {
+                            if (this.owner === null) throw new Error('Agent inbox has no owner')
+                            return this.owner
+                        })
+                        this.execution = await this.dependencies.createExecution?.(workspaceId, async envelope => {
+                            // Stop/revoke cannot open a new execution after the final asynchronous authorization check.
+                            if (!this.running || this.stopRequested || this.dependencies.policy?.isSaving()) return false
+                            try {
+                                const identity = await authentication.authenticate(envelope, new Date().toISOString(), { allowExpiredReplay: true })
+                                return this.running && !this.stopRequested && !this.dependencies.policy?.isSaving()
+                                    && identity.clientId === envelope.context.clientId
+                                    && identity.actor.kind === envelope.context.actor.kind && identity.actor.id === `client:${identity.clientId}`
+                            } catch { return false }
+                        }) ?? null
+                        this.dispatcher = new AgentCommandDispatcher({ workspaceId,
+                            handlers: [...handlers, ...(this.execution === null ? [] : [this.execution.handler]),
+                                ...(this.execution?.cancelHandler === undefined ? [] : [this.execution.cancelHandler]),
+                                ...(this.execution?.storageRetryHandler === undefined ? [] : [this.execution.storageRetryHandler]),
+                                ...(this.execution?.authoringHandlers ?? [])],
+                            authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
+                        })
+                        this.unsubscribePolicy?.()
+                        this.unsubscribePolicy = this.dependencies.policy?.subscribe(() => this.update({})) ?? null
+                    } catch (error) {
+                        reportStartupFailure('hydrate', error)
+                        throw error
+                    }
                 },
                 acquireOwner: async () => {
-                    this.owner = await native.acquire()
-                    if (this.owner === null) return null
-                    const token = this.owner
-                    return { release: async () => { await native.release(token); if (this.owner === token) this.owner = null } }
+                    try {
+                        this.owner = await native.acquire()
+                        if (this.owner === null) return null
+                        const token = this.owner
+                        return { release: async () => { await native.release(token); if (this.owner === token) this.owner = null } }
+                    } catch (error) {
+                        reportStartupFailure('acquire-owner', error)
+                        throw error
+                    }
                 },
                 processReadyRequests: async () => {
-                    if (this.stopRequested) return
-                    this.running = true
-                    // Queue recovery already completed. Execution recovery reads its committed facts;
-                    // it never treats an unresolved request as permission to enqueue again.
-                    for (const receipt of await this.execution?.recover() ?? []) await this.publishReceipt(receipt)
-                    await this.refreshApprovals()
-                    if (this.stopRequested) return
-                    this.update({ status: 'ready' }); await this.poll()
+                    try {
+                        if (this.stopRequested) return
+                        this.running = true
+                        // Queue recovery already completed. Execution recovery reads its committed facts;
+                        // it never treats an unresolved request as permission to enqueue again.
+                        for (const receipt of await this.execution?.recover() ?? []) await this.publishReceipt(receipt)
+                        await this.refreshApprovals()
+                        if (this.stopRequested) return
+                        this.update({ status: 'ready' }); await this.poll()
+                    } catch (error) {
+                        reportStartupFailure('process-ready-requests', error)
+                        throw error
+                    }
                 },
             })
             if (result.status !== 'ready') {
                 this.running = false
                 this.update({ status: result.status })
+                if (result.status === 'app-unavailable') {
+                    reportStartupFailure('result-app-unavailable', new Error('Agent command startup did not reach ready state.'))
+                }
             } else this.schedule()
         })().finally(() => { this.starting = null })
         return this.starting

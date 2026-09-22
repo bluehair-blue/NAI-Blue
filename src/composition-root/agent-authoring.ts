@@ -2,7 +2,7 @@ import { createAgentAuthoringService } from '@/application/agent/agent-authoring
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import type { AgentCommandHandler } from '@/application/agent/runtime-capability-registry'
 import type { JsonObject } from '@/domain/composition/types'
-import type { SceneAuthoringRecord } from '@/application/scene/scene-repository'
+import type { SceneAuthoringRecord, SceneDocumentSummary } from '@/application/scene/scene-repository'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { flushSceneAuthorityRuntime, publishAgentSceneDocument } from '@/lib/scene-authority-runtime'
 import { DEFAULT_GENERATION_FOLDER_WORKSPACE_ID } from '@/lib/generation-folder-authority-runtime'
@@ -73,12 +73,24 @@ export function createAgentAuthoringReadHandlers(): AgentCommandHandler[] {
 export async function getAgentAuthoringSnapshot(offset = 0, limit = 20): Promise<JsonObject> {
     await flushSceneAuthorityRuntime()
     const repository = getRuntimeSceneRepository()
-    const summaries = [...await repository.listDocuments()].sort((a, b) => a.presetId.localeCompare(b.presetId))
+    const documents = repository.listDocumentRecords !== undefined
+        ? await repository.listDocumentRecords()
+        : null
+    const summaries: SceneDocumentSummary[] = documents === null
+        ? [...await repository.listDocuments()]
+        : documents.map(document => ({
+            presetId: document.presetId,
+            revision: document.revision,
+            sceneCount: document.scenes.length,
+            updatedAt: document.updatedAt,
+        }))
+    summaries.sort((a, b) => a.presetId.localeCompare(b.presetId))
     const presets = useSceneStore.getState().presets
     const rows = []
     for (const summary of summaries) {
         if (!presets.some(preset => preset.id === summary.presetId)) continue
-        const document = await repository.getDocument(summary.presetId)
+        const document = documents?.find(candidate => candidate.presetId === summary.presetId)
+            ?? await repository.getDocument(summary.presetId)
         for (const scene of document?.scenes ?? []) rows.push({ presetId: summary.presetId, sceneId: scene.id,
             revision: document!.revision, name: scene.name.slice(0, 200), generationFolderId: scene.generationFolderId ?? null,
             productionCount: scene.productionCount ?? 1, resultCount: scene.artifactRefs.length })

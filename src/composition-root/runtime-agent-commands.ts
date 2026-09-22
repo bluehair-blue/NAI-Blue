@@ -23,6 +23,7 @@ import { isAgentExecutionPolicyUpdatePending, useSettingsStore } from '@/stores/
 import { createRuntimeAgentAuthoring, createAgentAuthoringReadHandlers, getAgentAuthoringSnapshot } from './agent-authoring'
 import { createAgentSceneGenerationPlanHandler } from './agent-scene-generation-plan'
 import { createProductionRequestHandlers } from './production-requests'
+import { summarizeWorkflowDraft } from '@/application/agent/agent-workflow-draft-summary'
 
 const receipts = new IndexedDbCommandReceiptRepository()
 
@@ -53,7 +54,7 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
             const authoring = await getAgentAuthoringSnapshot(offset, limit)
             const hasMore = offset + limit < Math.max(all.length, Number(authoring.totalScenes), Number(authoring.totalPresets), Number(authoring.totalFolders))
             return { workspaceId, ...authoring,
-                workflowDrafts: all.slice(offset, offset + limit).map(draft => ({ draftId: draft.id, revision: draft.revision })),
+                workflowDrafts: all.slice(offset, offset + limit).map(summarizeWorkflowDraft),
                 totalDrafts: all.length, truncated: hasMore, nextOffset: hasMore ? offset + limit : null }
         },
     }, {

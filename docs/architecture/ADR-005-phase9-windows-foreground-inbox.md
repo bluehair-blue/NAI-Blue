@@ -52,7 +52,7 @@ ready 파일은 검증된 ID에서만 경로를 만들고 64 KiB 이하로 읽�
 
 크기 초과와 잘못된 UTF-8은 protocol rejection 후 안전하게 retire하여 뒤의 정상 요청이 계속 처리되게 한다. 초과 파일은 전체를 메모리에 읽지 않고 exclusive handle을 유지한 채 같은 파일을 retire한다. ACL·link·실제 I/O 오류와 ledger 손상은 단순 잘못된 요청으로 축소하지 않으며 수신 불가 상태를 유지한다. publication 실패 뒤에는 기존 receipt를 재투영하고 handler를 다시 호출하지 않는다.
 
-Queue startup은 기존 반환값에 `inboxReady`와 제한된 recovery issue 목록을 추가한다. provider spool의 정리되지 않은 손상, linked/orphan output 복구 실패, Scene 연결 미완료, R2 reconciliation 실패가 남으면 수신을 열지 않는다. 정리된 임시 spool 손상은 차단하지 않는다. 기존에 throw하던 복구 실패는 계속 promise rejection으로 전달하여 Queue coordinator의 기존 시작 차단을 보존한다. Provider 결과 미확정 상태는 기존 복구 규칙을 따르며 자동 재호출하지 않는다.
+Queue startup은 기존 반환값에 `inboxReady`와 제한된 recovery issue 목록을 추가한다. provider spool의 정리되지 않은 손상, linked/orphan output 복구 실패, Scene 연결 미완료, R2 reconciliation 실패가 남으면 수신을 열지 않는다. 단, 이미 terminal 상태인 구형 main job의 스냅샷이 현재 형식으로 해석되지 않는 경우에는 원격 재시도나 전달 설정 추정을 하지 않고 경고로 격리하며 수신을 계속 연다. 정리된 임시 spool 손상은 차단하지 않는다. 기존에 throw하던 복구 실패는 계속 promise rejection으로 전달하여 Queue coordinator의 기존 시작 차단을 보존한다. Provider 결과 미확정 상태는 기존 복구 규칙을 따르며 자동 재호출하지 않는다.
 
 ## 외부 제출 도구
 

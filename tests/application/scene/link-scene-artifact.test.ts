@@ -167,4 +167,30 @@ describe('linkSceneArtifact', () => {
         expect(results).toEqual([])
         expect(commits).toBe(0)
     })
+
+    it('reads Scene documents sequentially during reconciliation', async () => {
+        let activeReads = 0
+        let maxActiveReads = 0
+        const scenes: SceneRepositoryPort = {
+            readLegacyProjection: async () => null,
+            listDocuments: async () => [
+                { presetId: 'preset-a', revision: 1, sceneCount: 1, updatedAt: BASE.updatedAt },
+                { presetId: 'preset-b', revision: 1, sceneCount: 1, updatedAt: BASE.updatedAt },
+            ],
+            getDocument: async presetId => {
+                activeReads += 1
+                maxActiveReads = Math.max(maxActiveReads, activeReads)
+                await new Promise(resolve => setTimeout(resolve, 0))
+                activeReads -= 1
+                return structuredClone(presetId === 'preset-a' ? BASE : { ...BASE, presetId: 'preset-b' })
+            },
+            commit: async next => ({ status: 'COMMITTED', document: next }),
+        }
+
+        await reconcileSceneArtifactLinks(scenes, {
+            list: async () => ({ items: [], nextCursor: null }),
+        })
+
+        expect(maxActiveReads).toBe(1)
+    })
 })

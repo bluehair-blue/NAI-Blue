@@ -15,7 +15,7 @@ import type { JsonObject } from '@/domain/composition/types'
 import { createAgentGenerationPlanHandler } from '@/application/agent/agent-generation-plan-handler'
 import { IndexedDbGenerationPlanRepository } from '@/adapters/generation/indexeddb-generation-plan-repository'
 import { getWorkflowDraftRepository } from '@/adapters/workflow/indexeddb-workflow-draft-repository'
-import { createSingleImageDraft, reviseSingleImageDraft } from '@/domain/workflow/single-image-draft'
+import { createBatchImageDraft, createSingleImageDraft, reviseBatchImageDraft, reviseSingleImageDraft } from '@/domain/workflow/single-image-draft'
 import { createWorkflowDraftGenerationPlanDependencies } from '@/presentation/generation/workflow-draft-main-batch-planner'
 
 const now = '2026-09-05T00:00:01.000Z'
@@ -83,12 +83,93 @@ describe('authenticated durable command integration (simulated file port)', () =
             count: 1, seedPolicy: { kind: 'fixed', seed: 42 }, budget: { maxImages: 1, maxAnlas: 100 },
         })
         const receipt = await f.dispatcher().dispatch(request)
-        expect(receipt).toMatchObject({ state: 'completed',
+        expect(receipt).toMatchObject({ state: 'rejected',
             result: { status: 'conflict', code: 'SOURCE_REVISION_CONFLICT' } })
         expect(prepare).not.toHaveBeenCalled()
         expect(persist).not.toHaveBeenCalled()
         resetIndexedDBConnectionForRetry()
         expect(await f.dispatcher(new IndexedDbCommandReceiptRepository()).dispatch(request)).toEqual(receipt)
+    })
+    it('surfaces a null saved resolution as an actionable rejected plan without creating handles', async () => {
+        const f = await fixture()
+        const drafts = getWorkflowDraftRepository()
+        const created = createSingleImageDraft({ id: 'guided-single-resolution', now, seed: 42 })
+        expect((await drafts.commit({ expectedRevision: null, draft: created })).status).toBe('committed')
+        const blocked = reviseSingleImageDraft(created, {
+            updatedAt: '2026-09-05T00:00:02.000Z',
+            payload: { ...created.payload, prompt: { positive: 'a blue ceramic teacup', negative: '' }, resolution: null },
+        })
+        expect((await drafts.commit({ expectedRevision: created.revision, draft: blocked })).status).toBe('committed')
+        const dependencies = createWorkflowDraftGenerationPlanDependencies({ drafts, pricingBasis: 'paid',
+            fragmentRepository: { findMetadataByPath: () => undefined, loadDefinitionByPath: async () => null,
+                getSequenceSnapshot: () => ({ revision: 0, counters: {} }), commitSequenceProposal: () => false } })
+        const prepare = vi.fn(dependencies.planner.prepare)
+        const plans = new IndexedDbGenerationPlanRepository()
+        const persist = vi.spyOn(plans, 'putIfAbsent')
+        f.handlers[1] = createAgentGenerationPlanHandler({ ...dependencies, planner: { prepare } }, plans)
+        const request = await f.sign('qa9b-resolution-required', 'generation.plan', {
+            source: { kind: 'workflow-draft', draftId: blocked.id, expectedRevision: blocked.revision },
+            count: 1, seedPolicy: { kind: 'fixed', seed: 42 }, budget: { maxImages: 1, maxAnlas: 100 },
+        })
+
+        const receipt = await f.dispatcher().dispatch(request)
+        expect(receipt).toMatchObject({
+            state: 'rejected',
+            result: {
+                status: 'invalid',
+                issueCodes: ['draft-resolution-required'],
+                issues: [{ code: 'draft-resolution-required', fieldPath: 'source.draft.payload.resolution' }],
+                nextAction: 'repair-workflow-draft-in-guided-ui',
+            },
+        })
+        expect(prepare).not.toHaveBeenCalled()
+        expect(persist).not.toHaveBeenCalled()
+    })
+    it('requires a fresh revision after repair and then exposes a durable 80-image V5 review', async () => {
+        const f = await fixture()
+        const drafts = getWorkflowDraftRepository()
+        const created = createBatchImageDraft({ id: 'guided-v5-eighty', now, seed: 42, batchMode: 'same-settings' })
+        expect((await drafts.commit({ expectedRevision: null, draft: created })).status).toBe('committed')
+        const blocked = reviseBatchImageDraft(created, {
+            updatedAt: '2026-09-05T00:00:02.000Z',
+            payload: {
+                ...created.payload,
+                model: 'nai-diffusion-5-full',
+                prompt: { positive: 'a blue ceramic teacup', negative: 'blurry' },
+                count: 80,
+                resolution: null,
+            },
+        })
+        expect((await drafts.commit({ expectedRevision: created.revision, draft: blocked })).status).toBe('committed')
+        const repaired = reviseBatchImageDraft(blocked, {
+            updatedAt: '2026-09-05T00:00:03.000Z',
+            payload: { ...blocked.payload, resolution: { width: 832, height: 1216 } },
+        })
+        const dependencies = createWorkflowDraftGenerationPlanDependencies({ drafts, pricingBasis: 'paid',
+            fragmentRepository: { findMetadataByPath: () => undefined, loadDefinitionByPath: async () => null,
+                getSequenceSnapshot: () => ({ revision: 0, counters: {} }), commitSequenceProposal: () => false } })
+        const plans = new IndexedDbGenerationPlanRepository()
+        f.handlers[1] = createAgentGenerationPlanHandler(dependencies, plans)
+        expect((await drafts.commit({ expectedRevision: blocked.revision, draft: repaired })).status).toBe('committed')
+
+        const stale = await f.dispatcher().dispatch(await f.sign('qa9b-v5-stale-revision', 'generation.plan', {
+            source: { kind: 'workflow-draft', draftId: blocked.id, expectedRevision: blocked.revision },
+            count: 80, seedPolicy: { kind: 'increment', firstSeed: 42 }, budget: { maxImages: 80, maxAnlas: 1_000_000 },
+        }))
+        expect(stale).toMatchObject({ state: 'rejected', result: { status: 'conflict', code: 'SOURCE_REVISION_CONFLICT' } })
+
+        const fresh = await f.dispatcher().dispatch(await f.sign('qa9b-v5-fresh-revision', 'generation.plan', {
+            source: { kind: 'workflow-draft', draftId: repaired.id, expectedRevision: repaired.revision },
+            count: 80, seedPolicy: { kind: 'increment', firstSeed: 42 }, budget: { maxImages: 80, maxAnlas: 1_000_000 },
+        }))
+        expect(fresh).toMatchObject({ state: 'completed', result: {
+            status: 'ready', jobCount: 80, planId: expect.stringMatching(/^sha256:/), planHash: expect.stringMatching(/^sha256:/),
+            review: { jobCount: 80, omittedJobs: 70, jobs: expect.arrayContaining([
+                expect.objectContaining({ model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, seed: 42 }),
+            ]) },
+        } })
+        expect(fresh.result && typeof fresh.result === 'object' && 'review' in fresh.result
+            ? (fresh.result.review as JsonObject).compatibilityStatuses : null).toEqual(['synthetic-only'])
     })
     it('keeps the claim but never executes a request that expires during its durable write', async () => {
         const f = await fixture()

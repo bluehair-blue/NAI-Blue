@@ -70,6 +70,18 @@ export class WorkflowDraftCharacterPromptValidationError extends Error {
     }
 }
 
+/**
+ * The MCP count is an assertion about the saved draft, not a repeat/override
+ * instruction. The existing Guided planner owns expansion, so this error lets
+ * the application return a safe draft issue before it creates any jobs.
+ */
+export class WorkflowDraftCountMismatchError extends Error {
+    constructor(readonly expected: number, readonly requested: number) {
+        super('The requested image count does not match the saved Guided draft')
+        this.name = 'WorkflowDraftCountMismatchError'
+    }
+}
+
 function requestedCount(draft: MainWorkflowDraft): number {
     if (draft.kind === 'single-image') return 1
     if (draft.payload.batchMode !== 'scenes') return draft.payload.count
@@ -210,6 +222,11 @@ export function createWorkflowDraftMainBatchPlanner(
                 || (!options.allowPinnedCredential
                     && captured.payload.credentialPolicy.kind !== 'auto')) {
                 return []
+            }
+            const expectedCount = requestedCount(captured)
+            if (options.materializedSeeds !== undefined
+                && options.materializedSeeds.length !== expectedCount) {
+                throw new WorkflowDraftCountMismatchError(expectedCount, options.materializedSeeds.length)
             }
             const { generation, output, resolution } = captured.payload
             const liveRepository = options.fragmentRepository
@@ -413,6 +430,13 @@ export function createWorkflowDraftGenerationPlanDependencies(
                     code: 'fragment-sequence-conflict',
                     severity: 'blocking',
                     fieldPath: 'source.fragmentSequence',
+                    message: error.message,
+                }
+            } else if (error instanceof WorkflowDraftCountMismatchError) {
+                classified = {
+                    code: 'draft-count-mismatch',
+                    severity: 'blocking',
+                    fieldPath: 'count',
                     message: error.message,
                 }
             }

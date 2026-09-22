@@ -87,6 +87,13 @@ describe('RuntimeCapabilities', () => {
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
         })).toBe('web')
         expect(detectRuntimePlatform({
+            configuredPlatform: 'windows',
+            hasWindow: true,
+            hasTauriRuntime: false,
+            isTauriBuild: true,
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        })).toBe('windows')
+        expect(detectRuntimePlatform({
             configuredPlatform: '',
             hasWindow: true,
             hasTauriRuntime: true,

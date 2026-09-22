@@ -216,6 +216,25 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         }
     })
 
+    it('marks an application-rejected generation plan as an MCP error instead of approval progress', async () => {
+        const rejected = observed('plan-invalid', 'generation.plan', {
+            status: 'invalid',
+            issueCodes: ['draft-resolution-required'],
+            issues: [{ code: 'draft-resolution-required', fieldPath: 'source.draft.payload.resolution' }],
+            nextAction: 'repair-workflow-draft-in-guided-ui',
+        }, 'rejected')
+        const f = await fixture({ invoke: async (command, requestId) => command.name === 'system.describe_capabilities'
+            ? observed(requestId, command.name, { capabilities: descriptors() } as unknown as JsonObject) : rejected })
+
+        const result = await f.client.callTool({ name: 'generation.plan', arguments: { requestId: 'plan-invalid', input: {
+            source: { kind: 'workflow-draft', draftId: 'guided-batch-1', expectedRevision: 9 },
+            count: 80, seedPolicy: { kind: 'increment', firstSeed: 42 }, budget: { maxImages: 80, maxAnlas: 3_000 },
+        } } })
+
+        expect(result.isError).toBe(true)
+        expect(result.structuredContent).toEqual(rejected)
+    })
+
     it('preserves all pending submission observations and fixed authentication rejection semantics', async () => {
         for (const status of ['submitted-to-inbox', 'submission-unconfirmed', 'observation-cancelled', 'inbox-rejection']) {
             const expected = { status, requestId: 'request-1', requiresAppProcess: true,

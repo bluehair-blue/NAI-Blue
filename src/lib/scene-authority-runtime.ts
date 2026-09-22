@@ -265,8 +265,10 @@ function removesArtifactReference(
 }
 
 async function readDocuments(repository: SceneRepositoryPort): Promise<readonly SceneDocument[]> {
+    if (repository.listDocumentRecords !== undefined) return repository.listDocumentRecords()
     const summaries = await repository.listDocuments()
-    const documents = await Promise.all(summaries.map(summary => repository.getDocument(summary.presetId)))
+    const documents: Array<SceneDocument | null> = []
+    for (const summary of summaries) documents.push(await repository.getDocument(summary.presetId))
     return documents.filter((document): document is SceneDocument => document !== null)
 }
 

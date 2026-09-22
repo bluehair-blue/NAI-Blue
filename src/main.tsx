@@ -127,15 +127,34 @@ async function performAutoBackup() {
             backups = backups.slice(0, MAX_AUTO_BACKUPS)
         }
         
-        // 저장 (localStorage 용량 제한 체크)
-        const backupStr = JSON.stringify(backups)
-        if (backupStr.length > 4 * 1024 * 1024) { // 4MB 제한
-            console.warn('[AutoBackup] Backup too large, keeping only latest')
-            backups = backups.slice(0, 1)
+        // localStorage quota varies with the other app keys, so a size-only
+        // check is insufficient. Retry with the newest envelope once, then
+        // preserve the existing local backup and let the disk backup remain the
+        // recovery authority instead of clearing data to make room.
+        const candidates = backups.length > 1 ? [backups, backups.slice(0, 1)] : [backups]
+        let saved = false
+        let lastError: unknown = null
+        for (const candidate of candidates) {
+            try {
+                localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(candidate))
+                localStorage.setItem('nai-blue-last-auto-backup', now.toString())
+                backups = candidate
+                saved = true
+                break
+            } catch (error) {
+                lastError = error
+            }
         }
-        
-        localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(backups))
-        localStorage.setItem('nai-blue-last-auto-backup', now.toString())
+        if (!saved) {
+            reportDiagnostic(lastError ?? new Error('Automatic local backup could not be stored.'), {
+                operation: 'startup.auto-backup',
+                stage: 'quota-fallback',
+                category: 'persistence',
+                severity: 'warning',
+                recoverable: true,
+            })
+            return
+        }
         
         console.log(`[AutoBackup] Complete - ${backups.length} backups stored`)
     } catch (err) {
@@ -364,6 +383,9 @@ async function runPostRenderStartupTasks(): Promise<void> {
     void startRuntimeAgentCommands(queueRecovery).catch(err => {
         reportDiagnostic(err, { operation: 'startup.agent-commands', stage: 'initialize', category: 'persistence' })
     })
+    // Queue startup owns the readiness gate and also reconciles Scene links. Run
+    // the independent projection pass only after that authority settles so both
+    // paths do not contend on the same IndexedDB Scene document transaction.
     void queueRecovery.then(async recovery => {
         const results = [...recovery.linkedOutputs, ...recovery.orphanOutputs]
         const failures = results.filter(result => result.action === 'failed')
@@ -376,22 +398,19 @@ async function runPostRenderStartupTasks(): Promise<void> {
         // Queue recovery may materialize ArtifactRecords after the independent
         // pass below, so replay once more after it succeeds.
         await reconcileSceneArtifactsAfterStartup()
-    }).catch(err => {
+    }).catch(async err => {
         reportDiagnostic(err, { operation: 'startup.output-recovery', stage: 'scan', category: 'local_io' })
+        // A rejected Queue gate must not suppress the independent Scene projection pass.
+        await reconcileSceneArtifactsAfterStartup()
     })
-    // Direct Scene link recovery must not depend on Queue startup health.
-    void reconcileSceneArtifactsAfterStartup()
-    // Agent Workspace depends on the desktop Asset Profile disk projection. Starting
-    // it after the initial profile load prevents a stale startup snapshot while both
-    // watchers continue to refresh their independent compatibility/read boundaries.
-    void startAssetProfileDiskSync()
-        .then(() => {
-            void startAgentWorkspaceBridge().catch(err => {
-                reportDiagnostic(err, { operation: 'startup.agent-workspace', stage: 'sync', category: 'sync' })
-            })
-        })
+    // Agent Workspace takes an initial Scene snapshot. Wait for the Queue
+    // recovery authority first so that this read-only projection cannot race
+    // the same IndexedDB-backed Scene collection during startup.
+    void queueRecovery
+        .then(() => startAssetProfileDiskSync())
+        .then(() => startAgentWorkspaceBridge())
         .catch(err => {
-            reportDiagnostic(err, { operation: 'startup.asset-profile-sync', stage: 'sync', category: 'sync' })
+            reportDiagnostic(err, { operation: 'startup.agent-workspace', stage: 'sync', category: 'sync' })
         })
 
     startStoreSnapshotScheduler()

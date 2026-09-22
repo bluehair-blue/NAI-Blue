@@ -167,5 +167,7 @@ export interface SceneRepositoryPort {
     readLegacyProjection(): Promise<SceneV1CompatibilityProjection | null>
     getDocument(presetId: string): Promise<SceneDocument | null>
     listDocuments(): Promise<readonly SceneDocumentSummary[]>
+    /** Optional bulk read for collection-backed adapters; avoids rereading the full store per preset. */
+    listDocumentRecords?(): Promise<readonly SceneDocument[]>
     commit(next: SceneDocument, expectedRevision: number): Promise<CommitResult>
 }

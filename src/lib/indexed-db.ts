@@ -238,6 +238,17 @@ export function isDbInitFailed(): boolean {
 }
 
 const OPERATION_TIMEOUT_MS = 5000 // 개별 작업 타임아웃
+const LARGE_COLLECTION_OPERATION_TIMEOUT_MS = 30000
+
+function operationTimeoutMs(name: string): number {
+    // Scene V2 is a single JSON collection and can legitimately contain
+    // several megabytes of authoring data. Give that critical key enough time
+    // to cross the WebView IndexedDB boundary; other keys retain the fast-fail
+    // timeout used to detect ordinary persistence stalls.
+    return name === SCENE_DOCUMENT_STORE_KEY || name === 'nai-blue-scenes'
+        ? LARGE_COLLECTION_OPERATION_TIMEOUT_MS
+        : OPERATION_TIMEOUT_MS
+}
 
 // ============================================
 // Debounced Write System
@@ -302,7 +313,7 @@ async function rawSetItem(name: string, value: string): Promise<void> {
             const timeoutId = setTimeout(() => {
                 try { transaction?.abort() } catch { /* timeout remains authoritative */ }
                 finishReject(new Error(`setItem timed out for key: ${name}`), 'operation-timeout')
-            }, OPERATION_TIMEOUT_MS)
+            }, operationTimeoutMs(name))
 
             try {
                 transaction = db.transaction(STORE_NAME, 'readwrite')
@@ -585,7 +596,7 @@ async function readIndexedDBItem(name: string): Promise<string | null> {
             const timeoutId = setTimeout(() => {
                 try { transaction?.abort() } catch { /* timeout remains authoritative */ }
                 finishReject(new Error(`getItem timed out for key: ${name}`), 'operation-timeout')
-            }, OPERATION_TIMEOUT_MS)
+            }, operationTimeoutMs(name))
 
             try {
                 transaction = db.transaction(STORE_NAME, 'readonly')
@@ -788,7 +799,7 @@ export async function removeIndexedDBItemStrict(name: string): Promise<void> {
                 const timeoutId = setTimeout(() => {
                     try { transaction?.abort() } catch { /* timeout remains authoritative */ }
                     finishReject(new Error(`removeItem timed out for key: ${name}`), 'operation-timeout')
-                }, OPERATION_TIMEOUT_MS)
+                }, operationTimeoutMs(name))
                 try {
                     transaction = db.transaction(STORE_NAME, 'readwrite')
                     const request = transaction.objectStore(STORE_NAME).delete(name)
@@ -850,7 +861,7 @@ export async function compareAndSetIndexedDBItem(
                 const timeoutId = setTimeout(() => {
                     try { transaction?.abort() } catch { /* timeout remains authoritative */ }
                     finishReject(new Error(`CAS timed out for key: ${name}`), 'operation-timeout')
-                }, OPERATION_TIMEOUT_MS)
+                }, operationTimeoutMs(name))
                 try {
                     transaction = db.transaction(STORE_NAME, 'readwrite')
                     const store = transaction.objectStore(STORE_NAME)

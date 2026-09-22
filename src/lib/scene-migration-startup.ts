@@ -29,6 +29,17 @@ function sameMigratedContent(left: SceneDocument, right: SceneDocument): boolean
     return JSON.stringify({ ...left, updatedAt: '' }) === JSON.stringify({ ...right, updatedAt: '' })
 }
 
+async function readDocumentRecords(repository: SceneRepositoryPort): Promise<readonly SceneDocument[]> {
+    if (repository.listDocumentRecords !== undefined) return repository.listDocumentRecords()
+    const summaries = await repository.listDocuments()
+    const documents: SceneDocument[] = []
+    for (const summary of summaries) {
+        const document = await repository.getDocument(summary.presetId)
+        if (document !== null) documents.push(document)
+    }
+    return documents
+}
+
 /** Materializes V2 first, verifies readback, and only then switches the reader marker. */
 export async function runSceneMigrationStartup(dependencies: {
     readonly repository: SceneRepositoryPort
@@ -46,13 +57,7 @@ export async function runSceneMigrationStartup(dependencies: {
             return { status: 'V1_FALLBACK', reason: 'INVALID_V2' }
         }
         try {
-            const summaries = await dependencies.repository.listDocuments()
-            const documents = await Promise.all(summaries.map(summary => (
-                dependencies.repository.getDocument(summary.presetId)
-            )))
-            if (!documents.every((document): document is SceneDocument => document !== null)) {
-                return { status: 'V1_FALLBACK', reason: 'INVALID_V2' }
-            }
+            const documents = await readDocumentRecords(dependencies.repository)
             if (currentMarker === null) {
                 await dependencies.marker.write({
                     reader: 'v2',
@@ -70,13 +75,10 @@ export async function runSceneMigrationStartup(dependencies: {
     }
     if (currentMarker?.reader === 'v2') {
         try {
-            const summaries = await dependencies.repository.listDocuments()
+            const documents = await readDocumentRecords(dependencies.repository)
+            const summaries = documents.map(document => ({ presetId: document.presetId }))
             const expectedPresetIds = new Set(legacy.presets.map(preset => preset.id))
-            const documents = await Promise.all(summaries.map(summary => (
-                dependencies.repository.getDocument(summary.presetId)
-            )))
-            const complete = documents.every((document): document is SceneDocument => document !== null)
-                && [...expectedPresetIds].every(presetId => summaries.some(summary => summary.presetId === presetId))
+            const complete = [...expectedPresetIds].every(presetId => summaries.some(summary => summary.presetId === presetId))
             if (complete) return { status: 'V2_ACTIVE', documents }
             await dependencies.marker.write({ reader: 'v1', v1Preimage: preimage })
             return { status: 'V1_FALLBACK', reason: 'INVALID_V2' }
@@ -104,8 +106,11 @@ export async function runSceneMigrationStartup(dependencies: {
                 return { status: 'V1_FALLBACK', reason: 'INVALID_V2' }
             }
         }
-        const readback = await Promise.all(materialized.map(document => dependencies.repository.getDocument(document.presetId)))
-        if (!materialized.every((document, index) => sameDocument(readback[index], document))) {
+        const readback = await readDocumentRecords(dependencies.repository)
+        if (!materialized.every(document => sameDocument(
+            readback.find(candidate => candidate.presetId === document.presetId) ?? null,
+            document,
+        ))) {
             return { status: 'V1_FALLBACK', reason: 'INVALID_V2' }
         }
         await dependencies.marker.write({ reader: 'v2', v1Preimage: preimage, verifiedAt: now })
@@ -139,6 +144,7 @@ const lazyRuntimeSceneRepository: SceneRepositoryPort = {
     readLegacyProjection: async () => (await loadRuntimeSceneRepository()).readLegacyProjection(),
     getDocument: async presetId => (await loadRuntimeSceneRepository()).getDocument(presetId),
     listDocuments: async () => (await loadRuntimeSceneRepository()).listDocuments(),
+    listDocumentRecords: async () => (await loadRuntimeSceneRepository()).listDocumentRecords?.() ?? [],
     commit: async (next, expectedRevision) => (
         await loadRuntimeSceneRepository()
     ).commit(next, expectedRevision),

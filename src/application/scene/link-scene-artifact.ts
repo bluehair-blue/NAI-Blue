@@ -64,7 +64,17 @@ export async function reconcileSceneArtifactLinks(
         readonly shouldLink?: (input: LinkSceneArtifactInput) => boolean
     } = {},
 ): Promise<readonly LinkSceneArtifactResult[]> {
-    const documents = await Promise.all((await scenes.listDocuments()).map(summary => scenes.getDocument(summary.presetId)))
+    // Collection-backed adapters can return all documents from one bounded
+    // read. Keep the sequential fallback for small in-memory/test adapters so
+    // the same reconciliation contract remains usable without a bulk method.
+    const documents: Array<SceneDocument | null> = scenes.listDocumentRecords !== undefined
+        ? [...await scenes.listDocumentRecords()]
+        : []
+    if (scenes.listDocumentRecords === undefined) {
+        for (const summary of await scenes.listDocuments()) {
+            documents.push(await scenes.getDocument(summary.presetId))
+        }
+    }
     const sceneOwners = new Map<string, string | null>()
     for (const document of documents) {
         for (const scene of document?.scenes ?? []) {

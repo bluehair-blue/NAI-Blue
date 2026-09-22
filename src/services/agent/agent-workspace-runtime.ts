@@ -105,10 +105,19 @@ async function snapshotSource(): Promise<
     const sceneDocuments = sceneAuthorityActive
         ? await (async () => {
             const repository = getRuntimeSceneRepository()
-            const summaries = await repository.listDocuments()
-            return (await Promise.all(summaries.map(summary => repository.getDocument(summary.presetId))))
-                .filter(document => document !== null)
-                .sort((left, right) => left.presetId.localeCompare(right.presetId))
+            const documents = repository.listDocumentRecords !== undefined
+                ? [...await repository.listDocumentRecords()]
+                : []
+            if (repository.listDocumentRecords === undefined) {
+                const summaries = await repository.listDocuments()
+                // The fallback may back onto a collection store; keep reads
+                // ordered so a compatibility adapter cannot flood its authority.
+                for (const summary of summaries) {
+                    const document = await repository.getDocument(summary.presetId)
+                    if (document !== null) documents.push(document)
+                }
+            }
+            return documents.sort((left, right) => left.presetId.localeCompare(right.presetId))
         })()
         : []
     return {

@@ -305,6 +305,11 @@ export class IndexedDbSceneRepository implements SceneRepositoryPort {
             .sort((left, right) => left.presetId.localeCompare(right.presetId))
     }
 
+    async listDocumentRecords(): Promise<readonly SceneDocument[]> {
+        return parseCollection(await this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY)).documents
+            .map(document => cloneDocument(document))
+    }
+
     async commit(next: SceneDocument, expectedRevision: number): Promise<CommitResult> {
         if (!Number.isSafeInteger(expectedRevision)
             || expectedRevision < 0

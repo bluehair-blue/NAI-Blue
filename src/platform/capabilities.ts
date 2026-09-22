@@ -1,6 +1,7 @@
 export type RuntimePlatform = 'android' | 'ios' | 'windows' | 'macos' | 'linux' | 'unknown' | 'desktop' | 'web'
 
 declare const __NAI_BLUE_TAURI_PLATFORM__: string | undefined
+declare const __NAI_BLUE_TAURI_BUILD__: boolean | undefined
 
 export interface RuntimeCapability {
     readonly supported: boolean
@@ -154,6 +155,7 @@ interface RuntimePlatformDetectionInput {
     readonly configuredPlatform: string
     readonly hasWindow: boolean
     readonly hasTauriRuntime: boolean
+    readonly isTauriBuild?: boolean
     readonly userAgent: string
 }
 
@@ -176,6 +178,7 @@ export function detectRuntimePlatform({
     configuredPlatform,
     hasWindow,
     hasTauriRuntime,
+    isTauriBuild = false,
     userAgent,
 }: RuntimePlatformDetectionInput): RuntimePlatform {
     const configured = configuredPlatform.toLowerCase()
@@ -184,7 +187,9 @@ export function detectRuntimePlatform({
         || configured === 'windows' || configured === 'macos' || configured === 'linux'
 
     if (!hasWindow) return configuredNative ? configured : 'unknown'
-    if (hasTauriRuntime) {
+    // The packaged Tauri build marker is a compile-time fallback for WebView2
+    // builds that expose the native bridge after this module is evaluated.
+    if (hasTauriRuntime || isTauriBuild) {
         if (configuredNative) return configured
         if (agent.includes('android')) return 'android'
         if (/iphone|ipad|ipod/.test(agent)) return 'ios'
@@ -212,6 +217,9 @@ const detectedPlatform = detectRuntimePlatform({
         : '',
     hasWindow: typeof window !== 'undefined',
     hasTauriRuntime: hasTauriRuntimeMarker(),
+    isTauriBuild: typeof __NAI_BLUE_TAURI_BUILD__ === 'boolean'
+        ? __NAI_BLUE_TAURI_BUILD__
+        : false,
     userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
 })
 

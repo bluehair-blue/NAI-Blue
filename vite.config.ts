@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
+const tauriPlatform = (process.env.TAURI_ENV_PLATFORM ?? '').toLowerCase()
+const tauriBuild = ['android', 'ios', 'windows', 'macos', 'linux'].includes(tauriPlatform)
+
 const getNodePackageName = (normalizedId: string) => {
     const marker = '/node_modules/'
     const markerIndex = normalizedId.lastIndexOf(marker)
@@ -28,6 +31,7 @@ export default defineConfig({
     plugins: [react(), tailwindcss()],
     define: {
         __NAI_BLUE_TAURI_PLATFORM__: JSON.stringify(process.env.TAURI_ENV_PLATFORM ?? ''),
+        __NAI_BLUE_TAURI_BUILD__: JSON.stringify(tauriBuild),
     },
     resolve: {
         alias: {

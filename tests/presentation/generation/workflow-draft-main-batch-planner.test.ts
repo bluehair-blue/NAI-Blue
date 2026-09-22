@@ -82,6 +82,14 @@ describe('Workflow Draft Main batch Planner', () => {
         await expect(planner.prepareBatch()).resolves.toEqual([])
     })
 
+    it('rejects a requested count that does not match the saved draft cardinality', async () => {
+        const planner = createWorkflowDraftMainBatchPlanner(readyDraft(), { materializedSeeds: [1, 2] })
+
+        await expect(planner.prepareBatch()).rejects.toMatchObject({
+            name: 'WorkflowDraftCountMismatchError', expected: 1, requested: 2,
+        })
+    })
+
     it('does not silently ignore a pinned credential before Queue affinity exists', async () => {
         const draft = readyDraft()
         const pinned = reviseSingleImageDraft(draft, {

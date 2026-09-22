@@ -178,6 +178,10 @@ export async function planAgentSceneGeneration(
 export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepository): AgentCommandHandler {
     return {
         command: 'generation.plan', effect: 'plan', validate: getAgentCommandInputContract('generation.plan')!.validate,
+        // A failed Scene plan must be visible as a rejected receipt so MCP does
+        // not mistake an application validation result for approval progress.
+        receiptState: result => result.status === 'ready' || result.status === 'needs_input'
+            ? 'completed' : 'rejected',
         execute: async (input): Promise<JsonObject> => {
             try {
                 const { result, submission } = await planAgentSceneGeneration(input as unknown as AgentSceneGenerationInput)
@@ -188,11 +192,18 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
                     requiredApprovals: result.plan.requiredApprovals.map(item => ({ ...item })),
                     review: publicAgentScenePreview(result.plan, submission),
                 }
-                return { status: result.status, issueCodes: 'issues' in result
-                    ? result.issues.map(issue => issue.code) : ['scene-source-changed'] }
+                const issueCodes = 'issues' in result
+                    ? result.issues.map(issue => issue.code) : ['scene-source-changed']
+                return {
+                    status: result.status, issueCodes,
+                    ...( 'issues' in result
+                        ? { issues: result.issues.map(issue => ({ code: issue.code, fieldPath: issue.fieldPath })) }
+                        : {}),
+                    nextAction: 'revise-scene-source-or-settings',
+                }
             } catch {
                 // Local paths and repository details must not cross the public receipt boundary.
-                return { status: 'invalid', issueCodes: ['scene-plan-unavailable'] }
+                return { status: 'invalid', issueCodes: ['scene-plan-unavailable'], nextAction: 'refresh-scene-snapshot' }
             }
         },
     }

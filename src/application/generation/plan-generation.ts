@@ -253,9 +253,27 @@ function invalidDraftIssues(draft: WorkflowDraft): readonly PlanIssue[] {
     const codes = draft.kind === 'single-image'
         ? listSingleImageDraftIssues(draft)
         : listBatchImageDraftIssues(draft)
+    const fieldPath = (code: string): string => {
+        switch (code) {
+            case 'model-required': return 'source.draft.payload.model'
+            case 'prompt-required': return 'source.draft.payload.prompt.positive'
+            case 'character-prompt-invalid': return 'source.draft.payload.characterPrompts'
+            case 'resolution-required':
+            case 'resolution-invalid': return 'source.draft.payload.resolution'
+            case 'generation-settings-invalid': return 'source.draft.payload.generation'
+            case 'output-invalid': return 'source.draft.payload.output'
+            case 'rights-owner-invalid': return 'source.draft.payload.output.rightsOwner'
+            case 'rights-effective-date-required': return 'source.draft.payload.output.rightsEffectiveDate'
+            case 'credential-invalid': return 'source.draft.payload.credentialPolicy'
+            case 'count-invalid': return 'source.draft.payload.count'
+            case 'scenes-required':
+            case 'scene-invalid': return 'source.draft.payload.scenes'
+            default: return 'source.draft'
+        }
+    }
     return Object.freeze(codes.map(code => issue(
         `draft-${code}`,
-        'source.draft',
+        fieldPath(code),
         `Workflow draft is not ready: ${code}.`,
     )))
 }
