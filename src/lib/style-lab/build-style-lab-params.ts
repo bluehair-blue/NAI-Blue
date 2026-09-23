@@ -25,12 +25,11 @@ import { useStyleLabStore, type StyleCombination } from '@/stores/style-lab-stor
 import type { GenerationParams } from '@/services/novelai-api'
 import type { MainReferenceSnapshot } from '@/lib/composition/main-adapter'
 import type { StyleLabCompositionMode } from './composition-mode'
-import { buildLegacyStyleLabGenerationParams } from './legacy-build-style-lab-params'
 import { materializeStyleLabPlanForNai } from './materialize-style-lab-plan'
-import { effectiveStyleLabCompositionMode } from '@/lib/composition-authority'
 import { runtimeCapabilities } from '@/platform/capabilities'
 
 export interface BuildStyleLabGenerationOptions {
+    /** Accepted for older callers; all requests use the canonical V2 runtime. */
     mode?: StyleLabCompositionMode
     seed?: number
     now?: Date
@@ -145,25 +144,6 @@ export async function buildStyleLabGenerationParams(
     options: BuildStyleLabGenerationOptions = {},
 ): Promise<StyleLabGenerationBuildResult> {
     const generation = useGenerationStore.getState()
-    const mode = effectiveStyleLabCompositionMode(
-        options.mode ?? generation.styleLabCompositionMode,
-    )
-    if (mode === 'legacy') {
-        const legacy = await buildLegacyStyleLabGenerationParams(combination, {
-            ...(options.seed === undefined ? {} : { seed: options.seed }),
-        })
-        return {
-            success: true,
-            mode,
-            ...legacy,
-            plan: null,
-            sourceRevision: null,
-            combinationProvenance: null,
-            warnings: [],
-            errors: [],
-        }
-    }
-
     const now = options.now ?? new Date()
     const seed = options.seed ?? selectedRuntimeSeed(generation.seed, generation.seedLocked)
     const sourceImage = generation.sourceImage
@@ -269,7 +249,7 @@ export async function buildStyleLabGenerationParams(
     if (!resolution.result.success) {
         return {
             success: false,
-            mode,
+            mode: 'v2',
             plan: null,
             sourceRevision: profile.revision,
             combinationProvenance: resolution.combination,
@@ -287,12 +267,12 @@ export async function buildStyleLabGenerationParams(
         imageFormat: settings.imageFormat,
         metadataMode: settings.metadataMode,
         useAbsolutePath: settings.useAbsoluteStyleLabPath,
-        enforcePortability: mode === 'v2',
+        enforcePortability: true,
         repository: createCharacterStoreResourceRepository(),
     })
     return {
         success: true,
-        mode,
+        mode: 'v2',
         params: materialized,
         prompt: plan.positivePrompt,
         seed: plan.params.seed,

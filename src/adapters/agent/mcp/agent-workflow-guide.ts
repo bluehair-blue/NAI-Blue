@@ -2,7 +2,7 @@ import type { AgentCommandName } from '@/application/agent/agent-command-contrac
 
 /** Static adapter guidance is fetched on demand; the live registry remains execution authority. */
 export const AGENT_WORKFLOW_GUIDE_URI = 'nai-blue://guides/agent-workflow/v1'
-export const AGENT_MCP_INSTRUCTIONS = `NAI Blue requires the foreground app. Before authoring or production, read ${AGENT_WORKFLOW_GUIDE_URI} on demand. Discover current tools/capabilities; never assume a guide grants availability. Reuse requestId only for the identical request after timeout/restart; use a new ID for each fresh status poll. Command receipts do not prove run completion. Approval stays in NAI Blue; unknown outcomes must be inspected, never blindly retried. Transport cancellation only stops waiting.`
+export const AGENT_MCP_INSTRUCTIONS = `NAI Blue requires the foreground app. Before authoring or production, read ${AGENT_WORKFLOW_GUIDE_URI} on demand. Tool names and schemas are stable bindings; read current capabilities before execution and never treat an unavailable reason as permission or success. Reuse requestId only for the identical request after timeout/restart; use a new ID for each fresh status poll. Command receipts do not prove run completion. Approval stays in NAI Blue; unknown outcomes must be inspected, never blindly retried. Transport cancellation only stops waiting.`
 
 /** Command-specific hints complement shared input schemas without repeating the workflow manual. */
 export const AGENT_TOOL_DESCRIPTIONS: Record<AgentCommandName, string> = {
@@ -30,7 +30,7 @@ export const AGENT_WORKFLOW_GUIDE = `# NAI Blue agent workflow v1
 
 Scope and discovery
 - This is a static usage guide, not current application state or permission. Keep NAI Blue running in the foreground. No execution while the app is closed is promised.
-- List tools and read nai-blue://capabilities for fresh availability and unavailable reasons. Only use tools currently advertised with matching input schemas. An unavailable command must not be replaced by a guessed command.
+- The tools/list response exposes stable schema-bound bindings even while the foreground app is starting. Read nai-blue://capabilities for fresh availability and unavailable reasons; do not execute an unavailable command or replace it with a guessed command.
 - MCP hosts decide whether initialize instructions or resources reach a model. This resource is available through resources/list and resources/read; connection alone does not prove the agent has read it.
 
 Request identity and observation

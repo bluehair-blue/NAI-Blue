@@ -241,11 +241,11 @@ const OPERATION_TIMEOUT_MS = 5000 // 개별 작업 타임아웃
 const LARGE_COLLECTION_OPERATION_TIMEOUT_MS = 30000
 
 function operationTimeoutMs(name: string): number {
-    // Scene V2 is a single JSON collection and can legitimately contain
-    // several megabytes of authoring data. Give that critical key enough time
-    // to cross the WebView IndexedDB boundary; other keys retain the fast-fail
-    // timeout used to detect ordinary persistence stalls.
-    return name === SCENE_DOCUMENT_STORE_KEY || name === 'nai-blue-scenes'
+    // Critical stores include user documents, Queue journals, and migration
+    // repositories. They can wait behind one IndexedDB object-store transaction
+    // during native startup, so a five-second timeout turns healthy contention
+    // into a false persistence failure. Best-effort UI preferences still fail fast.
+    return getPersistenceCriticality(name) === 'critical'
         ? LARGE_COLLECTION_OPERATION_TIMEOUT_MS
         : OPERATION_TIMEOUT_MS
 }
@@ -900,15 +900,29 @@ export async function compareAndSetIndexedDBItem(
 export async function exportRawIndexedDBEntries(): Promise<Record<string, string>> {
     const db = await getDb()
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly')
-        const store = transaction.objectStore(STORE_NAME)
-        const keysRequest = store.getAllKeys()
-        const valuesRequest = store.getAll()
+        let settled = false
+        let transaction: IDBTransaction | undefined
         let keys: IDBValidKey[] | null = null
         let values: unknown[] | null = null
 
+        const timeoutId = setTimeout(() => {
+            try { transaction?.abort() } catch { /* timeout remains authoritative */ }
+            finishReject(new Error(`IndexedDB raw export timed out after ${LARGE_COLLECTION_OPERATION_TIMEOUT_MS}ms`), 'operation-timeout')
+        }, LARGE_COLLECTION_OPERATION_TIMEOUT_MS)
+        const finishResolve = (result: Record<string, string>) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timeoutId)
+            resolve(result)
+        }
+        const finishReject = (error: unknown, kind?: PersistenceFaultKind) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timeoutId)
+            reject(persistenceFault(error, 'persistence.export', undefined, kind))
+        }
         const finish = () => {
-            if (keys === null || values === null) return
+            if (settled || keys === null || values === null) return
             const result: Record<string, string> = {}
             for (let index = 0; index < keys.length; index += 1) {
                 const key = keys[index]
@@ -917,18 +931,31 @@ export async function exportRawIndexedDBEntries(): Promise<Record<string, string
                     result[key] = value
                 }
             }
-            resolve(result)
+            finishResolve(result)
         }
-        keysRequest.onsuccess = () => {
-            keys = keysRequest.result
-            finish()
+        try {
+            transaction = db.transaction(STORE_NAME, 'readonly')
+            const store = transaction.objectStore(STORE_NAME)
+            const keysRequest = store.getAllKeys()
+            const valuesRequest = store.getAll()
+            keysRequest.onsuccess = () => {
+                keys = keysRequest.result
+                finish()
+            }
+            keysRequest.onerror = () => finishReject(keysRequest.error ?? new Error('Raw IndexedDB key export failed'))
+            valuesRequest.onsuccess = () => {
+                values = valuesRequest.result
+                finish()
+            }
+            valuesRequest.onerror = () => finishReject(valuesRequest.error ?? new Error('Raw IndexedDB value export failed'))
+            transaction.onerror = () => finishReject(transaction?.error ?? new Error('Raw IndexedDB snapshot failed'))
+            transaction.onabort = () => finishReject(
+                transaction?.error ?? new Error('Raw IndexedDB snapshot aborted'),
+                'transaction-aborted',
+            )
+        } catch (error) {
+            finishReject(error)
         }
-        valuesRequest.onsuccess = () => {
-            values = valuesRequest.result
-            finish()
-        }
-        transaction.onerror = () => reject(transaction.error)
-        transaction.onabort = () => reject(transaction.error ?? new Error('Raw IndexedDB snapshot aborted'))
     })
 }
 

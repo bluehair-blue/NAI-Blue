@@ -27,7 +27,6 @@ import {
     resolveScenePrompts,
     useSceneStore,
     type SceneCard,
-    type SceneCompositionMode,
 } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { AssetModulePlan } from '@/lib/asset-modules/resolver'
@@ -44,11 +43,9 @@ import {
     type MainReferenceSnapshot,
 } from '@/lib/composition/main-adapter'
 import { materializeCharacterResourcesForNai } from '@/lib/composition/character-resource-adapter'
-import { effectiveSceneCompositionMode } from '@/lib/composition-authority'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { assessPortableCompositionPlan } from '@/platform/portable-resources'
 import {
-    buildLegacySceneGenerationParams,
     resolveLegacySceneAssetModulePlan,
     selectSceneGenerationSeed,
 } from './legacy-build-scene-params'
@@ -61,7 +58,7 @@ type ReadonlyScenePlan = DeepReadonly<CompositionEnginePlan>
 type ReadonlySceneIssue = DeepReadonly<CompositionEngineIssue>
 
 export interface SceneCompositionBuildDiagnostics {
-    mode: SceneCompositionMode
+    mode: 'v2'
     planHash: CompositionPlanHash | null
     warnings: readonly ReadonlySceneIssue[]
     errors: readonly ReadonlySceneIssue[]
@@ -421,7 +418,6 @@ function reconcileSceneAssetModulePlan(
 async function materializeV2GenerationParams(
     scene: SceneCard,
     plan: ReadonlyScenePlan,
-    mode: 'shadow' | 'v2',
     now: Date,
     selectedRecipeId: string,
     directRecipeId: string,
@@ -430,13 +426,11 @@ async function materializeV2GenerationParams(
     output: SceneCompositionSnapshot['output'],
     presetId?: string,
 ): Promise<GenerationParams> {
-    if (mode === 'v2') {
-        const portability = assessPortableCompositionPlan(plan, runtimeCapabilities)
-        if (!portability.readyForGeneration) {
-            throw new Error(portability.issues
-                .map(issue => `${issue.code}:${issue.resourceId ?? 'output'}:${issue.repairAction.label}`)
-                .join(', '))
-        }
+    const portability = assessPortableCompositionPlan(plan, runtimeCapabilities)
+    if (!portability.readyForGeneration) {
+        throw new Error(portability.issues
+            .map(issue => `${issue.code}:${issue.resourceId ?? 'output'}:${issue.repairAction.label}`)
+            .join(', '))
     }
     const enabledBindings = [
         ...plan.resourceBindings,
@@ -524,7 +518,7 @@ async function materializeV2GenerationParams(
             detail: plan.promptParts.detail,
             negative: plan.promptParts.negative,
         },
-        compositionMode: mode,
+        compositionMode: 'v2',
         engineVersion: plan.engineVersion,
         sourceRevision: plan.documentRevision,
         compositionPlanHash: clonePlanHash(plan),
@@ -566,12 +560,11 @@ async function materializeV2GenerationParams(
 }
 
 function diagnosticsFor(
-    mode: SceneCompositionMode,
     resolution: SceneCompositionResolution,
 ): SceneCompositionBuildDiagnostics {
     const diagnostics = diagnosticsFromSceneResolution(resolution)
     return {
-        mode,
+        mode: 'v2',
         planHash: diagnostics.plan === null ? null : clonePlanHash(diagnostics.plan),
         warnings: diagnostics.warnings,
         errors: diagnostics.errors,
@@ -613,10 +606,6 @@ export async function previewSceneComposition(
     options: { scenePrompt?: string; seed?: number; now?: Date } = {},
 ): Promise<SceneCompositionResolution> {
     const preparedScene = applyGenerationFolderPolicy(scene)
-    const authorityMode = effectiveSceneCompositionMode(useSceneStore.getState().sceneCompositionMode)
-    if (authorityMode === 'legacy') {
-        throw new Error('Composition preview is unavailable while legacy authority is active')
-    }
     const sceneGeneration = resolveSceneGeneration(preparedScene)
     const seed = options.seed ?? (sceneGeneration.seed || 1)
     const now = options.now ?? new Date()
@@ -630,68 +619,12 @@ export async function previewSceneComposition(
     return captured.resolution
 }
 
-// Facade only: store snapshot -> engine (v2/shadow) -> existing GenerationParams.
-// Legacy prompt assembly is isolated in legacy-build-scene-params.ts for rollback.
+// Scene inputs converge on one Composition plan before NovelAI parameter materialization.
 export async function buildSceneGenerationParams(
     scene: SceneCard,
     options: { sessionId?: number; requestId?: string; now?: Date; presetId?: string; generationFolder?: ResolvedGenerationFolder | null; seed?: number } = {},
 ): Promise<SceneGenerationBuildResult> {
     const preparedScene = applyGenerationFolderPolicy(scene, options.generationFolder)
-    const mode = effectiveSceneCompositionMode(useSceneStore.getState().sceneCompositionMode)
-    if (mode === 'legacy') {
-        const legacy = await buildLegacySceneGenerationParams(preparedScene, {
-            presetId: options.presetId,
-            seed: options.seed,
-        })
-        return {
-            success: true,
-            ...legacy,
-            mode,
-            planHash: null,
-            warnings: [],
-            errors: [],
-            sequenceCommitProposal: legacy.sequenceCommitProposal,
-        }
-    }
-
-    if (mode === 'shadow') {
-        const legacy = await buildLegacySceneGenerationParams(preparedScene, {
-            presetId: options.presetId,
-            seed: options.seed,
-        })
-        const now = options.now ?? new Date()
-        const captured = await resolveSceneRuntimeComposition(preparedScene, {
-            mode: 'preview',
-            seed: legacy.params.seed,
-            now,
-            requestId: options.requestId ?? `scene-shadow:${options.sessionId ?? 0}:${scene.id}`,
-            presetId: options.presetId,
-        })
-        const { resolution } = captured
-        const diagnostics = diagnosticsFor(mode, resolution)
-        const params = resolution.result.success
-            ? {
-                ...legacy.params,
-                compositionMode: 'shadow' as const,
-                compositionPlanHash: clonePlanHash(resolution.result.plan),
-                compositionPlanId: resolution.result.plan.planId,
-                compositionRecipeId: resolution.result.plan.recipeId,
-                compositionProvenanceSummary: {
-                    sourceCount: resolution.result.plan.provenance.length,
-                    promptContributionCount: resolution.result.plan.provenanceDetails.prompts.length,
-                    randomSelectionCount: resolution.result.plan.provenanceDetails.randomSelections.length,
-                },
-            }
-            : legacy.params
-        return {
-            success: true,
-            ...legacy,
-            params,
-            ...diagnostics,
-            sequenceCommitProposal: legacy.sequenceCommitProposal,
-        }
-    }
-
     const sceneGeneration = resolveSceneGeneration(preparedScene)
     const seed = options.seed ?? selectSceneGenerationSeed(sceneGeneration.seedLocked, sceneGeneration.seed)
     const now = options.now ?? new Date()
@@ -703,7 +636,7 @@ export async function buildSceneGenerationParams(
         presetId: options.presetId,
     })
     const { resolution } = captured
-    const diagnostics = diagnosticsFor(mode, resolution)
+    const diagnostics = diagnosticsFor(resolution)
     if (!resolution.result.success) {
         return {
             success: false,
@@ -714,7 +647,6 @@ export async function buildSceneGenerationParams(
     const params = await materializeV2GenerationParams(
         preparedScene,
         resolution.result.plan,
-        'v2',
         now,
         resolution.selectedRecipeId,
         resolution.directRecipeId,

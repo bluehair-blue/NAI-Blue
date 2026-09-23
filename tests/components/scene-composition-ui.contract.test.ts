@@ -1,6 +1,16 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const persistedSceneStorage = vi.hoisted(() => ({ value: null as string | null }))
+
+vi.mock('@/lib/indexed-db', () => ({
+    indexedDBStorage: {
+        getItem: async () => persistedSceneStorage.value,
+        setItem: async () => undefined,
+        removeItem: async () => undefined,
+    },
+}))
 
 const source = (path: string) => readFile(resolve(process.cwd(), path), 'utf8')
 
@@ -18,7 +28,47 @@ describe('Scene composition minimal UI contract', () => {
         expect(editor).toContain("t('scene.copyMainPrompts'")
         expect(editor).toContain('<SceneCharacterCaptionsEditor')
         expect(sceneMode).toContain('<SceneCompositionCardMeta')
+        for (const page of [sceneMode, sceneDetail]) {
+            expect(page).not.toContain('SCENE_COMPOSITION_MODES')
+            expect(page).not.toContain('setSceneCompositionMode')
+            expect(page).not.toContain('mode={{')
+        }
+        const workspace = await source('src/components/scene/SceneCompositionWorkspace.tsx')
+        expect(workspace).toContain('mode?: CompositionSelectControl')
+        expect(workspace).toContain('mode={simplified ? undefined : mode}')
     })
+
+    it.each(['legacy', 'shadow', 'v2', 'unknown', undefined])(
+        'normalizes persisted mode %s to v2 while preserving Scene data',
+        async mode => {
+            persistedSceneStorage.value = null
+            const { useSceneStore } = await import('@/stores/scene-store')
+            await useSceneStore.persist.rehydrate()
+            const scene = {
+                id: 'scene:preserved', name: 'Saved Scene', scenePrompt: 'saved prompt',
+                queueCount: 0, images: [], createdAt: 123, excludePinned: true,
+                compositionRef: { recipeId: 'recipe:preserved' },
+            }
+            const preset = { id: 'scene-default', name: 'Saved folder', scenes: [scene], createdAt: 123 }
+            persistedSceneStorage.value = JSON.stringify({
+                state: {
+                    presets: [preset], activePresetId: preset.id, gridColumns: 3,
+                    sceneCompositionMode: mode,
+                },
+                version: 0,
+            })
+            try {
+                await useSceneStore.persist.rehydrate()
+                const state = useSceneStore.getState()
+                expect(state.sceneCompositionMode).toBe('v2')
+                expect(state.presets).toEqual([preset])
+                expect(state.activePresetId).toBe(preset.id)
+                expect(state.gridColumns).toBe(3)
+            } finally {
+                persistedSceneStorage.value = null
+            }
+        },
+    )
 
     it('resolves the visible Scene prompt and keeps reset local/store state aligned', async () => {
         const sceneDetail = await source('src/pages/SceneDetail.tsx')
@@ -29,8 +79,6 @@ describe('Scene composition minimal UI contract', () => {
         expect(sceneBuilder).toContain('resolveSceneGeneration(scene)')
         expect(sceneBuilder).toContain('SCENE_DIRECT_RECIPE_ID')
         expect(sceneBuilder).toContain("inpainting: ''")
-        expect(sceneBuilder).toContain('effectiveSceneCompositionMode(useSceneStore.getState().sceneCompositionMode)')
-        expect(sceneBuilder).toContain('Composition preview is unavailable while legacy authority is active')
     })
 
     it('shows the requested resolved summary without mounting Main controls', async () => {

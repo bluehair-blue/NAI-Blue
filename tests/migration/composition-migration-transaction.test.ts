@@ -101,14 +101,12 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'typed-reference-validation',
-            activateAuthority: 'v2',
             registryVersion: 1,
             migrate: input => {
                 const migrated = migrateLegacyStoresToV2(input)
                 migrated.document.profiles[0].randomRuleIds = ['random-rule:missing']
                 return migrated
             },
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
 
         expect(result.status).toBe('failed')
@@ -131,16 +129,7 @@ describe('repeatable Composition migration transaction', () => {
             },
             now: NOW,
             owner: 'test',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({
-                status: 'match',
-                matches: true,
-                fatal: false,
-                legacyHash: 'sha256:same',
-                v2Hash: 'sha256:same',
-                differences: [],
-            }),
         })
 
         const first = await run()
@@ -153,7 +142,6 @@ describe('repeatable Composition migration transaction', () => {
             'fatal-check',
             'temp-write',
             'schema-reference-validation',
-            'shadow-resolve-compare',
             'atomic-commit',
             'migration-marker',
             'startup-reread',
@@ -269,7 +257,6 @@ describe('repeatable Composition migration transaction', () => {
             source: exactSource,
             now: NOW,
             owner: 'raw-preimage-verification',
-            activateAuthority: 'v2',
             registryVersion: 1,
             migrate: input => {
                 const archive = JSON.parse(
@@ -294,7 +281,6 @@ describe('repeatable Composition migration transaction', () => {
                 }
                 return migrateLegacyStoresToV2(input)
             },
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
 
         expect(result.status).toBe('committed')
@@ -330,10 +316,8 @@ describe('repeatable Composition migration transaction', () => {
             source: exactSource,
             now: NOW,
             owner: 'raw-preimage-structural-failure',
-            activateAuthority: 'v2',
             registryVersion: 1,
             migrate,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
 
         expect(result.status).toBe('failed')
@@ -359,9 +343,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'post-commit-callback',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
             postCommitBeforeFinalize: async input => {
                 const duringCallback = await repository.read(NOW)
                 expect(duringCallback.migrationLock).toBeDefined()
@@ -394,9 +376,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'fixture',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
         const fixtureState = await fixtureRepository.read(NOW)
         expect(fixture.marker).toBeDefined()
@@ -429,9 +409,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: resumedAt,
             owner: 'restarted-process',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
 
         expect(resumed.status).toBe('already-current')
@@ -450,9 +428,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: `registry-${registryVersion}`,
-            activateAuthority: 'v2' as const,
             registryVersion,
-            shadowResolve: () => ({ status: 'match' as const, matches: true, fatal: false, differences: [] }),
         })
 
         expect((await run(1)).status).toBe('committed')
@@ -479,9 +455,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'source-count-verification',
-            activateAuthority: 'v2' as const,
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match' as const, matches: true, fatal: false, differences: [] }),
         })
 
         expect((await run()).status).toBe('committed')
@@ -506,9 +480,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'initial',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
         expect(initial.status).toBe('committed')
         await repository.acquireMigrationLock({ id: 'lock:other-live-process', owner: 'other', now: NOW })
@@ -519,9 +491,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'contender',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
 
         expect(contender.status).toBe('failed')
@@ -531,7 +501,7 @@ describe('repeatable Composition migration transaction', () => {
         expect(state.migrationLock?.id).toBe('lock:other-live-process')
     })
 
-    it('cleans temp state and retains old authority when shadow comparison is fatal', async () => {
+    it('commits transformable legacy data and retains the original source archive', async () => {
         const storage = new MemoryStorage()
         const oldScene = JSON.stringify({ state: { presets: [{ id: 'old-preset', scenes: [] }] }, version: 0 })
         storage.values.set('nai-blue-scenes', oldScene)
@@ -543,24 +513,18 @@ describe('repeatable Composition migration transaction', () => {
             source: source({ serializedStores: { 'nai-blue-scenes': oldScene } }),
             now: NOW,
             owner: 'test',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({
-                status: 'different',
-                matches: false,
-                fatal: true,
-                differences: ['semantic-plan'],
-            }),
         })
 
-        expect(result.status).toBe('failed')
+        expect(result.status).toBe('committed')
         expect(result.completedSteps).toContain('temp-write')
-        expect(result.completedSteps).toContain('temp-cleanup')
+        expect(result.completedSteps).toContain('atomic-commit')
         expect(storage.getItem('nai-blue-scenes')).toBe(oldScene)
-        const cleaned = await repository.read(NOW)
-        expect(cleaned.authority).toBe('legacy')
-        expect(cleaned.staged).toBeUndefined()
-        expect(cleaned.migrationLock).toBeUndefined()
+        const committed = await repository.read(NOW)
+        expect(committed.authority).toBe('v2')
+        expect(committed.committedDocument).toBeDefined()
+        expect(committed.staged).toBeUndefined()
+        expect(committed.migrationLock).toBeUndefined()
         expect(storage.getItem(COMPOSITION_MIGRATION_BACKUP_STORAGE_KEY)).not.toBeNull()
     })
 
@@ -588,9 +552,7 @@ describe('repeatable Composition migration transaction', () => {
             source: source({ assetProfileJson: rawAssetProfile }),
             now: NOW,
             owner: 'test',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
 
         expect(result.status).toBe('failed')
@@ -622,14 +584,7 @@ describe('repeatable Composition migration transaction', () => {
             },
             now: NOW,
             owner: 'test',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({
-                status: 'match',
-                matches: true,
-                fatal: false,
-                differences: [],
-            }),
         })
 
         expect(reads).toBe(2)
@@ -641,7 +596,7 @@ describe('repeatable Composition migration transaction', () => {
         expect(state.migrationLock).toBeUndefined()
     })
 
-    it('keeps a committed v2 document while switching the real read authority back to legacy', async () => {
+    it('commits one v2 projection and retains the original source stores', async () => {
         const storage = new MemoryStorage()
         const repository = new CompositionRepository(storage)
         const result = await runCompositionMigrationTransaction({
@@ -650,23 +605,13 @@ describe('repeatable Composition migration transaction', () => {
             source: source(),
             now: NOW,
             owner: 'test',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({
-                status: 'match',
-                matches: true,
-                fatal: false,
-                differences: [],
-            }),
         })
         expect(result.status).toBe('committed')
 
         const v2Document = await repository.readAuthoritativeDocument(NOW)
         expect(v2Document).not.toBeNull()
-        const rollback = await repository.setAuthority('legacy', NOW)
-        expect(rollback.authority).toBe('legacy')
-        expect(rollback.committedDocument).toEqual(v2Document)
-        expect(await repository.readAuthoritativeDocument(NOW)).toBeNull()
+        expect((await repository.read(NOW)).authority).toBe('v2')
         expect(storage.getItem('nai-blue-scenes')).toBeNull()
     })
 
@@ -705,14 +650,7 @@ describe('repeatable Composition migration transaction', () => {
             }),
             now: NOW,
             owner: 'test',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({
-                status: 'match',
-                matches: true,
-                fatal: false,
-                differences: [],
-            }),
         })
         expect(migrated.status).toBe('committed')
         const committedDocument = await repository.readAuthoritativeDocument(NOW)

@@ -144,12 +144,16 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
     it('negotiates, advertises exact registry schemas and correlates concurrent reads and decimal plan handles', async () => {
         const app = await appFixture(), sidecar = await connect(app.root)
         const listed = await sidecar.client.listTools({}, { cache: 'refresh' })
-        const available = app.dispatcher.capabilities().filter(item => item.available)
-        expect(listed.tools.map(tool => tool.name).sort()).toEqual(available.map(item => item.command).sort())
+        const bound = app.dispatcher.capabilities().filter(item => getAgentCommandInputContract(item.command) !== undefined)
+        expect(listed.tools.map(tool => tool.name).sort()).toEqual(bound.map(item => item.command).sort())
         for (const tool of listed.tools) {
-            const descriptor = available.find(item => item.command === tool.name)!
+            const descriptor = bound.find(item => item.command === tool.name)!
             const schema = (tool.inputSchema.properties as Record<string, JsonObject>).input
-            expect(`sha256:${hashCanonicalValue(schema)}`).toBe(descriptor.inputSchemaHash)
+            expect(`sha256:${hashCanonicalValue(schema)}`, tool.name)
+                .toBe(`sha256:${hashCanonicalValue(getAgentCommandInputContract(tool.name as AgentCommandName)!.schema)}`)
+            if (descriptor.inputSchemaHash !== undefined) {
+                expect(`sha256:${hashCanonicalValue(schema)}`, tool.name).toBe(descriptor.inputSchemaHash)
+            }
         }
         const requests = [
             { name: 'workspace.get_snapshot', arguments: { requestId: 'wire-snapshot', input: {} } },
@@ -210,11 +214,14 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         await assertWire(app.root)
     }, 35_000)
 
-    it('reports app-off submission without tools and cancels only observation while preserving the submitted command', async () => {
+    it('keeps bindings during app-off submission and cancels only observation while preserving the submitted command', async () => {
         const app = await appFixture(), sidecar = await connect(app.root, 1000)
         await sidecar.client.listTools({}, { cache: 'refresh' })
         app.setOnline(false)
-        expect((await sidecar.client.listTools({}, { cache: 'refresh' })).tools).toEqual([])
+        expect((await sidecar.client.listTools({}, { cache: 'refresh' })).tools.map(tool => tool.name).sort())
+            .toEqual(app.dispatcher.capabilities()
+                .filter(item => getAgentCommandInputContract(item.command) !== undefined)
+                .map(item => item.command).sort())
         const off = await sidecar.client.callTool({ name: 'workspace.get_snapshot', arguments: { requestId: 'app-off-submit', input: {} } })
         expect(off.structuredContent).toEqual({ status: 'submitted-to-inbox', accepted: false, requestId: 'app-off-submit', requiresAppProcess: true })
         expect(await app.receipts.get('app-off-submit')).toBeNull()
@@ -259,7 +266,10 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         await client.connect(transport, { timeout: 10_000 })
         expect(client.getServerVersion()).toMatchObject({ name: 'nai-blue-agent-spike' })
         expect(client.getNegotiatedProtocolVersion()).toBeDefined()
-        expect((await client.listTools({}, { cache: 'refresh' })).tools).toEqual([])
+        expect((await client.listTools({}, { cache: 'refresh' })).tools.map(tool => tool.name).sort())
+            .toEqual(app.dispatcher.capabilities()
+                .filter(item => getAgentCommandInputContract(item.command) !== undefined)
+                .map(item => item.command).sort())
         for (const directory of ['inbox', 'results', 'rejections']) expect(await readdir(path.join(app.root, directory))).toEqual([])
         expect(stderr).toBe('')
         expect(errors).toEqual([])

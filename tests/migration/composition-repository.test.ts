@@ -83,20 +83,12 @@ describe('CompositionRepository migration authority', () => {
             lockId: lock.id,
             migrationId: 'migration:fixture',
             targetHash: compositionDocumentHash(value),
-            authority: 'v2',
             now: NOW,
         })
         expect(finalized.migrationLock).toBeUndefined()
         expect(finalized.migrationMarker?.startupVerifiedAt).toBe(NOW)
         expect(await repository.readAuthoritativeDocument(NOW)).toEqual(value)
 
-        const rolledBack = await repository.setAuthority('legacy', NOW)
-        expect(rolledBack.authority).toBe('legacy')
-        expect(rolledBack.committedDocument).toEqual(value)
-        expect(await repository.readAuthoritativeDocument(NOW)).toBeNull()
-
-        const reactivated = await repository.setAuthority('v2', NOW)
-        expect(reactivated.authority).toBe('v2')
         expect(await repository.readAuthoritativeDocument(NOW)).toEqual(value)
     })
 

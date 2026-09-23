@@ -1116,7 +1116,7 @@ describe('Scene Composition v2 caller contract', () => {
         expect(runtimeCapture.calls).not.toContain('images:ensure-loaded')
     })
 
-    it('runs shadow diagnostics without issuing a second request or changing the legacy payload', async () => {
+    it('uses one canonical request when an old caller selects shadow mode', async () => {
         resetRuntime(205, [scene('scene-shadow', 1)])
         runtime.useSceneStore.setState({ sceneCompositionMode: 'shadow' })
 
@@ -1124,9 +1124,9 @@ describe('Scene Composition v2 caller contract', () => {
 
         expect(runtimeCapture.requests).toHaveLength(1)
         expect(runtimeCapture.params).toHaveLength(1)
-        expect(runtimeCapture.params[0]?.compositionMode).toBe('shadow')
+        expect(runtimeCapture.params[0]?.compositionMode).toBe('v2')
         expect(runtime.useSceneStore.getState().sceneCompositionResults['scene-shadow']).toMatchObject({
-            mode: 'shadow',
+            mode: 'v2',
             errors: [],
         })
         expect(runtime.useSceneStore.getState().sceneCompositionResults['scene-shadow']?.planHash?.digest).toBeTruthy()

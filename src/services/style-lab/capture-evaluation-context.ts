@@ -3,7 +3,6 @@ import {
     createStyleEvaluationContext,
     type StyleEvaluationContext,
 } from '@/domain/style-lab'
-import { effectiveStyleLabCompositionMode } from '@/lib/composition-authority'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { useCharacterStore } from '@/stores/character-store'
@@ -40,7 +39,6 @@ export function captureCurrentStyleEvaluationContext(
     const assetProfile = useAssetModuleStore.getState().profile
     const presets = usePresetStore.getState()
     const fragments = useFragmentStore.getState()
-    const compositionMode = effectiveStyleLabCompositionMode(generation.styleLabCompositionMode)
 
     const prompt = {
         template: styleLab.settings.promptTemplate,
@@ -69,7 +67,7 @@ export function captureCurrentStyleEvaluationContext(
         thumbnailDigest: runtimeDigest(reference.thumbnail),
     }))
     const plan = {
-        compositionMode,
+        compositionMode: 'v2',
         params: {
             model: generation.model,
             width: generation.selectedResolution.width,

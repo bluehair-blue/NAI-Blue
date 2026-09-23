@@ -22,7 +22,7 @@ import { CHARACTER_SCENES_DIRECTORY_NAME } from '@/domain/generation-folders'
 import { AutocompleteTextarea } from "@/components/ui/AutocompleteTextarea";
 import { Tip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { getScenePresetPathSegments, hasSceneCompositionOverrides, resolveSceneGeneration, useSceneStore, SceneImage, type SceneCompositionMode } from '@/stores/scene-store'
+import { getScenePresetPathSegments, hasSceneCompositionOverrides, resolveSceneGeneration, useSceneStore, SceneImage } from '@/stores/scene-store'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useSceneGeneration } from '@/hooks/useSceneGeneration'
@@ -84,7 +84,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useTrashStore } from '@/stores/trash-store'
 import { archiveSceneImages } from '@/services/trash/asset-trash-service'
 
-const SCENE_COMPOSITION_MODES: readonly SceneCompositionMode[] = ['legacy', 'shadow', 'v2']
 
 const getParentDirectoryPath = (path: string): string | null => {
     if (!path || path.startsWith('data:')) return null
@@ -158,8 +157,6 @@ export default function SceneDetail() {
     } = useSceneStore()
     const { isGenerating: sceneIsGenerating } = useSceneGeneration()
     const sceneIsCancelling = useSceneStore(state => state.isCancelling)
-    const sceneCompositionMode = useSceneStore(state => state.sceneCompositionMode)
-    const setSceneCompositionMode = useSceneStore(state => state.setSceneCompositionMode)
     const sceneCompositionRecord = useSceneStore(state => sceneId ? state.sceneCompositionResults[sceneId] : undefined)
     const { promptFontSize } = useSettingsStore()
     const activeCredentialsAreOpus = useAuthStore(selectActiveCredentialsAreOpus)
@@ -615,9 +612,7 @@ export default function SceneDetail() {
             ? { severity: 'error', errorCount: validationErrorCount, warningCount: validationWarningCount }
             : validationWarningCount > 0
                 ? { severity: 'warning', warningCount: validationWarningCount }
-                : sceneCompositionMode === 'legacy'
-                    ? { severity: 'disabled', label: 'legacy' }
-                    : { severity: 'valid' }
+                : { severity: 'valid' }
     const effectiveSceneGenerating = queueExecutionAuthority === 'legacy'
         ? sceneIsGenerating
         : false
@@ -719,13 +714,6 @@ export default function SceneDetail() {
     return (
         <SceneCompositionWorkspace
             simplified
-            mode={{
-                value: sceneCompositionMode,
-                label: t('scene.composition.mode', 'Mode'),
-                options: SCENE_COMPOSITION_MODES.map(mode => ({ value: mode, label: mode })),
-                onChange: value => setSceneCompositionMode(value as SceneCompositionMode),
-                disabled: effectiveSceneGenerating,
-            }}
             recipe={{
                 value: displayedRecipeId,
                 label: t('scene.composition.recipe', 'Recipe'),

@@ -30,28 +30,18 @@ describe('diagnostic drawer interaction contract', () => {
         expect(bridge).toContain('variant: latestEvent.severity')
     })
 
-    it('keeps Composition authority visible with workflow modes and one-action legacy rollback', async () => {
+    it('shows migration status without exposing a legacy authority switch', async () => {
         const drawer = await source('src/components/diagnostics/DiagnosticDrawer.tsx')
         const panel = await source('src/components/diagnostics/CompositionAuthorityPanel.tsx')
 
         expect(drawer).toContain('<CompositionAuthorityPanel')
         expect(drawer).not.toContain('{hasInteractiveDiagnostic && (')
-        for (const label of [
-            'Persisted authority',
-            'Process runtime authority',
-            'Repository revision / hash',
-            'Migration status',
-            'Startup verification',
-            'Main',
-            'Scene',
-            'Style Lab',
-        ]) {
+        for (const label of ['Composition Data', 'Composition → NovelAI', 'Repository revision / hash', 'Migration status']) {
             expect(panel).toContain(label)
         }
-        expect(panel).toContain("applyCompositionAuthorityFeatureFlag('legacy')")
-        expect(panel).toContain('effectiveMainCompositionMode(mainRequestedMode)')
-        expect(panel).toContain('effectiveSceneCompositionMode(sceneRequestedMode)')
-        expect(panel).toContain('effectiveStyleLabCompositionMode(styleLabRequestedMode)')
+        expect(panel).toContain('original data remains archived')
+        expect(panel).not.toContain('applyCompositionAuthorityFeatureFlag')
+        expect(panel).not.toContain('Rollback to legacy')
         expect(panel).not.toContain('.setAuthority(')
         expect(panel).toContain('min-h-11')
     })

@@ -10,9 +10,9 @@
   ],
   "nondeterminism": [
     "Date.now controls session, timing, history IDs and default filenames.",
-    "Math.random controls initial/unlocked/zero seed and every wildcard selection.",
-    "Fixed generation seed does not seed wildcard selection or filenames.",
-    "Unlocked generation advances the next seed before wildcard processing."
+    "Math.random controls initial/unlocked/zero seeds; Composition resolves wildcards from the captured seed.",
+    "Fixed generation seed determines wildcard selection; default filenames use the captured time.",
+    "Unlocked generation advances the next visible seed before resolving the captured seed."
   ],
   "scenarios": [
     {
@@ -23,7 +23,8 @@
           "additional": "",
           "detail": "",
           "negative": "",
-          "inpainting": ""
+          "inpainting": "",
+          "workflow": ""
         },
         "finalPositive": "1girl, silver hair",
         "finalNegative": "",
@@ -100,7 +101,7 @@
       "output": {
         "policy": "memory",
         "fileName": "NAI_Blue_1783728000000.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": true,
         "historyCount": 1
       },
@@ -123,7 +124,7 @@
         "sidecarMatchesPlanned": null
       },
       "callOrder": [
-        "wildcards:process",
+        "images:ensure-loaded",
         "images:ensure-loaded",
         "payload:adapt-params",
         "transport:non-streaming",
@@ -140,8 +141,9 @@
           "base": "1girl",
           "additional": "soft light",
           "detail": "detailed eyes",
-          "negative": "lowres\n# removed negative note",
-          "inpainting": ""
+          "negative": "lowres",
+          "inpainting": "",
+          "workflow": ""
         },
         "finalPositive": "1girl, soft light, detailed eyes",
         "finalNegative": "lowres",
@@ -218,7 +220,7 @@
       "output": {
         "policy": "memory",
         "fileName": "NAI_Blue_1783728000000.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": true,
         "historyCount": 1
       },
@@ -229,7 +231,7 @@
           "base": "1girl",
           "additional": "soft light",
           "detail": "detailed eyes",
-          "negative": "lowres\n# removed negative note",
+          "negative": "lowres",
           "inpainting": ""
         },
         "assetModulePlan": null,
@@ -241,7 +243,7 @@
         "sidecarMatchesPlanned": null
       },
       "callOrder": [
-        "wildcards:process",
+        "images:ensure-loaded",
         "images:ensure-loaded",
         "payload:adapt-params",
         "transport:streaming",
@@ -259,7 +261,8 @@
           "additional": "",
           "detail": "",
           "negative": "bad hands",
-          "inpainting": "repair hands"
+          "inpainting": "repair hands",
+          "workflow": ""
         },
         "finalPositive": "portrait, repair hands",
         "finalNegative": "bad hands",
@@ -335,8 +338,8 @@
       },
       "output": {
         "policy": "memory",
-        "fileName": "NAI_Blue_1783728000000.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "fileName": "NAI_Blue_INPAINT_1783728000000.png",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": true,
         "historyCount": 1
       },
@@ -359,7 +362,7 @@
         "sidecarMatchesPlanned": null
       },
       "callOrder": [
-        "wildcards:process",
+        "images:ensure-loaded",
         "images:ensure-loaded",
         "payload:adapt-params",
         "transport:non-streaming",
@@ -373,17 +376,18 @@
       "name": "wildcards-character-positive-negative-manual-position",
       "composition": {
         "promptParts": {
-          "base": "1girl, <red hair|blue hair>",
+          "base": "1girl, red hair",
           "additional": "",
           "detail": "",
-          "negative": "<bad anatomy|lowres>",
-          "inpainting": ""
+          "negative": "lowres",
+          "inpainting": "",
+          "workflow": ""
         },
-        "finalPositive": "1girl, blue hair",
-        "finalNegative": "<bad anatomy|lowres>",
+        "finalPositive": "1girl, red hair",
+        "finalNegative": "lowres",
         "characterPrompts": [
           {
-            "name": "Hero",
+            "name": null,
             "positive": "amber eyes",
             "negative": "glasses",
             "enabled": true
@@ -430,7 +434,7 @@
       },
       "payloadRedactedSummary": {
         "action": "generate",
-        "input": "1girl, blue hair, location, very aesthetic, masterpiece, no text",
+        "input": "1girl, red hair, location, very aesthetic, masterpiece, no text",
         "model": "nai-diffusion-4-5-full",
         "parameters": {
           "width": 832,
@@ -441,7 +445,7 @@
           "scale": 5,
           "cfgRescale": 0,
           "noiseSchedule": "karras",
-          "negativePrompt": "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, <bad anatomy|lowres>",
+          "negativePrompt": "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, lowres",
           "qualityToggle": true,
           "ucPreset": 0,
           "useCoords": true,
@@ -476,7 +480,7 @@
       "output": {
         "policy": "memory",
         "fileName": "NAI_Blue_1783728000000.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": true,
         "historyCount": 1
       },
@@ -484,10 +488,10 @@
         "qualityToggle": true,
         "ucPreset": 0,
         "promptParts": {
-          "base": "1girl, <red hair|blue hair>",
+          "base": "1girl, red hair",
           "additional": "",
           "detail": "",
-          "negative": "<bad anatomy|lowres>",
+          "negative": "lowres",
           "inpainting": ""
         },
         "assetModulePlan": null,
@@ -499,10 +503,8 @@
         "sidecarMatchesPlanned": null
       },
       "callOrder": [
-        "wildcards:process",
         "images:ensure-loaded",
-        "wildcards:process",
-        "wildcards:process",
+        "images:ensure-loaded",
         "payload:adapt-params",
         "transport:streaming",
         "thumbnail:create",
@@ -519,7 +521,8 @@
           "additional": "preset additional",
           "detail": "preset detail",
           "negative": "preset negative",
-          "inpainting": "preserved inpainting prompt"
+          "inpainting": "preserved inpainting prompt",
+          "workflow": ""
         },
         "finalPositive": "preset base, preserved inpainting prompt, preset additional, preset detail",
         "finalNegative": "preset negative",
@@ -596,7 +599,7 @@
       "output": {
         "policy": "memory",
         "fileName": "NAI_Blue_1783728000000.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": true,
         "historyCount": 1
       },
@@ -619,7 +622,7 @@
         "sidecarMatchesPlanned": null
       },
       "callOrder": [
-        "wildcards:process",
+        "images:ensure-loaded",
         "images:ensure-loaded",
         "payload:adapt-params",
         "transport:non-streaming",
@@ -637,7 +640,8 @@
           "additional": "",
           "detail": "",
           "negative": "module negative",
-          "inpainting": ""
+          "inpainting": "",
+          "workflow": ""
         },
         "finalPositive": "module subject, module lighting",
         "finalNegative": "module negative",
@@ -747,7 +751,7 @@
       "output": {
         "policy": "filesystem",
         "fileName": "module_424242.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": false,
         "historyCount": 1,
         "targetSegments": [
@@ -797,10 +801,7 @@
       },
       "callOrder": [
         "asset-plan:resolve",
-        "wildcards:process",
-        "wildcards:process",
-        "wildcards:process",
-        "wildcards:process",
+        "images:ensure-loaded",
         "images:ensure-loaded",
         "payload:adapt-params",
         "transport:non-streaming",
@@ -813,14 +814,15 @@
       ]
     },
     {
-      "name": "asset-module-missing-falls-back-to-direct",
+      "name": "explicit-direct-with-unavailable-asset-recipe",
       "composition": {
         "promptParts": {
           "base": "fallback base",
           "additional": "fallback additional",
           "detail": "",
           "negative": "fallback negative",
-          "inpainting": ""
+          "inpainting": "",
+          "workflow": ""
         },
         "finalPositive": "fallback base, fallback additional",
         "finalNegative": "fallback negative",
@@ -897,7 +899,7 @@
       "output": {
         "policy": "memory",
         "fileName": "NAI_Blue_1783728000000.png",
-        "outputTargetPolicy": "Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.",
+        "outputTargetPolicy": "Composition output policy selects the filename, including source-edit prefixes.",
         "eventIncludesImageData": true,
         "historyCount": 1
       },
@@ -920,8 +922,7 @@
         "sidecarMatchesPlanned": null
       },
       "callOrder": [
-        "asset-plan:resolve",
-        "wildcards:process",
+        "images:ensure-loaded",
         "images:ensure-loaded",
         "payload:adapt-params",
         "transport:non-streaming",

@@ -12,10 +12,7 @@ import type {
     CompositionEntityKind,
     RevisionedEntity,
 } from '@/domain/composition/types'
-import {
-    getRuntimeCompositionAuthority,
-    setRuntimeCompositionDocument,
-} from '@/lib/composition-authority'
+import { setRuntimeCompositionDocument } from '@/lib/composition-authority'
 import {
     createCompositionAuthoringSession,
     type CompositionAuthoringRepositorySnapshot,
@@ -124,7 +121,7 @@ export function createRepositoryCompositionAuthoringSession(
                 const saved = await repository.applyChangeSet(changeSet)
                 const document = saved.committedDocument
                 if (document === undefined) throw new Error('Composition repository commit has no document')
-                if (getRuntimeCompositionAuthority() === 'v2') setRuntimeCompositionDocument(document)
+                setRuntimeCompositionDocument(document)
                 return { status: 'committed', snapshot: repositorySnapshot(document) }
             } catch (error) {
                 if (error instanceof CompositionRepositoryError

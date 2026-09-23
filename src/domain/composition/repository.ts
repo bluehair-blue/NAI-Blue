@@ -8,7 +8,6 @@ import type { CompositionChangeSet, CompositionDocument } from './types'
 
 export const COMPOSITION_REPOSITORY_STORAGE_KEY = 'nai-blue-composition-repository' as const
 export const COMPOSITION_MIGRATION_BACKUP_STORAGE_KEY = 'nai-blue-composition-migration-backup' as const
-export const COMPOSITION_AUTHORITY_FEATURE_FLAG_KEY = 'nai-blue-composition-authority' as const
 export const COMPOSITION_REPOSITORY_FORMAT = 'nai-blue-composition-repository' as const
 export const COMPOSITION_REPOSITORY_SCHEMA_VERSION = 1 as const
 
@@ -82,7 +81,6 @@ export interface FinalizeCommittedCompositionInput {
     lockId: string
     migrationId: string
     targetHash: string
-    authority: CompositionAuthority
     now: string
 }
 
@@ -504,13 +502,13 @@ export class CompositionRepository {
             || current.migrationMarker.targetHash !== input.targetHash) {
             throw new CompositionRepositoryError(
                 'E_REPOSITORY_CONFLICT',
-                'Committed migration changed before authority finalization',
+                'Committed migration changed before verification completed',
             )
         }
         return this.persist({
             ...current,
             revision: current.revision + 1,
-            authority: input.authority,
+            authority: 'v2',
             migrationMarker: {
                 ...current.migrationMarker,
                 startupVerifiedAt: input.now,
@@ -554,25 +552,6 @@ export class CompositionRepository {
             revision: current.revision + 1,
             staged: undefined,
             migrationLock: undefined,
-            updatedAt: now,
-        }, raw)
-    }
-
-    async setAuthority(authority: CompositionAuthority, now: string): Promise<CompositionRepositoryRecord> {
-        const { raw, record: current } = await this.readWithRaw(now)
-        if (current.migrationLock !== undefined && !lockExpired(current.migrationLock, now)) {
-            throw new CompositionRepositoryError(
-                'E_MIGRATION_LOCKED',
-                `Composition authority is locked by ${current.migrationLock.owner}`,
-            )
-        }
-        if (authority === 'v2' && current.committedDocument === undefined) {
-            throw new CompositionRepositoryError('E_V2_DOCUMENT_MISSING', 'V2 authority requires a committed document')
-        }
-        return this.persist({
-            ...current,
-            revision: current.revision + 1,
-            authority,
             updatedAt: now,
         }, raw)
     }

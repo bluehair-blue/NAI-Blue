@@ -469,7 +469,11 @@ function summarizePreview(index: number, label: string): Record<string, unknown>
     const embeddedMetadata = typeof eventData === 'string'
         ? summarizeNaiBlueMetadata(readNaiBlueParams(base64Bytes(eventData)))
         : null
-    expect(embeddedMetadata).toEqual(metadata)
+    // Memory previews retain provider bytes and never pass through the output writer.
+    expect(location).toMatch(/^memory:\/\//)
+    expect(typeof eventData).toBe('string')
+    expect(base64Bytes(eventData as string)).toEqual(base64Bytes(TINY_PNG_BASE64))
+    expect(embeddedMetadata).toBeNull()
 
     return redactedGolden({
         name: label,
@@ -493,7 +497,7 @@ function summarizePreview(index: number, label: string): Record<string, unknown>
             sentPayloadMatchesTransport: true,
             configuredMetadataModeIgnoredByStyleParams: params.metadataMode === undefined,
             embeddedInOutput: embeddedMetadata !== null,
-            embeddedMatchesPlanned: true,
+            embeddedMatchesPlanned: false,
         },
         finalPreviewState: {
             previewLocation: combination?.previewPath,
@@ -525,7 +529,8 @@ function summarizeFilesystemOutput(): Record<string, unknown> {
         : undefined
     const metadata = summarizeMetadata(params, sentPayloadSummary)
     const persistedMetadata = summarizeNaiBlueMetadata(sidecarWrite ? readNaiBlueSidecar(sidecarWrite.data) : null)
-    const expectedResolvedPath = `C:/Synthetic/Pictures/${write.location}`
+    // The mocked browser runtime uses the portable app-data output root.
+    const expectedResolvedPath = `C:/Synthetic/AppData/${write.location}`
 
     expect(metadata.sentPayloadHash).toBe(hashCapturedPayload(request))
     expect(persistedMetadata).toEqual(metadata)
@@ -603,12 +608,12 @@ describe('Style Lab workflow golden characterization', () => {
         expect(runtimeCapture.requests).toHaveLength(2)
         const styleState = runtime.useStyleLabStore.getState()
         const memoryOutputPolicy = {
-            autoSaveOff: 'memory://NAI_Blue_STYLELAB_<Date.now()>.<format>',
-            autoSaveOn: 'configured style root or nai-blue-style / NAI_Blue_STYLELAB_<Date.now()>.<format>',
+            autoSaveOff: 'memory://NAI_Blue_STYLELAB_<seed>.<format>',
+            autoSaveOn: 'configured style root or nai-blue-style / NAI_Blue_STYLELAB_<seed>.<format>',
             memoryEventsIncludeImageData: true,
             memoryOutputAddsHistory: false,
             capturedEventCount: runtimeCapture.events.length,
-            frozenClockCollisionObserved: new Set(runtimeCapture.events.map(event => event.detail.path)).size === 1,
+            sharedSeedFilenameCollisionObserved: new Set(runtimeCapture.events.map(event => event.detail.path)).size === 1,
         }
         const memoryPreviews = [
             summarizePreview(0, 'single artist combination'),
@@ -656,9 +661,9 @@ describe('Style Lab workflow golden characterization', () => {
             nondeterminism: [
                 'Date.now and Math.random create combination IDs; injected fixture IDs avoid that path.',
                 'Random combination selection, tag ordering, weights, evolution and generation seed use Math.random.',
-                'Wildcard selection is independent of the fixed generation seed.',
-                'Locked nonzero seed is reused for every preview; locked zero is rerolled.',
-                'A frozen Date.now gives multiple previews the same default memory filename.',
+                'Composition wildcard selection uses the generation seed and combination scope.',
+                'Locked seed is reused for every preview, including deterministic zero.',
+                'A shared seed gives multiple previews the same default memory filename.',
                 'Date.now supplies generationSessionId, saved history id, and combination update timestamps; new Date supplies the history timestamp.',
                 'Each preview rereads live Main/character/settings stores, so mid-queue edits affect later requests.',
             ],
@@ -675,6 +680,24 @@ describe('Style Lab workflow golden characterization', () => {
 })
 
 describe('Style Lab Composition v2 production caller contract', () => {
+    it('accepts legacy mode inputs with the same V2 payload and evaluation context', async () => {
+        const { buildStyleLabGenerationParams } = await import('@/lib/style-lab/build-style-lab-params')
+        const { captureCurrentStyleEvaluationContext } = await import(
+            '@/services/style-lab/capture-evaluation-context'
+        )
+        const combination = runtime.useStyleLabStore.getState().combinations[0]
+        const options = { seed: FIXED_SEED, now: new Date(FIXED_TIME), requestId: 'mode-compatibility' }
+        const legacyContext = captureCurrentStyleEvaluationContext([FIXED_SEED], FIXED_TIME)
+        const legacyInput = await buildStyleLabGenerationParams(combination, { ...options, mode: 'legacy' })
+        expect(runtime.useGenerationStore.getState().styleLabCompositionMode).toBe('legacy')
+
+        runtime.useGenerationStore.setState({ styleLabCompositionMode: 'v2' })
+        const canonicalInput = await buildStyleLabGenerationParams(combination, { ...options, mode: 'v2' })
+        expect(legacyInput).toMatchObject({ success: true, mode: 'v2', plan: expect.any(Object) })
+        expect(legacyInput).toEqual(canonicalInput)
+        expect(legacyContext).toEqual(captureCurrentStyleEvaluationContext([FIXED_SEED], FIXED_TIME))
+    })
+
     it('renders an Arena pair with one immutable context and shared seed', async () => {
         runtime.useGenerationStore.setState({
             styleLabCompositionMode: 'v2',

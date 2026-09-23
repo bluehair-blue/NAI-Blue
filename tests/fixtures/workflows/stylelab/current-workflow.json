@@ -13,19 +13,19 @@
   "nondeterminism": [
     "Date.now and Math.random create combination IDs; injected fixture IDs avoid that path.",
     "Random combination selection, tag ordering, weights, evolution and generation seed use Math.random.",
-    "Wildcard selection is independent of the fixed generation seed.",
-    "Locked nonzero seed is reused for every preview; locked zero is rerolled.",
-    "A frozen Date.now gives multiple previews the same default memory filename.",
+    "Composition wildcard selection uses the generation seed and combination scope.",
+    "Locked seed is reused for every preview, including deterministic zero.",
+    "A shared seed gives multiple previews the same default memory filename.",
     "Date.now supplies generationSessionId, saved history id, and combination update timestamps; new Date supplies the history timestamp.",
     "Each preview rereads live Main/character/settings stores, so mid-queue edits affect later requests."
   ],
   "outputPolicy": {
-    "autoSaveOff": "memory://NAI_Blue_STYLELAB_<Date.now()>.<format>",
-    "autoSaveOn": "configured style root or nai-blue-style / NAI_Blue_STYLELAB_<Date.now()>.<format>",
+    "autoSaveOff": "memory://NAI_Blue_STYLELAB_<seed>.<format>",
+    "autoSaveOn": "configured style root or nai-blue-style / NAI_Blue_STYLELAB_<seed>.<format>",
     "memoryEventsIncludeImageData": true,
     "memoryOutputAddsHistory": false,
     "capturedEventCount": 2,
-    "frozenClockCollisionObserved": true
+    "sharedSeedFilenameCollisionObserved": true
   },
   "previews": [
     {
@@ -40,19 +40,20 @@
       ],
       "composition": {
         "promptParts": {
-          "base": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes",
+          "base": "",
+          "inpainting": "",
           "additional": "",
+          "workflow": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes",
           "detail": "",
-          "negative": "<bad anatomy|lowres>",
-          "inpainting": ""
+          "negative": "bad anatomy"
         },
         "finalPositive": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes",
-        "finalNegative": "<bad anatomy|lowres>",
+        "finalNegative": "bad anatomy",
         "characterPrompts": [
           {
-            "name": "Muse",
-            "positive": "serious, silver hair",
-            "negative": "glasses",
+            "name": null,
+            "positive": "smile, silver hair",
+            "negative": "hat",
             "enabled": true
           }
         ],
@@ -78,7 +79,7 @@
           "qualityToggle": true,
           "ucPreset": 3,
           "imageFormat": "png",
-          "metadataMode": null,
+          "metadataMode": "strip-and-sidecar",
           "characterPositionEnabled": true
         },
         "sourceEdit": {
@@ -108,7 +109,7 @@
           "scale": 6,
           "cfgRescale": 0.2,
           "noiseSchedule": "exponential",
-          "negativePrompt": "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy, <bad anatomy|lowres>",
+          "negativePrompt": "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy, bad anatomy",
           "qualityToggle": true,
           "ucPreset": 3,
           "useCoords": true,
@@ -116,8 +117,8 @@
           "stream": null,
           "characterPrompts": [
             {
-              "prompt": "serious, silver hair",
-              "uc": "glasses",
+              "prompt": "smile, silver hair",
+              "uc": "hat",
               "center": {
                 "x": 0.35,
                 "y": 0.65
@@ -142,28 +143,28 @@
       },
       "output": {
         "policy": "memory",
-        "fileName": "NAI_Blue_STYLELAB_1783728000000.png",
+        "fileName": "NAI_Blue_STYLELAB_616161.png",
         "eventIncludesImageData": true
       },
       "metadata": {
         "qualityToggle": true,
         "ucPreset": 3,
         "promptParts": {
-          "base": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes",
+          "base": "",
           "additional": "",
           "detail": "",
-          "negative": "<bad anatomy|lowres>",
+          "negative": "bad anatomy",
           "inpainting": "",
-          "workflow": ""
+          "workflow": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes"
         },
         "assetModulePlan": null,
         "sentPayloadMatchesTransport": true,
-        "configuredMetadataModeIgnoredByStyleParams": true,
-        "embeddedInOutput": true,
-        "embeddedMatchesPlanned": true
+        "configuredMetadataModeIgnoredByStyleParams": false,
+        "embeddedInOutput": false,
+        "embeddedMatchesPlanned": false
       },
       "finalPreviewState": {
-        "previewLocation": "memory://NAI_Blue_STYLELAB_1783728000000.png",
+        "previewLocation": "memory://NAI_Blue_STYLELAB_616161.png",
         "previewImagePresent": true,
         "previewThumbnailPresent": true,
         "previewSeed": 616161,
@@ -191,18 +192,19 @@
       ],
       "composition": {
         "promptParts": {
-          "base": "portrait, night, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
+          "base": "",
+          "inpainting": "",
           "additional": "",
+          "workflow": "portrait, day, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
           "detail": "",
-          "negative": "<bad anatomy|lowres>",
-          "inpainting": ""
+          "negative": "lowres"
         },
-        "finalPositive": "portrait, night, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
-        "finalNegative": "<bad anatomy|lowres>",
+        "finalPositive": "portrait, day, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
+        "finalNegative": "lowres",
         "characterPrompts": [
           {
-            "name": "Muse",
-            "positive": "serious, silver hair",
+            "name": null,
+            "positive": "smile, silver hair",
             "negative": "glasses",
             "enabled": true
           }
@@ -229,7 +231,7 @@
           "qualityToggle": true,
           "ucPreset": 3,
           "imageFormat": "png",
-          "metadataMode": null,
+          "metadataMode": "strip-and-sidecar",
           "characterPositionEnabled": true
         },
         "sourceEdit": {
@@ -248,7 +250,7 @@
       },
       "payloadRedactedSummary": {
         "action": "generate",
-        "input": "portrait, night, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes, location, very aesthetic, masterpiece, no text",
+        "input": "portrait, day, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes, location, very aesthetic, masterpiece, no text",
         "model": "nai-diffusion-4-5-full",
         "parameters": {
           "width": 896,
@@ -259,7 +261,7 @@
           "scale": 6,
           "cfgRescale": 0.2,
           "noiseSchedule": "exponential",
-          "negativePrompt": "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy, <bad anatomy|lowres>",
+          "negativePrompt": "lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy, lowres",
           "qualityToggle": true,
           "ucPreset": 3,
           "useCoords": true,
@@ -267,7 +269,7 @@
           "stream": null,
           "characterPrompts": [
             {
-              "prompt": "serious, silver hair",
+              "prompt": "smile, silver hair",
               "uc": "glasses",
               "center": {
                 "x": 0.35,
@@ -293,32 +295,32 @@
       },
       "output": {
         "policy": "memory",
-        "fileName": "NAI_Blue_STYLELAB_1783728000000.png",
+        "fileName": "NAI_Blue_STYLELAB_616161.png",
         "eventIncludesImageData": true
       },
       "metadata": {
         "qualityToggle": true,
         "ucPreset": 3,
         "promptParts": {
-          "base": "portrait, night, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
+          "base": "",
           "additional": "",
           "detail": "",
-          "negative": "<bad anatomy|lowres>",
+          "negative": "lowres",
           "inpainting": "",
-          "workflow": ""
+          "workflow": "portrait, day, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes"
         },
         "assetModulePlan": null,
         "sentPayloadMatchesTransport": true,
-        "configuredMetadataModeIgnoredByStyleParams": true,
-        "embeddedInOutput": true,
-        "embeddedMatchesPlanned": true
+        "configuredMetadataModeIgnoredByStyleParams": false,
+        "embeddedInOutput": false,
+        "embeddedMatchesPlanned": false
       },
       "finalPreviewState": {
-        "previewLocation": "memory://NAI_Blue_STYLELAB_1783728000000.png",
+        "previewLocation": "memory://NAI_Blue_STYLELAB_616161.png",
         "previewImagePresent": true,
         "previewThumbnailPresent": true,
         "previewSeed": 616161,
-        "previewPrompt": "portrait, night, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
+        "previewPrompt": "portrait, day, 1.2::artist:Synthetic One ::, 0.8::artist:Synthetic Two ::, soft light, detailed eyes",
         "previewProgress": 0,
         "isPreviewing": false,
         "previewError": null
@@ -327,7 +329,7 @@
   ],
   "filesystemOutput": {
     "policy": "platform media root / configured style root",
-    "fileName": "NAI_Blue_STYLELAB_1783728000000.png",
+    "fileName": "NAI_Blue_STYLELAB_616161.png",
     "targetSegments": [
       "nai-blue-style"
     ],
@@ -342,25 +344,22 @@
       "qualityToggle": true,
       "ucPreset": 3,
       "promptParts": {
-        "base": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes",
+        "base": "",
         "additional": "",
         "detail": "",
-        "negative": "<bad anatomy|lowres>",
+        "negative": "bad anatomy",
         "inpainting": "",
-        "workflow": ""
+        "workflow": "portrait, night, 1.0::artist:Synthetic One ::, soft light, detailed eyes"
       },
       "sentPayloadMatchesTransport": true,
-      "configuredMetadataModeIgnoredByStyleParams": true,
+      "configuredMetadataModeIgnoredByStyleParams": false,
       "embeddedInWrittenImage": false,
       "embeddedMatchesPlanned": true
     },
     "callOrder": [
       "preview-queue:running:1:0",
       "preview-update:single-artist:isPreviewing+previewError+previewProgress",
-      "wildcards:process",
       "images:ensure-loaded",
-      "wildcards:process",
-      "wildcards:process",
       "payload:adapt-params",
       "transport:non-streaming",
       "output:exists",
@@ -388,10 +387,7 @@
   "callOrder": [
     "preview-queue:running:2:0",
     "preview-update:single-artist:isPreviewing+previewError+previewProgress",
-    "wildcards:process",
     "images:ensure-loaded",
-    "wildcards:process",
-    "wildcards:process",
     "payload:adapt-params",
     "transport:non-streaming",
     "thumbnail:create",
@@ -400,10 +396,7 @@
     "anlas:refresh-slot-1",
     "preview-queue:running:2:1",
     "preview-update:multi-artist:isPreviewing+previewError+previewProgress",
-    "wildcards:process",
     "images:ensure-loaded",
-    "wildcards:process",
-    "wildcards:process",
     "payload:adapt-params",
     "transport:non-streaming",
     "thumbnail:create",

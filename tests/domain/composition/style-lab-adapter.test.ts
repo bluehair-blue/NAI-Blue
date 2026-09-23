@@ -15,10 +15,7 @@ import {
     type BuildStyleLabCompositionInput,
 } from '@/lib/composition/style-lab-adapter'
 import type { AssetProfile } from '@/types/asset-profile'
-import {
-    setRuntimeCompositionAuthority,
-    setRuntimeCompositionDocument,
-} from '@/lib/composition-authority'
+import { setRuntimeCompositionDocument } from '@/lib/composition-authority'
 
 const NOW = '2026-07-12T00:00:00.000Z' as const
 const SEED = 424242
@@ -133,7 +130,6 @@ describe('Style Lab Composition workflow adapter', () => {
         repositoryDocument.activeProfileId = 'repository:active-profile'
 
         setRuntimeCompositionDocument(repositoryDocument)
-        setRuntimeCompositionAuthority('v2')
         try {
             const built = buildStyleLabResolveRequest(value)
             const activeProfile = built.request.document.profiles.find(profile => (
@@ -143,8 +139,7 @@ describe('Style Lab Composition workflow adapter', () => {
             expect(activeProfile?.recipeIds).toContain(built.combination.recipeId)
             expect(planFor(value).profileId).toBe('repository:active-profile')
         } finally {
-            setRuntimeCompositionAuthority('legacy')
-            setRuntimeCompositionAuthority('v2')
+            setRuntimeCompositionDocument(null)
         }
     })
 

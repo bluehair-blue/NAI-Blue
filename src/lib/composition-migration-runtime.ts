@@ -33,7 +33,6 @@ export type CompositionMigrationTransactionStep =
     | 'fatal-check'
     | 'temp-write'
     | 'schema-reference-validation'
-    | 'shadow-resolve-compare'
     | 'atomic-commit'
     | 'migration-marker'
     | 'post-commit-pre-finalize'
@@ -70,25 +69,9 @@ export interface RawCompositionMigrationBackupArchive {
     snapshots: RawCompositionMigrationBackupSnapshot[]
 }
 
-export interface MigrationShadowResolveComparison {
-    status: 'match' | 'different' | 'skipped'
-    matches: boolean
-    fatal: boolean
-    legacyHash?: string
-    v2Hash?: string
-    differences: string[]
-}
-
-export interface CompositionMigrationShadowInput {
-    source: CompositionMigrationSourceSnapshot
-    legacyInput: LegacyStoresMigrationInput
-    migrated: LegacyStoresMigrationResult
-    document: CompositionDocument
-}
-
 /**
  * A compatibility projection may be written only after the v2 document has
- * committed and passed readback verification, but before authority activation
+ * committed and passed readback verification, but before startup verification
  * releases the migration lease.
  */
 export interface CompositionMigrationPostCommitInput {
@@ -108,14 +91,10 @@ export interface RunCompositionMigrationOptions {
     source: CompositionMigrationSourceSnapshot | (() => Promise<CompositionMigrationSourceSnapshot>)
     now: string
     owner: string
-    activateAuthority: CompositionAuthority
     registryVersion: number
     /** Runtime lease clock; tests may keep it fixed. */
     clock?: () => string
     migrate?: (input: LegacyStoresMigrationInput) => LegacyStoresMigrationResult
-    shadowResolve: (
-        input: CompositionMigrationShadowInput,
-    ) => MigrationShadowResolveComparison | Promise<MigrationShadowResolveComparison>
     postCommitBeforeFinalize?: (
         input: CompositionMigrationPostCommitInput,
     ) => void | Promise<void>
@@ -130,7 +109,6 @@ export interface CompositionMigrationTransactionResult {
     sourceCounts: Record<string, number>
     report?: MigrationReport
     sidecars?: LegacyStoresMigrationResult['sidecars']
-    shadow?: MigrationShadowResolveComparison
     validationIssues: ResolutionIssue[]
     marker?: CompositionMigrationMarker
     error?: string
@@ -419,12 +397,11 @@ function uniqueMigrationLockId(owner: string, now: string, registryVersion: numb
 }
 
 function resultBase(
-    options: RunCompositionMigrationOptions,
     migrationId: string,
     sourceHash: string,
     sourceCounts: Record<string, number>,
     completedSteps: CompositionMigrationTransactionStep[],
-    authority: CompositionAuthority = options.activateAuthority,
+    authority: CompositionAuthority = 'v2',
 ): Pick<
     CompositionMigrationTransactionResult,
     'migrationId' | 'authority' | 'sourceHash' | 'sourceCounts' | 'oldSourcesRetained' | 'completedSteps'
@@ -481,7 +458,6 @@ export async function runCompositionMigrationTransaction(
     const lockId = uniqueMigrationLockId(options.owner, options.now, options.registryVersion)
     let source: CompositionMigrationSourceSnapshot | undefined
     let report: MigrationReport | undefined
-    let shadow: MigrationShadowResolveComparison | undefined
     let validationIssues: ResolutionIssue[] = []
     const operationNow = (): string => options.clock?.() ?? options.now
     const assertLeaseOwned = async (): Promise<void> => {
@@ -582,23 +558,12 @@ export async function runCompositionMigrationTransaction(
                 throw new Error('Idempotent migration repository document failed reference validation')
             }
             complete('schema-reference-validation')
-            shadow = await options.shadowResolve({
-                source,
-                legacyInput,
-                migrated,
-                document: parsedCurrent.data,
-            })
-            if (shadow.fatal || (options.activateAuthority === 'v2' && !shadow.matches)) {
-                throw new Error(`Migration shadow comparison failed: ${shadow.differences.join(', ')}`)
-            }
-            complete('shadow-resolve-compare')
             await assertMigrationSourceUnchanged(options.source, sourceHash)
             await runPostCommitBeforeFinalize(migrated, parsedCurrent.data, targetHash)
             const activated = await options.repository.finalizeCommittedMigration({
                 lockId,
                 migrationId,
                 targetHash,
-                authority: options.activateAuthority,
                 now: operationNow(),
             })
             if (activated.committedHash !== targetHash) {
@@ -606,11 +571,10 @@ export async function runCompositionMigrationTransaction(
             }
             complete('startup-reread')
             return {
-                ...resultBase(options, migrationId, sourceHash, sourceCounts, completedSteps),
+                ...resultBase(migrationId, sourceHash, sourceCounts, completedSteps),
                 status: 'already-current',
                 report,
                 sidecars: migrated.sidecars,
-                shadow,
                 validationIssues,
                 marker: activated.migrationMarker,
             }
@@ -631,17 +595,6 @@ export async function runCompositionMigrationTransaction(
                 .join(', ')}`)
         }
         complete('schema-reference-validation')
-
-        shadow = await options.shadowResolve({
-            source,
-            legacyInput,
-            migrated,
-            document: parsed.data,
-        })
-        if (shadow.fatal || (options.activateAuthority === 'v2' && !shadow.matches)) {
-            throw new Error(`Migration shadow comparison failed: ${shadow.differences.join(', ')}`)
-        }
-        complete('shadow-resolve-compare')
 
         await assertMigrationSourceUnchanged(options.source, sourceHash)
 
@@ -675,17 +628,15 @@ export async function runCompositionMigrationTransaction(
             lockId,
             migrationId,
             targetHash,
-            authority: options.activateAuthority,
             now: operationNow(),
         })
         complete('startup-reread')
 
         return {
-            ...resultBase(options, migrationId, sourceHash, sourceCounts, completedSteps),
+            ...resultBase(migrationId, sourceHash, sourceCounts, completedSteps),
             status: 'committed',
             report,
             sidecars: migrated.sidecars,
-            shadow,
             validationIssues,
             marker: verified.migrationMarker,
         }
@@ -703,10 +654,9 @@ export async function runCompositionMigrationTransaction(
             console.error('[CompositionMigration] Failed to clean temporary migration state:', cleanupError)
         }
         return {
-            ...resultBase(options, migrationId, sourceHash, sourceCounts, completedSteps, persistedAuthority),
+            ...resultBase(migrationId, sourceHash, sourceCounts, completedSteps, persistedAuthority),
             status: 'failed',
             ...(report === undefined ? {} : { report }),
-            ...(shadow === undefined ? {} : { shadow }),
             validationIssues,
             error: error instanceof Error ? error.message : String(error),
             ...(error instanceof CompositionRepositoryError

@@ -112,10 +112,10 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         expect(f.invokes.map(item => item.command.name)).toEqual(['system.describe_capabilities', 'generation.get_run'])
     })
 
-    it('handshakes and advertises exactly the fresh registered available schema-bound tools', async () => {
+    it('handshakes and advertises stable schema-bound tools with fresh availability metadata', async () => {
         const f = await fixture()
         const listed = await f.client.listTools()
-        const expected = descriptors().filter(item => item.available)
+        const expected = descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined)
         expect(listed.tools.map(item => item.name)).toEqual(expected.map(item => item.command))
         for (const tool of listed.tools) {
             expect(tool.inputSchema.properties?.input).toEqual(getAgentCommandInputContract(tool.name as AgentCommandName)!.schema)
@@ -136,17 +136,23 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities: current } as unknown as JsonObject) })
         expect((await f.client.listTools()).tools.length).toBeGreaterThan(0)
         current = current.map(item => item.command === 'generation.plan' ? { ...item, inputSchemaHash: `sha256:${'b'.repeat(64)}` } : item)
-        expect((await f.client.listTools()).tools.map(item => item.name)).not.toContain('generation.plan')
+        expect((await f.client.listTools()).tools.map(item => item.name)).toContain('generation.plan')
+        expect((await f.client.listTools()).tools.find(item => item.name === 'generation.plan')?.description)
+            .toContain('schema-version-mismatch')
         const resource = await f.client.readResource({ uri: 'nai-blue://capabilities' })
         const snapshot = JSON.parse(String(resource.contents[0].text))
         expect(snapshot.capabilities.find((item: { command: string }) => item.command === 'generation.plan')).toMatchObject({ available: false, reason: 'schema-version-mismatch' })
         current = descriptors(false)
-        expect((await f.client.listTools()).tools).toEqual([])
+        expect((await f.client.listTools()).tools.map(item => item.name))
+            .toEqual(descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined).map(item => item.command))
     })
 
-    it('returns no tools and an unconfirmed app state when a fresh probe has no application receipt', async () => {
+    it('keeps stable bindings and reports an unconfirmed app state when a fresh probe has no application receipt', async () => {
         const f = await fixture({ invoke: async (_command, requestId) => ({ status: 'submitted-to-inbox', requestId, requiresAppProcess: true, accepted: false }) })
-        expect((await f.client.listTools()).tools).toEqual([])
+        const listed = await f.client.listTools()
+        expect(listed.tools.map(item => item.name))
+            .toEqual(descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined).map(item => item.command))
+        expect(listed.tools[0]?.description).toContain('app-unavailable')
         const resource = await f.client.readResource({ uri: 'nai-blue://capabilities' })
         const snapshot = JSON.parse(String(resource.contents[0].text))
         expect(snapshot.status).toBe('app-state-unconfirmed')
@@ -154,13 +160,14 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         expect(snapshot).not.toHaveProperty('accepted')
     })
 
-    it('refuses malformed or duplicated registry facts without advertising partial success', async () => {
+    it('refuses malformed or duplicated registry facts without advertising partial availability', async () => {
         const values = [descriptors().slice(1), [...descriptors().slice(0, -1), descriptors()[0]],
             descriptors().map(item => item.command === 'generation.plan' ? { ...item, requiresHumanApproval: 'no' } : item),
             descriptors().map(item => item.command === 'generation.plan' ? { ...item, canExecuteWhileAppClosed: true } : item)]
         for (const capabilities of values) {
             const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities } as unknown as JsonObject) })
-            expect((await f.client.listTools()).tools).toEqual([])
+            expect((await f.client.listTools()).tools.map(item => item.name))
+                .toEqual(descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined).map(item => item.command))
         }
     })
 

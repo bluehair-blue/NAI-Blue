@@ -16,10 +16,7 @@ import {
     type MainCompositionSnapshot,
 } from '@/lib/composition/main-adapter'
 import type { AssetProfile } from '@/types/asset-profile'
-import {
-    setRuntimeCompositionAuthority,
-    setRuntimeCompositionDocument,
-} from '@/lib/composition-authority'
+import { setRuntimeCompositionDocument } from '@/lib/composition-authority'
 
 const NOW = '2026-07-12T00:00:00.000Z' as const
 const FIXED_SEED = 424242
@@ -167,7 +164,6 @@ describe('CompositionRepository runtime authority', () => {
         })
 
         setRuntimeCompositionDocument(repositoryDocument)
-        setRuntimeCompositionAuthority('v2')
         try {
             const built = buildMainResolveRequest(adapterInput(liveSnapshot))
             const plan = successfulPlan(resolveMainComposition(adapterInput(liveSnapshot)))
@@ -178,8 +174,7 @@ describe('CompositionRepository runtime authority', () => {
             expect(plan.positivePrompt).toBe('live edited subject')
             expect(plan.positivePrompt).not.toContain('repository subject')
         } finally {
-            setRuntimeCompositionAuthority('legacy')
-            setRuntimeCompositionAuthority('v2')
+            setRuntimeCompositionDocument(null)
         }
     })
 
@@ -219,7 +214,6 @@ describe('CompositionRepository runtime authority', () => {
         repositoryDocument.profiles[0].characterIds = ['character:alpha', 'character:beta']
 
         setRuntimeCompositionDocument(repositoryDocument)
-        setRuntimeCompositionAuthority('v2')
         try {
             const reordered = {
                 ...repositorySnapshot,
@@ -248,8 +242,7 @@ describe('CompositionRepository runtime authority', () => {
                     .toContain('E_CHARACTER_REF_MISSING')
             }
         } finally {
-            setRuntimeCompositionAuthority('legacy')
-            setRuntimeCompositionAuthority('v2')
+            setRuntimeCompositionDocument(null)
         }
     })
 
@@ -279,7 +272,6 @@ describe('CompositionRepository runtime authority', () => {
         liveSnapshot.selectedRecipeId = mainAssetRecipeSelectionId('scene:recipe')
 
         setRuntimeCompositionDocument(repositoryDocument)
-        setRuntimeCompositionAuthority('v2')
         try {
             const built = buildMainResolveRequest(adapterInput(liveSnapshot))
             expect(built.request.document.modules.map(module => module.id)).toEqual(expect.arrayContaining([
@@ -293,8 +285,7 @@ describe('CompositionRepository runtime authority', () => {
             expect(successfulPlan(resolveMainComposition(adapterInput(liveSnapshot))).positivePrompt)
                 .toBe('migrated scene prompt')
         } finally {
-            setRuntimeCompositionAuthority('legacy')
-            setRuntimeCompositionAuthority('v2')
+            setRuntimeCompositionDocument(null)
         }
     })
 })

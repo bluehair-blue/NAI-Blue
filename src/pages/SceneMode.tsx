@@ -84,7 +84,6 @@ import {
     hasSceneCompositionOverrides,
     resolveSceneGeneration,
     useSceneStore,
-    type SceneCompositionMode,
     getScenePresetPathSegments,
 } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -150,16 +149,6 @@ import {
     archiveSceneImages,
     archiveScenesIndividually,
 } from '@/services/trash/asset-trash-service'
-
-const SCENE_COMPOSITION_MODES: readonly SceneCompositionMode[] = ['legacy', 'shadow', 'v2']
-
-// Persisted mode values remain stable rollout IDs; the workspace presents the
-// user-facing purpose of each path so normal Scene authoring does not expose internals.
-const SCENE_COMPOSITION_MODE_LABEL_KEYS: Record<SceneCompositionMode, { key: string; fallback: string }> = {
-    legacy: { key: 'composition.mode.previous', fallback: 'Previous generation engine' },
-    shadow: { key: 'composition.mode.compatibility', fallback: 'Compatibility comparison' },
-    v2: { key: 'composition.mode.current', fallback: 'Current generation engine' },
-}
 
 const dropAnimation = {
     sideEffects: defaultDropAnimationSideEffects({
@@ -317,8 +306,6 @@ export default function SceneMode() {
     const clearAllFavorites = useSceneStore(s => s.clearAllFavorites)
     const deleteAllImages = useSceneStore(s => s.deleteAllImages)
     const addToTrash = useTrashStore(state => state.add)
-    const sceneCompositionMode = useSceneStore(s => s.sceneCompositionMode)
-    const setSceneCompositionMode = useSceneStore(s => s.setSceneCompositionMode)
     const sceneCompositionResults = useSceneStore(s => s.sceneCompositionResults)
     const setSceneCompositionRef = useSceneStore(s => s.setSceneCompositionRef)
     const assetRecipes = useAssetModuleStore(s => s.profile.recipes)
@@ -459,9 +446,7 @@ export default function SceneMode() {
             ? { severity: 'error', errorCount: compositionErrorCount, warningCount: compositionWarningCount }
             : compositionWarningCount > 0
                 ? { severity: 'warning', warningCount: compositionWarningCount }
-                : sceneCompositionMode === 'legacy'
-                    ? { severity: 'disabled', label: t('composition.validation.legacy', 'Previous generation mode') }
-                    : { severity: 'valid' }
+                : { severity: 'valid' }
     const estimatedCost = scenes.reduce((sum, scene) => {
         if (scene.queueCount <= 0) return sum
         const generation = resolveSceneGeneration(scene)
@@ -947,19 +932,6 @@ export default function SceneMode() {
     return (
         <SceneCompositionWorkspace
             simplified
-            mode={{
-                value: sceneCompositionMode,
-                label: t('scene.composition.mode', 'Mode'),
-                options: SCENE_COMPOSITION_MODES.map(mode => ({
-                    value: mode,
-                    label: t(
-                        SCENE_COMPOSITION_MODE_LABEL_KEYS[mode].key,
-                        SCENE_COMPOSITION_MODE_LABEL_KEYS[mode].fallback,
-                    ),
-                })),
-                onChange: value => setSceneCompositionMode(value as SceneCompositionMode),
-                disabled: isGenerating,
-            }}
             recipe={{
                 value: bulkRecipeId,
                 label: t('scene.composition.recipe', 'Recipe'),

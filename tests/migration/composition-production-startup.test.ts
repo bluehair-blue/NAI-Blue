@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { prepareBackupRestore } from '@/lib/auto-backup'
 import {
-    applyCompositionAuthorityFeatureFlag,
     getLastCompositionStartupObservation,
     inspectCompositionAuthority,
     runStartupCompositionMigration,
@@ -13,10 +12,7 @@ import {
     type CompositionAuthority,
     type CompositionRepositoryStorage,
 } from '@/domain/composition/repository'
-import {
-    getRuntimeCompositionAuthority,
-    setRuntimeCompositionAuthority,
-} from '@/lib/composition-authority'
+import { getRuntimeCompositionDocument } from '@/lib/composition-authority'
 import type { CompositionMigrationSourceSnapshot } from '@/lib/composition-migration-runtime'
 import { loadFixtureJson } from '../helpers'
 
@@ -64,19 +60,6 @@ class VerificationFallbackStorage extends MemoryStorage {
     }
 }
 
-class ActivationVerificationStorage extends MemoryStorage {
-    private v2Reads = 0
-
-    override getItem(key: string): string | null {
-        const raw = super.getItem(key)
-        if (key === COMPOSITION_REPOSITORY_STORAGE_KEY && raw?.includes('"authority":"v2"')) {
-            this.v2Reads += 1
-            if (this.v2Reads === 4) throw new Error('injected final activation verification failure')
-        }
-        return raw
-    }
-}
-
 const START = '2026-07-13T00:00:00.000Z'
 const LATER = '2026-07-13T00:06:00.000Z'
 const EMPTY_SOURCE: CompositionMigrationSourceSnapshot = {
@@ -105,11 +88,9 @@ beforeEach(() => {
         getItem: (key: string) => featureFlags.get(key) ?? null,
         setItem: (key: string, value: string) => { featureFlags.set(key, value) },
     })
-    setRuntimeCompositionAuthority('legacy')
 })
 
 afterEach(() => {
-    setRuntimeCompositionAuthority('legacy')
     vi.unstubAllGlobals()
 })
 
@@ -137,7 +118,7 @@ describe('Phase 06 production-like authority startup matrix', () => {
     it('names every required fresh, upgrade, recovery, and rollback fixture', async () => {
         const loaded = await fixture()
 
-        expect(loaded.case).toBe('production-authority-startup')
+        expect(loaded.case).toBe('unified-composition-startup')
         expect(loaded.description.trim()).not.toBe('')
         expect(loaded.scenarios.map(scenario => scenario.id)).toEqual([
             'fresh-install',
@@ -147,7 +128,7 @@ describe('Phase 06 production-like authority startup matrix', () => {
             'old-backup-retired-remote-keys',
             'interrupted-migration',
             'corrupted-repository',
-            'rollback-and-forward-migration',
+            'legacy-flag-ignored',
         ])
         expect(loaded.scenarios.every(scenario => scenario.description.trim().length > 0)).toBe(true)
     })
@@ -166,7 +147,6 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await expectAuthority('fresh-install', storage)
         expect(featureFlags.get('nai-blue-composition-authority')).toBeUndefined()
 
-        setRuntimeCompositionAuthority('legacy')
         const restarted = await runStartupCompositionMigration({
             now: LATER,
             clock: () => LATER,
@@ -178,17 +158,30 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await expectAuthority('fresh-install', storage)
     })
 
+    it('ignores an obsolete persisted legacy preference', async () => {
+        const storage = new MemoryStorage()
+        featureFlags.set('nai-blue-composition-authority', 'legacy')
+
+        const result = await runStartupCompositionMigration({
+            now: START,
+            clock: () => START,
+            storage,
+            source: EMPTY_SOURCE,
+        })
+
+        expect(result.status).toBe('committed')
+        await expectAuthority('fresh-install', storage)
+        expect(featureFlags.get('nai-blue-composition-authority')).toBe('legacy')
+    })
+
     it('accepts a repository-verified canonical v2-only restart', async () => {
         const storage = new MemoryStorage()
         await runStartupCompositionMigration({
             now: START,
             clock: () => START,
-            authority: 'v2',
             storage,
             source: EMPTY_SOURCE,
         })
-        setRuntimeCompositionAuthority('legacy')
-
         const restarted = await runStartupCompositionMigration({
             now: LATER,
             clock: () => LATER,
@@ -214,7 +207,6 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await expectAuthority('upgrade-current-legacy-stores', storage)
         expect(featureFlags.get('nai-blue-composition-authority')).toBeUndefined()
 
-        setRuntimeCompositionAuthority('legacy')
         const restarted = await runStartupCompositionMigration({
             now: LATER,
             storage,
@@ -225,18 +217,15 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await expectAuthority('upgrade-current-legacy-stores', storage)
     })
 
-    it('keeps matching legacy and canonical v2 sources without deleting either authority source', async () => {
+    it('keeps source stores after converting them into the canonical Composition document', async () => {
         const storage = new MemoryStorage()
         await runStartupCompositionMigration({
             now: START,
             clock: () => START,
-            authority: 'v2',
             storage,
             source: LEGACY_SOURCE,
         })
         const sourceBefore = structuredClone(LEGACY_SOURCE)
-        setRuntimeCompositionAuthority('legacy')
-
         const restarted = await runStartupCompositionMigration({
             now: LATER,
             clock: () => LATER,
@@ -278,7 +267,6 @@ describe('Phase 06 production-like authority startup matrix', () => {
         expect(source.serializedStores).not.toHaveProperty('nai-blue-marketplace-cache')
         expect(source.serializedStores).not.toHaveProperty('supabase.auth.session')
 
-        setRuntimeCompositionAuthority('legacy')
         const restarted = await runStartupCompositionMigration({
             now: LATER,
             storage,
@@ -295,7 +283,6 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await runStartupCompositionMigration({
             now: START,
             clock: () => START,
-            authority: 'legacy',
             storage,
             source: LEGACY_SOURCE,
         })
@@ -313,7 +300,9 @@ describe('Phase 06 production-like authority startup matrix', () => {
             START,
         )
 
-        await applyCompositionAuthorityFeatureFlag('v2', LATER, storage, {
+        await runStartupCompositionMigration({
+            now: LATER,
+            storage,
             source: LEGACY_SOURCE,
             clock: () => LATER,
         })
@@ -331,7 +320,6 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await expect(runStartupCompositionMigration({
             now: START,
             clock: () => START,
-            authority: 'v2',
             storage,
             source: LEGACY_SOURCE,
         })).rejects.toThrow('Composition repository JSON is invalid')
@@ -343,71 +331,52 @@ describe('Phase 06 production-like authority startup matrix', () => {
         await expectAuthority('corrupted-repository', storage)
     })
 
-    it('rolls back in one authority action and forward-activates only after repository verification', async () => {
+    it('ignores a legacy rollback request and retains the canonical document', async () => {
         const storage = new MemoryStorage()
         const repository = new CompositionRepository(storage)
-        await applyCompositionAuthorityFeatureFlag('v2', START, storage, {
+        await runStartupCompositionMigration({
+            now: START,
+            storage,
             source: LEGACY_SOURCE,
             clock: () => START,
         })
-        const beforeRollback = await repository.read(START)
+        const beforeRetiredRequest = await repository.read(START)
+        featureFlags.set('nai-blue-composition-authority', 'legacy')
 
-        await applyCompositionAuthorityFeatureFlag('legacy', LATER, storage)
-
-        const rolledBack = await repository.read(LATER)
-        expect(rolledBack.authority).toBe('legacy')
-        expect(rolledBack.committedHash).toBe(beforeRollback.committedHash)
-        expect(rolledBack.committedDocument).toEqual(beforeRollback.committedDocument)
-        expect(getRuntimeCompositionAuthority()).toBe('legacy')
-
-        await applyCompositionAuthorityFeatureFlag('v2', LATER, storage, {
+        await runStartupCompositionMigration({
+            now: LATER,
+            storage,
             source: LEGACY_SOURCE,
             clock: () => LATER,
         })
 
-        await expectAuthority('rollback-and-forward-migration', storage)
-        expect((await repository.read(LATER)).committedHash).toBe(beforeRollback.committedHash)
+        const afterRetiredRequest = await repository.read(LATER)
+        expect(afterRetiredRequest.authority).toBe('v2')
+        expect(afterRetiredRequest.committedHash).toBe(beforeRetiredRequest.committedHash)
+        expect(afterRetiredRequest.committedDocument).toEqual(beforeRetiredRequest.committedDocument)
+        expect(getRuntimeCompositionDocument()).not.toBeNull()
+        await expectAuthority('legacy-flag-ignored', storage)
     })
 
-    it('records a successful persisted-v2/runtime-legacy verification fallback for diagnostics', async () => {
+    it('keeps the single runtime path when repository readback verification fails', async () => {
         const storage = new VerificationFallbackStorage()
 
         const result = await runStartupCompositionMigration({
             now: START,
             clock: () => START,
-            authority: 'v2',
             storage,
             source: LEGACY_SOURCE,
         })
 
         expect(result.status).toBe('committed')
         expect(result.authority).toBe('v2')
-        expect(getRuntimeCompositionAuthority()).toBe('legacy')
+        expect(getRuntimeCompositionDocument()).toBeNull()
         expect(getLastCompositionStartupObservation()).toMatchObject({
-            requestedAuthority: 'v2',
             persistedAuthority: 'v2',
-            runtimeAuthority: 'legacy',
-            fallbackReason: 'repository-verification-failed',
+            runtimeAuthority: 'v2',
+            migrationIssue: 'repository-verification-failed',
         })
-        expect((await inspectCompositionAuthority({ now: LATER, storage })).fallbackReason)
+        expect((await inspectCompositionAuthority({ now: LATER, storage })).migrationIssue)
             .toBe('repository-verification-failed')
-    })
-
-    it('rejects v2 activation when its final repository verification cannot be read', async () => {
-        const storage = new ActivationVerificationStorage()
-
-        await expect(applyCompositionAuthorityFeatureFlag('v2', START, storage, {
-            source: LEGACY_SOURCE,
-            clock: () => START,
-        })).rejects.toThrow('repository verification failed')
-
-        expect(getRuntimeCompositionAuthority()).toBe('legacy')
-        expect(featureFlags.get('nai-blue-composition-authority')).toBe('legacy')
-        expect(getLastCompositionStartupObservation()).toMatchObject({
-            requestedAuthority: 'v2',
-            persistedAuthority: 'unavailable',
-            runtimeAuthority: 'legacy',
-            fallbackReason: 'repository-verification-failed',
-        })
     })
 })

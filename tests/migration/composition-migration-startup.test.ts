@@ -13,10 +13,7 @@ import {
     CompositionRepository,
     type CompositionRepositoryStorage,
 } from '@/domain/composition/repository'
-import {
-    getRuntimeCompositionAuthority,
-    setRuntimeCompositionAuthority,
-} from '@/lib/composition-authority'
+import { getRuntimeCompositionDocument } from '@/lib/composition-authority'
 
 describe('startup legacy source capture', () => {
     it('rehydrates every composition-connected store after migration and before rendering', () => {
@@ -35,8 +32,8 @@ describe('startup legacy source capture', () => {
         expect(mainSource).not.toMatch(/^import App from/m)
         expect(mainSource).not.toMatch(/^import .*['"]\.\/stores\//m)
         expect(mainSource).not.toMatch(/^import .*composition-migration-startup/m)
-        expect(mainSource).toContain('authorityObservation?.fallbackReason')
-        expect(mainSource).toContain("code: 'E_COMPOSITION_AUTHORITY_FALLBACK'")
+        expect(mainSource).toContain('compositionObservation?.migrationIssue')
+        expect(mainSource).toContain("code: 'E_COMPOSITION_MIGRATION_FAILED'")
         expect(assetResolverSource).not.toMatch(/^import .*fragment-processor/m)
         expect(assetResolverSource).toContain("await import('@/lib/fragment-processor')")
         for (const storeName of [
@@ -107,7 +104,6 @@ describe('startup legacy source capture', () => {
         const result = await runStartupCompositionMigration({
             now: '2026-07-12T00:00:00.000Z',
             clock: () => '2026-07-12T00:00:00.000Z',
-            authority: 'legacy',
             storage,
             source,
             materializeSidecars: async () => {
@@ -126,14 +122,14 @@ describe('startup legacy source capture', () => {
         expect(materializations).toBe(2)
         expect(result.sourceHash).toBe(compositionMigrationSourceHash(source))
         expect(result.marker?.sourceHash).toBe(result.sourceHash)
-        expect(result.authority).toBe('legacy')
+        expect(result.authority).toBe('v2')
         expect(callbackStates).toEqual([
             { authority: 'legacy', locked: true },
             { authority: 'legacy', locked: true },
         ])
     })
 
-    it('keeps first-migration authority legacy when post-commit materialization fails', async () => {
+    it('retains the committed document and legacy source when materialization fails', async () => {
         const values = new Map<string, string>()
         const storage: CompositionRepositoryStorage = {
             getItem: key => values.get(key) ?? null,
@@ -150,7 +146,6 @@ describe('startup legacy source capture', () => {
         const result = await runStartupCompositionMigration({
             now: '2026-07-12T00:00:00.000Z',
             clock: () => '2026-07-12T00:00:00.000Z',
-            authority: 'v2',
             storage,
             source,
             materializeSidecars: async () => {
@@ -171,7 +166,7 @@ describe('startup legacy source capture', () => {
         expect(afterFailure.authority).toBe('legacy')
         expect(afterFailure.migrationLock).toBeUndefined()
         expect(afterFailure.migrationMarker?.startupVerifiedAt).toBeUndefined()
-        expect(getRuntimeCompositionAuthority()).toBe('legacy')
+        expect(getRuntimeCompositionDocument()).toBeNull()
     })
 
     it('does not downgrade a winner that finalizes after a failed materializer loses its lease', async () => {
@@ -200,7 +195,6 @@ describe('startup legacy source capture', () => {
             const failed = await runStartupCompositionMigration({
                 now: startedAt,
                 clock: () => runtimeNow,
-                authority: 'v2',
                 storage,
                 source,
                 materializeSidecars: async () => {
@@ -208,7 +202,6 @@ describe('startup legacy source capture', () => {
                     const winner = await runStartupCompositionMigration({
                         now: takeoverAt,
                         clock: () => takeoverAt,
-                        authority: 'v2',
                         storage,
                         source,
                         materializeSidecars: async () => undefined,
@@ -250,13 +243,9 @@ describe('startup legacy source capture', () => {
             source,
             now: '2026-07-12T00:00:00.000Z',
             owner: 'restored-backup',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
         expect(initial.status).toBe('committed')
-        setRuntimeCompositionAuthority('legacy')
-
         const restarted = await runStartupCompositionMigration({
             now: '2026-07-12T00:00:00.000Z',
             clock: () => '2026-07-12T00:00:00.000Z',
@@ -266,7 +255,7 @@ describe('startup legacy source capture', () => {
 
         expect(restarted.status).toBe('already-current')
         expect(restarted.authority).toBe('v2')
-        expect(getRuntimeCompositionAuthority()).toBe('v2')
+        expect(getRuntimeCompositionDocument()).not.toBeNull()
     })
 
     it('does not downgrade a concurrent v2 migration winner or its feature flag', async () => {
@@ -288,9 +277,7 @@ describe('startup legacy source capture', () => {
             source,
             now: '2026-07-12T00:00:00.000Z',
             owner: 'winner',
-            activateAuthority: 'v2',
             registryVersion: 1,
-            shadowResolve: () => ({ status: 'match', matches: true, fatal: false, differences: [] }),
         })
         await repository.acquireMigrationLock({
             id: 'lock:winner-next-migration',
@@ -314,7 +301,7 @@ describe('startup legacy source capture', () => {
             expect(contender.failureCode).toBe('E_MIGRATION_LOCKED')
             expect((await repository.read('2026-07-12T00:00:00.000Z')).authority).toBe('v2')
             expect(setItem).not.toHaveBeenCalled()
-            expect(getRuntimeCompositionAuthority()).toBe('legacy')
+            expect(getRuntimeCompositionDocument()).toBeNull()
         } finally {
             vi.unstubAllGlobals()
         }

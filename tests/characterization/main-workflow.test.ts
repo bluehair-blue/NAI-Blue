@@ -514,7 +514,7 @@ function summarizeOutput(): Record<string, unknown> {
     const output: Record<string, unknown> = {
         policy: typeof location === 'string' && location.startsWith('memory://') ? 'memory' : 'filesystem',
         fileName,
-        outputTargetPolicy: 'Asset module fileName when present; otherwise NAI_Blue_<Date.now()>.<format>.',
+        outputTargetPolicy: 'Composition output policy selects the filename, including source-edit prefixes.',
         eventIncludesImageData: Boolean(event?.detail.data),
         historyCount: stores.useGenerationStore.getState().history.length,
     }
@@ -915,6 +915,7 @@ describe('Main workflow golden characterization', () => {
             basePrompt: 'fallback base',
             additionalPrompt: 'fallback additional',
             negativePrompt: 'fallback negative',
+            selectedRecipeId: 'main:direct',
         })
         stores.useAssetModuleStore.setState({
             profile: {
@@ -932,7 +933,7 @@ describe('Main workflow golden characterization', () => {
                 }],
             },
         })
-        scenarios.push(await runScenario('asset-module-missing-falls-back-to-direct'))
+        scenarios.push(await runScenario('explicit-direct-with-unavailable-asset-recipe'))
 
         const actual: MainFixture = {
             workflow: 'main',
@@ -946,9 +947,9 @@ describe('Main workflow golden characterization', () => {
             ],
             nondeterminism: [
                 'Date.now controls session, timing, history IDs and default filenames.',
-                'Math.random controls initial/unlocked/zero seed and every wildcard selection.',
-                'Fixed generation seed does not seed wildcard selection or filenames.',
-                'Unlocked generation advances the next seed before wildcard processing.',
+                'Math.random controls initial/unlocked/zero seeds; Composition resolves wildcards from the captured seed.',
+                'Fixed generation seed determines wildcard selection; default filenames use the captured time.',
+                'Unlocked generation advances the next visible seed before resolving the captured seed.',
             ],
             scenarios,
         }
@@ -1016,7 +1017,7 @@ describe('Main workflow golden characterization', () => {
         }))
     })
 
-    it('runs shadow as one legacy request while retaining a deterministic v2 comparison', async () => {
+    it('runs a stale shadow selection as one canonical request without comparison', async () => {
         stores.useGenerationStore.setState({
             compositionMode: 'shadow',
             selectedRecipeId: 'main:direct',
@@ -1029,14 +1030,14 @@ describe('Main workflow golden characterization', () => {
         const state = stores.useGenerationStore.getState()
         expect(runtimeCapture.requests).toHaveLength(1)
         expect(state.lastResolvedPlan).not.toBeNull()
-        expect(state.compositionShadowDiff).toMatchObject({ matches: true, v2Valid: true })
+        expect(state.compositionShadowDiff).toBeNull()
         expect(runtimeCapture.params[0]).toMatchObject({
-            compositionMode: 'shadow',
+            compositionMode: 'v2',
             compositionPlanId: state.lastResolvedPlan?.planId,
         })
     })
 
-    it('keeps legacy output materialization in shadow mode', async () => {
+    it('honors an explicit direct recipe even with a stale shadow selection', async () => {
         stores.useAssetModuleStore.setState({
             profile: {
                 revision: 5,
@@ -1071,22 +1072,12 @@ describe('Main workflow golden characterization', () => {
         await stores.useGenerationStore.getState().generate()
 
         expect(runtimeCapture.requests).toHaveLength(1)
-        expect(runtimeCapture.params[0].prompt).toBe('legacy asset prompt')
-        expect(runtimeCapture.events[0].detail.path).toBe(`memory://legacy_shadow_${FIXED_SEED}.png`)
-        const shadowDiff = stores.useGenerationStore.getState().compositionShadowDiff
-        expect(shadowDiff).toMatchObject({
-            matches: false,
-            v2Valid: true,
-        })
-        expect(shadowDiff?.differences).toContainEqual({
-            path: 'prompt',
-            legacy: 'legacy asset prompt',
-            v2: 'v2 direct prompt',
-        })
-        expect(shadowDiff?.differences.every(difference => difference.approvedRule === undefined)).toBe(true)
+        expect(runtimeCapture.params[0].prompt).toBe('v2 direct prompt')
+        expect(runtimeCapture.events[0].detail.path).toBe(`memory://NAI_Blue_${FIXED_TIME}.png`)
+        expect(stores.useGenerationStore.getState().compositionShadowDiff).toBeNull()
     })
 
-    it('reports selected-recipe output differences even when shadow prompts and params match', async () => {
+    it('uses the selected saved recipe output policy even with a stale shadow selection', async () => {
         stores.useAssetModuleStore.setState({
             profile: {
                 revision: 9,
@@ -1129,20 +1120,9 @@ describe('Main workflow golden characterization', () => {
         await stores.useGenerationStore.getState().generate()
 
         expect(runtimeCapture.params[0].prompt).toBe('same asset prompt')
-        expect(runtimeCapture.events[0].detail.path).toBe(`memory://first_${FIXED_SEED}.png`)
-        const differences = stores.useGenerationStore.getState().compositionShadowDiff?.differences ?? []
-        expect(differences).toEqual(expect.arrayContaining([
-            expect.objectContaining({
-                path: 'output.recipeId',
-                legacy: 'shadow:first',
-                v2: 'shadow:second',
-            }),
-            expect.objectContaining({
-                path: 'output.filenameTemplate',
-                legacy: 'first_{seed}',
-                v2: 'second_{seed}',
-            }),
-        ]))
+        expect(runtimeCapture.events[0].detail.path).toBe(`memory://second_${FIXED_SEED}.png`)
+        expect(runtimeCapture.params[0].compositionRecipeId).toBe('shadow:second')
+        expect(stores.useGenerationStore.getState().compositionShadowDiff).toBeNull()
     })
 
     it('uses the selected Asset recipe prompt, typed params, and output policy in v2', async () => {
@@ -1330,7 +1310,7 @@ describe('Main workflow golden characterization', () => {
         expect(runtimeCapture.toasts).toEqual([])
     })
 
-    it('blocks strict invalid v2 before transport/output and keeps legacy rollback available', async () => {
+    it('blocks invalid plans before transport/output even when an old caller requests legacy', async () => {
         const brokenProfile = {
             revision: 3,
             updatedBy: 'agent' as const,
@@ -1400,8 +1380,9 @@ describe('Main workflow golden characterization', () => {
         })
         await stores.useGenerationStore.getState().generate()
         state = stores.useGenerationStore.getState()
-        expect(runtimeCapture.requests).toHaveLength(1)
-        expect(state.history).toHaveLength(1)
+        expect(runtimeCapture.requests).toEqual([])
+        expect(state.history).toEqual([])
+        expect(state.compositionErrors.map(issue => issue.code)).toContain('E_MODULE_REF_MISSING')
     })
 
     it('commits a sequential fragment only after a successful v2 request', async () => {
@@ -1817,7 +1798,10 @@ describe('Main workflow golden characterization', () => {
             'folder common, subject',
         ])
         expect(runtimeCapture.writes).toHaveLength(2)
-        expect(runtimeCapture.writes.every(write => write.location.startsWith('Prime_Output/'))).toBe(true)
+        expect(runtimeCapture.writes.map(write => write.location)).toEqual([
+            expect.stringContaining('Prime_Output/'),
+            expect.stringContaining('Prime_Output/'),
+        ])
         expect(runtimeCapture.writes.some(write => write.location.startsWith('Later_Output/'))).toBe(false)
     })
 

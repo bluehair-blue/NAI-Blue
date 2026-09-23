@@ -79,7 +79,7 @@ function capabilityDescriptors(value: unknown): RuntimeCapabilityDescriptor[] {
     })
 }
 
-/** SDK stdio framing/correlation stays outside application; every list probes current app facts. */
+/** SDK framing stays outside application; tool names/schemas are stable bindings while availability is live. */
 export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     const server = new Server({ name: 'nai-blue-agent-spike', version: '0.1.0' }, {
         capabilities: { tools: {}, resources: {} },
@@ -118,14 +118,25 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
 
     server.setRequestHandler('tools/list', async (_request, context) => {
         const snapshot = await freshCapabilities(context.mcpReq.signal)
-        return { tools: snapshot.available.map(descriptor => ({
-            name: descriptor.command,
-            description: `${AGENT_TOOL_DESCRIPTIONS[descriptor.command]} Foreground app required. ${descriptor.requiresHumanApproval ? 'Human approval required in NAI Blue.' : 'Input-specific policy limits still apply.'}`,
-            inputSchema: { type: 'object' as const, properties: { requestId: requestIdSchema,
-                input: getAgentCommandInputContract(descriptor.command)!.schema },
-                required: ['requestId', 'input'], additionalProperties: false },
-            outputSchema: MCP_AGENT_RESULT_SCHEMA as JsonSchemaType & { type: 'object' },
-        })) }
+        // Keep the transport binding discoverable when the foreground process is
+        // still starting or temporarily unavailable. The capability resource and
+        // description remain the execution authority, so this does not turn an
+        // unavailable application command into an executable one.
+        return { tools: snapshot.capabilities.flatMap(descriptor => {
+            const contract = getAgentCommandInputContract(descriptor.command)
+            if (contract === undefined) return []
+            const availability = descriptor.available
+                ? 'Currently available.'
+                : `Currently unavailable (${descriptor.reason ?? 'app-unavailable'}); read nai-blue://capabilities before calling.`
+            return [{
+                name: descriptor.command,
+                description: `${AGENT_TOOL_DESCRIPTIONS[descriptor.command]} ${availability} Foreground app required. ${descriptor.requiresHumanApproval ? 'Human approval required in NAI Blue.' : 'Input-specific policy limits still apply.'}`,
+                inputSchema: { type: 'object' as const, properties: { requestId: requestIdSchema,
+                    input: contract.schema },
+                    required: ['requestId', 'input'], additionalProperties: false },
+                outputSchema: MCP_AGENT_RESULT_SCHEMA as JsonSchemaType & { type: 'object' },
+            }]
+        }) }
     })
 
     server.setRequestHandler('tools/call', async (request, context): Promise<CallToolResult> => {

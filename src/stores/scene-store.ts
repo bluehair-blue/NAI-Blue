@@ -1929,9 +1929,8 @@ export const useSceneStore = create<SceneState>()(
                 }
                 
                 if (state) {
-                    if (!['legacy', 'shadow', 'v2'].includes(state.sceneCompositionMode)) {
-                        state.sceneCompositionMode = 'v2'
-                    }
+                    // Old rollout preferences must not select a retired generation path.
+                    state.sceneCompositionMode = 'v2'
                     state.sceneCompositionResults = {}
                     // 복원 로그
                     const presetCount = state.presets?.length || 0

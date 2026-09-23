@@ -22,7 +22,7 @@ import {
 
 export interface SceneCompositionWorkspaceProps {
     children: ReactNode
-    mode: CompositionSelectControl
+    mode?: CompositionSelectControl
     recipe: CompositionSelectControl
     validation: CompositionValidationSummary
     generation: CompositionGenerationControl

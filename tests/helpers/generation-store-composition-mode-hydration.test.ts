@@ -22,11 +22,15 @@ vi.mock('@/lib/toast', () => ({
 }))
 
 describe('Main composition mode persistence', () => {
-    it.each(['legacy', 'shadow'] as const)(
+    it.each(['legacy', 'shadow', 'v2', 'unknown', undefined] as const)(
         'normalizes a persisted %s request and excludes the rollout mode from future writes',
         async persistedMode => {
             persistence.value = JSON.stringify({
-                state: { compositionMode: persistedMode, selectedRecipeId: null },
+                state: {
+                    compositionMode: persistedMode, selectedRecipeId: 'saved-recipe',
+                    basePrompt: 'saved base', negativePrompt: 'saved negative',
+                    seed: 12345, batchCount: 3, model: 'nai-diffusion-4-5-full',
+                },
                 version: 0,
             })
             persistence.writes = []
@@ -36,6 +40,10 @@ describe('Main composition mode persistence', () => {
             await useGenerationStore.persist.rehydrate()
 
             expect(useGenerationStore.getState().compositionMode).toBe('v2')
+            expect(useGenerationStore.getState()).toMatchObject({
+                selectedRecipeId: 'saved-recipe', basePrompt: 'saved base', negativePrompt: 'saved negative',
+                seed: 12345, batchCount: 3, model: 'nai-diffusion-4-5-full',
+            })
 
             useGenerationStore.getState().setSelectedRecipeId(null)
             const persisted = persistence.writes.at(-1)

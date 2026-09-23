@@ -105,24 +105,36 @@ async function main() {
         report.capabilities = capabilities
         report.toolNames = listed.tools.map(tool => tool.name).sort()
 
+        // MCP names and input schemas stay bound while the app is unavailable;
+        // only the fresh capability receipt controls whether a command can run.
+        const { createServer } = await import('vite')
+        loader = await createServer({ root: repo, configFile: false, logLevel: 'silent',
+            resolve: { alias: { '@': path.join(repo, 'src') } },
+            server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom' })
+        const [projection, canonical, inputs] = await Promise.all([
+            '/src/adapters/agent/mcp/inbox-result-projection.ts', '/src/domain/composition/canonical-serialize.ts',
+            '/src/application/agent/agent-command-input.ts',
+        ].map(file => loader.ssrLoadModule(file)))
+        const { getAgentCommandInputContract } = inputs
+        const bound = capabilities.capabilities.filter(item => getAgentCommandInputContract(item.command) !== undefined)
+        assert.deepEqual(report.toolNames, bound.map(item => item.command).sort())
+        report.schemaHashes = listed.tools.map(tool => {
+            const descriptor = capabilities.capabilities.find(item => item.command === tool.name)
+            const contract = getAgentCommandInputContract(tool.name)
+            assert(descriptor && contract)
+            const hash = `sha256:${canonical.hashCanonicalValue(tool.inputSchema.properties.input)}`
+            assert.equal(hash, `sha256:${canonical.hashCanonicalValue(contract.schema)}`)
+            if (descriptor.available) assert.equal(hash, descriptor.inputSchemaHash)
+            else assert(tool.description.includes(`Currently unavailable (${descriptor.reason ?? 'app-unavailable'})`))
+            return { command: tool.name, inputSchemaHash: hash, available: descriptor.available,
+                unavailableReason: descriptor.available ? null : descriptor.reason ?? 'app-unavailable' }
+        })
+        report.checks.push('stable-schema-bound-tool-list', 'tool-schema-contract-equality')
+
         if (values.mode === 'live') {
             assert.equal(capabilities.status, 'fresh-application-capabilities')
             assert.deepEqual(capabilities.schemaMismatches, [])
-            // Use the application parsers/hash implementation, without creating a second native runtime.
-            const { createServer } = await import('vite')
-            loader = await createServer({ root: repo, configFile: false, logLevel: 'silent',
-                resolve: { alias: { '@': path.join(repo, 'src') } },
-                server: { middlewareMode: true, watch: null, hmr: false }, appType: 'custom' })
-            const [projection, canonical] = await Promise.all([
-                '/src/adapters/agent/mcp/inbox-result-projection.ts', '/src/domain/composition/canonical-serialize.ts',
-            ].map(file => loader.ssrLoadModule(file)))
             const available = capabilities.capabilities.filter(item => item.available)
-            assert.deepEqual(report.toolNames, available.map(item => item.command).sort())
-            report.schemaHashes = listed.tools.map(tool => {
-                const hash = `sha256:${canonical.hashCanonicalValue(tool.inputSchema.properties.input)}`
-                assert.equal(hash, available.find(item => item.command === tool.name).inputSchemaHash)
-                return { command: tool.name, inputSchemaHash: hash }
-            })
             assert(requests.every(request => report.toolNames.includes(request.name)))
             const nativeCapabilities = await inspectAgentCommand({ inboxDir, requestId: capabilities.requestId },
                 projection.projectAgentInboxResult)
@@ -169,9 +181,8 @@ async function main() {
             report.checks.push('same-id-replay-archive-and-receipt-unchanged')
         } else {
             assert.equal(capabilities.status, 'app-state-unconfirmed')
-            assert.deepEqual(listed.tools, [])
             assert(capabilities.capabilities.every(item => item.available === false))
-            report.checks.push('unconfirmed-app-empty-tools')
+            report.checks.push('unconfirmed-app-keeps-stable-tool-bindings')
             const request = requests[0], requestId = request.arguments.requestId
             report.phase = values.mode === 'app-off' ? 'app-off-submission' : 'revoked-submission'
             const result = await call(request)

@@ -1,10 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { runtimeCapabilities } from './platform/capabilities'
 import './styles/globals.css'
 import './i18n'
 import { BACKUP_STORE_KEYS, migrateFromLocalStorage, initializeIndexedDB, resetIndexedDBConnectionForRetry, indexedDBStorage } from './lib/indexed-db'
 import { createCurrentBackupEnvelopeV3, createFullAutoBackup } from './lib/auto-backup'
-import { setRuntimeCompositionAuthority } from './lib/composition-authority'
 import { runStartupGate } from './lib/startup-mode'
 import { scheduleAfterVisiblePaint } from './lib/after-visible-paint'
 import { reportDiagnostic, reportPersistenceFault } from './services/diagnostics/error-registry'
@@ -94,6 +94,14 @@ const showSplashError = (message: string) => {
 // 자동 백업 실행 (localStorage에 저장 - IndexedDB와 분리)
 async function performAutoBackup() {
     try {
+        // Native builds have a dedicated rotating disk backup. Keeping the same
+        // full envelope in WebView localStorage hits the small origin quota and
+        // starts a second IndexedDB export during startup, so browser-only auto
+        // backup remains the fallback while Tauri uses the disk authority.
+        if (runtimeCapabilities.nativePluginRuntime.supported) {
+            console.log('[AutoBackup] Skipping localStorage copy in native runtime')
+            return
+        }
         const lastBackupStr = localStorage.getItem('nai-blue-last-auto-backup')
         const lastBackup = lastBackupStr ? parseInt(lastBackupStr, 10) : 0
         const now = Date.now()
@@ -415,26 +423,35 @@ async function runPostRenderStartupTasks(): Promise<void> {
 
     startStoreSnapshotScheduler()
 
-    void checkDataIntegrity().then(isHealthy => {
-        if (!isHealthy) {
-            console.warn('[Startup] Data integrity check reported possible data loss')
+    // Queue recovery performs durable reads/writes of the same IndexedDB store.
+    // Run integrity and both full-backup paths after that gate, and serialize the
+    // browser fallback with the native disk backup so startup never launches two
+    // full exports against a busy WebView database.
+    const afterQueueRecovery = queueRecovery.catch(() => undefined)
+    void afterQueueRecovery.then(async () => {
+        try {
+            const isHealthy = await checkDataIntegrity()
+            if (!isHealthy) console.warn('[Startup] Data integrity check reported possible data loss')
+        } catch (err) {
+            reportDiagnostic(err, { operation: 'startup.integrity-check', stage: 'verify', category: 'persistence' })
         }
-    }).catch(err => {
-        reportDiagnostic(err, { operation: 'startup.integrity-check', stage: 'verify', category: 'persistence' })
-    })
 
-    void performAutoBackup().catch(err => {
-        reportDiagnostic(err, { operation: 'startup.auto-backup', stage: 'backup', category: 'persistence' })
-    })
-
-    // Disk auto-backup supplements B's existing localStorage startup backup.
-    // It restores through importAllData, so the full IndexedDB export schema remains authoritative.
-    void createFullAutoBackup({ minIntervalMs: AUTO_BACKUP_INTERVAL }).then(result => {
-        if (result.status === 'created') {
-            console.log(`[Startup] Disk auto-backup written: ${result.entry.fileName}`)
+        try {
+            await performAutoBackup()
+        } catch (err) {
+            reportDiagnostic(err, { operation: 'startup.auto-backup', stage: 'backup', category: 'persistence' })
         }
-    }).catch(err => {
-        reportDiagnostic(err, { operation: 'startup.disk-auto-backup', stage: 'backup', category: 'persistence' })
+
+        // The disk backup is the native recovery authority. It restores through
+        // importAllData, so its full IndexedDB export remains schema-authoritative.
+        try {
+            const result = await createFullAutoBackup({ minIntervalMs: AUTO_BACKUP_INTERVAL })
+            if (result.status === 'created') {
+                console.log(`[Startup] Disk auto-backup written: ${result.entry.fileName}`)
+            }
+        } catch (err) {
+            reportDiagnostic(err, { operation: 'startup.disk-auto-backup', stage: 'backup', category: 'persistence' })
+        }
     })
 
     // FragmentStore owns embedded-content migration and verified repository
@@ -492,33 +509,32 @@ async function runStartupMigrations(): Promise<void> {
             runStartupCompositionMigration,
         } = await import('./lib/composition-migration-startup')
         const migration = await runStartupCompositionMigration()
-        const authorityObservation = getLastCompositionStartupObservation()
+        const compositionObservation = getLastCompositionStartupObservation()
         if (migration.status === 'failed') {
-            reportDiagnostic(new Error(migration.error || 'Composition migration retained legacy authority'), {
+            reportDiagnostic(new Error(migration.error || 'Composition migration could not convert all source data'), {
                 operation: 'startup.composition-migration',
                 stage: 'migrate',
                 category: 'persistence',
                 severity: 'error',
                 recoverable: true,
             })
-        } else if (authorityObservation?.fallbackReason !== null
-            && authorityObservation?.fallbackReason !== undefined) {
-            reportDiagnostic(new Error(`Composition authority fallback: ${authorityObservation.fallbackReason}`), {
-                operation: 'startup.composition-authority',
+        } else if (compositionObservation?.migrationIssue !== null
+            && compositionObservation?.migrationIssue !== undefined) {
+            reportDiagnostic(new Error(`Composition startup issue: ${compositionObservation.migrationIssue}`), {
+                operation: 'startup.composition-migration',
                 stage: 'verify',
                 category: 'persistence',
-                code: 'E_COMPOSITION_AUTHORITY_FALLBACK',
+                code: 'E_COMPOSITION_MIGRATION_FAILED',
                 severity: 'error',
                 recoverable: true,
             })
         } else {
             console.log(
-                `[Startup] Composition migration ${migration.status}; authority=${migration.authority}`,
+                `[Startup] Composition migration ${migration.status}; record=${migration.authority}`,
             )
         }
     } catch (err) {
-        // The migration transaction is fail-closed and never deletes old
-        // stores. Startup can safely continue on the legacy authority.
+        // Migration preserves source stores; generation uses one Composition path.
         reportDiagnostic(err, { operation: 'startup.composition-migration', stage: 'migrate', category: 'persistence', severity: 'error', recoverable: true })
     }
 
@@ -593,13 +609,6 @@ async function runStartupMigrations(): Promise<void> {
         storesHydrated = true
     } catch (err) {
         reportDiagnostic(err, { operation: 'startup.store-hydration', stage: 'hydrate', category: 'persistence', severity: 'error', recoverable: true })
-        try {
-            const { applyCompositionAuthorityFeatureFlag } = await import('./lib/composition-migration-startup')
-            await applyCompositionAuthorityFeatureFlag('legacy')
-        } catch (authorityError) {
-            setRuntimeCompositionAuthority('legacy')
-            reportDiagnostic(authorityError, { operation: 'startup.store-hydration', stage: 'rollback-authority', category: 'persistence', severity: 'error', recoverable: true })
-        }
     }
 
     if (storesHydrated && sceneRepository !== null) {
@@ -679,8 +688,6 @@ async function runStartupMigrations(): Promise<void> {
 }
 
 async function runStartupAttempt(): Promise<void> {
-    // No workflow may use v2 authority until repository migration verifies.
-    setRuntimeCompositionAuthority('legacy')
     console.log('[Startup] Starting app initialization...')
     setSplashStage('Starting database')
 
@@ -700,7 +707,6 @@ async function runStartupAttempt(): Promise<void> {
         return
     }
     if (startup.migrationError !== undefined) {
-        setRuntimeCompositionAuthority('legacy')
         reportDiagnostic(startup.migrationError, {
             operation: 'startup.migration',
             stage: 'migrate',

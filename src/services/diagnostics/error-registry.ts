@@ -212,6 +212,17 @@ export function diagnoseError(error: unknown, context: DiagnosticContext): Diagn
 
 /** Records only the already-redacted event in memory and production diagnostics logging. */
 export function reportDiagnostic(error: unknown, context: DiagnosticContext): DiagnosticEvent {
+    // Preserve the typed persistence code when a startup/background boundary
+    // catches and re-reports a DB fault. Generic PERSISTENCE_FAILED hides the
+    // affected operation/key and makes one timeout look like a new failure.
+    if (error instanceof PersistenceFault && (context.category === undefined || context.category === 'persistence')) {
+        return reportPersistenceFault(error, {
+            operation: context.operation,
+            stage: context.stage,
+            criticality: error.criticality,
+            fatal: context.fatal,
+        })
+    }
     const event = diagnoseError(error, context)
     return recordDiagnosticEvent(event)
 }

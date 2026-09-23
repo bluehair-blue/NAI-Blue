@@ -11,10 +11,7 @@ import {
     type ReferenceImage,
 } from '@/stores/character-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
-import {
-    commitWildcardSequenceProposal,
-    createWildcardResolutionSession,
-} from '@/lib/fragment-processor'
+import { commitWildcardSequenceProposal } from '@/lib/fragment-processor'
 import {
     projectFragmentSequenceSnapshot,
     useFragmentStore,
@@ -26,21 +23,14 @@ import i18n from '@/i18n'
 import { toast } from '@/lib/toast'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { resolveAssetModulePlan, type AssetModulePlan } from '@/lib/asset-modules/resolver'
-import {
-    cloneCompositionRandomTrace,
-    ensureImageFileExtension,
-} from '@/lib/generation-metadata'
-import { shouldUseAbsoluteMediaPath } from '@/platform/storage'
+import { cloneCompositionRandomTrace } from '@/lib/generation-metadata'
 import { getRuntimeOutputWriter } from '@/services/output/output-writer'
 import {
     diagnosticsFromMainResolution,
-    MAIN_DIRECT_RECIPE_ID,
     resolveMainComposition,
     type MainCompositionMode,
-    type MainOutputMaterialization,
 } from '@/lib/composition/main-adapter'
 import type { FragmentSequenceCommitProposal } from '@/domain/composition/fragment-resolver'
-import { buildLegacyMainGenerationParameters } from '@/domain/generation/legacy-main-parameters'
 import { DEFAULT_GENERATION_FOLDER_ID } from '@/domain/generation-folders'
 import { resolveGenerationFolderAuthority } from '@/lib/generation-folder-authority-runtime'
 import { DEFAULT_R2_PROFILE_ID } from '@/domain/r2/types'
@@ -48,7 +38,6 @@ import type { CompositionEngineIssue, CompositionEnginePlan } from '@/domain/com
 import type { DeepReadonly } from '@/domain/composition/provenance'
 import { materializeCharacterResourcesForNai } from '@/lib/composition/character-resource-adapter'
 import type { StyleLabCompositionMode } from '@/lib/style-lab/composition-mode'
-import { effectiveMainCompositionMode } from '@/lib/composition-authority'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import {
     assessPortableCompositionPlan,
@@ -133,7 +122,6 @@ interface HistoryItem {
     sourceSceneId?: string
 }
 
-type CharacterPromptParams = NonNullable<GenerationParams['characterPrompts']>
 type ReadonlyCompositionPlan = DeepReadonly<CompositionEnginePlan>
 type ReadonlyCompositionIssue = DeepReadonly<CompositionEngineIssue>
 
@@ -154,11 +142,6 @@ export interface MainCompositionShadowDiff {
     differences: MainCompositionShadowDifference[]
 }
 
-const removeComments = (text: string) => text
-    .split('\n')
-    .filter(line => !line.trimStart().startsWith('#'))
-    .join('\n')
-
 async function captureReferenceImages(images: readonly ReferenceImage[]): Promise<ReferenceImage[]> {
     return Promise.all(images.map(async image => {
         const captured = structuredClone(image)
@@ -170,19 +153,6 @@ async function captureReferenceImages(images: readonly ReferenceImage[]): Promis
         }
         return captured
     }))
-}
-
-function hasAssetModulePrompts(plan: AssetModulePlan | null): plan is AssetModulePlan {
-    return Boolean(plan && Object.values(plan.promptGroups).some(prompt => prompt.trim().length > 0))
-}
-
-function readStringParam(value: unknown): string {
-    return typeof value === 'string' ? value : ''
-}
-
-function readModuleCharacterPrompts(plan: AssetModulePlan | null): CharacterPromptParams | null {
-    const value = plan?.generationParams.characterPrompts
-    return Array.isArray(value) ? value as CharacterPromptParams : null
 }
 
 async function resolveMainAssetModulePlan(
@@ -322,174 +292,6 @@ async function resolveMainSourceDimensions(
     return { width, height }
 }
 
-function normalizedPromptParts(params: GenerationParams): Record<string, string> {
-    return {
-        base: params.promptParts?.base ?? '',
-        inpainting: params.promptParts?.inpainting ?? '',
-        additional: params.promptParts?.additional ?? '',
-        workflow: params.promptParts?.workflow ?? '',
-        detail: params.promptParts?.detail ?? '',
-        negative: params.promptParts?.negative ?? '',
-    }
-}
-
-function redactedMainGenerationSemantics(params: GenerationParams): Record<string, unknown> {
-    return {
-        prompt: params.prompt,
-        negative_prompt: params.negative_prompt,
-        model: params.model,
-        width: params.width,
-        height: params.height,
-        steps: params.steps,
-        cfg_scale: params.cfg_scale,
-        cfg_rescale: params.cfg_rescale,
-        sampler: params.sampler,
-        scheduler: params.scheduler,
-        smea: params.smea,
-        smea_dyn: params.smea_dyn,
-        variety: params.variety,
-        seed: params.seed,
-        sourceImagePresent: Boolean(params.sourceImage),
-        maskPresent: Boolean(params.mask),
-        strength: params.strength,
-        noise: params.noise,
-        characterReferenceCount: params.charImages?.length ?? 0,
-        charStrength: params.charStrength ?? [],
-        charFidelity: params.charFidelity ?? [],
-        charReferenceType: params.charReferenceType ?? [],
-        charCacheKeyPresent: params.charCacheKeys?.map(Boolean) ?? [],
-        vibeReferenceCount: params.vibeImages?.length ?? 0,
-        vibeInfo: params.vibeInfo ?? [],
-        vibeStrength: params.vibeStrength ?? [],
-        preEncodedVibePresent: params.preEncodedVibes?.map(Boolean) ?? [],
-        characterPrompts: params.characterPrompts ?? [],
-        characterPositionEnabled: params.characterPositionEnabled,
-        qualityToggle: params.qualityToggle,
-        ucPreset: params.ucPreset,
-        imageFormat: params.imageFormat,
-        metadataMode: params.metadataMode,
-        promptParts: normalizedPromptParts(params),
-        assetModuleRecipeId: params.assetModulePlan?.recipe?.id,
-        assetModuleIds: params.assetModulePlan?.modules.map(item => item.module.id) ?? [],
-    }
-}
-
-interface MainShadowOutputSemantics {
-    recipeId: string | null
-    directory: string
-    filenameTemplate: string
-    renderedFileName?: string
-    format: 'png' | 'webp'
-    metadataMode: GenerationParams['metadataMode']
-    useAbsolutePath: boolean
-    capabilityFallbackDirectory: string
-}
-
-function hasVolatileFilenameTime(template: string): boolean {
-    return /\{(?:now|date|time|datetime|timestamp)(?::[^{}]+)?\}/i.test(template)
-}
-
-function directMainFilenameTemplate(sourceImage: string | null, mask: string | null): string {
-    return mask
-        ? 'NAI_Blue_INPAINT_{timestamp}'
-        : sourceImage
-            ? 'NAI_Blue_I2I_{timestamp}'
-            : 'NAI_Blue_{timestamp}'
-}
-
-function legacyShadowOutputSemantics(params: {
-    modulePlan: AssetModulePlan | null
-    settings: ReturnType<typeof useSettingsStore.getState>
-    sourceImage: string | null
-    mask: string | null
-    directRecipeId: string
-}): MainShadowOutputSemantics {
-    const template = params.modulePlan?.output.filenameTemplate
-        ?? (params.modulePlan === null
-            ? directMainFilenameTemplate(params.sourceImage, params.mask)
-            : '{profile}_{seed}_{datetime:YYYYMMDD-HHmmss}')
-    const format = params.settings.imageFormat
-    return {
-        recipeId: params.modulePlan?.recipeId ?? params.directRecipeId,
-        directory: params.modulePlan?.output.directory
-            || params.settings.savePath
-            || 'NAI_Blue_Output',
-        filenameTemplate: template,
-        ...(!hasVolatileFilenameTime(template) && params.modulePlan?.output.fileName
-            ? { renderedFileName: ensureImageFileExtension(params.modulePlan.output.fileName, format) ?? undefined }
-            : {}),
-        format,
-        metadataMode: params.modulePlan?.output.metadataMode ?? params.settings.metadataMode,
-        useAbsolutePath: shouldUseAbsoluteMediaPath(params.settings.useAbsolutePath),
-        capabilityFallbackDirectory: params.settings.savePath || 'NAI_Blue_Output',
-    }
-}
-
-function v2ShadowOutputSemantics(
-    plan: ReadonlyCompositionPlan,
-    output: MainOutputMaterialization,
-): MainShadowOutputSemantics {
-    const template = plan.outputPolicy.filenameTemplate
-    return {
-        recipeId: plan.recipeId ?? null,
-        directory: output.directory,
-        filenameTemplate: template,
-        ...(!hasVolatileFilenameTime(template)
-            ? { renderedFileName: ensureImageFileExtension(output.fileName, output.format) ?? undefined }
-            : {}),
-        format: output.format,
-        metadataMode: output.metadataMode,
-        useAbsolutePath: shouldUseAbsoluteMediaPath(output.useAbsolutePath),
-        capabilityFallbackDirectory: output.capabilityFallbackDirectory,
-    }
-}
-
-function compareMainGenerationParams(
-    legacy: GenerationParams,
-    v2: GenerationParams,
-    output: {
-        legacy: MainShadowOutputSemantics
-        v2: MainShadowOutputSemantics
-    },
-): MainCompositionShadowDiff {
-    const legacySemantics = {
-        ...redactedMainGenerationSemantics(legacy),
-        ...Object.fromEntries(Object.entries(output.legacy).map(([key, value]) => [`output.${key}`, value])),
-    }
-    const v2Semantics = {
-        ...redactedMainGenerationSemantics(v2),
-        ...Object.fromEntries(Object.entries(output.v2).map(([key, value]) => [`output.${key}`, value])),
-    }
-    const fields = [...new Set([
-        ...Object.keys(legacySemantics),
-        ...Object.keys(v2Semantics),
-    ])].sort()
-    const differences = fields.flatMap<MainCompositionShadowDifference>(field => {
-        const left = legacySemantics[field]
-        const right = v2Semantics[field]
-        if (JSON.stringify(left) === JSON.stringify(right)) return []
-        return [{ path: field, legacy: left, v2: right }]
-    })
-    return {
-        matches: differences.length === 0,
-        v2Valid: true,
-        differences,
-    }
-}
-
-interface MainMaterializedReference {
-    id: string
-    base64: string
-    enabled: boolean
-    encodedVibe?: string
-    thumbnail?: string
-    informationExtracted: number
-    strength: number
-    fidelity: number
-    referenceType: 'character' | 'style' | 'character&style'
-    cacheKey?: string
-}
-
 function clonePlanHash(plan: ReadonlyCompositionPlan): GenerationParams['compositionPlanHash'] {
     return {
         version: plan.planHash.version,
@@ -549,12 +351,9 @@ function reconcileAssetModulePlan(
 
 async function buildV2GenerationParams(params: {
     plan: ReadonlyCompositionPlan
-    compositionMode: 'shadow' | 'v2'
     modulePlan: AssetModulePlan | null
     sourceImage: string | null
     mask: string | null
-    characterImages: readonly MainMaterializedReference[]
-    vibeImages: readonly MainMaterializedReference[]
 }): Promise<GenerationParams> {
     const materialized = await materializeCharacterResourcesForNai({
         resources: params.plan.resources,
@@ -566,23 +365,10 @@ async function buildV2GenerationParams(params: {
         ],
         repository: createCharacterStoreResourceRepository(),
     })
-    if (!materialized.success && params.compositionMode === 'v2') {
+    if (!materialized.success) {
         throw new Error(materialized.errors.map(error => `${error.code}:${error.resourceId}`).join(', '))
     }
-    const references = materialized.success
-        ? materialized.value
-        : {
-            charImages: params.characterImages.map(image => image.base64),
-            charStrength: params.characterImages.map(image => image.strength),
-            charFidelity: params.characterImages.map(image => image.fidelity),
-            charReferenceType: params.characterImages.map(image => image.referenceType),
-            charCacheKeys: params.characterImages.map(image => image.cacheKey ?? null),
-            charInfo: params.characterImages.map(image => image.informationExtracted),
-            vibeImages: params.vibeImages.map(image => image.base64),
-            vibeInfo: params.vibeImages.map(image => image.informationExtracted),
-            vibeStrength: params.vibeImages.map(image => image.strength),
-            preEncodedVibes: params.vibeImages.map(image => image.encodedVibe ?? null),
-        }
+    const references = materialized.value
 
     return {
         prompt: params.plan.positivePrompt,
@@ -667,7 +453,7 @@ async function buildV2GenerationParams(params: {
                     },
             }
             : {}),
-        compositionMode: params.compositionMode,
+        compositionMode: 'v2',
         compositionPlanHash: clonePlanHash(params.plan),
         compositionPlanId: params.plan.planId,
         compositionRecipeId: params.plan.recipeId,
@@ -1052,15 +838,7 @@ export const useGenerationStore = create<GenerationState>()(
                     ? getMainParamsPresetSnapshot()
                     : null
                 const generationDraft = get()
-                const {
-                    basePrompt, additionalPrompt, detailPrompt, negativePrompt, inpaintingPrompt,
-                    model, steps, cfgScale, cfgRescale, sampler, scheduler, smea, smeaDyn, variety,
-                    transparentBackground,
-                    selectedResolution, batchCount, lastGenerationTime,
-                    sourceImage, strength, noise, mask,
-                    compositionMode: requestedCompositionMode,
-                } = generationDraft
-                const compositionMode = effectiveMainCompositionMode(requestedCompositionMode)
+                const { basePrompt, selectedResolution, batchCount, lastGenerationTime, sourceImage, mask } = generationDraft
                 const preparationInputs = run.kind === 'prepare'
                     ? (() => {
                         const prompts = useCharacterPromptStore.getState()
@@ -1222,312 +1000,130 @@ export const useGenerationStore = create<GenerationState>()(
                         const characterPromptState = preparationSnapshots?.characterPrompts
                             ?? useCharacterPromptStore.getState()
                         const referenceStateBeforeLoad = preparationSnapshots ?? useCharacterStore.getState()
-                        let resolvedPlan: ReadonlyCompositionPlan | null = null
-                        let resolvedDirectRecipeId: string = MAIN_DIRECT_RECIPE_ID
-                        let compositionOutput: MainOutputMaterialization | null = null
-                        let sequenceProposal: DeepReadonly<FragmentSequenceCommitProposal> | null = null
-                        let shadowParams: GenerationParams | null = null
-                        const legacyFragmentSession = compositionMode === 'v2'
-                            ? null
-                            : createWildcardResolutionSession({
-                                ...(batchSequencePlanner === null
-                                    ? {}
-                                    : { repository: batchSequencePlanner.repository }),
-                            })
+                        const assetProfile = preparationSnapshots?.assetProfile
+                            ?? useAssetModuleStore.getState().profile
+                        const paramsPresetState = preparationSnapshots?.paramsPresets
+                            ?? getMainParamsPresetSnapshot()
+                        const projection = buildMainCompositionProjection({
+                            generation: generationDraft,
+                            effectiveBasePrompt,
+                            profile: assetProfile,
+                            characters: characterPromptState.characters,
+                            characterPresets: characterPromptState.presets,
+                            characterGroups: characterPromptState.groups,
+                            positionEnabled: characterPromptState.positionEnabled,
+                            characterImages: referenceStateBeforeLoad.characterImages,
+                            vibeImages: referenceStateBeforeLoad.vibeImages,
+                            paramsPresets: paramsPresetState.presets,
+                            activeParamsPresetId: paramsPresetState.activePresetId,
+                            output: settings,
+                            portableRoot: runtimeCapabilities.absoluteOutputPath.supported ? 'pictures' : 'app-data',
+                            paramsWidth: roundTo64(selectedResolution.width),
+                            paramsHeight: roundTo64(selectedResolution.height),
+                            sourceWidth: finalWidth,
+                            sourceHeight: finalHeight,
+                            seed: currentSeed,
+                        })
+                        const fragment = await buildMainFragmentInput(
+                            'generate',
+                            projection.fragmentSourceTexts,
+                            batchSequencePlanner?.repository,
+                        )
+                        if (!shouldContinue()) break
 
-                        if (compositionMode !== 'legacy') {
-                            const assetProfile = preparationSnapshots?.assetProfile
-                                ?? useAssetModuleStore.getState().profile
-                            const paramsPresetState = preparationSnapshots?.paramsPresets
-                                ?? getMainParamsPresetSnapshot()
-                            const projection = buildMainCompositionProjection({
-                                generation: generationDraft,
-                                effectiveBasePrompt,
-                                profile: assetProfile,
-                                characters: characterPromptState.characters,
-                                characterPresets: characterPromptState.presets,
-                                characterGroups: characterPromptState.groups,
-                                positionEnabled: characterPromptState.positionEnabled,
-                                characterImages: referenceStateBeforeLoad.characterImages,
-                                vibeImages: referenceStateBeforeLoad.vibeImages,
-                                paramsPresets: paramsPresetState.presets,
-                                activeParamsPresetId: paramsPresetState.activePresetId,
-                                output: settings,
-                                portableRoot: runtimeCapabilities.absoluteOutputPath.supported ? 'pictures' : 'app-data',
-                                paramsWidth: roundTo64(selectedResolution.width),
-                                paramsHeight: roundTo64(selectedResolution.height),
-                                sourceWidth: finalWidth,
-                                sourceHeight: finalHeight,
-                                seed: currentSeed,
+                        const composition = resolveMainComposition({
+                            snapshot: projection.snapshot,
+                            requestId: `main-request:${sessionId}:${i}`,
+                            now: new Date(startTime).toISOString(),
+                            seed: currentSeed,
+                            fragment,
+                        })
+                        const diagnostics = diagnosticsFromMainResolution(composition)
+                        if (run.kind === 'execute') {
+                            set({
+                                compositionWarnings: diagnostics.warnings,
+                                compositionErrors: diagnostics.errors,
+                                lastResolvedPlan: diagnostics.plan,
                             })
-                            const fragment = await buildMainFragmentInput(
-                                compositionMode === 'v2' ? 'generate' : 'preview',
-                                projection.fragmentSourceTexts,
-                                batchSequencePlanner?.repository,
-                            )
-                            if (!shouldContinue()) break
-
-                            const composition = resolveMainComposition({
-                                snapshot: projection.snapshot,
-                                requestId: `main-request:${sessionId}:${i}`,
-                                now: new Date(startTime).toISOString(),
-                                seed: currentSeed,
-                                fragment,
-                            })
-                            resolvedDirectRecipeId = composition.directRecipeId
-                            const diagnostics = diagnosticsFromMainResolution(composition)
-                            if (run.kind === 'execute') {
-                                set({
-                                    compositionWarnings: diagnostics.warnings,
-                                    compositionErrors: diagnostics.errors,
-                                    lastResolvedPlan: diagnostics.plan,
-                                })
-                            }
-
-                            if (!composition.result.success) {
-                                if (compositionMode === 'v2' && run.kind === 'execute') {
-                                    toast({
-                                        title: i18n.t('composition.invalidPlan', 'Composition plan is invalid'),
-                                        description: composition.result.errors.map(issue => issue.code).join(', '),
-                                        variant: 'destructive',
-                                    })
-                                    break
-                                }
-                                if (run.kind === 'execute') {
-                                    set({
-                                        compositionShadowDiff: {
-                                            matches: false,
-                                            v2Valid: false,
-                                            differences: [{
-                                                path: '$plan',
-                                                legacy: 'valid',
-                                                v2: composition.result.errors.map(issue => issue.code),
-                                                ...(composition.result.errors.some(issue => issue.code === 'E_MODULE_REF_MISSING')
-                                                    ? { approvedRule: 'strict-broken-reference' as const }
-                                                    : {}),
-                                            }],
-                                        },
-                                    })
-                                }
-                            } else {
-                                resolvedPlan = composition.result.plan
-                                compositionOutput = composition.output
-                                sequenceProposal = composition.result.sequenceCommitProposal
-                                const portableOutput = composition.output?.portableDirectory
-                                if (run.kind === 'execute'
-                                    && portableOutput?.kind === 'bookmark'
-                                    && portableOutput.bookmarkId === 'main-output:absolute-runtime'
-                                    && runtimeCapabilities.absoluteOutputPath.supported
-                                    && composition.output?.directory) {
-                                    runtimePortablePathTokenRegistry.register({
-                                        logicalId: portableOutput.bookmarkId,
-                                        platform: runtimeCapabilities.platform,
-                                        kind: 'directory',
-                                        opaqueToken: composition.output.directory,
-                                        displayPath: composition.output.directory,
-                                    })
-                                }
-                                if (compositionMode === 'v2' && run.kind === 'execute') {
-                                    const portableAssessment = assessPortableCompositionPlan(
-                                        composition.result.plan,
-                                        runtimeCapabilities,
-                                        runtimePortablePathTokenRegistry,
-                                    )
-                                    if (!portableAssessment.readyForGeneration) {
-                                        toast({
-                                            title: i18n.t(
-                                                'composition.resourceRepairRequired',
-                                                'Repair output destination before generation',
-                                            ),
-                                            description: portableAssessment.issues
-                                                .map(issue => `${issue.message} ${issue.repairAction.label}`)
-                                                .join(' '),
-                                            variant: 'destructive',
-                                        })
-                                        break
-                                    }
-                                }
-                            }
-                            if (!shouldContinue()) break
                         }
 
-                        let modulePlan: AssetModulePlan | null = null
-                        let v2ModulePlan: AssetModulePlan | null = null
-                        let legacyParams: GenerationParams | null = null
-                        if (compositionMode !== 'v2') {
-                            modulePlan = await resolveMainAssetModulePlan(currentSeed, {
-                                wildcardProcessor: legacyFragmentSession?.process,
-                                profile: preparationSnapshots?.assetProfile,
-                            })
-                            if (compositionMode === 'shadow'
-                                && resolvedPlan !== null
-                                && resolvedPlan.recipeId !== resolvedDirectRecipeId) {
-                                v2ModulePlan = await resolveMainAssetModulePlan(currentSeed, {
-                                    recipeId: resolvedPlan.recipeId,
-                                    now: new Date(startTime),
-                                    wildcardProcessor: prompt => prompt,
-                                    profile: preparationSnapshots?.assetProfile,
+                        if (!composition.result.success) {
+                            if (run.kind === 'execute') {
+                                toast({
+                                    title: i18n.t('composition.invalidPlan', 'Composition plan is invalid'),
+                                    description: composition.result.errors.map(issue => issue.code).join(', '),
+                                    variant: 'destructive',
                                 })
                             }
-                        } else if (resolvedPlan?.recipeId !== resolvedDirectRecipeId) {
-                            v2ModulePlan = await resolveMainAssetModulePlan(currentSeed, {
-                                recipeId: resolvedPlan?.recipeId,
+                            break
+                        }
+                        const resolvedPlan = composition.result.plan
+                        const compositionOutput = composition.output
+                        const sequenceProposal = composition.result.sequenceCommitProposal
+                        const portableOutput = composition.output?.portableDirectory
+                        if (run.kind === 'execute'
+                            && portableOutput?.kind === 'bookmark'
+                            && portableOutput.bookmarkId === 'main-output:absolute-runtime'
+                            && runtimeCapabilities.absoluteOutputPath.supported
+                            && composition.output?.directory) {
+                            runtimePortablePathTokenRegistry.register({
+                                logicalId: portableOutput.bookmarkId,
+                                platform: runtimeCapabilities.platform,
+                                kind: 'directory',
+                                opaqueToken: composition.output.directory,
+                                displayPath: composition.output.directory,
+                            })
+                        }
+                        if (run.kind === 'execute') {
+                            const portableAssessment = assessPortableCompositionPlan(
+                                composition.result.plan,
+                                runtimeCapabilities,
+                                runtimePortablePathTokenRegistry,
+                            )
+                            if (!portableAssessment.readyForGeneration) {
+                                toast({
+                                    title: i18n.t(
+                                        'composition.resourceRepairRequired',
+                                        'Repair output destination before generation',
+                                    ),
+                                    description: portableAssessment.issues
+                                        .map(issue => `${issue.message} ${issue.repairAction.label}`)
+                                        .join(' '),
+                                    variant: 'destructive',
+                                })
+                                break
+                            }
+                        }
+                        if (!shouldContinue()) break
+
+                        // Retain saved Asset recipe metadata; Composition owns resolved prompts.
+                        const modulePlan = resolvedPlan.recipeId !== composition.directRecipeId
+                            ? await resolveMainAssetModulePlan(currentSeed, {
+                                recipeId: resolvedPlan.recipeId,
                                 now: new Date(startTime),
                                 wildcardProcessor: prompt => prompt,
                                 profile: preparationSnapshots?.assetProfile,
                             })
-                        }
-                        if (!shouldContinue()) break
-
-                        const modulePromptsActive = compositionMode !== 'v2'
-                            && hasAssetModulePrompts(modulePlan)
-                        let legacyPrompt = ''
-                        let legacyNegative = ''
-                        if (compositionMode !== 'v2') {
-                            if (modulePromptsActive) {
-                                const folderPrompt = generationFolder?.commonPrompt.trim()
-                                    ? await legacyFragmentSession!.process(removeComments(generationFolder.commonPrompt))
-                                    : ''
-                                legacyPrompt = [folderPrompt, readStringParam(modulePlan?.generationParams.prompt)]
-                                    .filter(Boolean)
-                                    .join(', ')
-                                legacyNegative = readStringParam(modulePlan?.generationParams.negative_prompt)
-                            } else {
-                                legacyPrompt = [
-                                    removeComments(effectiveBasePrompt),
-                                    removeComments(inpaintingPrompt),
-                                    removeComments(additionalPrompt),
-                                    removeComments(detailPrompt),
-                                ].filter(Boolean).join(', ')
-                                legacyPrompt = await legacyFragmentSession!.process(legacyPrompt)
-                                legacyNegative = removeComments(negativePrompt)
-                            }
-                        }
+                            : null
                         if (!shouldContinue()) break
 
                         if (run.kind === 'execute') {
                             await useCharacterStore.getState().ensureImagesLoaded()
                         }
                         if (!shouldContinue()) break
-                        const loadedReferences = preparationSnapshots ?? useCharacterStore.getState()
-                        const characterImages = loadedReferences.characterImages
-                            .filter(img => img.enabled !== false && img.base64)
-                        const vibeImages = loadedReferences.vibeImages
-                            .filter(img => img.enabled !== false && img.base64)
 
-                        if (compositionMode !== 'v2') {
-                            const moduleCharacterPrompts = readModuleCharacterPrompts(modulePlan)
-                            const processedCharacterPrompts = modulePromptsActive
-                                ? moduleCharacterPrompts ?? []
-                                : await Promise.all(
-                                    characterPromptState.characters.filter(c => c.enabled).map(async c => ({
-                                        ...c,
-                                        prompt: await legacyFragmentSession!.process(c.prompt),
-                                        negative: await legacyFragmentSession!.process(c.negative),
-                                    })),
-                                )
-                            legacyParams = buildLegacyMainGenerationParameters({
-                                prompt: legacyPrompt,
-                                negativePrompt: legacyNegative,
-                                originalPrompts: {
-                                    base: effectiveBasePrompt,
-                                    additional: additionalPrompt,
-                                    detail: detailPrompt,
-                                    negative: negativePrompt,
-                                    inpainting: inpaintingPrompt,
-                                },
-                                model,
-                                width: finalWidth,
-                                height: finalHeight,
-                                steps,
-                                cfgScale,
-                                cfgRescale,
-                                sampler,
-                                scheduler,
-                                smea,
-                                smeaDyn,
-                                variety,
-                                seed: currentSeed,
-                                sourceImage,
-                                strength,
-                                noise,
-                                mask,
-                                characterImages,
-                                vibeImages,
-                                characterPrompts: processedCharacterPrompts,
-                                characterPositionEnabled: characterPromptState.positionEnabled,
-                                modulePromptsActive,
-                                moduleCharacterPromptsPresent: moduleCharacterPrompts !== null,
-                                imageFormat: settings.imageFormat,
-                                metadataMode: modulePlan?.output.metadataMode ?? settings.metadataMode,
-                                assetModulePlan: modulePlan,
-                                qualityToggle: generationDraft.qualityToggle,
-                                ucPreset: generationDraft.ucPreset,
-                                transparentBackground,
-                            })
-                        }
-
-                        if (resolvedPlan !== null) {
-                            shadowParams = await buildV2GenerationParams({
-                                plan: resolvedPlan,
-                                compositionMode: compositionMode === 'shadow' ? 'shadow' : 'v2',
-                                modulePlan: v2ModulePlan,
-                                sourceImage,
-                                mask,
-                                characterImages,
-                                vibeImages,
-                            })
-                        }
-
-                        let generationParams: GenerationParams
-                        if (compositionMode === 'v2') {
-                            if (shadowParams === null) break
-                            generationParams = shadowParams
-                        } else {
-                            if (legacyParams === null) break
-                            generationParams = legacyParams
-                            if (compositionMode === 'shadow'
-                                && shadowParams !== null
-                                && resolvedPlan !== null
-                                && compositionOutput !== null) {
-                                if (run.kind === 'execute') {
-                                    set({
-                                        compositionShadowDiff: compareMainGenerationParams(
-                                            legacyParams,
-                                            shadowParams,
-                                            {
-                                                legacy: legacyShadowOutputSemantics({
-                                                    modulePlan,
-                                                    settings,
-                                                    sourceImage,
-                                                    mask,
-                                                    directRecipeId: resolvedDirectRecipeId,
-                                                }),
-                                                v2: v2ShadowOutputSemantics(resolvedPlan, compositionOutput),
-                                            },
-                                        ),
-                                    })
-                                }
-                                generationParams = {
-                                    ...generationParams,
-                                    compositionMode: 'shadow',
-                                    compositionPlanHash: clonePlanHash(resolvedPlan),
-                                    compositionPlanId: resolvedPlan.planId,
-                                    compositionRecipeId: resolvedPlan.recipeId,
-                                    compositionProvenanceSummary: shadowParams.compositionProvenanceSummary,
-                                }
-                            }
-                        }
-                        const v2Output = compositionMode === 'v2' ? compositionOutput : null
+                        let generationParams = await buildV2GenerationParams({
+                            plan: resolvedPlan,
+                            modulePlan,
+                            sourceImage,
+                            mask,
+                        })
                         if (generationFolder?.r2.autoUpload) {
                             generationParams = { ...generationParams, metadataMode: 'strip-and-sidecar' }
                         }
                         // Reset progress
                         if (run.kind === 'execute') set({ streamProgress: 0 })
 
-                        const generationSequenceProposal = compositionMode === 'v2'
-                            ? sequenceProposal
-                            : legacyFragmentSession!.sequenceCommitProposal
                         const {
                             savePath,
                             autoSave: liveAutoSave,
@@ -1541,24 +1137,24 @@ export const useGenerationStore = create<GenerationState>()(
                             fallbackImageFormat: settings.imageFormat,
                             fallbackMetadataMode: settings.metadataMode,
                             streamingRequested: settings.useStreaming,
-                            sequenceCommitProposal: generationSequenceProposal,
+                            sequenceCommitProposal: sequenceProposal,
                             output: {
-                                autoSave: v2Output?.autoSave ?? liveAutoSave,
+                                autoSave: compositionOutput?.autoSave ?? liveAutoSave,
                                 directory: explicitOutputFolder?.directory
-                                    || v2Output?.directory
-                                    || modulePlan?.output.directory
+                                    || compositionOutput?.directory
                                     || savePath,
                                 useAbsolutePath: explicitOutputFolder?.useAbsolutePath
-                                    ?? v2Output?.useAbsolutePath
+                                    ?? compositionOutput?.useAbsolutePath
                                     ?? useAbsolutePath,
                                 capabilityFallbackDirectory: explicitOutputFolder
                                     ? explicitOutputFolder.useAbsolutePath ? 'NAI_Blue_Output' : explicitOutputFolder.directory
-                                    : v2Output?.capabilityFallbackDirectory
+                                    : compositionOutput?.capabilityFallbackDirectory
                                     || savePath,
-                                ...(v2Output?.portableDirectory === undefined
+                                // An explicit folder overrides the plan's default portable destination.
+                                ...(explicitOutputFolder !== null || compositionOutput?.portableDirectory === undefined
                                     ? {}
-                                    : { portableDirectory: v2Output.portableDirectory }),
-                                fileName: v2Output?.fileName ?? modulePlan?.output.fileName,
+                                    : { portableDirectory: compositionOutput.portableDirectory }),
+                                fileName: compositionOutput?.fileName,
                                 collisionPolicy: resolvedPlan?.outputPolicy.collisionPolicy ?? 'unique',
                                 generationFolderId: generationFolder?.id ?? null,
                                 generationFolderPath: generationFolder?.path ?? null,

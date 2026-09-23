@@ -1,28 +1,28 @@
 {
-  "case": "production-authority-startup",
-  "description": "Synthetic production-like authority startup and rollback matrix for the Phase 06 release gate.",
+  "case": "unified-composition-startup",
+  "description": "Synthetic migration matrix for converting supported saved formats into one Composition runtime.",
   "scenarios": [
     {
       "id": "fresh-install",
-      "description": "No legacy stores, feature flag, or Composition repository exists; the verified production default activates v2.",
+      "description": "No legacy stores or Composition repository exists; startup creates the canonical Composition document.",
       "expectedRuntimeAuthority": "v2",
       "expectedPersistedAuthority": "v2"
     },
     {
       "id": "canonical-v2-only",
-      "description": "A repository-verified canonical v2 document exists without legacy stores or a feature flag.",
+      "description": "A verified canonical Composition document exists without legacy stores.",
       "expectedRuntimeAuthority": "v2",
       "expectedPersistedAuthority": "v2"
     },
     {
       "id": "upgrade-current-legacy-stores",
-      "description": "Current local generation and Scene stores are migrated under an explicit v2 activation request.",
+      "description": "Current local generation and Scene stores are converted to the canonical document.",
       "expectedRuntimeAuthority": "v2",
       "expectedPersistedAuthority": "v2"
     },
     {
       "id": "both-present",
-      "description": "Current legacy stores and a matching committed v2 repository coexist.",
+      "description": "Legacy import stores and their committed Composition projection coexist without source deletion.",
       "expectedRuntimeAuthority": "v2",
       "expectedPersistedAuthority": "v2"
     },
@@ -40,13 +40,13 @@
     },
     {
       "id": "corrupted-repository",
-      "description": "Malformed repository JSON is retained and runtime authority fails closed to legacy.",
-      "expectedRuntimeAuthority": "legacy",
+      "description": "Malformed repository JSON is retained while the application keeps its single Composition runtime.",
+      "expectedRuntimeAuthority": "v2",
       "expectedPersistedAuthority": "unavailable"
     },
     {
-      "id": "rollback-and-forward-migration",
-      "description": "One authority action rolls back to legacy without deleting v2 data and a verified forward activation restores v2.",
+      "id": "legacy-flag-ignored",
+      "description": "A request to restore the retired legacy authority leaves the canonical Composition document active.",
       "expectedRuntimeAuthority": "v2",
       "expectedPersistedAuthority": "v2"
     }
