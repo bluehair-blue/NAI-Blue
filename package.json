@@ -128,7 +128,7 @@
     "@babel/preset-typescript": "^8.0.1",
     "@babel/types": "^8.0.4",
     "@cloudflare/workers-types": "5.20260822.1",
-    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/client": "2.2.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@swc/core": "^1.16.1",
     "@tailwindcss/vite": "^4.3.3",
