@@ -129,7 +129,7 @@
     "@babel/types": "^8.0.4",
     "@cloudflare/workers-types": "5.20260822.1",
     "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.0",
     "@swc/core": "^1.16.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.10.1",
