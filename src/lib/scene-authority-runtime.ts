@@ -449,9 +449,17 @@ export async function activateSceneAuthorityRuntime(
         running.set(presetId, task)
     }
 
-    const scan = (): void => {
+    const scan = (
+        state = useSceneStore.getState(),
+        previous?: ReturnType<typeof useSceneStore.getState>,
+    ): void => {
         if (applying || stopped) return
-        for (const preset of useSceneStore.getState().presets) {
+        // Zustand also notifies for scrolling, selection and progress. Those updates
+        // cannot edit authoring; immutable scene arrays identify the presets to check.
+        if (previous?.presets === state.presets) return
+        const previousScenes = new Map(previous?.presets.map(preset => [preset.id, preset.scenes]))
+        for (const preset of state.presets) {
+            if (previousScenes.get(preset.id) === preset.scenes) continue
             const scenes = projectPreset(
                 preset,
                 authority.get(preset.id),

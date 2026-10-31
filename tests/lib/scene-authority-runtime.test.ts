@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as serialization from '@/domain/composition/canonical-serialize'
 import type {
     CommitResult,
     SceneDocument,
@@ -108,6 +109,36 @@ function resetStore(): void {
 
 describe('Scene Zustand authority runtime', () => {
     beforeEach(resetStore)
+
+    it('does not serialize scene authoring for scrolling, selection or generation progress', async () => {
+        const repository = new MemoryRepository(document())
+        await activateSceneAuthorityRuntime(repository)
+        const serialize = vi.spyOn(serialization, 'canonicalSerialize')
+        try {
+            useSceneStore.getState().setScrollPosition(240)
+            useSceneStore.getState().setGenerationProgress(1, 10)
+            useSceneStore.setState({ selectedSceneIds: ['scene-a'], isEditMode: true })
+            expect(serialize).not.toHaveBeenCalled()
+            expect(repository.commits).toHaveLength(0)
+        } finally { serialize.mockRestore() }
+    })
+
+    it('does not reproject unchanged presets when another preset changes', async () => {
+        const repository = new MemoryRepository(document())
+        await activateSceneAuthorityRuntime(repository)
+        useSceneStore.setState(state => ({ presets: [...state.presets, {
+            id: 'unrelated', name: 'Unrelated', parentId: null, createdAt: 1,
+            scenes: [{ ...state.presets[0].scenes[0], id: 'unrelated-scene', scenePrompt: 'untouched-marker' }],
+        }] }))
+        await flushSceneAuthorityRuntime()
+        const serialize = vi.spyOn(serialization, 'canonicalSerialize')
+        try {
+            useSceneStore.setState(state => ({ presets: state.presets.map(preset => preset.id === 'preset-a'
+                ? { ...preset, scenes: preset.scenes.map(scene => ({ ...scene, scenePrompt: 'changed' })) }
+                : preset) }))
+            expect(serialize.mock.calls.every(([value]) => !JSON.stringify(value).includes('untouched-marker'))).toBe(true)
+        } finally { serialize.mockRestore() }
+    })
     afterEach(stopSceneAuthorityRuntimeForTests)
 
     it('persists only presentation shells and never raw Scene authoring or images', () => {
