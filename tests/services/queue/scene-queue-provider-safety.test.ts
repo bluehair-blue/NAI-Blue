@@ -372,4 +372,16 @@ describe('Scene Queue Provider safety', () => {
         expect(mocks.spoolCommit).toHaveBeenCalledTimes(0)
         expect(mocks.save).toHaveBeenCalledTimes(1)
     })
+
+    it('forwards Scene streaming frames through the shared queue preview port', async () => {
+        const current = context(null)
+        const reportPreview = vi.fn()
+        mocks.transport.mockImplementationOnce(async request => {
+            request.onProgress(25, 'data:image/png;base64,YQ==')
+            return { success: true, imageData: 'data:image/png;base64,AQID' }
+        })
+        await executeSceneQueueJob(job(false), { ...current.value, reportPreview }, { presentation: {} as never })
+        expect(reportPreview).toHaveBeenCalledWith('data:image/png;base64,YQ==')
+        expect(mocks.save).toHaveBeenCalledOnce()
+    })
 })

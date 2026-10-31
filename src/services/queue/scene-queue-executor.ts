@@ -195,7 +195,8 @@ export async function executeSceneQueueJob(
     try {
         await context.updateProgress('transport', 0, Math.max(1, params.steps))
         const progressReporter = createSerializedProgressReporter(context.updateProgress)
-        const onProgress = (progress: number): void => {
+        const onProgress = (progress: number, previewImage?: string): void => {
+            if (context.canCommit()) context.reportPreview?.(previewImage)
             progressReporter.enqueue(
                 'stream',
                 Math.min(params.steps, Math.round(params.steps * progress / 100)),

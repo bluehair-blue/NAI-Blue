@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import { ReactNode, useEffect, useRef, useState } from 'react'
 import { registerNativeBackButton } from '@/platform/native-app'
 import { Link, useLocation } from 'react-router'
@@ -5,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { PromptPanel } from './PromptPanel'
 import { HistoryPanel } from './HistoryPanel'
+import { LiveGenerationMonitor } from '@/components/queue/LiveGenerationMonitor'
 import '@/styles/folder-workbench.css'
 import '@/styles/workspace.css'
 import { CustomTitleBar } from './CustomTitleBar'
@@ -149,7 +151,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const sceneIsGenerating = useSceneStore(state => state.isGenerating)
 
     // Get active preset for header display
-    const { presets, activePresetId } = usePresetStore()
+    const { presets, activePresetId } = usePresetStore(useShallow(state => ({ presets: state.presets, activePresetId: state.activePresetId })))
     const activePreset = presets.find(p => p.id === activePresetId)
 
     const handleSlotEnabled = async (slot: 1 | 2, enabled: boolean) => {
@@ -462,6 +464,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     </div>
 
                     {/* Page Content */}
+                    <LiveGenerationMonitor />
                     <main className={cn(
                         "workspace-content relative min-h-0 min-w-0 flex-1",
                         ['/advanced', '/library', '/folders', '/settings', '/queue', '/data', '/trash'].includes(location.pathname) ? 'p-0 overflow-hidden' : 'workspace-content-inset overflow-y-auto'

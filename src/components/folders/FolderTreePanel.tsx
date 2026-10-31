@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Images, Plus, Search } from 'lucide-react'
 import type { GenerationFolder } from '@/domain/generation-folders'
 import { UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
+import type { SavedOutputDirectory } from '@/services/organizer/saved-output-catalog'
 
 interface FolderTreePanelProps {
     folders: readonly GenerationFolder[]
@@ -10,16 +11,27 @@ interface FolderTreePanelProps {
     counts: Readonly<Record<string, number>>
     onSelect: (id: string | null) => void
     onManage: () => void
+    savedDirectories?: readonly SavedOutputDirectory[]
+    selectedDirectory?: string | null
+    onSelectDirectory?: (key: string) => void
+    savedLoading?: boolean
+    savedUnavailable?: number
+    onRetrySaved?: () => void
 }
 
 /** Read-only navigation over the existing folder projection; management stays with its dialog. */
-export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onManage }: FolderTreePanelProps) {
+export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onManage,
+    savedDirectories = [], selectedDirectory, onSelectDirectory, savedLoading, savedUnavailable, onRetrySaved,
+}: FolderTreePanelProps) {
     const { t } = useTranslation()
     const searchId = useId()
     const headingId = useId()
     const [query, setQuery] = useState('')
+    const [savedLimit, setSavedLimit] = useState(40)
     const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
     const normalizedQuery = query.trim().toLocaleLowerCase().replace(/\s*\/\s*/gu, '/')
+    const matchingSaved = useMemo(() => savedDirectories.filter(directory =>
+        !normalizedQuery || directory.path.toLocaleLowerCase().includes(normalizedQuery)), [savedDirectories, normalizedQuery])
     const { children, totals, visible, paths } = useMemo(() => {
         const byId = new Map(folders.map(folder => [folder.id, folder]))
         const children = new Map<string | null, GenerationFolder[]>()
@@ -128,11 +140,25 @@ export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onM
                     className="min-h-11 text-base"
                     value={query}
                     placeholder={t('folderWorkbench.design.findFolder', '폴더 찾기')}
-                    onChange={event => setQuery(event.target.value)}
+                    onChange={event => { setQuery(event.target.value); setSavedLimit(40) }}
                 />
             </div>
             <div className="fb-folder-tree">
                 {renderFolders(null)}
+                {(savedDirectories.length > 0 || savedLoading || !!savedUnavailable) && <section className="mt-5 border-t border-border pt-4">
+                    <h3 className="mb-2 text-base font-semibold">{t('savedOutputs.title', '저장된 이미지 폴더')}</h3>
+                    {savedLoading && <p role="status" className="text-sm text-muted-foreground">{t('savedOutputs.loading', '저장 폴더 불러오는 중…')}</p>}
+                    {!!savedUnavailable && <button type="button" onClick={onRetrySaved} className="min-h-11 text-left text-sm underline">{t('savedOutputs.retry', '읽지 못한 저장 위치 {{count}}개 · 다시 확인', { count: savedUnavailable })}</button>}
+                    <ul className="space-y-1">{matchingSaved.slice(0, savedLimit).map(directory => <li key={directory.key}>
+                        <button type="button" title={directory.path} aria-current={selectedDirectory === directory.key ? 'page' : undefined}
+                            onClick={() => onSelectDirectory?.(directory.key)}
+                            className={`flex min-h-11 w-full items-center gap-2 rounded-control px-2 text-left text-sm focus-ring ${selectedDirectory === directory.key ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'}`}>
+                            <FolderOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span className="min-w-0 flex-1 break-all">{directory.path}</span><span className="shrink-0 text-muted-foreground">{directory.count}</span>
+                        </button>
+                    </li>)}</ul>
+                    {matchingSaved.length > savedLimit && <button type="button" onClick={() => setSavedLimit(value => value + 40)} className="min-h-11 text-sm underline">{t('savedOutputs.more', '폴더 더 보기')}</button>}
+                </section>}
                 {normalizedQuery && visible.size === 0 && (
                     <p className="fb-folder-empty" role="status">{t('folderWorkbench.design.noFolderMatches', '찾는 폴더가 없어요')}</p>
                 )}

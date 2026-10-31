@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FolderAssetComposer } from '@/components/folders/FolderAssetComposer'
 import { FolderTreePanel } from '@/components/folders/FolderTreePanel'
+import { SavedOutputGallery } from '@/components/folders/SavedOutputGallery'
+import { useSavedOutputCatalog } from '@/presentation/folders/useSavedOutputCatalog'
 import { FolderAssetDetailDialog } from '@/components/folders/FolderAssetDetailDialog'
 import { FolderProductionRequests } from '@/components/folders/FolderProductionRequests'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -34,6 +36,8 @@ const PAGE_SIZE = 60
 /** A folder is the viewing scope; SceneStore still owns all editable assets and Queue owns execution. */
 export default function FolderWorkbench() {
     const { t } = useTranslation()
+    const savedOutputs = useSavedOutputCatalog()
+    const [savedDirectory, setSavedDirectory] = useState<string | null>(null)
     const folders = useSettingsStore(state => state.generationFolders)
     const folderDocument = useSettingsStore(state => state.generationFolderDocument)
     const activeFolderId = useSettingsStore(state => state.activeGenerationFolderId)
@@ -91,6 +95,7 @@ export default function FolderWorkbench() {
     }
     const selectFolder = (id: string | null) => {
         if (busyRef.current) return
+        setSavedDirectory(null)
         viewStateRef.current = { ...viewStateRef.current, folderId: id }
         setViewSaved(saveFolderWorkbenchView(viewStateRef.current))
         setFolderId(id)
@@ -235,7 +240,10 @@ export default function FolderWorkbench() {
         for (const row of pageRows) checked ? keys.add(row.key) : keys.delete(row.key)
         updateView({ selected: [...keys] })
     }
-    const folderPanel = <FolderTreePanel folders={folders} activeFolderId={folderId} counts={folderCounts}
+    const folderPanel = <FolderTreePanel folders={folders} activeFolderId={savedDirectory === null ? folderId : '__saved_output__'} counts={folderCounts}
+        savedDirectories={savedOutputs.directories} selectedDirectory={savedDirectory}
+        savedLoading={savedOutputs.loading} savedUnavailable={savedOutputs.unavailable} onRetrySaved={savedOutputs.retry}
+        onSelectDirectory={key => { setSavedDirectory(key); setFolderSheetOpen(false) }}
         onSelect={selectFolder} onManage={() => { setFolderSheetOpen(false); setManagerOpen(true) }} />
     const composer = <FolderAssetComposer key={scopeKey} folderId={scopeKey} busy={busy} disabled={!sceneAuthorityReady || !concreteFolder}
         error={error} templates={templates} onSubmit={addAssets} />
@@ -250,7 +258,8 @@ export default function FolderWorkbench() {
     return (
         <div className="fb-workspace" data-testid="folder-workbench">
             <aside className="fb-sidebar">{folderPanel}</aside>
-            <section className="fb-main" aria-label={t('folderWorkbench.design.imageWorkspace', '이미지 작업 공간')}>
+            {savedDirectory !== null ? <SavedOutputGallery key={savedDirectory} directoryKey={savedDirectory} images={savedOutputs.images} onFolders={() => setFolderSheetOpen(true)} />
+                : <section className="fb-main" aria-label={t('folderWorkbench.design.imageWorkspace', '이미지 작업 공간')}>
                 <div ref={contentRef} onScroll={event => {
                     const current = viewStateRef.current.views[scopeKey] ?? emptyFolderView()
                     viewStateRef.current.views[scopeKey] = { ...current, scrollTop: event.currentTarget.scrollTop }
@@ -356,7 +365,7 @@ export default function FolderWorkbench() {
                                                     aria-label={t('folderWorkbench.selectAsset', '{{name}} 선택', { name: row.scene.name })}
                                                     onChange={event => updateView({ selected: event.target.checked ? [...view.selected, row.key] : view.selected.filter(key => key !== row.key) })} /><span className="sr-only">{row.scene.name}</span></label>
                                                 <button type="button" className="fb-open-preview" onClick={() => setDetailKey(row.key)} aria-label={t('folderWorkbench.design.openImage', '{{name}} 이미지와 설명 보기', { name: row.scene.name })}>
-                                                    {imageUrl ? <img src={imageUrl} alt={row.scene.name} loading="lazy" /> : <span className="fb-prompt-preview"><ImageIcon aria-hidden="true" /><span>{prompt || t('folderWorkbench.design.addDescription', '그림 설명을 적어 주세요.')}</span><small>{t('folderWorkbench.design.withoutImages', '만들기 전')}</small></span>}
+                                                    {imageUrl ? <img src={imageUrl} alt={row.scene.name} loading="lazy" decoding="async" /> : <span className="fb-prompt-preview"><ImageIcon aria-hidden="true" /><span>{prompt || t('folderWorkbench.design.addDescription', '그림 설명을 적어 주세요.')}</span><small>{t('folderWorkbench.design.withoutImages', '만들기 전')}</small></span>}
                                                 </button>
                                             </div>
                                             <div className="fb-card-info"><h3 title={row.scene.name}>{row.scene.name}</h3><p className="fb-card-status">{activity ? <>{queueActivityUnavailable && <>{t('folderWorkbench.design.lastKnownStatus', '마지막 확인')} · </>}{activityLabel}{activity.unfinished > 0 && <> · {t('folderWorkbench.design.jobRemaining', '남은 {{count}}장', { count: activity.unfinished })}</>}</> : imageUrl ? <><Check aria-hidden="true" />{t('folderWorkbench.design.imageAvailable', '이미지 {{count}}장 있음', { count: row.scene.images.length })}</> : t('folderWorkbench.design.readyDescription', '설명 준비됨')}</p>
@@ -379,7 +388,7 @@ export default function FolderWorkbench() {
                         <span className="sr-only">{t('folderWorkbench.scopeSummary', '검색 결과 {{results}}개 중 선택 {{selected}}개 · 총 {{images}}장', { results: filtered.length, selected: selected.length, images: imageCount })}</span></div>
                     {pageCount > 1 && <nav className="fb-pagination" aria-label={t('folderWorkbench.pagination', '항목 페이지')}><button type="button" disabled={page === 0} onClick={() => updateView({ page: page - 1 })} aria-label={t('folderWorkbench.previous', '이전')}><ChevronLeft aria-hidden="true" /></button><span>{page + 1} / {pageCount}</span><button type="button" disabled={page + 1 >= pageCount} onClick={() => updateView({ page: page + 1 })} aria-label={t('folderWorkbench.next', '다음')}><ChevronRight aria-hidden="true" /></button></nav>}
                 </footer>}
-            </section>
+            </section>}
             <Sheet open={folderSheetOpen} onOpenChange={setFolderSheetOpen}><SheetContent side="left" closeLabel={t('folderWorkbench.design.close', '닫기')} className="folder-workbench-surface fb-folder-sheet"><SheetHeader className="sr-only"><SheetTitle>{t('folderWorkbench.design.folders', '폴더')}</SheetTitle><SheetDescription>{t('folderWorkbench.design.chooseFolder', '이미지를 담을 폴더를 골라 주세요.')}</SheetDescription></SheetHeader>{folderPanel}</SheetContent></Sheet>
             <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="right" closeLabel={t('folderWorkbench.design.close', '닫기')} className="folder-workbench-surface fb-settings-sheet">
                 <SheetHeader className="fb-settings-heading"><SheetTitle>{t('folderWorkbench.design.folderSettings', '폴더 설정')}</SheetTitle><SheetDescription>{scopeName}</SheetDescription></SheetHeader>

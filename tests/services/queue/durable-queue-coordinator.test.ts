@@ -16,6 +16,7 @@ import {
 } from '@/services/queue/indexeddb-queue-repository'
 import { createGenerationJobSnapshot } from '@/services/queue/job-snapshot'
 import { useDiagnosticsStore } from '@/stores/diagnostics-store'
+import { queueLivePreview } from '@/services/queue/queue-live-preview'
 
 const NOW = '2026-07-14T08:00:00.000Z'
 let databaseCounter = 0
@@ -217,6 +218,22 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 }
 
 describe('durable queue coordinator', () => {
+    it('publishes live frames per job and clears them after success or failure', async () => {
+        const queue = repository('live-preview-lifecycle')
+        await enqueue(queue, [workflowJob({ id: 'job:live', batchId: 'batch:1', workflow: 'scene' })])
+        const runtime = coordinator(queue, async (context, jobId) => {
+            context.reportPreview?.('data:image/png;base64,YQ==')
+            await context.updateProgress('stream', 7, 28)
+            expect(queueLivePreview.getSnapshot().find(item => item.jobId === jobId)).toMatchObject({
+                batchId: 'batch:1', preview: 'data:image/png;base64,YQ==', progress: { current: 7, total: 28 },
+            })
+            throw new QueueExecutionError('fatal', 'test failure')
+        })
+        await runtime.drain()
+        expect(queueLivePreview.getSnapshot().some(item => item.jobId === 'job:live')).toBe(false)
+        expect(await queue.getJob('job:live')).toMatchObject({ state: 'failed' })
+        queue.close()
+    })
     it('interrupts pacing on shutdown without dispatching the next queued image', async () => {
         const queue = repository('stop-during-pacing')
         await enqueueWorkflowBatch(queue, 'batch:stop-pacing', 'scene', [0, 1].map(ordinal => workflowJob({

@@ -1,4 +1,26 @@
 {
+  "liveGeneration": {
+    "queue": "キューセンターで表示",
+    "title": "リアルタイム生成",
+    "counts": "生成中 {{processing}} · 待機 {{waiting}}",
+    "attention": "確認が必要 {{count}}",
+    "inProgress": "生成中のプレビュー",
+    "scene": "シーン生成",
+    "image": "画像生成",
+    "preparing": "準備中",
+    "waitPreview": "プレビューを待機中",
+    "openResult": "完成した画像を開く",
+    "completed": "完成した画像",
+    "saved": "完了",
+    "history": "生成履歴"
+  },
+  "savedOutputs": {
+    "title": "保存済み画像フォルダー",
+    "count": "保存済み画像 {{count}} 枚",
+    "loading": "保存フォルダーを読み込み中…",
+    "retry": "読み込めない保存先 {{count}} 件 · 再試行",
+    "more": "フォルダーをさらに表示"
+  },
   "readableChoices": {
     "observeHint": "参照のみ許可します。生成・編集のリクエストは実行しません。",
     "suggestHint": "生成キューへの登録には、毎回人の承認が必要です。",

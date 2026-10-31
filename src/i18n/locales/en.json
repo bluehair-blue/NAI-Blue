@@ -1,4 +1,26 @@
 {
+  "liveGeneration": {
+    "queue": "Open Queue Center",
+    "title": "Live generation",
+    "counts": "Generating {{processing}} · Waiting {{waiting}}",
+    "attention": "Needs attention {{count}}",
+    "inProgress": "Generation preview",
+    "scene": "Scene generation",
+    "image": "Image generation",
+    "preparing": "Preparing",
+    "waitPreview": "Waiting for preview",
+    "openResult": "Open completed image",
+    "completed": "Completed image",
+    "saved": "Complete",
+    "history": "Generation history"
+  },
+  "savedOutputs": {
+    "title": "Saved image folders",
+    "count": "{{count}} saved images",
+    "loading": "Loading saved folders…",
+    "retry": "{{count}} unavailable locations · Retry",
+    "more": "Show more folders"
+  },
   "readableChoices": {
     "observeHint": "Read access only. Generation and editing requests do not run.",
     "suggestHint": "A person approves each request to add jobs to the generation queue.",

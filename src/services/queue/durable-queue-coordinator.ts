@@ -16,6 +16,7 @@ import {
 } from '@/domain/queue/types'
 import type { ProviderAttemptEvidence } from '@/domain/queue/provider-result'
 import type { IndexedDBQueueRepository } from './indexeddb-queue-repository'
+import { queueLivePreview } from './queue-live-preview'
 
 export interface QueueExecutorContext {
     /** Storage-only resumes consume a verified spool and must never dispatch Provider transport. */
@@ -28,6 +29,8 @@ export interface QueueExecutorContext {
     readonly providerAttempt: GenerationAttempt
     canCommit(): boolean
     updateProgress(stage: string, current: number, total: number): Promise<void>
+    /** Transient Provider frame; never persisted with durable progress. */
+    reportPreview?(preview: string | undefined): void
     bindOutput(transactionId: string, artifactReference: QueueArtifactReference): Promise<void>
     commitOutput(transactionId: string, artifactReference: QueueArtifactReference): Promise<void>
     getOutputReservation?(reservationId: string): Promise<OutputReservation | null>
@@ -504,6 +507,7 @@ export class DurableQueueCoordinator {
             }).catch(() => controller.abort('durable-queue-lease-lost'))
         }, heartbeatMs)
 
+        queueLivePreview.begin(running)
         const context: QueueExecutorContext = {
             executionMode,
             tokenSlotId: slot.slotId,
@@ -514,6 +518,9 @@ export class DurableQueueCoordinator {
             signal: controller.signal,
             providerAttempt,
             canCommit: () => !controller.signal.aborted && !terminalCommitted,
+            reportPreview: preview => {
+                if (!controller.signal.aborted && !terminalCommitted) queueLivePreview.frame(leased.id, preview)
+            },
             updateProgress: async (stage, current, total) => {
                 await this.repository.updateProgress({
                     jobId: leased.id,
@@ -522,6 +529,7 @@ export class DurableQueueCoordinator {
                     now: this.now(),
                     progress: { stage, current, total },
                 })
+                queueLivePreview.progress(leased.id, { stage, current, total })
             },
             bindOutput: async (transactionId, artifactReference) => {
                 await this.repository.bindOutputTransaction({
@@ -667,6 +675,7 @@ export class DurableQueueCoordinator {
                 : classified)
         } finally {
             clearInterval(heartbeat)
+            queueLivePreview.finish(leased.id)
             // Provider failure/spool handling can leave running through its own durable transition.
             // Finish the pending scheduling cancellation only after that journal has settled.
             const current = await this.repository.getJob(leased.id)

@@ -29,6 +29,7 @@ import {
 import { summarizeWorkflowDraftPrompt } from '@/presentation/workflow/workflow-draft-summary'
 
 const ACTIVITY_REFRESH_MS = 5_000
+const QUEUE_REFRESH_MS = 1_000
 const MAX_VISIBLE_DRAFTS = 5
 
 const EMPTY_QUEUE_ACTIVITY_SUMMARY: QueueActivitySummary = Object.freeze({
@@ -56,6 +57,14 @@ let activityReadModel = EMPTY_ACTIVITY_READ_MODEL
 const activityReadModelListeners = new Set<() => void>()
 
 function publishActivityReadModel(readModel: MyWorkActivityReadModel): void {
+    if (activityReadModel.queue.processing === readModel.queue.processing
+        && activityReadModel.queue.waiting === readModel.queue.waiting
+        && activityReadModel.queue.needsAttention === readModel.queue.needsAttention
+        && activityReadModel.drafts.length === readModel.drafts.length
+        && activityReadModel.drafts.every((item, index) => {
+            const next = readModel.drafts[index]
+            return item.draft.id === next.draft.id && item.draft.revision === next.draft.revision && item.status === next.status
+        })) return
     activityReadModel = readModel
     activityReadModelListeners.forEach(listener => listener())
 }
@@ -65,7 +74,7 @@ function subscribeActivityReadModel(listener: () => void): () => void {
     return () => activityReadModelListeners.delete(listener)
 }
 
-function useMyWorkActivityReadModel(): MyWorkActivityReadModel {
+export function useMyWorkActivityReadModel(): MyWorkActivityReadModel {
     return useSyncExternalStore(
         subscribeActivityReadModel,
         () => activityReadModel,
@@ -81,11 +90,16 @@ export function MyWorkActivityRefreshOwner() {
     const draftRepository = useMemo(() => getWorkflowDraftRepository(), [])
     const queueRepository = useMemo(() => getRuntimeQueueRepository(), [])
     const refreshId = useRef(0)
+    const reading = useRef(false)
+    const lastDraftRead = useRef(0)
 
     const refresh = useCallback(async () => {
+        if (reading.current) return
+        reading.current = true
         const requestId = ++refreshId.current
+        const readDrafts = Date.now() - lastDraftRead.current >= ACTIVITY_REFRESH_MS
         const [listedDrafts, queue] = await Promise.all([
-            draftRepository.list().catch(() => null),
+            readDrafts ? draftRepository.list().catch(() => null) : Promise.resolve(null),
             queueRepository.getActivitySummary().catch(() => null),
         ])
 
@@ -108,12 +122,14 @@ export function MyWorkActivityRefreshOwner() {
                 }
             }))
 
+        reading.current = false
+        if (listedDrafts !== null) lastDraftRead.current = Date.now()
         if (requestId !== refreshId.current) return
         publishActivityReadModel({
             drafts: drafts ?? activityReadModel.drafts,
             queue: queue ?? activityReadModel.queue,
         })
-        announceGuidedQueueActivityRefresh()
+        if (readDrafts) announceGuidedQueueActivityRefresh()
     }, [draftRepository, queueRepository])
 
     useEffect(() => {
@@ -122,11 +138,11 @@ export function MyWorkActivityRefreshOwner() {
             void refresh()
         }
 
-        const refreshForDraftChange = () => void refresh()
+        const refreshForDraftChange = () => { lastDraftRead.current = 0; void refresh() }
         refreshWhenVisible()
         window.addEventListener(GUIDED_DRAFTS_CHANGED_EVENT, refreshForDraftChange)
         document.addEventListener('visibilitychange', refreshWhenVisible)
-        const interval = window.setInterval(refreshWhenVisible, ACTIVITY_REFRESH_MS)
+        const interval = window.setInterval(refreshWhenVisible, QUEUE_REFRESH_MS)
         return () => {
             refreshId.current += 1
             window.clearInterval(interval)

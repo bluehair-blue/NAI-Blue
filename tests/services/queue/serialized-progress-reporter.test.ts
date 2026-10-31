@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { createSerializedProgressReporter } from '@/services/queue/serialized-progress-reporter'
 
 describe('serialized queue progress reporter', () => {
+    it('does not persist every preview frame at an unchanged step', async () => {
+        const update = vi.fn(async () => undefined)
+        const reporter = createSerializedProgressReporter(update)
+        for (let frame = 0; frame < 100; frame++) reporter.enqueue('stream', 7, 28)
+        reporter.enqueue('stream', 8, 28)
+        reporter.enqueue('storage', 8, 28)
+        await reporter.flush()
+        expect(update).toHaveBeenCalledTimes(3)
+    })
     it('persists provider callbacks one at a time and in arrival order', async () => {
         const events: string[] = []
         let active = 0

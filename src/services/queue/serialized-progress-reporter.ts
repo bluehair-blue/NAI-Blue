@@ -14,9 +14,14 @@ export function createSerializedProgressReporter(
 ): SerializedProgressReporter {
     let pending = Promise.resolve()
     let firstError: unknown = null
+    let latest: { stage: string; current: number; total: number } | null = null
 
     return {
         enqueue: (stage, current, total) => {
+            // Multiple Provider frames can round to the same step. Persist the
+            // progress fact once; frame display has its independent transient port.
+            if (latest?.stage === stage && latest.current === current && latest.total === total) return
+            latest = { stage, current, total }
             pending = pending.then(async () => {
                 if (firstError !== null) return
                 try {

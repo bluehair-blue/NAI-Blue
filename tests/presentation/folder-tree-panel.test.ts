@@ -6,6 +6,22 @@ import { expect, it } from 'vitest'
 import { FolderTreePanel } from '@/components/folders/FolderTreePanel'
 import { createDefaultGenerationFolder } from '@/domain/generation-folders'
 
+it('shows saved agent directories without registering new generation folders and bounds the list', async () => {
+    const i18n = createInstance()
+    await i18n.init({ lng: 'ko', resources: {}, interpolation: { escapeValue: false } })
+    const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n,
+        children: createElement(FolderTreePanel, {
+            folders: [], activeFolderId: '__saved_output__', counts: {}, onSelect: () => {}, onManage: () => {},
+            savedDirectories: Array.from({ length: 100 }, (_, index) => ({ key: `saved-${index}`, path: `C:/Agent/${index}`, count: 2 })),
+            selectedDirectory: 'saved-0', onSelectDirectory: () => {},
+        }),
+    }))
+    expect(html).toContain('저장된 이미지 폴더')
+    expect(html).toContain('C:/Agent/0')
+    expect(html).not.toContain('C:/Agent/40')
+    expect(html).toContain('폴더 더 보기')
+})
+
 it('renders nested folder navigation with descendant counts and safely ignores a rootless cycle', async () => {
     const i18n = createInstance()
     await i18n.init({ lng: 'ko', resources: {}, interpolation: { escapeValue: false } })

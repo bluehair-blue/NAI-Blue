@@ -185,6 +185,7 @@ export async function executeMainQueueJob(job: GenerationJob, context: QueueExec
         await context.updateProgress('transport', 0, Math.max(1, params.steps))
         const progressReporter = createSerializedProgressReporter(context.updateProgress)
         const onProgress = (progress: number, previewImage?: string): void => {
+            if (context.canCommit()) context.reportPreview?.(previewImage)
                 presentation.reportStreamProgress(
                     progress,
                     context.canCommit() ? previewImage : undefined,
