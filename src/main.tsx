@@ -292,7 +292,7 @@ async function reconcileSceneArtifactsAfterStartup(): Promise<void> {
     if (!sceneAuthorityV2Active) return
     try {
         const [
-            { reconcileSceneArtifactLinks },
+            { reconcileSceneArtifactLinks, latestReconciledSceneDocuments },
             { getRuntimeSceneRepository },
             { getRuntimeArtifactRepository },
             { applySceneDocumentProjection },
@@ -319,16 +319,16 @@ async function reconcileSceneArtifactsAfterStartup(): Promise<void> {
             },
         )
         const outputPlatform = createRuntimeOutputPlatformAdapter()
-        for (const result of reconciled) {
-            if (!('document' in result)) continue
-            applySceneDocumentProjection(result.document)
-            for (const scene of result.document.scenes) {
+        // A large history repeats the same preset in many results; apply its latest revision once.
+        for (const document of latestReconciledSceneDocuments(reconciled)) {
+            applySceneDocumentProjection(document)
+            for (const scene of document.scenes) {
                 for (const reference of scene.artifactRefs) {
                     const state = useSceneStore.getState()
                     const presentation = state.legacyImagePresentation[
-                        sceneImagePresentationKey(result.document.presetId, scene.id, reference.artifactId)
+                        sceneImagePresentationKey(document.presetId, scene.id, reference.artifactId)
                     ]
-                    const projected = state.presets.find(preset => preset.id === result.document.presetId)
+                    const projected = state.presets.find(preset => preset.id === document.presetId)
                         ?.scenes.find(candidate => candidate.id === scene.id)
                         ?.images.some(image => image.id === reference.artifactId)
                     if (presentation?.deleted || projected) continue
@@ -342,7 +342,7 @@ async function reconcileSceneArtifactsAfterStartup(): Promise<void> {
                         const original = childOutputRef(directory, record.original.file.fileName)
                         if (!await outputPlatform.exists(original)) continue
                         useSceneStore.getState().addImageToScene(
-                            result.document.presetId,
+                            document.presetId,
                             scene.id,
                             original.displayPath,
                             reference.artifactId,

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { linkSceneArtifact, reconcileSceneArtifactLinks } from '@/application/scene/link-scene-artifact'
+import { describe, expect, it, vi } from 'vitest'
+import { linkSceneArtifact, reconcileSceneArtifactLinks, latestReconciledSceneDocuments } from '@/application/scene/link-scene-artifact'
 import type { CommitResult, SceneDocument, SceneRepositoryPort } from '@/application/scene/scene-repository'
 import { createArtifactRecord } from '@/domain/organizer/types'
 
@@ -193,4 +193,37 @@ describe('linkSceneArtifact', () => {
 
         expect(maxActiveReads).toBe(1)
     })
+})
+
+it('reconciles hundreds of existing links with one bulk read and one presentation document', async () => {
+    const records = Array.from({ length: 300 }, (_, index) => createArtifactRecord({
+        artifactId: `artifact-${index}`, sourceSceneId: 'scene-a',
+        file: { directory: { kind: 'standard', root: 'pictures', segments: [] }, fileName: `${index}.png` },
+        format: 'png', contentChecksum: `sha256:${'a'.repeat(64)}`, size: 1, createdAt: INPUT.createdAt,
+    }))
+    const linked: SceneDocument = { ...BASE, scenes: [{ ...BASE.scenes[0], artifactRefs: records.map(record => ({
+        artifactId: record.artifactId, createdAt: record.createdAt, favorite: false,
+    })) }] }
+    const getDocument = vi.fn(async () => linked)
+    const listDocumentRecords = vi.fn(async () => [linked])
+    const commit = vi.fn(async (next: SceneDocument) => ({ status: 'COMMITTED' as const, document: next }))
+    const results = await reconcileSceneArtifactLinks({ ...repository(commit), getDocument, listDocumentRecords }, {
+        list: async () => ({ items: records, nextCursor: null }),
+    })
+    expect(results).toHaveLength(300)
+    expect(results.every(result => result.status === 'ALREADY_LINKED')).toBe(true)
+    expect(listDocumentRecords).toHaveBeenCalledOnce()
+    expect(getDocument).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+    expect(latestReconciledSceneDocuments(results)).toEqual([linked])
+})
+
+it('projects the highest committed revision once, regardless of result order', () => {
+    const latest = { ...BASE, revision: 3 }
+    expect(latestReconciledSceneDocuments([
+        { status: 'LINKED', document: latest },
+        { status: 'ALREADY_LINKED', document: BASE },
+        { status: 'PENDING_CONFLICT', artifactId: 'other' },
+        { status: 'ALREADY_LINKED', document: latest },
+    ])).toEqual([latest])
 })

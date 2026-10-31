@@ -76,6 +76,10 @@ export async function reconcileSceneArtifactLinks(
         }
     }
     const sceneOwners = new Map<string, string | null>()
+    const knownDocuments = new Map(documents.flatMap(document => document === null ? [] : [[document.presetId, document] as const]))
+    const knownLinks = new Map(documents.flatMap(document => document?.scenes.map(scene => [
+        JSON.stringify([document.presetId, scene.id]), new Set(scene.artifactRefs.map(reference => reference.artifactId)),
+    ] as const) ?? []))
     for (const document of documents) {
         for (const scene of document?.scenes ?? []) {
             const owner = sceneOwners.get(scene.id)
@@ -99,9 +103,38 @@ export async function reconcileSceneArtifactLinks(
                 favorite: false,
             }
             if (options.shouldLink?.(input) === false) continue
-            results.push(await linkSceneArtifact(scenes, input))
+            // The bulk snapshot already proves existing links. Re-reading a
+            // collection-backed repository for every historical image makes
+            // startup quadratic. Missing links still use fresh reads and CAS.
+            const key = JSON.stringify([presetId, record.sourceSceneId])
+            const known = knownDocuments.get(presetId)
+            if (known && knownLinks.get(key)?.has(record.artifactId)) {
+                results.push({ status: 'ALREADY_LINKED', document: known })
+                continue
+            }
+            const result = await linkSceneArtifact(scenes, input)
+            results.push(result)
+            if ('document' in result) {
+                knownDocuments.set(presetId, result.document)
+                for (const scene of result.document.scenes) knownLinks.set(
+                    JSON.stringify([presetId, scene.id]), new Set(scene.artifactRefs.map(reference => reference.artifactId)),
+                )
+            }
         }
         cursor = page.nextCursor
     } while (cursor !== null)
     return results
+}
+
+/** Startup presentation applies each latest preset once, even when hundreds
+ * of Artifact records report the same document or several CAS revisions.
+ */
+export function latestReconciledSceneDocuments(results: readonly LinkSceneArtifactResult[]): readonly SceneDocument[] {
+    const documents = new Map<string, SceneDocument>()
+    for (const result of results) {
+        if (!('document' in result)) continue
+        const current = documents.get(result.document.presetId)
+        if (!current || current.revision < result.document.revision) documents.set(result.document.presetId, result.document)
+    }
+    return [...documents.values()]
 }
