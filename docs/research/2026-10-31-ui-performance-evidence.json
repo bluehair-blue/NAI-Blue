@@ -1,0 +1,158 @@
+{
+  "date": "2026-10-31",
+  "scope": "NAI Blue UI performance, all registered agent generation visibility, saved output directory navigation",
+  "commits": [
+    "0ba3863",
+    "5a39281",
+    "d9087f3",
+    "878383b"
+  ],
+  "findings": [
+    "Scene authority projected and serialized every preset for unrelated store updates.",
+    "Generation persistence serialized thumbnail history again on transient progress updates.",
+    "Broad subscriptions rerendered shell/editor/history; Library always measured draggable items.",
+    "File agent workspace reread all Scene documents after unrelated state changes.",
+    "Scene Queue dropped preview frames; shell activity exposed only guided drafts and counts.",
+    "Configured generation folders omitted existing Artifact and legacy Scene output directories.",
+    "Startup reread the whole Scene collection for each already-linked artifact and reapplied repeated preset documents."
+  ],
+  "implemented": [
+    "Changed-preset authoring checks; persisted-field identity deduplication; focused UI subscriptions; idle drag measurements removed; lazy async image decoding.",
+    "All Queue jobs expose an ephemeral per-job live projection; Main and Scene forward Provider frames. Latest frame at 200ms intervals, at most four active cards/four recent results. Overlay preserves editor route.",
+    "One metadata catalog initialization per app session, 128-record pages and eight concurrent path resolutions; synchronous save events update it. Windows path normalization and legacy paths included. Folder section shows 40 at a time; gallery 60 at a time.",
+    "Existing Scene links reuse bulk snapshot; missing links retain fresh reads and CAS. Each highest preset revision is projected once."
+  ],
+  "validation": [
+    {
+      "command": "vitest: queue suite + scene authority + saved catalog + storage + folder tests",
+      "files": 37,
+      "passed": 362
+    },
+    {
+      "command": "vitest: component contracts + generation storage hydration + agent workspace + main presentation",
+      "files": 35,
+      "passed": 196
+    },
+    {
+      "command": "vitest: scene link + authority + startup recovery + scene provider safety",
+      "files": 4,
+      "passed": 56
+    },
+    {
+      "command": "tsc --noEmit",
+      "status": "pass"
+    },
+    {
+      "command": "dependency-cruiser",
+      "status": "pass",
+      "modules": 665,
+      "dependencies": 3739
+    },
+    {
+      "case": "100 unchanged persisted history projections",
+      "serializationWrites": 1
+    },
+    {
+      "case": "300 previously linked artifacts",
+      "bulkReads": 1,
+      "additionalDocumentReads": 0,
+      "projectedDocuments": 1
+    }
+  ],
+  "runtime": {
+    "firstBuildRestart": {
+      "officialMcpResponse": "completed",
+      "presets": 297,
+      "scenes": 3138,
+      "configuredFolders": 3,
+      "processing": 0,
+      "waiting": 0,
+      "needsAttention": 8,
+      "preservedWorkspace": true
+    },
+    "finalBuild": "pass: npx tauri build --no-bundle; optimized release",
+    "finalExecutableSha256": "83B45EAE475096E0D8BBCC4703762788B0F6CDC38687C23789A773F2DB24FA89",
+    "finalRestart": {
+      "processId": 36812,
+      "startedAt": "2026-10-31T16:57:50+09:00",
+      "officialRequestId": "perf-visibility-postrestart-20261031-06",
+      "officialMcpResponse": "completed",
+      "observedAt": "2026-10-31T07:59:44.094Z",
+      "presets": 297,
+      "scenes": 3138,
+      "configuredFolders": 3,
+      "drafts": 4,
+      "processing": 0,
+      "waiting": 0,
+      "needsAttention": 8,
+      "preservedWorkspace": true,
+      "editingAndGenerationConsentPreserved": true
+    },
+    "remainingStartupWork": "2356 retained Provider result files (~1.49 GB) require existing safety verification; this check was retained.",
+    "timingNote": "Final app launch to completed official receipt was approximately 114 seconds; uncontrolled observation, not a scrolling FPS benchmark.",
+    "finalStartupStages": [
+      {
+        "stage": "startup:post-render",
+        "at": "2026-10-31T07:58:19.579Z"
+      },
+      {
+        "stage": "startup:queue-recovered",
+        "at": "2026-10-31T07:59:19.216Z"
+      },
+      {
+        "stage": "startup:agent-commands:ready",
+        "at": "2026-10-31T07:59:46.702Z"
+      },
+      {
+        "stage": "startup:integrity-check",
+        "at": "2026-10-31T07:59:47.343Z"
+      },
+      {
+        "stage": "startup:disk-backup",
+        "at": "2026-10-31T07:59:47.366Z"
+      }
+    ],
+    "backgroundStartupCompleted": true
+  },
+  "limits": [
+    "No paid Provider generation or UI automation was performed.",
+    "Actual scrolling FPS/frame time was not measured; functional and structural checks passed.",
+    "Intermediate image frames depend on Provider streaming support. Non-streaming work shows progress/availability and committed results.",
+    "Native Windows app cannot be embedded by open_in_codex target types; use the running Windows app and a side-panel validation report."
+  ],
+  "preserved": [
+    "Existing uncommitted changes were not included in these implementation commits.",
+    "Existing image files, save policies, credentials, consent and unknown Provider outcome safeguards remain in place."
+  ],
+  "designReview": {
+    "jobId": "76d64eb5-e663-42e4-a1a2-abd7c53acb72",
+    "status": "completed",
+    "contributors": [
+      "Gemini 4 Argon",
+      "Claude Opus"
+    ],
+    "adopted": [
+      "ephemeral throttled previews",
+      "bounded global strip",
+      "overlay preserving editor",
+      "incremental saved output directories"
+    ]
+  },
+  "finalEditorialReview": {
+    "status": "unavailable",
+    "failure": "GEMINI_RESPONSE_READ_FAILED",
+    "attemptedRecovery": "Inspected diagnostic: HTTP200 event-stream with zero output; retried shorter facts-only request through registered TriadFlow, same failure. A required-evidence preflight was corrected without a Provider call.",
+    "jobs": [
+      "c326f10c-0cbc-4788-a08b-4491b4f631d3",
+      "9d3f3b2d-c3f9-49a1-90db-180187b006a6"
+    ],
+    "fallback": "GPT factual report; successful earlier Gemini/Claude design consultation retained."
+  },
+  "presentation": {
+    "tool": "open_in_codex",
+    "placement": "right",
+    "target": "docs/research/2026-10-31-ui-performance-report.md",
+    "status": "queued",
+    "reason": "Official tool queues the target when this chat is hidden; actual side-panel display is not confirmed. Native NAI Blue process and official response were independently confirmed."
+  }
+}
