@@ -273,8 +273,15 @@ const HistoryImageItem = memo(function HistoryImageItem({
 
 export function HistoryPanel({ guided = false }: { guided?: boolean } = {}) {
     const { t } = useTranslation()
-    const { setPreviewImage, isGenerating, setIsGenerating, setSourceImage, setI2IMode } = useGenerationStore()
-    const { savePath, useAbsolutePath, sceneSavePath, useAbsoluteScenePath } = useSettingsStore()
+    const setPreviewImage = useGenerationStore(state => state.setPreviewImage)
+    const isGenerating = useGenerationStore(state => state.isGenerating)
+    const setIsGenerating = useGenerationStore(state => state.setIsGenerating)
+    const setSourceImage = useGenerationStore(state => state.setSourceImage)
+    const setI2IMode = useGenerationStore(state => state.setI2IMode)
+    const savePath = useSettingsStore(state => state.savePath)
+    const useAbsolutePath = useSettingsStore(state => state.useAbsolutePath)
+    const sceneSavePath = useSettingsStore(state => state.sceneSavePath)
+    const useAbsoluteScenePath = useSettingsStore(state => state.useAbsoluteScenePath)
     const [savedImages, setSavedImages] = useState<SavedImage[]>([])
     const [imageThumbnails, setImageThumbnails] = useState<Record<string, string>>({})
     const [isLoading, setIsLoading] = useState(false)

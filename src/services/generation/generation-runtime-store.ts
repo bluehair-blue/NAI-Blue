@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+import { persist } from 'zustand/middleware'
+import { createUnchangedJSONStorage } from '@/lib/unchanged-json-storage'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -1513,7 +1514,7 @@ export const useGenerationStore = create<GenerationState>()(
         }),
         {
             name: 'nai-blue-generation',
-            storage: createJSONStorage(() => indexedDBStorage),
+            storage: createUnchangedJSONStorage(() => indexedDBStorage),
             partialize: (state) => ({
                 // Prompts
                 basePrompt: state.basePrompt,
@@ -1551,7 +1552,9 @@ export const useGenerationStore = create<GenerationState>()(
                 noise: state.noise,
                 inpaintingPrompt: state.inpaintingPrompt,
                 // History - limit to 20 items to prevent memory issues
-                history: state.history.slice(0, 20),
+                // Producers and hydration already cap history at 20. Preserve
+                // identity so stream-only updates do not reserialize thumbnails.
+                history: state.history,
             }),
             onRehydrateStorage: () => (state, error) => {
                 if (error) {

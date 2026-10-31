@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 
 import { useState, useRef, useEffect, PointerEvent } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -33,7 +34,7 @@ export function InpaintingDialog({
         mask: existingMask,
         generate,
         isGenerating,
-    } = useGenerationStore()
+    } = useGenerationStore(useShallow(state => ({ setSourceImage: state.setSourceImage, setMask: state.setMask, setI2IMode: state.setI2IMode, resetI2IParams: state.resetI2IParams, mask: state.mask, generate: state.generate, isGenerating: state.isGenerating })))
 
     const {
         inpaintingBrushSize,

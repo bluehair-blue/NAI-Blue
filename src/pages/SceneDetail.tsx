@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useParams, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -154,11 +155,11 @@ export default function SceneDetail() {
         resetSceneToRecipe,
         startNewGenerationSession,
         cancelSceneGeneration,
-    } = useSceneStore()
+    } = useSceneStore(useShallow(state => ({ renameScene: state.renameScene, toggleFavorite: state.toggleFavorite, deleteImage: state.deleteImage, incrementQueue: state.incrementQueue, decrementQueue: state.decrementQueue, validateSceneImages: state.validateSceneImages, updateSceneSettings: state.updateSceneSettings, setSceneCompositionRef: state.setSceneCompositionRef, resetSceneToRecipe: state.resetSceneToRecipe, startNewGenerationSession: state.startNewGenerationSession, cancelSceneGeneration: state.cancelSceneGeneration })))
     const { isGenerating: sceneIsGenerating } = useSceneGeneration()
     const sceneIsCancelling = useSceneStore(state => state.isCancelling)
     const sceneCompositionRecord = useSceneStore(state => sceneId ? state.sceneCompositionResults[sceneId] : undefined)
-    const { promptFontSize } = useSettingsStore()
+    const { promptFontSize } = useSettingsStore(useShallow(state => ({ promptFontSize: state.promptFontSize })))
     const activeCredentialsAreOpus = useAuthStore(selectActiveCredentialsAreOpus)
     const assetProfile = useAssetModuleStore(state => state.profile)
     const assetHasConflict = useAssetModuleStore(state => state.hasConflict)

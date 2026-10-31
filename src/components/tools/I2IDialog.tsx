@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 
 import { useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -33,7 +34,7 @@ export function I2IDialog({
         resetI2IParams,
         generate,
         isGenerating
-    } = useGenerationStore()
+    } = useGenerationStore(useShallow(state => ({ setSourceImage: state.setSourceImage, strength: state.strength, setStrength: state.setStrength, noise: state.noise, setNoise: state.setNoise, resetI2IParams: state.resetI2IParams, generate: state.generate, isGenerating: state.isGenerating })))
 
     // Reset params and set source image when dialog opens
     useEffect(() => {

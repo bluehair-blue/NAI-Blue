@@ -429,10 +429,23 @@ export async function startAgentWorkspaceBridge(): Promise<() => void> {
         }, REFRESH_DEBOUNCE_MS)
     }
     const unsubscribers = [
-        usePresetStore.subscribe(scheduleRefresh),
-        useSettingsStore.subscribe(scheduleRefresh),
-        useAssetModuleStore.subscribe(scheduleRefresh),
-        useSceneStore.subscribe(scheduleRefresh),
+        // Only snapshotSource inputs invalidate the file projection. Scrolling,
+        // stream progress and unsaved prompt typing must not reread all documents.
+        usePresetStore.subscribe((state, previous) => {
+            if (state.presets !== previous.presets || state.activePresetId !== previous.activePresetId) scheduleRefresh()
+        }),
+        useSettingsStore.subscribe((state, previous) => {
+            const keys = ['savePath', 'useAbsolutePath', 'sceneSavePath', 'useAbsoluteScenePath',
+                'styleLabSavePath', 'useAbsoluteStyleLabPath', 'toolsSavePath', 'useAbsoluteToolsPath',
+                'libraryPath', 'useAbsoluteLibraryPath', 'generationFolderDocument'] as const
+            if (keys.some(key => state[key] !== previous[key])) scheduleRefresh()
+        }),
+        useAssetModuleStore.subscribe((state, previous) => {
+            if (state.profile !== previous.profile) scheduleRefresh()
+        }),
+        useSceneStore.subscribe((state, previous) => {
+            if (state.presets !== previous.presets || state.sceneAuthorityInitialized !== previous.sceneAuthorityInitialized) scheduleRefresh()
+        }),
     ]
 
     const poll = async () => {

@@ -70,6 +70,8 @@ export function LibraryItem({ item, className, isOverlay, onRename, onAddRef, on
                 <img
                     src={imageUrl}
                     alt={item.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     draggable={false} // Prevent native drag
                 />

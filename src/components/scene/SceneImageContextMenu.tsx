@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import {
     ContextMenu,
     ContextMenuContent,
@@ -30,7 +31,7 @@ export function SceneImageContextMenu({ image, children, onDelete, onAddRef, onL
     const { t } = useTranslation()
     const navigate = useNavigate()
     const { setActiveImage } = useToolsStore()
-    const { setSourceImage, setI2IMode } = useGenerationStore()
+    const { setSourceImage, setI2IMode } = useGenerationStore(useShallow(state => ({ setSourceImage: state.setSourceImage, setI2IMode: state.setI2IMode })))
 
     // Determine file path. 
     // image.url is expected to be the full file path for saved images.

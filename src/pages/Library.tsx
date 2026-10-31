@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
     DndContext,
@@ -134,7 +135,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
         unstack
     } = useLibraryStore()
     const addToTrash = useTrashStore(state => state.add)
-    const { libraryPath, useAbsoluteLibraryPath, generationFolders } = useSettingsStore()
+    const { libraryPath, useAbsoluteLibraryPath, generationFolders } = useSettingsStore(useShallow(state => ({ libraryPath: state.libraryPath, useAbsoluteLibraryPath: state.useAbsoluteLibraryPath, generationFolders: state.generationFolders })))
     const [activeId, setActiveId] = useState<string | null>(null)
     const [isDraggingFile, setIsDraggingFile] = useState(false)
     const [folderFilter, setFolderFilter] = useState('')
@@ -710,7 +711,9 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                     onDragEnd={handleDragEnd}
                     measuring={{
                         droppable: {
-                            strategy: MeasuringStrategy.Always,
+                            // Match Scene Mode: idle scrolling does not need a
+                            // layout measurement for every draggable image.
+                            strategy: MeasuringStrategy.WhileDragging,
                         },
                     }}
                 >
