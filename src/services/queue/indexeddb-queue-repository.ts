@@ -1,4 +1,5 @@
 import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+import { inputBudget } from '@/lib/yield-to-input'
 import { createOutputCollisionKey, hashOutputCommitSet } from '@/domain/output-commit-set'
 import { CHARACTER_SCENES_DIRECTORY_NAME } from '@/domain/generation-folders'
 import {
@@ -2670,17 +2671,24 @@ export class IndexedDBQueueRepository {
     }
 
     private async getJobsByIds(ids: readonly string[]): Promise<(GenerationJob | null)[]> {
-        return this.runTransaction(['jobs', 'leases'], 'readonly', async transaction => {
+        const [jobValues, leaseValues] = await this.runTransaction(['jobs', 'leases'], 'readonly', async transaction => {
             const jobs = transaction.objectStore('jobs')
             const leases = transaction.objectStore('leases')
-            const [jobValues, leaseValues] = await Promise.all([
+            return Promise.all([
                 Promise.all(ids.map(id => requestResult(jobs.get(id)))),
                 Promise.all(ids.map(id => requestResult(leases.get(id)))),
             ])
-            return jobValues.map((value, index) => (
-                value === undefined ? null : aggregateJob(parseStoredJob(value), parseLease(leaseValues[index]))
-            ))
         })
+        // Capture jobs and leases atomically, then validate the detached snapshot
+        // in bounded slices. Yielding inside the IDB transaction would close it.
+        const result: (GenerationJob | null)[] = []
+        const checkpoint = inputBudget()
+        for (const [index, value] of jobValues.entries()) {
+            result.push(value === undefined ? null : aggregateJob(parseStoredJob(value), parseLease(leaseValues[index])))
+            const pause = checkpoint()
+            if (pause) await pause
+        }
+        return result
     }
 
     async getJob(id: string): Promise<GenerationJob | null> {

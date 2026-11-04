@@ -16,6 +16,50 @@ import {
 import { getRuntimeCompositionDocument } from '@/lib/composition-authority'
 
 describe('startup legacy source capture', () => {
+    it('verifies unchanged finalized sources without rewriting the migration archive', async () => {
+        const values = new Map<string, string>()
+        const write = vi.fn((key: string, value: string) => { values.set(key, value) })
+        const storage: CompositionRepositoryStorage = { getItem: key => values.get(key) ?? null, setItem: write }
+        const source: CompositionMigrationSourceSnapshot = { serializedStores: {}, wildcardContent: {} }
+        const materialize = vi.fn(async () => undefined)
+        const options = { storage, source, materializeSidecars: materialize }
+        expect((await runStartupCompositionMigration(options)).status).toBe('committed')
+        const before = new Map(values)
+        write.mockClear()
+        materialize.mockClear()
+        const restart = await runStartupCompositionMigration(options)
+        expect(restart.status).toBe('already-current')
+        expect(restart.completedSteps).toEqual(['source-manifest', 'schema-reference-validation', 'startup-reread'])
+        expect(write).not.toHaveBeenCalled()
+        expect(materialize).not.toHaveBeenCalled()
+        expect(values).toEqual(before)
+        expect(getRuntimeCompositionDocument()).not.toBeNull()
+        // A real source change still performs the full recoverable migration.
+        source.serializedStores['nai-blue-scenes'] = JSON.stringify({ state: { presets: [] }, version: 1 })
+        const changed = await runStartupCompositionMigration(options)
+        expect(changed.status).toBe('committed')
+        expect(changed.completedSteps).toContain('raw-backup')
+        expect(materialize).toHaveBeenCalled()
+    })
+
+    it('does not reuse verified startup when live source changes during the fast check', async () => {
+        const values = new Map<string, string>()
+        const storage: CompositionRepositoryStorage = {
+            getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value) },
+        }
+        const original: CompositionMigrationSourceSnapshot = { serializedStores: {}, wildcardContent: {} }
+        await runStartupCompositionMigration({ storage, source: original })
+        const changed = { ...original, serializedStores: { 'nai-blue-scenes': '{"state":{"presets":[]},"version":1}' } }
+        let reads = 0
+        const result = await runStartupCompositionMigration({ storage,
+            sourceProvider: async () => ++reads === 1 ? original : changed,
+            materializeSidecars: async () => undefined,
+        })
+        expect(result.status).toBe('committed')
+        expect(result.sourceHash).toBe(compositionMigrationSourceHash(changed))
+        expect(result.completedSteps).toContain('raw-backup')
+    })
+
     it('rehydrates every composition-connected store after migration and before rendering', () => {
         const mainSource = readFileSync(new URL('../../src/main.tsx', import.meta.url), 'utf8')
         const assetResolverSource = readFileSync(

@@ -19,10 +19,12 @@ import {
 } from '@/lib/indexed-db'
 import {
     COMPOSITION_MIGRATION_POST_COMMIT_SOURCE_CHANGED,
+    compositionMigrationSourceHash,
     runCompositionMigrationTransaction,
     type CompositionMigrationSourceSnapshot,
     type CompositionMigrationTransactionResult,
 } from '@/lib/composition-migration-runtime'
+import { validateCompositionSemantics } from '@/domain/composition/validation'
 import { materializeCompositionMigrationSidecars } from '@/lib/composition-migration-materialization'
 import { loadRawAssetProfileFile } from '@/services/asset-profile-file'
 import {
@@ -67,7 +69,7 @@ export interface CompositionAuthorityInspection {
 
 let lastStartupObservation: CompositionStartupObservation | null = null
 
-function recordStartupObservation(observation: CompositionStartupObservation): void {
+export function recordStartupObservation(observation: CompositionStartupObservation): void {
     lastStartupObservation = { ...observation }
 }
 
@@ -97,7 +99,10 @@ export function mergeLegacyLocalStorageAliases(
     return merged
 }
 
-export async function collectCompositionMigrationSource(): Promise<CompositionMigrationSourceSnapshot> {
+export async function collectCompositionMigrationSource(environment?: {
+    readLocalValue: (key: string) => string | null
+    readAssetProfile: typeof loadRawAssetProfileFile
+}): Promise<CompositionMigrationSourceSnapshot> {
     // Capture only authorities the legacy migrator consumes. Operational journals
     // and growing rollback archives must never become new migration preimages.
     const aliases = [...new Set(Object.values(LEGACY_COMPOSITION_STORE_ALIASES).flat())]
@@ -111,10 +116,10 @@ export async function collectCompositionMigrationSource(): Promise<CompositionMi
     // Some pre-IndexedDB releases used non-canonical localStorage aliases.
     // Capture them under the migration lock without deleting or rewriting the
     // source; the legacy migrator already understands these exact keys.
-    if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+    if (environment !== undefined || (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function')) {
         serializedStores = mergeLegacyLocalStorageAliases(
             serializedStores,
-            key => localStorage.getItem(key),
+            environment?.readLocalValue ?? (key => localStorage.getItem(key)),
         )
     }
 
@@ -122,7 +127,7 @@ export async function collectCompositionMigrationSource(): Promise<CompositionMi
     let assetProfileJson: unknown
     // A read error is not equivalent to a missing profile. Let it abort the
     // migration so an existing disk authority can never be silently omitted.
-    const diskProfile = await loadRawAssetProfileFile()
+    const diskProfile = await (environment?.readAssetProfile ?? loadRawAssetProfileFile)()
     if (diskProfile.exists) assetProfileJson = diskProfile.rawJson
 
     return {
@@ -135,6 +140,7 @@ export async function collectCompositionMigrationSource(): Promise<CompositionMi
 export interface StartupCompositionMigrationOptions {
     now?: string
     source?: CompositionMigrationSourceSnapshot
+    sourceProvider?: () => Promise<CompositionMigrationSourceSnapshot>
     storage?: CompositionRepositoryStorage
     materializeSidecars?: typeof materializeCompositionMigrationSidecars
     clock?: () => string
@@ -148,9 +154,9 @@ export async function runStartupCompositionMigration(
     const now = options.now ?? new Date().toISOString()
     const storage = options.storage ?? productionStorage()
     const repository = new CompositionRepository(storage)
-    const sourceInput = options.source === undefined
+    const sourceInput = options.sourceProvider ?? (options.source === undefined
         ? collectCompositionMigrationSource
-        : async () => options.source!
+        : async () => options.source!)
     const materializeSidecars = options.materializeSidecars
         ?? (options.source === undefined ? materializeCompositionMigrationSidecars : undefined)
     let repositoryVerificationFailed = false
@@ -173,7 +179,32 @@ export async function runStartupCompositionMigration(
     })
     let result: CompositionMigrationTransactionResult
     try {
-        await repository.cleanupInterruptedMigration(now)
+        const current = await repository.cleanupInterruptedMigration(now)
+        // A finalized migration already materialized its sidecars. Verify its
+        // exact live source and repository again, but do not rebuild the raw
+        // rollback archive or repeat the legacy conversion on every launch.
+        const marker = current.migrationMarker
+        if (current.authority === 'v2' && current.committedDocument !== undefined
+            && current.migrationLock === undefined && current.staged === undefined
+            && marker?.startupVerifiedAt !== undefined
+            && marker.registryVersion === COMPOSITION_MIGRATION_REGISTRY_VERSION
+            && compositionMigrationSourceHash(await sourceInput()) === marker.sourceHash) {
+            const issues = validateCompositionSemantics(current.committedDocument)
+            const readback = await repository.read(now)
+            if (!issues.some(issue => issue.blocking) && readback.revision === current.revision
+                && readback.committedHash === current.committedHash
+                && readback.migrationLock === undefined && readback.staged === undefined
+                && readback.authority === 'v2'
+                && compositionMigrationSourceHash(await sourceInput()) === marker.sourceHash) {
+                setRuntimeCompositionDocument(current.committedDocument)
+                recordStartupObservation({ observedAt: now, persistedAuthority: 'v2', runtimeAuthority: 'v2',
+                    resultStatus: 'already-current', migrationIssue: null })
+                return { status: 'already-current', authority: 'v2', migrationId: marker.migrationId,
+                    sourceHash: marker.sourceHash, sourceCounts: marker.sourceCounts, marker,
+                    validationIssues: issues, oldSourcesRetained: true,
+                    completedSteps: ['source-manifest', 'schema-reference-validation', 'startup-reread'] }
+            }
+        }
         result = await executeMigration()
         if (result.failureCode === COMPOSITION_MIGRATION_POST_COMMIT_SOURCE_CHANGED) {
             result = await executeMigration()

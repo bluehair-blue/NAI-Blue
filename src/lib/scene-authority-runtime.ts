@@ -8,6 +8,7 @@ import type {
 } from '@/application/scene/scene-repository'
 import type { ArtifactRecord } from '@/domain/organizer/types'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
+import { inputBudget } from '@/lib/yield-to-input'
 import { flushIndexedDBKey, SCENE_PRESENTATION_STORE_KEY } from '@/lib/indexed-db'
 import {
     sceneImagePresentationKey,
@@ -24,6 +25,7 @@ export interface SceneAuthorityRuntime {
 }
 
 export interface ActivateSceneAuthorityOptions {
+    readonly onStartupPhase?: (phase: string) => void
     /** Migration may pass its verified readback and avoid a second repository scan. */
     readonly documents?: readonly SceneDocument[]
     readonly legacyProjection?: SceneV1CompatibilityProjection | null
@@ -284,10 +286,11 @@ async function resolveArtifactImages(
 }> {
     const byPreset = new Map<string, ReadonlyMap<string, readonly SceneImage[]>>()
     const managedByPreset = new Map<string, Map<string, Set<string>>>()
-    await Promise.all(documents.map(async document => {
+    const checkpoint = inputBudget()
+    const loadDocument = async (document: SceneDocument): Promise<void> => {
         const byScene = new Map<string, readonly SceneImage[]>()
         const managedByScene = new Map<string, Set<string>>()
-        await Promise.all(document.scenes.map(async scene => {
+        for (const scene of document.scenes) {
             const images = (await Promise.all(scene.artifactRefs.map(async reference => {
                 if (overlay[sceneImagePresentationKey(document.presetId, scene.id, reference.artifactId)]?.deleted) {
                     return null
@@ -319,9 +322,17 @@ async function resolveArtifactImages(
                     )]?.deleted)
                     .map(reference => reference.artifactId),
             ]))
-        }))
+            const pause = checkpoint()
+            if (pause) await pause
+        }
         byPreset.set(document.presetId, byScene)
         managedByPreset.set(document.presetId, managedByScene)
+    }
+    // A small pool overlaps native file reads without submitting every saved
+    // image at once or serializing thousands of independent existence checks.
+    let nextDocument = 0
+    await Promise.all(Array.from({ length: Math.min(8, documents.length) }, async () => {
+        while (nextDocument < documents.length) await loadDocument(documents[nextDocument++])
     }))
     return { images: byPreset, managedIds: managedByPreset }
 }
@@ -335,6 +346,7 @@ export async function activateSceneAuthorityRuntime(
     options: ActivateSceneAuthorityOptions = {},
 ): Promise<SceneAuthorityRuntime> {
     activeRuntime?.stop()
+    options.onStartupPhase?.('scene:read-projection')
     const [documents, legacyProjection] = await Promise.all([
         options.documents === undefined ? readDocuments(repository) : options.documents,
         options.legacyProjection === undefined
@@ -342,6 +354,7 @@ export async function activateSceneAuthorityRuntime(
             : options.legacyProjection,
     ])
     const presentationState = useSceneStore.getState()
+    options.onStartupPhase?.('scene:resolve-artifacts')
     const artifactPresentation = options.artifactPresentation === undefined
         ? undefined
         : await resolveArtifactImages(
@@ -349,7 +362,14 @@ export async function activateSceneAuthorityRuntime(
             options.artifactPresentation,
             presentationState.legacyImagePresentation,
         )
-    const authority = new Map(documents.map(document => [document.presetId, structuredClone(document)]))
+    const authority = new Map<string, SceneDocument>()
+    options.onStartupPhase?.('scene:clone-authority')
+    const checkpoint = inputBudget()
+    for (const document of documents) {
+        authority.set(document.presetId, structuredClone(document))
+        const pause = checkpoint()
+        if (pause) await pause
+    }
     const legacy = new Map(legacyProjection?.presets.map(preset => [preset.id, preset]) ?? [])
     const hashes = new Map<string, string>()
     const latest = new Map<string, readonly SceneAuthoringRecord[]>()
@@ -475,33 +495,37 @@ export async function activateSceneAuthorityRuntime(
     }
 
     const state = useSceneStore.getState()
+    options.onStartupPhase?.('scene:prepare-shells')
     const initialBootstrap = !state.sceneAuthorityInitialized && legacy.size > 0
     const shells = initialBootstrap
         ? [...legacy.values()].map(legacyShell)
         : state.presets
+    const projectedShells: ScenePreset[] = []
+    // Build in bounded slices and publish once. Partial shells never escape
+    // before the authoritative write bridge is connected.
+    for (const shell of shells) {
+        const document = authority.get(shell.id)
+        projectedShells.push(document === undefined
+            ? shell
+            : mergeDocumentIntoShell(
+                shell,
+                document,
+                legacy.get(shell.id),
+                true,
+                artifactPresentation?.images.get(document.presetId),
+                state.legacyImagePresentation,
+            ))
+        if (document !== undefined) hashes.set(shell.id, authoringHash(document.scenes))
+        const pause = checkpoint()
+        if (pause) await pause
+    }
     useSceneStore.setState({
-        presets: shells.map(shell => {
-            const document = authority.get(shell.id)
-            return document === undefined
-                ? shell
-                : mergeDocumentIntoShell(
-                    shell,
-                    document,
-                    legacy.get(shell.id),
-                    true,
-                    artifactPresentation?.images.get(document.presetId),
-                    state.legacyImagePresentation,
-                )
-        }),
+        presets: projectedShells,
         activePresetId: shells.some(shell => shell.id === state.activePresetId)
             ? state.activePresetId
             : shells[0]?.id ?? null,
         sceneAuthorityInitialized: true,
     })
-    for (const shell of shells) {
-        const document = authority.get(shell.id)
-        if (document !== undefined) hashes.set(shell.id, authoringHash(document.scenes))
-    }
     applying = false
 
     const unsubscribe = useSceneStore.subscribe(scan)
@@ -532,7 +556,13 @@ export async function activateSceneAuthorityRuntime(
         },
     }
     activeRuntime = runtime
-    scan()
+    options.onStartupPhase?.('scene:scan-projection')
+    for (const preset of useSceneStore.getState().presets) {
+        scan({ ...useSceneStore.getState(), presets: [preset] })
+        const pause = checkpoint()
+        if (pause) await pause
+    }
+    options.onStartupPhase?.('scene:ready')
     return runtime
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
     FULL_BACKUP_STORE_KEYS,
@@ -22,6 +22,22 @@ class MemoryStorage implements BackupStoragePort {
 }
 
 describe('old store migration and backup round trip', () => {
+    it('checks target metadata without loading existing large values and fails closed on lookup errors', async () => {
+        const source = new MemoryStorage()
+        source.values.set('old', 'retained source')
+        const getItem = vi.fn(() => { throw new Error('Large value must not be loaded') })
+        const setItem = vi.fn()
+        const hasItem = vi.fn(async () => true)
+        const target = { getItem, setItem, hasItem }
+        expect((await copyStoreKeysRetainingSource([['old', 'new']], source, target))[0].status).toBe('target-present')
+        expect(getItem).not.toHaveBeenCalled()
+        expect(setItem).not.toHaveBeenCalled()
+        hasItem.mockRejectedValueOnce(new Error('metadata read failed'))
+        expect((await copyStoreKeysRetainingSource([['old', 'new']], source, target))[0].status).toBe('failed')
+        expect(setItem).not.toHaveBeenCalled()
+        expect(source.values.get('old')).toBe('retained source')
+    })
+
     it('copies renamed data with exact readback while retaining the legacy source', async () => {
         const storage = new MemoryStorage()
         const legacy = JSON.stringify({ state: { enabled: false, count: 0 }, version: 0 })

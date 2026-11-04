@@ -1,5 +1,7 @@
 import React from 'react'
 import { configureBackupWorker } from './lib/write-backup-worker'
+import { configureStartupMigrationWorker } from './lib/startup-migration-worker'
+import { yieldToInput } from './lib/yield-to-input'
 import { observeStartupResponsiveness } from './lib/startup-responsiveness'
 
 import ReactDOM from 'react-dom/client'
@@ -18,7 +20,9 @@ import type { SceneMigrationStartupResult } from './lib/scene-migration-startup'
 import type { IndexedDbSceneMigrationPersistence } from './adapters/scene/indexeddb-scene-migration'
 
 configureBackupWorker(() => new Worker(new URL('./lib/backup.worker.ts', import.meta.url), { type: 'module' }))
+configureStartupMigrationWorker(() => new Worker(new URL('./lib/startup-migration.worker.ts', import.meta.url), { type: 'module' }))
 observeStartupResponsiveness()
+void startupCheckpoint('startup:module-ready')
 
 // 자동 백업 상수
 const AUTO_BACKUP_KEY = 'nai-blue-auto-backup'
@@ -72,6 +76,7 @@ async function rehydrateCompositionConnectedStores(): Promise<void> {
 }
 
 const setSplashStage = (message: string) => {
+    void startupCheckpoint(message)
     const subtitle = document.querySelector<HTMLElement>('#splash-screen .splash-subtitle')
     if (subtitle) {
         subtitle.textContent = message
@@ -522,8 +527,8 @@ async function runStartupMigrations(): Promise<void> {
         setSplashStage('Migrating Composition data')
         const {
             getLastCompositionStartupObservation,
-            runStartupCompositionMigration,
         } = await import('./lib/composition-migration-startup')
+        const { runStartupCompositionMigration } = await import('./lib/startup-migration-worker')
         const migration = await runStartupCompositionMigration()
         const compositionObservation = getLastCompositionStartupObservation()
         if (migration.status === 'failed') {
@@ -629,6 +634,8 @@ async function runStartupMigrations(): Promise<void> {
 
     if (storesHydrated && sceneRepository !== null) {
         try {
+            setSplashStage('Connecting Scene display')
+            await yieldToInput()
             const {
                 activateSceneAuthorityRuntime,
                 applyLegacySceneProjection,
@@ -647,18 +654,28 @@ async function runStartupMigrations(): Promise<void> {
                 ])
                 const artifacts = getRuntimeArtifactRepository()
                 const outputPlatform = createRuntimeOutputPlatformAdapter()
+                const resolvedDirectories = new Map<string, ReturnType<typeof outputPlatform.resolveDirectory>>()
                 // Artifact bookmarks are creation-time bindings. Hydrate their local
                 // opaque tokens independently of mutable Settings/Folder authority.
                 await hydrateDurableSceneOutputDirectories()
                 await activateSceneAuthorityRuntime(sceneRepository, {
+                    onStartupPhase: phase => { void startupCheckpoint(phase) },
                     documents: sceneMigration.documents,
                     artifactPresentation: {
                         get: artifactId => artifacts.get(artifactId),
                         resolveOriginalPath: async record => {
-                            const directory = await outputPlatform.resolveDirectory({
-                                portableDirectory: record.original.file.directory,
-                                workflowDefaultDirectory: 'NAI_Blue_Output',
-                            })
+                            // Files in a saved folder share one immutable creation-time
+                            // locator. Reuse only its startup resolution, never file existence.
+                            const key = JSON.stringify(record.original.file.directory)
+                            let resolution = resolvedDirectories.get(key)
+                            if (resolution === undefined) {
+                                resolution = outputPlatform.resolveDirectory({
+                                    portableDirectory: record.original.file.directory,
+                                    workflowDefaultDirectory: 'NAI_Blue_Output',
+                                })
+                                resolvedDirectories.set(key, resolution)
+                            }
+                            const directory = await resolution
                             const original = childOutputRef(directory, record.original.file.fileName)
                             return await outputPlatform.exists(original) ? original.displayPath : null
                         },

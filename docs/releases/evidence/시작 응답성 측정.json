@@ -1,128 +1,795 @@
 {
-  "recordedAt": "2026-11-04 17:36:00 KST",
+  "recordedAt": "2026-11-04 18:18:40 KST",
+  "currentResult": "followup.final",
   "installedVersion": "1.3.6",
-  "installedSha256": "eff17f920840ca68dbad5cb720f68457494a7f19967ad00aacdb2fb693263bec",
-  "deployedAtUtc": "2026-11-04T08:29:47.9726891Z",
-  "rendererBaseline": {
-    "sampleSeconds": 10,
-    "cpuSeconds": 7.203125,
-    "workingSetMiB": 2078.2
-  },
-  "rendererAfter": {
-    "sampleSeconds": 10.0107819,
-    "cpuSeconds": 0.359375,
-    "workingSetMiB": 362.6,
-    "observedAtUtc": "2026-11-04T08:32:33.3999699Z"
-  },
-  "responsiveness": {
-    "startedAt": "2026-11-04T08:29:59.542Z",
-    "windows": [
-      {
-        "elapsedMs": 15853,
-        "samples": 11,
-        "p95DelayMs": 4527,
-        "maxDelayMs": 4527
-      },
-      {
-        "elapsedMs": 31001,
-        "samples": 40,
-        "p95DelayMs": 882,
-        "maxDelayMs": 1623
-      },
-      {
-        "elapsedMs": 46003,
-        "samples": 60,
-        "p95DelayMs": 8,
-        "maxDelayMs": 12
-      },
-      {
-        "elapsedMs": 61252,
-        "samples": 61,
-        "p95DelayMs": 4,
-        "maxDelayMs": 8
-      },
-      {
-        "elapsedMs": 76501,
-        "samples": 56,
-        "p95DelayMs": 290,
-        "maxDelayMs": 343
-      },
-      {
-        "elapsedMs": 91509,
-        "samples": 60,
-        "p95DelayMs": 15,
-        "maxDelayMs": 101
-      },
-      {
-        "elapsedMs": 106765,
-        "samples": 61,
-        "p95DelayMs": 6,
-        "maxDelayMs": 13
-      },
-      {
-        "elapsedMs": 122006,
-        "samples": 61,
-        "p95DelayMs": 4,
-        "maxDelayMs": 13
-      },
-      {
-        "elapsedMs": 137256,
-        "samples": 61,
-        "p95DelayMs": 4,
-        "maxDelayMs": 13
-      },
-      {
-        "elapsedMs": 152261,
-        "samples": 60,
-        "p95DelayMs": 10,
-        "maxDelayMs": 15
-      },
-      {
-        "elapsedMs": 167507,
-        "samples": 61,
-        "p95DelayMs": 14,
-        "maxDelayMs": 15
-      },
-      {
-        "elapsedMs": 182766,
-        "samples": 61,
-        "p95DelayMs": 5,
-        "maxDelayMs": 15
+  "installedSha256": "4f11f60a3e2ab2608508560abe4215094eb04407fb1b89a38f82cfbb3c5cda4d",
+  "deployedAtUtc": "2026-11-04T09:10:10.9549120Z",
+  "initialOptimization": {
+    "recordedAt": "2026-11-04T18:16:33+09:00",
+    "installedVersion": "1.3.6",
+    "installedSha256": "eff17f920840ca68dbad5cb720f68457494a7f19967ad00aacdb2fb693263bec",
+    "deployedAtUtc": "2026-11-04T08:29:47.9726891Z",
+    "rendererBaseline": {
+      "sampleSeconds": 10,
+      "cpuSeconds": 7.203125,
+      "workingSetMiB": 2078.2
+    },
+    "rendererAfter": {
+      "sampleSeconds": 10.0107819,
+      "cpuSeconds": 0.359375,
+      "workingSetMiB": 362.6,
+      "observedAtUtc": "2026-11-04T08:32:33.3999699Z"
+    },
+    "responsiveness": {
+      "startedAt": "2026-11-04T08:29:59.542Z",
+      "windows": [
+        {
+          "elapsedMs": 15853,
+          "samples": 11,
+          "p95DelayMs": 4527,
+          "maxDelayMs": 4527
+        },
+        {
+          "elapsedMs": 31001,
+          "samples": 40,
+          "p95DelayMs": 882,
+          "maxDelayMs": 1623
+        },
+        {
+          "elapsedMs": 46003,
+          "samples": 60,
+          "p95DelayMs": 8,
+          "maxDelayMs": 12
+        },
+        {
+          "elapsedMs": 61252,
+          "samples": 61,
+          "p95DelayMs": 4,
+          "maxDelayMs": 8
+        },
+        {
+          "elapsedMs": 76501,
+          "samples": 56,
+          "p95DelayMs": 290,
+          "maxDelayMs": 343
+        },
+        {
+          "elapsedMs": 91509,
+          "samples": 60,
+          "p95DelayMs": 15,
+          "maxDelayMs": 101
+        },
+        {
+          "elapsedMs": 106765,
+          "samples": 61,
+          "p95DelayMs": 6,
+          "maxDelayMs": 13
+        },
+        {
+          "elapsedMs": 122006,
+          "samples": 61,
+          "p95DelayMs": 4,
+          "maxDelayMs": 13
+        },
+        {
+          "elapsedMs": 137256,
+          "samples": 61,
+          "p95DelayMs": 4,
+          "maxDelayMs": 13
+        },
+        {
+          "elapsedMs": 152261,
+          "samples": 60,
+          "p95DelayMs": 10,
+          "maxDelayMs": 15
+        },
+        {
+          "elapsedMs": 167507,
+          "samples": 61,
+          "p95DelayMs": 14,
+          "maxDelayMs": 15
+        },
+        {
+          "elapsedMs": 182766,
+          "samples": 61,
+          "p95DelayMs": 5,
+          "maxDelayMs": 15
+        }
+      ]
+    },
+    "publicMcp": {
+      "verified": true,
+      "processId": 45472,
+      "requestId": "runtime-verification-14c0ab59-5b0c-472c-ba41-8a5659f8f1dc",
+      "resultDigest": "sha256:50bedfa481a84acf655e74ac0d2a55c1540c980e91964ebc5e2c268f9d876231",
+      "presets": 317,
+      "scenes": 3218,
+      "drafts": 4,
+      "queue": {
+        "processing": 0,
+        "waiting": 0,
+        "needsAttention": 8
       }
-    ]
+    },
+    "backup": {
+      "bytes": 543530825,
+      "parseMs": 1363,
+      "preflightTotalMs": 40119,
+      "canRestore": true,
+      "manifestVerified": true,
+      "errors": []
+    },
+    "tests": {
+      "passed": 2850,
+      "skipped": 4,
+      "filesPassed": 366,
+      "filesSkipped": 2
+    },
+    "cleanup": {
+      "cargoClean": "6144 files, 2.5GiB removed",
+      "dist": "blocked by policy; no deletion executed; detailed reason not supplied"
+    },
+    "existingHostConnection": "MCP_ADAPTER_RECONNECT_REQUIRED",
+    "initialSourceArchive": "9df17902d65bccb7138bf3db856d05d80b527bcd"
   },
-  "publicMcp": {
-    "verified": true,
-    "processId": 45472,
-    "requestId": "runtime-verification-14c0ab59-5b0c-472c-ba41-8a5659f8f1dc",
-    "resultDigest": "sha256:50bedfa481a84acf655e74ac0d2a55c1540c980e91964ebc5e2c268f9d876231",
-    "presets": 317,
-    "scenes": 3218,
-    "drafts": 4,
-    "queue": {
-      "processing": 0,
-      "waiting": 0,
-      "needsAttention": 8
+  "followup": {
+    "baselineCommit": "4d4a2a75727ff4a7179ee1909032476b45f9dec0",
+    "hostReconnectionVerifiedAtUtc": "2026-11-04T08:47:15.168Z",
+    "baselineDigest": "sha256:50bedfa481a84acf655e74ac0d2a55c1540c980e91964ebc5e2c268f9d876231",
+    "firstMeasurement": {
+      "installedSha256": "63d71f98ef57b28d2d77525a9c65c7b433e657c6d47e0f222bb5b026e7360a5e",
+      "checkpoints": {
+        "stages": [
+          {
+            "stage": "startup:module-ready",
+            "at": "2026-11-04T08:55:19.695Z"
+          },
+          {
+            "stage": "Starting database",
+            "at": "2026-11-04T08:55:19.696Z"
+          },
+          {
+            "stage": "Migrating local data",
+            "at": "2026-11-04T08:55:19.710Z"
+          },
+          {
+            "stage": "Loading secure API credentials",
+            "at": "2026-11-04T08:55:20.374Z"
+          },
+          {
+            "stage": "Migrating Composition data",
+            "at": "2026-11-04T08:55:20.384Z"
+          },
+          {
+            "stage": "Migrating Scene authority",
+            "at": "2026-11-04T08:55:22.883Z"
+          },
+          {
+            "stage": "Migrating folder authority",
+            "at": "2026-11-04T08:55:23.122Z"
+          },
+          {
+            "stage": "Hydrating migrated stores",
+            "at": "2026-11-04T08:55:23.127Z"
+          },
+          {
+            "stage": "Connecting Scene display",
+            "at": "2026-11-04T08:55:23.139Z"
+          },
+          {
+            "stage": "Rendering app",
+            "at": "2026-11-04T08:55:27.695Z"
+          },
+          {
+            "stage": "Ready",
+            "at": "2026-11-04T08:55:27.726Z"
+          },
+          {
+            "stage": "startup:post-render",
+            "at": "2026-11-04T08:55:27.728Z"
+          },
+          {
+            "stage": "startup:queue-recovered",
+            "at": "2026-11-04T08:56:19.806Z"
+          },
+          {
+            "stage": "startup:agent-commands:ready",
+            "at": "2026-11-04T08:56:49.593Z"
+          },
+          {
+            "stage": "startup:integrity-check",
+            "at": "2026-11-04T08:56:50.449Z"
+          },
+          {
+            "stage": "startup:disk-backup",
+            "at": "2026-11-04T08:56:50.468Z"
+          }
+        ]
+      },
+      "responsiveness": {
+        "startedAt": "2026-11-04T08:55:19.695Z",
+        "windows": [
+          {
+            "elapsedMs": 15474,
+            "samples": 54,
+            "p95DelayMs": 65,
+            "maxDelayMs": 430
+          },
+          {
+            "elapsedMs": 30474,
+            "samples": 0,
+            "p95DelayMs": 0,
+            "maxDelayMs": 0
+          },
+          {
+            "elapsedMs": 45475,
+            "samples": 0,
+            "p95DelayMs": 0,
+            "maxDelayMs": 0
+          },
+          {
+            "elapsedMs": 60490,
+            "samples": 0,
+            "p95DelayMs": 0,
+            "maxDelayMs": 0
+          },
+          {
+            "elapsedMs": 120476,
+            "samples": 0,
+            "p95DelayMs": 0,
+            "maxDelayMs": 0
+          },
+          {
+            "elapsedMs": 180485,
+            "samples": 0,
+            "p95DelayMs": 0,
+            "maxDelayMs": 0
+          }
+        ]
+      },
+      "sceneArtifactReferenceCount": 1258
+    },
+    "secondMeasurement": {
+      "installedSha256": "56a593d3f65e55ddc746be00f1ffaea6172b856908965e068d36f6c91592cae3",
+      "checkpoints": {
+        "stages": [
+          {
+            "stage": "startup:module-ready",
+            "at": "2026-11-04T09:03:47.317Z"
+          },
+          {
+            "stage": "Starting database",
+            "at": "2026-11-04T09:03:47.317Z"
+          },
+          {
+            "stage": "Migrating local data",
+            "at": "2026-11-04T09:03:47.330Z"
+          },
+          {
+            "stage": "Loading secure API credentials",
+            "at": "2026-11-04T09:03:47.968Z"
+          },
+          {
+            "stage": "Migrating Composition data",
+            "at": "2026-11-04T09:03:47.977Z"
+          },
+          {
+            "stage": "Migrating Scene authority",
+            "at": "2026-11-04T09:03:50.383Z"
+          },
+          {
+            "stage": "Migrating folder authority",
+            "at": "2026-11-04T09:03:50.611Z"
+          },
+          {
+            "stage": "Hydrating migrated stores",
+            "at": "2026-11-04T09:03:50.614Z"
+          },
+          {
+            "stage": "Connecting Scene display",
+            "at": "2026-11-04T09:03:50.629Z"
+          },
+          {
+            "stage": "scene:read-projection",
+            "at": "2026-11-04T09:03:50.632Z"
+          },
+          {
+            "stage": "scene:resolve-artifacts",
+            "at": "2026-11-04T09:03:50.669Z"
+          },
+          {
+            "stage": "scene:clone-authority",
+            "at": "2026-11-04T09:03:52.060Z"
+          },
+          {
+            "stage": "scene:prepare-shells",
+            "at": "2026-11-04T09:03:52.074Z"
+          },
+          {
+            "stage": "scene:scan-projection",
+            "at": "2026-11-04T09:03:52.190Z"
+          },
+          {
+            "stage": "scene:ready",
+            "at": "2026-11-04T09:03:52.307Z"
+          },
+          {
+            "stage": "Rendering app",
+            "at": "2026-11-04T09:03:52.307Z"
+          },
+          {
+            "stage": "Ready",
+            "at": "2026-11-04T09:03:52.341Z"
+          },
+          {
+            "stage": "startup:post-render",
+            "at": "2026-11-04T09:03:52.343Z"
+          },
+          {
+            "stage": "startup:queue-recovered",
+            "at": "2026-11-04T09:04:33.556Z"
+          },
+          {
+            "stage": "startup:agent-commands:ready",
+            "at": "2026-11-04T09:04:45.944Z"
+          },
+          {
+            "stage": "startup:integrity-check",
+            "at": "2026-11-04T09:04:46.354Z"
+          },
+          {
+            "stage": "startup:disk-backup",
+            "at": "2026-11-04T09:04:46.371Z"
+          }
+        ]
+      },
+      "responsiveness": {
+        "startedAt": "2026-11-04T09:03:47.317Z",
+        "windows": [
+          {
+            "elapsedMs": 5001,
+            "samples": 86,
+            "p95DelayMs": 13,
+            "maxDelayMs": 500
+          },
+          {
+            "elapsedMs": 10050,
+            "samples": 98,
+            "p95DelayMs": 25,
+            "maxDelayMs": 95
+          },
+          {
+            "elapsedMs": 15052,
+            "samples": 100,
+            "p95DelayMs": 6,
+            "maxDelayMs": 15
+          },
+          {
+            "elapsedMs": 20101,
+            "samples": 101,
+            "p95DelayMs": 9,
+            "maxDelayMs": 15
+          },
+          {
+            "elapsedMs": 25101,
+            "samples": 98,
+            "p95DelayMs": 9,
+            "maxDelayMs": 133
+          },
+          {
+            "elapsedMs": 40110,
+            "samples": 300,
+            "p95DelayMs": 8,
+            "maxDelayMs": 12
+          },
+          {
+            "elapsedMs": 55152,
+            "samples": 271,
+            "p95DelayMs": 13,
+            "maxDelayMs": 328
+          },
+          {
+            "elapsedMs": 70160,
+            "samples": 294,
+            "p95DelayMs": 13,
+            "maxDelayMs": 144
+          },
+          {
+            "elapsedMs": 85161,
+            "samples": 300,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 100206,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 115266,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 15
+          },
+          {
+            "elapsedMs": 130303,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 15
+          },
+          {
+            "elapsedMs": 145312,
+            "samples": 300,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 160364,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 13
+          },
+          {
+            "elapsedMs": 175409,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 190410,
+            "samples": 300,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          }
+        ],
+        "longTasks": [
+          {
+            "startMs": 111,
+            "durationMs": 538
+          },
+          {
+            "startMs": 3014,
+            "durationMs": 53
+          },
+          {
+            "startMs": 3106,
+            "durationMs": 78
+          },
+          {
+            "startMs": 3235,
+            "durationMs": 59
+          },
+          {
+            "startMs": 4871,
+            "durationMs": 121
+          },
+          {
+            "startMs": 5071,
+            "durationMs": 75
+          },
+          {
+            "startMs": 5530,
+            "durationMs": 66
+          },
+          {
+            "startMs": 8600,
+            "durationMs": 97
+          },
+          {
+            "startMs": 40676,
+            "durationMs": 329
+          },
+          {
+            "startMs": 41453,
+            "durationMs": 349
+          },
+          {
+            "startMs": 42224,
+            "durationMs": 356
+          },
+          {
+            "startMs": 42976,
+            "durationMs": 347
+          },
+          {
+            "startMs": 43764,
+            "durationMs": 352
+          },
+          {
+            "startMs": 58632,
+            "durationMs": 66
+          },
+          {
+            "startMs": 58774,
+            "durationMs": 166
+          },
+          {
+            "startMs": 58967,
+            "durationMs": 70
+          },
+          {
+            "startMs": 67946,
+            "durationMs": 157
+          }
+        ]
+      },
+      "publicMcpRequestId": "runtime-verification-70102d94-6176-4cc3-899f-bcb9bff18fb0",
+      "resultDigest": "sha256:50bedfa481a84acf655e74ac0d2a55c1540c980e91964ebc5e2c268f9d876231"
+    },
+    "final": {
+      "recordedAt": "2026-11-04T18:16:33+09:00",
+      "installedSha256": "4f11f60a3e2ab2608508560abe4215094eb04407fb1b89a38f82cfbb3c5cda4d",
+      "installedAtUtc": "2026-11-04T09:10:10.9549120Z",
+      "processId": 43736,
+      "checkpoints": {
+        "stages": [
+          {
+            "stage": "startup:module-ready",
+            "at": "2026-11-04T09:10:13.598Z"
+          },
+          {
+            "stage": "Starting database",
+            "at": "2026-11-04T09:10:13.598Z"
+          },
+          {
+            "stage": "Migrating local data",
+            "at": "2026-11-04T09:10:13.610Z"
+          },
+          {
+            "stage": "Loading secure API credentials",
+            "at": "2026-11-04T09:10:14.702Z"
+          },
+          {
+            "stage": "Migrating Composition data",
+            "at": "2026-11-04T09:10:14.712Z"
+          },
+          {
+            "stage": "Migrating Scene authority",
+            "at": "2026-11-04T09:10:17.173Z"
+          },
+          {
+            "stage": "Migrating folder authority",
+            "at": "2026-11-04T09:10:17.421Z"
+          },
+          {
+            "stage": "Hydrating migrated stores",
+            "at": "2026-11-04T09:10:17.425Z"
+          },
+          {
+            "stage": "Connecting Scene display",
+            "at": "2026-11-04T09:10:17.447Z"
+          },
+          {
+            "stage": "scene:read-projection",
+            "at": "2026-11-04T09:10:17.451Z"
+          },
+          {
+            "stage": "scene:resolve-artifacts",
+            "at": "2026-11-04T09:10:17.485Z"
+          },
+          {
+            "stage": "scene:clone-authority",
+            "at": "2026-11-04T09:10:18.840Z"
+          },
+          {
+            "stage": "scene:prepare-shells",
+            "at": "2026-11-04T09:10:18.858Z"
+          },
+          {
+            "stage": "scene:scan-projection",
+            "at": "2026-11-04T09:10:18.973Z"
+          },
+          {
+            "stage": "scene:ready",
+            "at": "2026-11-04T09:10:19.099Z"
+          },
+          {
+            "stage": "Rendering app",
+            "at": "2026-11-04T09:10:19.099Z"
+          },
+          {
+            "stage": "Ready",
+            "at": "2026-11-04T09:10:19.132Z"
+          },
+          {
+            "stage": "startup:post-render",
+            "at": "2026-11-04T09:10:19.134Z"
+          },
+          {
+            "stage": "startup:queue-recovered",
+            "at": "2026-11-04T09:11:01.186Z"
+          },
+          {
+            "stage": "startup:agent-commands:ready",
+            "at": "2026-11-04T09:11:13.722Z"
+          },
+          {
+            "stage": "startup:integrity-check",
+            "at": "2026-11-04T09:11:14.143Z"
+          },
+          {
+            "stage": "startup:disk-backup",
+            "at": "2026-11-04T09:11:14.161Z"
+          }
+        ]
+      },
+      "responsiveness": {
+        "startedAt": "2026-11-04T09:10:13.597Z",
+        "windows": [
+          {
+            "elapsedMs": 5001,
+            "samples": 99,
+            "p95DelayMs": 5,
+            "maxDelayMs": 56
+          },
+          {
+            "elapsedMs": 10002,
+            "samples": 91,
+            "p95DelayMs": 37,
+            "maxDelayMs": 253
+          },
+          {
+            "elapsedMs": 15055,
+            "samples": 101,
+            "p95DelayMs": 4,
+            "maxDelayMs": 8
+          },
+          {
+            "elapsedMs": 20063,
+            "samples": 100,
+            "p95DelayMs": 9,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 25102,
+            "samples": 101,
+            "p95DelayMs": 8,
+            "maxDelayMs": 13
+          },
+          {
+            "elapsedMs": 40105,
+            "samples": 300,
+            "p95DelayMs": 8,
+            "maxDelayMs": 13
+          },
+          {
+            "elapsedMs": 55151,
+            "samples": 269,
+            "p95DelayMs": 13,
+            "maxDelayMs": 346
+          },
+          {
+            "elapsedMs": 70153,
+            "samples": 295,
+            "p95DelayMs": 13,
+            "maxDelayMs": 152
+          },
+          {
+            "elapsedMs": 85166,
+            "samples": 300,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 100211,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 115250,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 130261,
+            "samples": 300,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 145302,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 160309,
+            "samples": 300,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 175364,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          },
+          {
+            "elapsedMs": 190409,
+            "samples": 301,
+            "p95DelayMs": 13,
+            "maxDelayMs": 14
+          }
+        ],
+        "longTasks": [
+          {
+            "startMs": 3524,
+            "durationMs": 52
+          },
+          {
+            "startMs": 3636,
+            "durationMs": 74
+          },
+          {
+            "startMs": 3766,
+            "durationMs": 58
+          },
+          {
+            "startMs": 5582,
+            "durationMs": 76
+          },
+          {
+            "startMs": 60280,
+            "durationMs": 168
+          },
+          {
+            "startMs": 60476,
+            "durationMs": 70
+          },
+          {
+            "startMs": 68413,
+            "durationMs": 139
+          }
+        ]
+      },
+      "publicMcp": {
+        "requestId": "runtime-verification-294d653b-671b-4d16-bea8-eb7e00616e4c",
+        "resultDigest": "sha256:50bedfa481a84acf655e74ac0d2a55c1540c980e91964ebc5e2c268f9d876231",
+        "totalPresets": 317,
+        "totalScenes": 3218,
+        "totalDrafts": 4,
+        "queueActivity": {
+          "processing": 0,
+          "waiting": 0,
+          "needsAttention": 8
+        }
+      },
+      "rendererRecoverySample": {
+        "observedAtUtc": "2026-11-04T09:11:17.2931957Z",
+        "sampleSeconds": 10.0108428,
+        "cpuSeconds": 5.703125,
+        "workingSetMiB": 826.1
+      },
+      "rendererIdleSample": {
+        "observedAtUtc": "2026-11-04T09:13:04.6172091Z",
+        "sampleSeconds": 10.0292911,
+        "cpuSeconds": 0.484375,
+        "workingSetMiB": 551.8
+      },
+      "tests": {
+        "passed": 2853,
+        "skipped": 4,
+        "filesPassed": 366,
+        "filesSkipped": 2
+      },
+      "typescript": "pass",
+      "eslint": "pass",
+      "windowsReleaseBuild": "pass",
+      "existingHostConnection": "MCP_ADAPTER_RECONNECT_REQUIRED after source edits; fresh registered connection verified",
+      "cleanup": "User requested manual removal of dist and src-tauri/target; no cache deletion attempted in this follow-up",
+      "triadflow": {
+        "jobId": "9849cca4-0b85-478f-bc34-6f0c55e8aab6",
+        "status": "RUN_CANCELLED",
+        "diagnosis": "claude auth status --json: loggedIn false; no completed external review"
+      },
+      "preview": {
+        "placement": "right",
+        "status": "queued",
+        "displayConfirmed": false
+      }
     }
-  },
-  "backup": {
-    "bytes": 543530825,
-    "parseMs": 1363,
-    "preflightTotalMs": 40119,
-    "canRestore": true,
-    "manifestVerified": true,
-    "errors": []
-  },
-  "tests": {
-    "passed": 2850,
-    "skipped": 4,
-    "filesPassed": 366,
-    "filesSkipped": 2
-  },
-  "cleanup": {
-    "cargoClean": "6144 files, 2.5GiB removed",
-    "dist": "blocked by policy; no deletion executed; detailed reason not supplied"
-  },
-  "existingHostConnection": "MCP_ADAPTER_RECONNECT_REQUIRED",
-  "initialSourceArchive": "9df17902d65bccb7138bf3db856d05d80b527bcd"
+  }
 }

@@ -719,6 +719,8 @@ export async function cleanupLargeData(key: string, maxSizeKB: number = 100): Pr
 
 export interface StoreMigrationReader {
     getItem: (key: string) => string | null | Promise<string | null>
+    /** Presence checks must not clone large rollback archives into the UI. */
+    hasItem?: (key: string) => boolean | Promise<boolean>
 }
 
 export async function initializeIndexedDB(): Promise<void> {
@@ -1017,8 +1019,10 @@ export async function copyStoreKeysRetainingSource(
     const results: RetainedStoreMigrationResult[] = []
     for (const [sourceKey, targetKey] of renames) {
         try {
-            const targetData = await target.getItem(targetKey)
-            if (targetData !== null) {
+            const targetPresent = target.hasItem === undefined
+                ? await target.getItem(targetKey) !== null
+                : await target.hasItem(targetKey)
+            if (targetPresent) {
                 results.push({ sourceKey, targetKey, status: 'target-present', sourceRetained: true })
                 continue
             }
@@ -1060,11 +1064,22 @@ function logRetainedMigrationResults(prefix: string, results: readonly RetainedS
 }
 
 /** Copy renamed IndexedDB keys while retaining the old key for rollback. */
+const migrationTarget: StoreMigrationWriter = {
+    getItem: indexedDBStorage.getItem,
+    setItem: indexedDBStorage.setItem,
+    hasItem: async key => {
+        await flushKey(key)
+        // Fresh metadata per operation preserves concurrent-writer visibility.
+        // Existing values are validated by their owning store on hydration.
+        return (await listRawIndexedDBKeys()).includes(key)
+    },
+}
+
 export async function migrateIndexedDBKeys(renames: [string, string][]): Promise<RetainedStoreMigrationResult[]> {
     const results = await copyStoreKeysRetainingSource(
         renames,
         indexedDBStorage,
-        indexedDBStorage,
+        migrationTarget,
         flushKey,
     )
     logRetainedMigrationResults('[IndexedDB Migration]', results)
@@ -1079,7 +1094,7 @@ export async function migrateRenamedLocalStorageKeys(renames: [string, string][]
     const results = await copyStoreKeysRetainingSource(
         renames,
         localReader,
-        indexedDBStorage,
+        migrationTarget,
         flushKey,
     )
     logRetainedMigrationResults('[Migration]', results)
@@ -1097,7 +1112,7 @@ export async function migrateFromLocalStorage(keys: string[]): Promise<RetainedS
     const results = await copyStoreKeysRetainingSource(
         keys.map(key => [key, key] as const),
         localReader,
-        indexedDBStorage,
+        migrationTarget,
         flushKey,
     )
     logRetainedMigrationResults('[Migration]', results)
