@@ -8,6 +8,8 @@ CUA, CDP, 브라우저 자동화, 비공개 API, 토큰 추출 및 승인 클릭
 
 # NAI Blue
 
+[작업 폴더 인덱스와 현재 설치본](docs/README.md) · [시작 응답성 개선 기록](docs/releases/시작%20응답성.md)
+
 Windows agent runtime location: run `powershell -NoProfile -File scripts/inspect-agent-runtime.ps1` from this checkout. The read-only report resolves the registered installation and distinguishes it from any temporary local release build by SHA-256. Use the registered installation as the single application runtime; a null local build is normal after deployment cleanup. The development MCP entry point is `scripts/run-agent-mcp-stdio.mjs`; it loads source at connection startup. Updating the desktop app does not update this source adapter or the MCP host's configuration. Reconnect safely after source/configuration changes, preserve pending request IDs, and verify `nai-blue://capabilities` before claiming compatibility.
 
 The Windows MCP entry now resolves that installation again before every new call. It normally starts the installed app when closed and verifies its native startup hash, PID, and version through `nai-blue://runtime`. Updating or relocating the installed app therefore needs no versioned Pi/Codex executable path. New requests carry a signed target hash; another build rejects them before acceptance. Pending probes and historical receipts are inspected without replaying work. A stale running app is never killed automatically, and changed adapter source explicitly requires reconnecting the MCP host. “Latest” means the current deployed installation; this mechanism does not download new internet releases. Existing MCP connections created before this guard was installed need one initial reconnect.

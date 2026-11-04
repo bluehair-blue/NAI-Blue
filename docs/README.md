@@ -1,5 +1,18 @@
 # NAI Blue 디렉터리 인덱스
 
+## 현재 사용본과 최신 결과
+
+- 정식 소스: `E:/AI_Project_Library/projects/nais/NAI-Blue`.
+- 실제 실행 경로: `E:/AI_Project_Library/projects/nais/NAI Blue/NAI-Blue.exe`. 등록된 Windows 설치 하나만 사용한다.
+- 대표 결과: [시작 응답성 개선 기록](./releases/시작%20응답성.md). 상태: 사용본 설치 검증 완료, 웹 빌드 캐시 정리는 정책 차단으로 미완료.
+- 사용본 SHA-256: `eff17f920840ca68dbad5cb720f68457494a7f19967ad00aacdb2fb693263bec` (1.3.6 로컬 최적화 빌드).
+- [측정 근거](./releases/evidence/시작%20응답성%20측정.json): CPU·메모리·타이머 지연, 테스트와 실제 MCP 검증. 생성·수정 시각은 파일의 `recordedAt` 참조.
+- 변경 이력: `git log --oneline -- "docs/releases/시작 응답성.md"`; 커밋 ID는 완료 보고와 Git에서 확인한다.
+- 기존 작업 보존: `refs/archive/tasks/startup-responsiveness/initial-worktree` (`9df17902d65bccb7138bf3db856d05d80b527bcd`). 작업 전 `main`의 `37d9a9a3548023865f7a7eb3ebce27c27747ee3c`와 미커밋 소스·테스트를 별도 보존했고 원래 `main`은 이동하지 않았다.
+- 확인 시각: 2026-11-04 17:36:00 KST. 이전 문서의 최초 생성 시각은 미확인.
+
+앱 실행 파일·빌드 폴더·자동 백업 파일의 이름은 도구 및 기존 복원 규약이 강제하므로 유지한다. Rust 빌드 출력은 배포 후 제거했고 웹 `dist`는 삭제 정책 차단으로 남아 있으며, 사용자 데이터와 복구 이력은 별개로 보존한다.
+
 이 문서는 저장소 검색과 문서 탐색의 시작점이다. 도구가 루트 경로를 계약으로 사용하는 설정 파일은 옮기지 않고, 소스와 문서는 아래 책임에 따라 찾는다.
 
 ## 실행 코드와 개발 도구

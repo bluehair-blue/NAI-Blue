@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { closeApplicationWithFlush } from '@/lib/indexed-db'
 import { exitNativeApplication } from '@/platform/native-app'
 import { getNativeWindowController } from '@/platform/native-window'
+import { runtimeCapabilities } from '@/platform/capabilities'
 import { useLayoutStore } from '@/stores/layout-store'
 import { Tip } from '@/components/ui/tooltip'
 
@@ -32,6 +33,7 @@ export function CustomTitleBar({ showWorkspaceToggles = true }: CustomTitleBarPr
     const [isMaximized, setIsMaximized] = useState(false)
     // Browser dev smoke tests run outside Tauri; native window APIs exist only in the Tauri webview.
     const appWindow = getNativeWindowController()
+    const nativeCaption = runtimeCapabilities.platform === 'windows'
 
     const {
         leftSidebarVisible,
@@ -41,7 +43,7 @@ export function CustomTitleBar({ showWorkspaceToggles = true }: CustomTitleBarPr
     } = useLayoutStore()
 
     useEffect(() => {
-        if (!appWindow) return
+        if (!appWindow || nativeCaption) return
         let resizeTimer: ReturnType<typeof setTimeout> | null = null
 
         appWindow.isMaximized().then(setIsMaximized)
@@ -63,9 +65,9 @@ export function CustomTitleBar({ showWorkspaceToggles = true }: CustomTitleBarPr
             }
             unlisten.then(fn => fn())
         }
-    }, [appWindow])
+    }, [appWindow, nativeCaption])
 
-    if (!appWindow) return null
+    if (!appWindow || (nativeCaption && !showWorkspaceToggles)) return null
 
     const handleMinimize = async () => {
         await appWindow.minimize()
@@ -156,6 +158,9 @@ export function CustomTitleBar({ showWorkspaceToggles = true }: CustomTitleBarPr
                     </>
                 )}
 
+                {/* Windows uses OS caption buttons so migration work cannot
+                    starve minimize/maximize input. Workspace toggles remain. */}
+                {!nativeCaption && <>
                 {/* Minimize */}
                 <button
                     onClick={handleMinimize}
@@ -197,6 +202,7 @@ export function CustomTitleBar({ showWorkspaceToggles = true }: CustomTitleBarPr
                 >
                     <X className="h-4 w-4" />
                 </button>
+                </>}
             </div>
         </div>
     )

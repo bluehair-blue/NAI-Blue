@@ -1,0 +1,128 @@
+{
+  "recordedAt": "2026-11-04 17:36:00 KST",
+  "installedVersion": "1.3.6",
+  "installedSha256": "eff17f920840ca68dbad5cb720f68457494a7f19967ad00aacdb2fb693263bec",
+  "deployedAtUtc": "2026-11-04T08:29:47.9726891Z",
+  "rendererBaseline": {
+    "sampleSeconds": 10,
+    "cpuSeconds": 7.203125,
+    "workingSetMiB": 2078.2
+  },
+  "rendererAfter": {
+    "sampleSeconds": 10.0107819,
+    "cpuSeconds": 0.359375,
+    "workingSetMiB": 362.6,
+    "observedAtUtc": "2026-11-04T08:32:33.3999699Z"
+  },
+  "responsiveness": {
+    "startedAt": "2026-11-04T08:29:59.542Z",
+    "windows": [
+      {
+        "elapsedMs": 15853,
+        "samples": 11,
+        "p95DelayMs": 4527,
+        "maxDelayMs": 4527
+      },
+      {
+        "elapsedMs": 31001,
+        "samples": 40,
+        "p95DelayMs": 882,
+        "maxDelayMs": 1623
+      },
+      {
+        "elapsedMs": 46003,
+        "samples": 60,
+        "p95DelayMs": 8,
+        "maxDelayMs": 12
+      },
+      {
+        "elapsedMs": 61252,
+        "samples": 61,
+        "p95DelayMs": 4,
+        "maxDelayMs": 8
+      },
+      {
+        "elapsedMs": 76501,
+        "samples": 56,
+        "p95DelayMs": 290,
+        "maxDelayMs": 343
+      },
+      {
+        "elapsedMs": 91509,
+        "samples": 60,
+        "p95DelayMs": 15,
+        "maxDelayMs": 101
+      },
+      {
+        "elapsedMs": 106765,
+        "samples": 61,
+        "p95DelayMs": 6,
+        "maxDelayMs": 13
+      },
+      {
+        "elapsedMs": 122006,
+        "samples": 61,
+        "p95DelayMs": 4,
+        "maxDelayMs": 13
+      },
+      {
+        "elapsedMs": 137256,
+        "samples": 61,
+        "p95DelayMs": 4,
+        "maxDelayMs": 13
+      },
+      {
+        "elapsedMs": 152261,
+        "samples": 60,
+        "p95DelayMs": 10,
+        "maxDelayMs": 15
+      },
+      {
+        "elapsedMs": 167507,
+        "samples": 61,
+        "p95DelayMs": 14,
+        "maxDelayMs": 15
+      },
+      {
+        "elapsedMs": 182766,
+        "samples": 61,
+        "p95DelayMs": 5,
+        "maxDelayMs": 15
+      }
+    ]
+  },
+  "publicMcp": {
+    "verified": true,
+    "processId": 45472,
+    "requestId": "runtime-verification-14c0ab59-5b0c-472c-ba41-8a5659f8f1dc",
+    "resultDigest": "sha256:50bedfa481a84acf655e74ac0d2a55c1540c980e91964ebc5e2c268f9d876231",
+    "presets": 317,
+    "scenes": 3218,
+    "drafts": 4,
+    "queue": {
+      "processing": 0,
+      "waiting": 0,
+      "needsAttention": 8
+    }
+  },
+  "backup": {
+    "bytes": 543530825,
+    "parseMs": 1363,
+    "preflightTotalMs": 40119,
+    "canRestore": true,
+    "manifestVerified": true,
+    "errors": []
+  },
+  "tests": {
+    "passed": 2850,
+    "skipped": 4,
+    "filesPassed": 366,
+    "filesSkipped": 2
+  },
+  "cleanup": {
+    "cargoClean": "6144 files, 2.5GiB removed",
+    "dist": "blocked by policy; no deletion executed; detailed reason not supplied"
+  },
+  "existingHostConnection": "MCP_ADAPTER_RECONNECT_REQUIRED",
+  "initialSourceArchive": "9df17902d65bccb7138bf3db856d05d80b527bcd"
+}

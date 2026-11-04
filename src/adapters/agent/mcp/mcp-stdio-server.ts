@@ -175,7 +175,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             const availability = snapshot.status === 'app-state-unconfirmed'
                 ? `Availability unconfirmed (${descriptor.reason}); inspect ${snapshot.requestResource} for the existing probe.`
                 : snapshot.status === 'runtime-unavailable'
-                ? `Runtime check required (${snapshot.runtime.code}); read nai-blue://runtime. Do not search old executable copies.`
+                ? `Runtime check required (${snapshot.runtime?.code ?? 'APP_RUNTIME_UNAVAILABLE'}); read nai-blue://runtime. Do not search old executable copies.`
                 : descriptor.available
                 ? 'Currently available.'
                 : `Currently unavailable (${descriptor.reason ?? 'app-unavailable'}); read nai-blue://capabilities before calling.`

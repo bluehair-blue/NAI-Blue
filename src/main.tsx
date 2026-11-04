@@ -1,4 +1,7 @@
 import React from 'react'
+import { configureBackupWorker } from './lib/write-backup-worker'
+import { observeStartupResponsiveness } from './lib/startup-responsiveness'
+
 import ReactDOM from 'react-dom/client'
 import { runtimeCapabilities } from './platform/capabilities'
 import './styles/globals.css'
@@ -13,6 +16,9 @@ import type { DiagnosticEvent } from './domain/diagnostics/types'
 import type { SceneRepositoryPort } from './application/scene/scene-repository'
 import type { SceneMigrationStartupResult } from './lib/scene-migration-startup'
 import type { IndexedDbSceneMigrationPersistence } from './adapters/scene/indexeddb-scene-migration'
+
+configureBackupWorker(() => new Worker(new URL('./lib/backup.worker.ts', import.meta.url), { type: 'module' }))
+observeStartupResponsiveness()
 
 // 자동 백업 상수
 const AUTO_BACKUP_KEY = 'nai-blue-auto-backup'

@@ -896,6 +896,28 @@ export async function compareAndSetIndexedDBItem(
     }
 }
 
+/** Backup's ignored-key report needs names only. Reading every value again
+ * duplicates immutable migration archives and blocks unrelated database reads. */
+export async function listRawIndexedDBKeys(): Promise<string[]> {
+    const db = await getDb()
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readonly')
+        const request = transaction.objectStore(STORE_NAME).getAllKeys()
+        const timer = setTimeout(() => {
+            transaction.abort()
+            reject(new Error('IndexedDB key listing timed out'))
+        }, LARGE_COLLECTION_OPERATION_TIMEOUT_MS)
+        transaction.oncomplete = () => {
+            clearTimeout(timer)
+            resolve(request.result.filter((key): key is string => typeof key === 'string'))
+        }
+        transaction.onabort = transaction.onerror = () => {
+            clearTimeout(timer)
+            reject(transaction.error ?? new Error('IndexedDB key listing failed'))
+        }
+    })
+}
+
 /** Exact serialized key/value snapshot used by non-destructive migrations. */
 export async function exportRawIndexedDBEntries(): Promise<Record<string, string>> {
     const db = await getDb()

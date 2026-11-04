@@ -1,11 +1,11 @@
-import { exists, mkdir, readDir, readFile, remove } from '@tauri-apps/plugin-fs'
-import { writeUtf8TextFile } from './write-utf8-text-file'
+import { exists, mkdir, readDir, remove } from '@tauri-apps/plugin-fs'
+import { readBackupJson } from './read-backup-stream'
+import { writeBackupWithWorker } from './write-backup-worker'
 import { isTauri } from '@tauri-apps/api/core'
 import {
     BACKUP_STORE_KEYS,
     flushAllPendingWrites,
     importAllData,
-    indexedDBStorage,
     registerIndexedDBWriteListener,
     type BackupStoreKey,
 } from '@/lib/indexed-db'
@@ -40,7 +40,6 @@ export interface StoreSnapshotGroup {
     entries: StoreSnapshotEntry[]
 }
 
-const decoder = new TextDecoder()
 const timers = new Map<BackupStoreKey, ReturnType<typeof setTimeout>>()
 const inflight = new Set<BackupStoreKey>()
 const pendingAfterInflight = new Set<BackupStoreKey>()
@@ -115,26 +114,15 @@ async function listStoreSnapshotEntries(storeKey: BackupStoreKey): Promise<Store
 async function writeStoreSnapshot(storeKey: BackupStoreKey): Promise<StoreSnapshotEntry | null> {
     await flushAllPendingWrites()
 
-    const raw = await indexedDBStorage.getItem(storeKey)
-    if (!raw) return null
-
-    let persistPayload: unknown
-    try {
-        persistPayload = JSON.parse(raw)
-    } catch (error) {
-        console.warn(`[StoreSnapshot] ${storeKey} contains invalid JSON, skipping snapshot`, error)
-        return null
-    }
-
     await ensureStoreSnapshotDir(storeKey)
 
     const exportedAt = new Date().toISOString()
-    const backup = createStoreSnapshotBackup(storeKey, persistPayload, exportedAt)
     const timestamp = tsStamp()
     const fileName = `${storeKey}_${timestamp}.json`
     const relPath = `${storeSnapshotDir(storeKey)}/${fileName}`
 
-    await writeUtf8TextFile(relPath, JSON.stringify(backup, null, 2), { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
+    await writeBackupWithWorker(relPath, { kind: 'store', storeKey, createdAt: exportedAt },
+        { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
     await rotateStoreSnapshots(storeKey)
 
     return { storeKey, fileName, relPath, timestamp, exportedAt }
@@ -260,8 +248,7 @@ export async function restoreStoreSnapshot(
         throw new Error('Store snapshot restore is only available in the Tauri app.')
     }
 
-    const bytes = await readFile(fileRelPath, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
-    const backup = JSON.parse(decoder.decode(bytes)) as unknown
+    const backup = await readBackupJson(fileRelPath, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
     const prepared = prepareStoreSnapshotRestore(storeKey, backup, options)
     if (!prepared.report.canRestore) throw new UnsupportedBackupSchemaError(prepared.report)
 
@@ -351,6 +338,6 @@ export async function dryRunStoreSnapshot(
     options: PrepareBackupRestoreOptions = {},
 ): Promise<BackupRestoreDryRunReport> {
     if (!isTauri()) throw new Error('Store snapshot restore is only available in the Tauri app.')
-    const bytes = await readFile(fileRelPath, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
-    return prepareStoreSnapshotRestore(storeKey, JSON.parse(decoder.decode(bytes)) as unknown, options).report
+    return prepareStoreSnapshotRestore(storeKey,
+        await readBackupJson(fileRelPath, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY }), options).report
 }

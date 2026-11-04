@@ -184,7 +184,8 @@ describe('durable targeted files-committed registration authority', () => {
         duplicate.context.idempotencyKey = 'storage-1'; duplicate.requestHash = agentRequestHash(duplicate)
         expect(await f.dispatcher.dispatch(duplicate)).toMatchObject({ state: 'rejected', result: { code: 'AGENT_IDEMPOTENCY_CONFLICT' } })
         await f.coordinator.approve('storage-1', await f.review(f.coordinator))
-        const ledger = (await f.repository.get('workspace-1'))!
+        // Deliberately corrupt a detached persisted copy, never the validated read cache.
+        const ledger = structuredClone((await f.repository.get('workspace-1'))!)
         expect(parseAgentExecutionLedger(ledger, 'workspace-1')).toEqual(ledger)
         Object.assign(ledger.records[0].grant!, { authorization: 'bounded-auto' })
         await setIndexedDBItemStrict('nai-blue-agent-execution:workspace-1', JSON.stringify(ledger))

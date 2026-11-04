@@ -1102,7 +1102,10 @@ pub fn run() {
             // Public capabilities bind this process to the installed executable,
             // including different builds that intentionally share a version.
             let _ = agent_runtime_identity::capture();
-            #[cfg(target_os = "macos")]
+            // Native caption controls stay responsive while the WebView performs
+            // startup migrations or other renderer work. Close still uses the
+            // existing frontend close-request flush before exit.
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 if let Some(window) = _app.get_webview_window("main") {
                     let _ = window.set_decorations(true);

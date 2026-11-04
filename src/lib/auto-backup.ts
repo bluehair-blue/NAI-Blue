@@ -1,5 +1,6 @@
-import { exists, mkdir, readDir, readFile, remove } from '@tauri-apps/plugin-fs'
-import { writeUtf8TextFile } from './write-utf8-text-file'
+import { exists, mkdir, readDir, remove } from '@tauri-apps/plugin-fs'
+import { readBackupJson } from './read-backup-stream'
+import { writeBackupWithWorker } from './write-backup-worker'
 import { startupCheckpoint } from './startup-checkpoint'
 import { isTauri } from '@tauri-apps/api/core'
 import packageMetadata from '../../package.json'
@@ -28,7 +29,7 @@ import {
     LEGACY_BACKUP_STORE_KEYS,
     STRUCTURED_PROMPT_MODULE_STORE_KEY,
     exportAllData,
-    exportRawIndexedDBEntries,
+    listRawIndexedDBKeys,
     flushAllPendingWrites,
     importBackupToStorage,
     importAllData,
@@ -68,7 +69,6 @@ const WILDCARD_CONTENT_KEY = 'nai-blue-wildcard-content'
 export const ASSET_PROFILE_FILE_RESTORE_KEY = 'file:asset-profile' as const
 const CURRENT_APP_VERSION = packageMetadata.version
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
 const legacyStoreKeySet = new Set<string>(LEGACY_BACKUP_STORE_KEYS)
 
 /**
@@ -1425,7 +1425,12 @@ export async function createCurrentBackupEnvelopeV3(
         purpose: options.purpose ?? 'manual-full',
     })))()
     await startupCheckpoint('backup:export-raw')
-    const rawEntries = await (options.readRawIndexedEntries ?? exportRawIndexedDBEntries)()
+    // Strict export above already read every supported store. Unknown payloads
+    // cannot be restored; retain their names without cloning the entire DB twice.
+    const rawEntries = options.readRawIndexedEntries !== undefined
+        ? await options.readRawIndexedEntries()
+        : Object.fromEntries((await listRawIndexedDBKeys())
+            .filter(key => rawBackup[key] === undefined).map(key => [key, 'null']))
     await startupCheckpoint('backup:merge-raw')
     for (const [key, raw] of Object.entries(rawEntries)) {
         if (rawBackup[key] !== undefined) continue
@@ -1552,22 +1557,23 @@ export async function createFullAutoBackup(options: CreateFullAutoBackupOptions 
 
     await ensureBackupDir()
     const createdAt = new Date(now).toISOString()
-    const backup = await createCurrentBackupEnvelopeV3({
-        compositionDocument: options.compositionDocument,
-        readCompositionDocument: options.readCompositionDocument,
-        createdAt,
-        appVersion: options.appVersion,
-        sourceCommit: options.sourceCommit,
-        purpose: 'disk-auto',
-    })
     const timestamp = tsStamp(new Date(now))
     const fileName = `${FULL_BACKUP_PREFIX}_${timestamp}.json`
     const relPath = `${FULL_BACKUP_DIR}/${fileName}`
 
-    await startupCheckpoint('backup:serialize-json')
-    const serialized = JSON.stringify(backup, null, 2)
-    await startupCheckpoint('backup:write-file')
-    await writeUtf8TextFile(relPath, serialized, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
+    await flushAllPendingWrites()
+    await startupCheckpoint('backup:worker-start')
+    const backup = await writeBackupWithWorker(relPath, {
+        kind: 'full', createdAt, appVersion: options.appVersion, sourceCommit: options.sourceCommit,
+        compositionDocument: options.compositionDocument ?? await options.readCompositionDocument?.() ?? undefined,
+        assetProfile: await loadRawAssetProfileFile(),
+        legacyValues: Object.fromEntries(LEGACY_BACKUP_STORE_KEYS.flatMap(key => {
+            const value = localStorage.getItem(key)
+            return value === null ? [] : [[key, value]]
+        })),
+        legacyKeys: Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+            .filter((key): key is string => key !== null),
+    }, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
     await startupCheckpoint('backup:file-written')
     localStorage.setItem(DISK_AUTO_BACKUP_LAST_KEY, String(now))
     localStorage.setItem('nai-blue-last-disk-auto-backup-file', relPath)
@@ -1576,13 +1582,12 @@ export async function createFullAutoBackup(options: CreateFullAutoBackupOptions 
     return {
         status: 'created',
         entry: { fileName, relPath, timestamp, exportedAt: backup.createdAt },
-        storeCount: backup.storeManifest.storeCount,
+        storeCount: backup.storeCount,
     }
 }
 
 async function readBackupFile(fileRelPath: string): Promise<unknown> {
-    const bytes = await readFile(fileRelPath, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
-    return JSON.parse(decoder.decode(bytes)) as unknown
+    return readBackupJson(fileRelPath, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
 }
 
 export async function dryRunFullAutoBackup(

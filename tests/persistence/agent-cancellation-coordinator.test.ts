@@ -200,7 +200,8 @@ describe('durable whole-batch agent cancellation', () => {
         const f = fixture()
         await f.dispatcher.dispatch(f.request())
         await f.coordinator.approve('cancel-1', await f.review(f.coordinator))
-        const ledger = (await f.repository.get('workspace-1'))!
+        // Deliberately corrupt a detached persisted copy, never the validated read cache.
+        const ledger = structuredClone((await f.repository.get('workspace-1'))!)
         expect(parseAgentExecutionLedger(ledger, 'workspace-1')).toEqual(ledger)
         Object.assign(ledger.records[0].grant!, { expiresAt: '2026-09-05T02:00:00.000Z' })
         await setIndexedDBItemStrict('nai-blue-agent-execution:workspace-1', JSON.stringify(ledger))
