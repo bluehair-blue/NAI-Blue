@@ -73,4 +73,16 @@ describe('shared production monitoring from durable fulfillment evidence', () =>
             expect(() => assertAgentPublicValue(projectGenerationRunStatus(projection)), kind).not.toThrow()
         }
     })
+
+    it('selects the exact job before row/byte truncation while retaining full run counts', () => {
+        const projection = run(Array.from({ length: 2400 }, (_, i) => job({ jobId: `job-${i}`,
+            ...(i === 2399 ? { provider: fact('uncertain'), queueState: 'blocked' } : {}) })))
+        expect(projectGenerationRunStatus(projection, 'job-2399')).toMatchObject({
+            requestedJobFound: true, jobCount: 2400, truncated: true,
+            jobs: [{ jobId: 'job-2399', providerState: 'uncertain' }],
+            monitor: { complete: false, counts: { total: 2400, uncertain: 1, generated: 2399 } },
+        })
+        expect(projectGenerationRunStatus(projection, 'missing')).toMatchObject({ requestedJobFound: false, jobs: [] })
+        expect(projectGenerationRunStatus(projection)).not.toHaveProperty('requestedJobFound')
+    })
 })

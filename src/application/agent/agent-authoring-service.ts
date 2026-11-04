@@ -6,6 +6,7 @@ import { planGenerationFolderChanges, type GenerationFolderChange } from '@/appl
 import type { ApplyGenerationFolderChangesInput, ApplyGenerationFolderChangesResult } from '@/application/folder/apply-folder-changes'
 import { AgentCommandError } from './agent-command-contract'
 import type { AgentAuthoringPort, AgentAuthoringTarget } from './agent-authoring-contract'
+import type { SceneImageSource } from '@/application/scene/scene-image-source'
 
 type SceneChange = Partial<Omit<SceneAuthoringRecord, 'id' | 'artifactRefs' | 'createdAt' | 'compositionRef' | 'scenePrompt'>> & { sceneId: string }
 interface SceneInput { presetId: string; expectedRevision: number; presetName?: string; changes: SceneChange[] }
@@ -15,6 +16,7 @@ type FolderChange = Partial<Pick<GenerationFolderV2, 'displayName' | 'pathSegmen
 interface FolderInput { expectedRevision: number; expectedPlanHash?: `sha256:${string}`; changes: FolderChange[] }
 
 export interface AgentAuthoringDependencies {
+    readonly validateImageSource?: (source: SceneImageSource) => Promise<boolean>
     readonly scenes: SceneRepositoryPort
     readonly folderWorkspaceId: string
     readonly readFolders: () => Promise<GenerationFolderDocument | null>
@@ -101,6 +103,9 @@ export function createAgentAuthoringService(deps: AgentAuthoringDependencies): A
         const folders = await deps.readFolders()
         if (!folders || input.changes.some(change => change.generationFolderId !== undefined
             && !folders.folders.some(folder => folder.id === change.generationFolderId))) return null
+        for (const change of input.changes) {
+            if (change.imageSource && (!deps.validateImageSource || !await deps.validateImageSource(change.imageSource))) return null
+        }
         const document = nextScenes(current, input, '1970-01-01T00:00:00.000Z')
         if (!document) return null
         const target: AgentAuthoringTarget = { command: 'scene.patch_many', resourceId: input.presetId,

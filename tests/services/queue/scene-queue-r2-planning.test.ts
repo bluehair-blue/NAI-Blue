@@ -148,6 +148,59 @@ async function agentFixture(input = agentInput) {
 }
 
 describe('agent Scene plans use the existing durable Scene Queue', () => {
+    it.each(['SY', 'KHR', 'JSH', 'APR', 'LSH'])('keeps %s plan handles when an optional filename preview fails output validation', async code => {
+        const basename = `PB_ALL_${code}_V5_01_b_20261018`
+        runtime.scene.mockResolvedValue({ schemaVersion: 1, presetId: 'preset', revision: 2,
+            updatedAt: '2026-09-05T00:00:00.000Z', scenes: [{ id: 'scene', name: 'Scene',
+                scenePrompt: params.prompt, filenameTemplate: basename, generationFolderId: 'child',
+                generation: { seed: 7, seedLocked: true }, artifactRefs: [], createdAt: 1 }] })
+        runtime.build.mockResolvedValue({ success: true,
+            params: { ...params, model: 'nai-diffusion-5-full', promptTextMode: 'standard', ucPreset: 4, qualityToggle: false },
+            finalPrompt: params.prompt, mimeType: 'image/png', sequenceCommitProposal: null,
+            planHash: null, mode: 'legacy', warnings: [], errors: [] })
+        const storage = new Map<string, string>()
+        const persistence = { getItem: async (key: string) => storage.get(key) ?? null,
+            compareAndSet: async (key: string, expected: string | null, next: string) => {
+                if ((storage.get(key) ?? null) !== expected) return false
+                storage.set(key, next); return true
+            } }
+        const plans = new IndexedDbGenerationPlanRepository(persistence)
+        const dispatcher = new AgentCommandDispatcher({ workspaceId: 'workspace',
+            receipts: new IndexedDbCommandReceiptRepository(persistence),
+            handlers: [createAgentSceneGenerationPlanHandler(plans)],
+            authentication: { authenticate: async envelope => ({ clientId: envelope.context.clientId,
+                actor: { kind: envelope.context.actor.kind, id: `client:${envelope.context.clientId}` } }) },
+            runtime: () => ({ ready: true, mode: 'bounded-auto', globalPause: false }) })
+        const envelope: AgentCommandEnvelope = { schemaVersion: 1, requestId: `public-preview-${code}`,
+            requestHash: `sha256:${'a'.repeat(64)}`, submittedAt: new Date().toISOString(),
+            command: { name: 'generation.plan', input: agentInput as unknown as JsonObject },
+            context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'workspace', clientId: 'client',
+                actor: { kind: 'agent' }, idempotencyKey: `public-preview-${code}` },
+            authentication: { scheme: 'hmac-sha256', keyId: 'test-key', signature: `hmac-sha256:${'0'.repeat(64)}` } }
+
+        const receipt = await dispatcher.dispatch({ ...envelope, requestHash: agentRequestHash(envelope) })
+        expect(receipt).toMatchObject({ state: 'completed', result: { status: 'ready',
+            review: { jobs: [{ destination: { fileName: code === 'SY' ? `${basename}.png` : null } }] } } })
+        const plan = await plans.get(receipt.result!.planId as string)
+        expect(receipt.result).toMatchObject({ planId: plan!.planId, planHash: plan!.planHash })
+        expect(plan!.jobs[0]).toMatchObject({ semantic: { prompt: params.prompt, model: 'nai-diffusion-5-full',
+            generationParameters: { promptTextMode: 'standard' } }, destination: { expectedBaseName: basename } })
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+    })
+
+    it('rejects executor-invalid model/mode settings before output allocation or Queue admission', async () => {
+        runtime.build.mockResolvedValueOnce({ success: true,
+            params: { ...params, model: 'nai-diffusion-5-full', promptTextMode: 'verbatim', ucPreset: 4, qualityToggle: false },
+            finalPrompt: 'A room', mimeType: 'image/png', sequenceCommitProposal: null, planHash: null,
+            mode: 'legacy', warnings: [], errors: [] })
+        const handler = createAgentSceneGenerationPlanHandler({ putIfAbsent: vi.fn(), get: vi.fn() } as never)
+        const result = await handler.execute(agentInput as unknown as JsonObject, {} as never)
+        expect(result).toMatchObject({ status: 'invalid', issues: [{ fieldPath: 'source.targets[0].promptTextMode' }] })
+        expect(String(result.nextAction)).toContain('V5=standard')
+        expect(runtime.allocation).not.toHaveBeenCalled()
+        expect(runtime.enqueue).not.toHaveBeenCalled()
+    })
+
     it('advertises and executes the SDK Scene tool chain through dispatcher, approval policy and the actual Queue once', async () => {
         const { IndexedDBQueueRepository } = await vi.importActual<typeof import('@/services/queue/indexeddb-queue-repository')>('@/services/queue/indexeddb-queue-repository')
         const { createAgentGenerationExecutionPort } = await import('@/composition-root/agent-generation-execution')
@@ -203,6 +256,7 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
             expect(tools.tools.map(tool => tool.name)).toContain('generation.plan')
             expect(tools.tools.map(tool => tool.name)).toContain('generation.enqueue')
             expect(JSON.stringify(tools.tools.find(tool => tool.name === 'generation.plan')!.inputSchema)).toContain('targets')
+            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
             const planned = await client.callTool({ name: 'generation.plan', arguments: {
                 requestId: 'scene-plan-request', input: agentInput as unknown as JsonObject,
             } })
@@ -216,9 +270,11 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
             expect(JSON.stringify(planResult)).not.toContain('output/')
             const request = { name: 'generation.enqueue', arguments: { requestId: 'scene-enqueue-request',
                 input: { planId: planResult.planId, planHash: planResult.planHash } } }
+            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
             const first = await client.callTool(request)
             expect(first.isError).toBe(false)
             expect(first.structuredContent).toMatchObject({ receipt: { state: 'completed', result: { status: 'ready' } } })
+            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
             const repeated = await client.callTool(request)
             expect(repeated.structuredContent).toEqual(first.structuredContent)
             const jobs = (await queue.listJobs()).items
@@ -560,6 +616,7 @@ describe('saved production requests with actual IndexedDB Queue and plan reposit
         const client = new Client({ name: 'production-sdk-integration', version: '1.0.0' })
         const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
         async function call(name: AgentCommandName, requestId: string, input: JsonObject) {
+            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
             const response = await client.callTool({ name, arguments: { requestId, input } })
             expect(response.isError, JSON.stringify(response)).toBe(false)
             return (response.structuredContent!.receipt as JsonObject).result as JsonObject

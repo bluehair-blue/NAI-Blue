@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { AgentRuntimeIdentity } from '@/application/agent/runtime-capability-registry'
 import { AgentCommandError, agentRequestHash, assertAgentTimestamp, canonicalAgentSigningPayload, parseAgentCommandEnvelope, type AgentCommandAuthenticator } from '@/application/agent/agent-command-contract'
 
 export interface AgentClientRegistration {
@@ -13,6 +14,7 @@ export interface NativeAgentWorkspace {
     readonly available: true
     readonly workspaceId: string
     readonly clients: readonly AgentClientRegistration[]
+    readonly runtimeIdentity?: AgentRuntimeIdentity | null
 }
 
 /** Native methods own ACL, keyring and path authority; renderer arguments carry no secret. */

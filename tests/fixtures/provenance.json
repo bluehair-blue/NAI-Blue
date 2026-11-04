@@ -2,6 +2,16 @@
   "schemaVersion": 1,
   "fixtures": [
     {
+      "path": "payload/v5-medium.json",
+      "source": "Synthetic settings contract from the official October 8 Effort announcement and October 14 public NovelAI image frontend; no live Provider result.",
+      "model": "nai-diffusion-5-full-medium",
+      "captureDate": "2026-10-14",
+      "captureKind": "synthetic-derived",
+      "transformed": false,
+      "sensitiveDataRemoved": true,
+      "transformations": ["Contains fixed public model settings only, without credentials, user prompts or images."]
+    },
+    {
       "path": "image-metadata-release-v2.json",
       "source": "Sanitized synthetic derivative of the user-supplied prime-city-image-release/v2 sidecar shape, covering nested NovelAI Comment metadata without image bytes or personal paths.",
       "model": "nai-diffusion-4-5-full",

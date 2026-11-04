@@ -86,7 +86,7 @@ function releaseProfileId(job: GenerationJob): string | null {
     return output.autoR2UploadProfileId.trim() || null
 }
 
-function scenePresetId(job: GenerationJob): string | null {
+export function scenePresetId(job: GenerationJob): string | null {
     if (job.workflow !== 'scene') return null
     const parameters = job.snapshot.parameters
     if (!isRecord(parameters) || !isRecord(parameters.sceneWorkflow)) return null
@@ -96,7 +96,7 @@ function scenePresetId(job: GenerationJob): string | null {
         : null
 }
 
-function journalMatchesJob(transaction: PendingQueueOutputTransaction | undefined, job: GenerationJob): boolean {
+export function journalMatchesJob(transaction: PendingQueueOutputTransaction | undefined, job: GenerationJob): boolean {
     if (transaction === undefined
         || transaction.phase !== 'files-committed'
         || job.outputTransactionId !== transaction.transactionId
@@ -110,7 +110,7 @@ function journalMatchesJob(transaction: PendingQueueOutputTransaction | undefine
             || transaction.outputReservation.commitSetHash === snapshot.commitSetHash)
 }
 
-function reservationMatchesJob(reservation: OutputReservation | null | undefined, job: GenerationJob): boolean {
+export function reservationMatchesJob(reservation: OutputReservation | null | undefined, job: GenerationJob): boolean {
     const snapshot = job.snapshot.outputReservation
     return reservation !== null && reservation !== undefined && snapshot !== undefined
         && reservation.reservationId === snapshot.reservationId
@@ -392,9 +392,22 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                 ? directFact('succeeded', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
                 : providerEvidence?.providerOutcome === 'unknown'
                     ? directFact('uncertain', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
-                    : job.attemptCount > 0 && storage === undefined
-                        ? derivedFact('uncertain', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
-                        : undefined
+                    : providerEvidence?.providerOutcome === 'known-failure'
+                        ? directFact('failed', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
+                        : job.attemptCount > 0 && storage === undefined
+                            ? derivedFact('uncertain', 'queue-attempt', `${job.id}:provider`, job.updatedAt)
+                            : undefined
+            // Only a complete recorded no-dispatch history removes the cleanup
+            // conflict. Missing evidence or any remote/unknown attempt stays conservative.
+            const entirelyPreDispatch = job.attemptCount > 0 && attemptRows !== null
+                && attemptRows.length === job.attemptCount
+                && [...attemptRows].sort((a, b) => a.attemptNumber - b.attemptNumber).every((attempt, ordinal) => {
+                    const evidence = attempt.providerEvidence
+                    return attempt.attemptNumber === ordinal + 1
+                        && evidence?.dispatchState === 'connect-failed-before-dispatch'
+                        && evidence.providerOutcome === 'known-failure' && evidence.billingRisk === 'none'
+                        && evidence.responseDigest === null && evidence.spoolReceipt === null
+                })
             const presetId = scenePresetId(job)
             const sceneDocument = presetId === null ? undefined : sceneDocuments.get(presetId)
             const scene = sceneDocument?.scenes.find(candidate => candidate.id === job.sceneId)
@@ -439,7 +452,8 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                     severity: 'blocking',
                     action: { kind: 'review-provider-unknown', requiresHuman: true },
                 })
-            } else if (!filesCommitted && reservationMatches && destructiveEligible) {
+            } else if (!filesCommitted && reservationMatches && destructiveEligible
+                && !(entirelyPreDispatch && reservationRow?.state === 'reserved')) {
                 issues.push({
                     code: 'OUTPUT_RESERVATION_CONFLICT',
                     jobId: job.id,
@@ -483,6 +497,27 @@ export class IndexedDbGenerationRunReader implements GenerationRunReadPort {
                     ? directFact('succeeded', 'queue-snapshot', `${job.id}:interpretation`, job.createdAt)
                     : undefined,
                 provider,
+                providerExecution: {
+                    attemptCount: job.attemptCount,
+                    diagnosticEventId: job.lastDiagnosticEventId,
+                    evidenceKind: provider?.kind ?? 'none',
+                    attemptsTruncated: attemptRows === null || attemptRows.length > 3 || attemptRows.length < job.attemptCount,
+                    attempts: attemptRows === null ? null : [...attemptRows]
+                        .sort((a, b) => a.attemptNumber - b.attemptNumber).slice(-3).map(attempt => ({
+                            attemptId: attempt.id, attemptNumber: attempt.attemptNumber, outcome: attempt.outcome,
+                            startedAt: attempt.startedAt, finishedAt: attempt.finishedAt,
+                            diagnosticEventId: attempt.diagnosticEventId,
+                            dispatchState: attempt.providerEvidence?.dispatchState ?? null,
+                            providerOutcome: attempt.providerEvidence?.providerOutcome ?? null,
+                            billingRisk: attempt.providerEvidence?.billingRisk ?? null,
+                            transitionsTruncated: attempt.providerTransitions.length > 8,
+                            transitions: attempt.providerTransitions.slice(-8).map(transition => ({
+                                occurredAt: transition.occurredAt, dispatchState: transition.to.dispatchState,
+                                providerOutcome: transition.to.providerOutcome, billingRisk: transition.to.billingRisk,
+                                diagnosticEventId: transition.diagnosticEventId,
+                            })),
+                        })),
+                },
                 storage,
                 release,
                 acceptance: {

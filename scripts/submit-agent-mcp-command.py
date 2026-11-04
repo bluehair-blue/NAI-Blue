@@ -103,7 +103,10 @@ def validate_payload(payload, identifier):
     context = unsigned["context"]
     context_fields = {"apiVersion", "workspaceId", "clientId", "actor", "idempotencyKey"}
     require(isinstance(context, dict) and context_fields <= set(context)
-            and set(context) <= context_fields | {"correlationId", "approvalToken"})
+            and set(context) <= context_fields | {"correlationId", "approvalToken", "expectedRuntimeHash"})
+    if "expectedRuntimeHash" in context:
+        require(isinstance(context["expectedRuntimeHash"], str)
+                and re.fullmatch(r"sha256:[a-f0-9]{64}", context["expectedRuntimeHash"]))
     require(context["apiVersion"] == "nai-blue.agent/v1alpha1"
             and context["workspaceId"] == connection["workspaceId"]
             and context["clientId"] == connection["clientId"])

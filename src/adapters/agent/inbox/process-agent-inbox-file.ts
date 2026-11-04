@@ -29,6 +29,7 @@ const REJECTION_CODES = new Set([
     'AUTHENTICATION_FAILED', 'WORKSPACE_MISMATCH', 'IDEMPOTENCY_CONFLICT',
     'INVALID_COMMAND_INPUT', 'COMMAND_INPUT_CHANGED', 'APP_UNAVAILABLE',
     'REQUEST_TOO_LARGE', 'REQUEST_ID_MISMATCH',
+    'APP_RUNTIME_CHANGED',
 ])
 
 /** Ingress and result readers share the same fixed pre-acceptance error vocabulary. */

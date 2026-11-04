@@ -7,7 +7,9 @@ import type { GenerationPlanRepository } from '@/application/generation/generati
 import { AgentCommandError, assertAgentPublicValue, type AgentCommandEnvelope } from './agent-command-contract'
 import { agentResultDigest, type AgentCommandReceipt, type CommandReceiptRepository } from './command-receipt-repository'
 import { effectiveAgentExecutionPolicy, normalizeAgentExecutionPolicy, type AgentExecutionPolicy } from './agent-execution-policy'
-import { agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentStorageRetryRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentQueueRepairRecord, type AgentExecutionRepository } from './agent-execution-repository'
+import { hasAgentAuthoringConsent, normalizeAgentAuthoringConsent, type AgentAuthoringConsent } from './agent-authoring-consent'
+import { hasAgentGenerationConsent, normalizeAgentGenerationConsent, type AgentGenerationConsent } from './agent-generation-consent'
+import { MAX_AGENT_CANARY_ANLAS, agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentStorageRetryRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentQueueRepairRecord, type AgentExecutionRepository } from './agent-execution-repository'
 import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationPorts } from './agent-cancellation-contract'
 import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, sameAgentStorageRetryTarget, type AgentStorageRetryPorts } from './agent-storage-retry-contract'
 import type { AgentCommandHandler } from './runtime-capability-registry'
@@ -38,6 +40,7 @@ export interface AgentGenerationExecutionReview extends AgentGenerationApprovalB
         readonly generationParameters: JsonValue
     }[]
     readonly compatibilityStatuses: readonly string[]
+    readonly canaryEligible?: boolean
     readonly sourceIds: readonly string[]
     readonly outputEffect: 'local-output' | 'local-output-and-r2'
     readonly reasons: readonly string[]
@@ -95,6 +98,8 @@ export interface AgentExecutionCoordinatorOptions {
     readonly receipts: CommandReceiptRepository
     readonly plans: GenerationPlanRepository
     readonly getPolicy: () => AgentExecutionPolicy
+    readonly getAuthoringConsent?: () => AgentAuthoringConsent
+    readonly getGenerationConsent?: () => AgentGenerationConsent
     readonly now?: () => string
     readonly isClientAuthorized: (envelope: AgentCommandEnvelope) => Promise<boolean>
     readonly cancellation?: AgentCancellationPorts
@@ -109,7 +114,9 @@ export interface AgentExecutionCoordinatorOptions {
         readonly isOutstanding?: (grant: AgentExecutionGrant) => Promise<boolean>
     }
 }
-const approval = (reason?: string): JsonObject => ({ code: 'AGENT_APPROVAL_REQUIRED', ...(reason ? { issueCodes: [reason] } : {}) })
+const approval = (reason?: string, canaryEligible = false): JsonObject => ({ code: 'AGENT_APPROVAL_REQUIRED',
+    ...(reason ? { issueCodes: [reason] } : {}),
+    ...(reason === 'AGENT_COMPATIBILITY_DENIED' && canaryEligible ? { nextAction: 'review-one-image-canary-in-app' } : {}) })
 const unknown = (): JsonObject => ({ code: 'AGENT_EXECUTION_UNKNOWN' })
 const failure = (code: string): JsonObject => ({ code })
 const adjustablePolicyIssue = (code: string | null): boolean => code !== null
@@ -124,6 +131,10 @@ function receiptState(result: JsonObject): 'completed' | 'needs-input' | 'reject
 export function createAgentExecutionCoordinator(options: AgentExecutionCoordinatorOptions) {
     const now = options.now ?? (() => new Date().toISOString())
     const policy = () => effectiveAgentExecutionPolicy(normalizeAgentExecutionPolicy(options.getPolicy()), Date.parse(now()))
+    const generationConsent = () => normalizeAgentGenerationConsent(options.getGenerationConsent?.())
+    const canAlwaysGenerate = (record: AgentGenerationExecutionRecord, consent = generationConsent()) =>
+        record.consentRevision === consent.revision
+        && hasAgentGenerationConsent(consent, options.workspaceId, record.envelope.context.clientId)
     const ledger = () => options.repository.get(options.workspaceId)
     // ponytail: a workspace CAS ledger favors auditability; partition only if measured contention requires it.
     async function change(transform: (records: readonly AgentExecutionRecord[]) => readonly AgentExecutionRecord[] | null): Promise<boolean> {
@@ -172,25 +183,40 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         return plan?.planHash === record.envelope.command.input.planHash
             && plan.jobs.length === record.imageCount && plan.estimatedAnlas === record.estimatedAnlas ? plan : null
     }
-    function planIssue(plan: GenerationPlan, current: AgentExecutionPolicy): string | null {
+    // Without persistent generation consent, a separate human action bootstraps one unverified intent.
+    // Its immutable plan binds source hashes, parameters, destination and budget.
+    function canaryEligible(plan: GenerationPlan, current: AgentExecutionPolicy): boolean {
+        return current.mode !== 'observe' && !current.globalPause
+            && !current.generation.allowedCompatibilityStatuses.includes('synthetic-only')
+            && plan.jobs.length === 1 && plan.budget.maxImages === 1
+            && Number.isFinite(plan.budget.maxAnlas) && plan.budget.maxAnlas >= 0 && plan.budget.maxAnlas <= MAX_AGENT_CANARY_ANLAS
+            && Number.isFinite(plan.estimatedAnlas) && plan.estimatedAnlas >= 0 && plan.estimatedAnlas <= plan.budget.maxAnlas
+            && plan.requiredApprovals.length === 0
+            && plan.jobs[0].compatibility.status === 'synthetic-only'
+            && plan.jobs[0].destination.collisionPolicy === 'fail' && plan.jobs[0].destination.r2 === undefined
+    }
+    function planIssue(plan: GenerationPlan, current: AgentExecutionPolicy, canary = false, persistentConsent = false): string | null {
         if (plan.jobs.length > plan.budget.maxImages || plan.estimatedAnlas > plan.budget.maxAnlas
             || plan.requiredApprovals.length > 0) return 'AGENT_REPLAN_REQUIRED'
-        if (plan.jobs.some(job => !current.generation.allowedCompatibilityStatuses.includes(job.compatibility.status as 'captured-pass'))) {
-            return 'AGENT_COMPATIBILITY_DENIED'
-        }
         // This phase never mutates folder structure or original outputs. R2 requires explicit destination authority.
         if (plan.jobs.some(job => job.destination.collisionPolicy !== 'fail')) return 'AGENT_OUTPUT_DENIED'
         if (plan.jobs.some(job => job.destination.r2 && (!current.r2.allowUpload
             || job.destination.r2.profileId === null || !current.r2.allowedProfileIds.includes(job.destination.r2.profileId)))) return 'AGENT_R2_DENIED'
+        if (canary && !canaryEligible(plan, current)) return 'AGENT_CANARY_DENIED'
+        // Consent authorizes supported synthetic routes; it never upgrades evidence or permits unsupported/divergent routes.
+        if (!canary && plan.jobs.some(job => !current.generation.allowedCompatibilityStatuses.includes(job.compatibility.status as 'captured-pass')
+            && !(persistentConsent && job.compatibility.status === 'synthetic-only'))) {
+            return 'AGENT_COMPATIBILITY_DENIED'
+        }
         return null
     }
-    async function eligibility(record: AgentGenerationExecutionRecord, current: AgentExecutionPolicy): Promise<{ plan: GenerationPlan | null; code: string | null }> {
+    async function eligibility(record: AgentGenerationExecutionRecord, current: AgentExecutionPolicy, canary = false, persistentConsent = false): Promise<{ plan: GenerationPlan | null; code: string | null }> {
         if (Date.parse(record.expiresAt) <= Date.parse(now())) return { plan: null, code: 'REQUEST_EXPIRED' }
         if (current.mode === 'observe') return { plan: null, code: 'AGENT_OBSERVE_ONLY' }
         if (!await options.isClientAuthorized(record.envelope)) return { plan: null, code: 'AUTHENTICATION_FAILED' }
         const plan = await planFor(record)
         if (!plan) return { plan: null, code: 'AGENT_PLAN_CHANGED' }
-        const code = planIssue(plan, current)
+        const code = planIssue(plan, current, canary, persistentConsent)
         if (code) return { plan, code }
         if (!await options.ports.validate(plan)) return { plan, code: 'AGENT_PLAN_STALE' }
         return { plan, code: null }
@@ -275,25 +301,31 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         const completed = queueRepairResult(reserved, result)
         return completed ? settle(reserved, completed, 'completed') : settle(reserved, unknown(), 'unknown')
     }
-    async function execute(record: AgentGenerationExecutionRecord, human: boolean): Promise<JsonObject> {
+    async function execute(record: AgentGenerationExecutionRecord, human: boolean, canary = false): Promise<JsonObject> {
         const current = policy()
+        const consent = generationConsent()
+        const alwaysGenerate = !human && canAlwaysGenerate(record, consent)
         if (record.policyRevision !== current.revision) {
             const result = approval(current.globalPause ? 'AGENT_GLOBAL_PAUSE' : undefined)
             const refreshed = { ...record, policyRevision: current.revision, result }
             if (await replace(record, refreshed)) await publish(refreshed)
             return result
         }
-        const eligible = await eligibility(record, current)
-        if (adjustablePolicyIssue(eligible.code)) return settle(record, approval(eligible.code!), 'pending')
+        // Only this automatic grant path borrows persistent authority and performs its matching reservation checks.
+        const eligible = await eligibility(record, current, human && canary, alwaysGenerate)
+        if (adjustablePolicyIssue(eligible.code)) return settle(record,
+            approval(eligible.code!, eligible.plan !== null && canaryEligible(eligible.plan, current)), 'pending')
         if (eligible.code || !eligible.plan) return settle(record, failure(eligible.code ?? 'AGENT_PLAN_CHANGED'), 'rejected')
         // Human consent cannot bypass the workspace pause; clearing it requires a fresh policy-bound review.
         if (current.globalPause) return settle(record, approval('AGENT_GLOBAL_PAUSE'), 'pending')
-        if (!human && current.mode !== 'bounded-auto') return record.result
+        if (!human && !alwaysGenerate && current.mode !== 'bounded-auto') return record.result
         const grant: AgentExecutionGrant = Object.freeze({ requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
             workspaceId: options.workspaceId, clientId: record.envelope.context.clientId,
             actorKind: record.envelope.context.actor.kind,
             planId: eligible.plan.planId, planHash: eligible.plan.planHash, scopeId: agentExecutionScope(record.envelope),
-            policyRevision: current.revision, consentedAt: now(), authorization: human ? 'human' : 'bounded-auto',
+            policyRevision: current.revision, consentedAt: now(), authorization: canary ? 'human-canary' : human ? 'human'
+                : alwaysGenerate ? 'client-always-generate' : 'bounded-auto',
+            ...(alwaysGenerate ? { consentRevision: consent.revision } : {}),
             estimatedAnlas: record.estimatedAnlas, imageCount: record.imageCount })
         await refreshExposure()
         let authorityCode: string | null = null
@@ -303,7 +335,9 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)) return null
             const latest = policy()
             if (canonicalSerialize(latest) !== canonicalSerialize(current)
-                || Date.parse(record.expiresAt) <= Date.parse(now()) || (!human && latest.mode !== 'bounded-auto')) {
+                || Date.parse(record.expiresAt) <= Date.parse(now())
+                || (alwaysGenerate && !canAlwaysGenerate(record))
+                || (!human && !alwaysGenerate && latest.mode !== 'bounded-auto')) {
                 authorityCode = 'AGENT_AUTHORITY_CHANGED'; return null
             }
             // Queue scheduling owns parallelism and pacing; the reviewed plan owns
@@ -314,6 +348,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         // Authority can change while IndexedDB is committing. The grant is consumed but no Queue call follows stale consent.
         const stillAuthorized = await options.isClientAuthorized(record.envelope)
         if (!stillAuthorized || canonicalSerialize(policy()) !== canonicalSerialize(current)
+            || (alwaysGenerate && !canAlwaysGenerate(record))
             || Date.parse(record.expiresAt) <= Date.parse(now())) return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
         let result: JsonObject
         try {
@@ -332,16 +367,18 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             const plan = await options.plans.get(String(envelope.command.input.planId))
             if (!plan || plan.planHash !== envelope.command.input.planHash || !plan.jobs.length) return failure('AGENT_PLAN_CHANGED')
             if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
+            const consent = generationConsent()
             let record: AgentGenerationExecutionRecord = { envelope: structuredClone(envelope), policyRevision: current.revision, originalPolicyRevision: current.revision,
+                ...(hasAgentGenerationConsent(consent, options.workspaceId, envelope.context.clientId) ? { consentRevision: consent.revision } : {}),
                 expiresAt: envelope.expiresAt, estimatedAnlas: plan.estimatedAnlas, imageCount: plan.jobs.length,
                 exposureSettledAt: null, state: 'pending', grant: null, result: approval() }
-            const checked = await eligibility(record, current)
+            const checked = await eligibility(record, current, false, canAlwaysGenerate(record))
             if (checked.code && !adjustablePolicyIssue(checked.code)) return failure(checked.code)
-            if (checked.code) record = { ...record, result: approval(checked.code) }
+            if (checked.code) record = { ...record, result: approval(checked.code, canaryEligible(plan, current)) }
             await refreshExposure()
             const createIssue = await storePending(record)
             if (createIssue) return failure(createIssue)
-            return current.mode === 'bounded-auto' && !checked.code ? execute(record, false) : record.result
+            return (canAlwaysGenerate(record) || current.mode === 'bounded-auto') && !checked.code ? execute(record, false) : record.result
         },
     }
     /** Only these two concrete Queue actions share admission; future commands remain unregistered. */
@@ -377,23 +414,29 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             return createIssue ? failure(createIssue) : record.result
         },
     })
-    function authoringIssue(record: AgentAuthoringRecord, current: AgentExecutionPolicy, human: boolean): string | null {
+    const authoringConsent = () => normalizeAgentAuthoringConsent(options.getAuthoringConsent?.())
+    function authoringIssue(record: AgentAuthoringRecord, current: AgentExecutionPolicy, human: boolean,
+        consent = authoringConsent()): string | null {
+        const alwaysEdit = hasAgentAuthoringConsent(consent, options.workspaceId, record.envelope.context.clientId)
         if (current.mode === 'observe') return 'AGENT_OBSERVE_ONLY'
         if (current.globalPause) return 'AGENT_GLOBAL_PAUSE'
-        if (!human && current.mode !== 'bounded-auto') return 'AGENT_APPROVAL_REQUIRED'
-        if (!human && record.command === 'scene.patch_many' && !current.authoring.allowSceneChanges) return 'AGENT_SCENE_AUTHORING_DENIED'
+        if (!human && !alwaysEdit && current.mode !== 'bounded-auto') return 'AGENT_APPROVAL_REQUIRED'
+        // Explicit client consent has the same Scene scope as approve-once; bounded-auto keeps its own flag.
+        if (!human && !alwaysEdit && record.command === 'scene.patch_many' && !current.authoring.allowSceneChanges) return 'AGENT_SCENE_AUTHORING_DENIED'
         if (record.target.createsFolders && !current.output.allowCreateFolders) return 'AGENT_FOLDER_CREATE_DENIED'
         if (record.target.renamesPathSegments && !current.output.allowRenamePathSegments) return 'AGENT_FOLDER_RENAME_DENIED'
         return null
     }
     async function executeAuthoring(record: AgentAuthoringRecord, human: boolean): Promise<JsonObject> {
         const current = policy()
+        const consent = authoringConsent()
+        const alwaysEdit = !human && hasAgentAuthoringConsent(consent, options.workspaceId, record.envelope.context.clientId)
         if (current.revision !== record.policyRevision) {
             const refreshed = { ...record, policyRevision: current.revision, result: approval() }
             if (await replace(record, refreshed)) await publish(refreshed)
             return refreshed.result
         }
-        const issue = authoringIssue(record, current, human)
+        const issue = authoringIssue(record, current, human, consent)
         if (issue) return settle(record, approval(issue), 'pending')
         if (Date.parse(record.expiresAt) <= Date.parse(now())) return settle(record, failure('REQUEST_EXPIRED'), 'rejected')
         if (!await options.isClientAuthorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
@@ -403,16 +446,20 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         const grant = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
             workspaceId: options.workspaceId, clientId: record.envelope.context.clientId, actorKind: record.envelope.context.actor.kind,
             policyRevision: current.revision, expiresAt: record.expiresAt, consentedAt: now(),
-            authorization: human ? 'human' as const : 'bounded-auto' as const, target: structuredClone(target) }
+            authorization: human ? 'human' as const : alwaysEdit ? 'client-always-edit' as const : 'bounded-auto' as const,
+            ...(alwaysEdit ? { consentRevision: consent.revision } : {}), target: structuredClone(target) }
         const reserved: AgentAuthoringRecord = { ...record, grant, state: 'reserved', result: unknown() }
         const didReserve = await change(records => {
             const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
             if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)
-                || canonicalSerialize(policy()) !== canonicalSerialize(current) || Date.parse(record.expiresAt) <= Date.parse(now())) return null
+                || canonicalSerialize(policy()) !== canonicalSerialize(current)
+                || (alwaysEdit && canonicalSerialize(authoringConsent()) !== canonicalSerialize(consent))
+                || Date.parse(record.expiresAt) <= Date.parse(now())) return null
             return records.map(item => item === saved ? reserved : item)
         })
         if (!didReserve) return unknown()
         if (!await options.isClientAuthorized(record.envelope) || canonicalSerialize(policy()) !== canonicalSerialize(current)
+            || (alwaysEdit && canonicalSerialize(authoringConsent()) !== canonicalSerialize(consent))
             || Date.parse(record.expiresAt) <= Date.parse(now())) return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
         let result: JsonObject
         try {
@@ -441,7 +488,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 state: 'pending', grant: null, result: approval() }
             const createIssue = await storePending(record)
             if (createIssue) return failure(createIssue)
-            return current.mode === 'bounded-auto' && !authoringIssue(record, current, false) ? executeAuthoring(record, false) : record.result
+            return !authoringIssue(record, current, false) ? executeAuthoring(record, false) : record.result
         },
     })) : []
     const cancelHandler = options.cancellation ? queueRepairHandler('generation.cancel') : undefined
@@ -513,7 +560,8 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 const current = policy()
                 if (record.policyRevision !== current.revision && current.revision >= record.originalPolicyRevision
                     && Date.parse(record.expiresAt) > Date.parse(now())) {
-                    const refreshed = { ...record, policyRevision: current.revision, result: approval(planIssue(plan, current) ?? undefined) }
+                    const refreshed = { ...record, policyRevision: current.revision,
+                        result: approval(planIssue(plan, current) ?? undefined, canaryEligible(plan, current)) }
                     if (!await replace(record, refreshed)) continue
                     record = refreshed
                     await publish(record)
@@ -527,6 +575,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                         height: job.semantic.height, steps: job.semantic.steps, seed: job.semantic.seed,
                         generationParameters: structuredClone(job.semantic.generationParameters) })),
                     compatibilityStatuses: [...new Set(plan.jobs.map(job => job.compatibility.status))],
+                    canaryEligible: Date.parse(record.expiresAt) > Date.parse(now()) && canaryEligible(plan, current),
                     sourceIds: plan.sourceBindings.map(source => source.resourceId),
                     outputEffect: plan.jobs.some(job => job.destination.r2) ? 'local-output-and-r2' : 'local-output',
                     reasons: Date.parse(record.expiresAt) <= Date.parse(now()) ? ['REQUEST_EXPIRED'] : current.globalPause ? ['AGENT_GLOBAL_PAUSE']
@@ -539,6 +588,11 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             const record = await decisionRecord(requestId, expected)
             return record ? isAgentAuthoringRecord(record) ? executeAuthoring(record, true)
                 : isAgentGenerationRecord(record) ? execute(record, true) : executeQueueRepair(record) : failure('AGENT_APPROVAL_UNAVAILABLE')
+        },
+        async approveCanary(requestId: string, expected: AgentGenerationApprovalBinding): Promise<JsonObject> {
+            const record = await decisionRecord(requestId, expected)
+            return record && isAgentGenerationRecord(record)
+                ? execute(record, true, true) : failure('AGENT_APPROVAL_UNAVAILABLE')
         },
         async reject(requestId: string, expected: AgentExecutionApprovalBinding): Promise<JsonObject> {
             const record = await decisionRecord(requestId, expected)

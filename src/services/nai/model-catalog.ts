@@ -3,7 +3,7 @@ import { DEFAULT_NAI_IMAGE_MODEL } from '@/domain/generation/model-default'
 export { DEFAULT_NAI_IMAGE_MODEL } from '@/domain/generation/model-default'
 
 /** Immutable revision of the model IDs and capability semantics below. */
-export const CURRENT_NAI_MODEL_CATALOG_REVISION = 'nai-blue-model-catalog-v1' as const
+export const CURRENT_NAI_MODEL_CATALOG_REVISION = 'nai-blue-model-catalog-v2' as const
 
 export interface NaiImageModelCapabilities {
     readonly imageToImage: boolean
@@ -41,7 +41,8 @@ const V5_CAPABILITIES: NaiImageModelCapabilities = {
     transparentBackground: true,
     vibeTransfer: false,
     preciseReference: false,
-    enhanceMax: false,
+    enhanceMax: true,
+    // Oct 14 production frontend exposes 32; the public guide still says 22.
     maxCharacters: 32,
 }
 
@@ -90,6 +91,15 @@ export const NAI_IMAGE_MODELS = [
         deprecated: false,
         capabilities: V5_CAPABILITIES,
     },
+    {
+        id: 'nai-diffusion-5-full-medium',
+        inpaintId: 'nai-diffusion-5-full-medium-inpainting',
+        name: 'NAI Diffusion V5 Full Medium',
+        description: '절약 모드: 14 Steps, Euler Ancestral, CFG Rescale 0, Heavy UC를 사용하며 커스텀 네거티브는 지원하지 않아요.',
+        recommended: false,
+        deprecated: false,
+        capabilities: V5_CAPABILITIES,
+    },
     legacy(
         'nai-diffusion-4-5-full',
         'nai-diffusion-4-5-full-inpainting',
@@ -132,6 +142,43 @@ export function isNovelAiV5Model(model: string): boolean {
         || model === 'nai-diffusion-5-full-inpainting'
         || model === 'nai-diffusion-5-curated'
         || model === 'nai-diffusion-5-curated-inpainting'
+        || isNovelAiMediumModel(model)
+}
+
+export function isNovelAiMediumModel(model: string): boolean {
+    return model === 'nai-diffusion-5-full-medium'
+        || model === 'nai-diffusion-5-full-medium-inpainting'
+}
+
+/** A deliberate model selection applies its fixed numeric settings; prompt text
+ * stays intact so unsupported negatives still require an explicit user edit. */
+export function naiModelSelectionDefaults(model: string): {
+    steps?: number; sampler?: string; cfgRescale?: number; ucPreset?: number
+} {
+    return isNovelAiMediumModel(model)
+        ? { steps: 14, sampler: 'k_euler_ancestral', cfgRescale: 0, ucPreset: 0 }
+        : {}
+}
+
+/** Shared adapter/payload guard: never discard reviewed settings for the distilled model. */
+export function mediumSettingsIssue(settings: {
+    model: string
+    steps: number
+    sampler: string
+    cfgRescale: number
+    ucPreset: number
+    negativePrompt: string
+    characterNegatives: readonly string[]
+}): string | null {
+    if (!isNovelAiMediumModel(settings.model)) return null
+    if (settings.steps !== 14 || settings.sampler !== 'k_euler_ancestral'
+        || settings.cfgRescale !== 0 || settings.ucPreset !== 0) {
+        return 'V5 Full Medium은 14 Steps, Euler Ancestral, CFG Rescale 0, Heavy UC만 지원합니다.'
+    }
+    if (settings.negativePrompt.trim() || settings.characterNegatives.some(value => value.trim())) {
+        return 'V5 Full Medium은 커스텀 네거티브 프롬프트를 지원하지 않습니다. 네거티브를 비우거나 High 모델을 선택하세요.'
+    }
+    return null
 }
 
 export function getNovelAiModelProfile(model: string): NovelAiModelProfile | undefined {
@@ -148,6 +195,15 @@ export function getNovelAiModelProfile(model: string): NovelAiModelProfile | und
     }
 }
 
+/** Exact final text cannot also request provider preset/quality text injection. */
+export function novelAiVerbatimSettingsIssue(settings: { promptTextMode?: string; model: string; ucPreset: number;
+    qualityToggle?: boolean; transparentBackground?: boolean }): string | null {
+    if (settings.promptTextMode === undefined || settings.promptTextMode === 'standard') return null
+    return settings.promptTextMode !== 'verbatim' || !getNovelAiModelProfile(settings.model)?.modelId.startsWith('nai-diffusion-4-5-')
+        || settings.ucPreset !== 4 || settings.qualityToggle || settings.transparentBackground
+        ? '원문 보존은 V4.5, UC None(4), 품질 태그 끄기가 필요합니다.' : null
+}
+
 export function normalizeNaiImageModelId(model: string | undefined): string | undefined {
     if (model === undefined) return undefined
     const raw = model.trim()
@@ -161,6 +217,7 @@ export function normalizeNaiImageModelId(model: string | undefined): string | un
         return normalized.includes('curated') ? 'nai-diffusion-4-5-curated' : 'nai-diffusion-4-5-full'
     }
     if (normalized.includes('v5') || /\b5\b/.test(normalized)) {
+        if (normalized.includes('medium') && !normalized.includes('curated')) return 'nai-diffusion-5-full-medium'
         return normalized.includes('curated') ? 'nai-diffusion-5-curated' : DEFAULT_NAI_IMAGE_MODEL
     }
     if (normalized.includes('v4') || /\b4\b/.test(normalized)) {

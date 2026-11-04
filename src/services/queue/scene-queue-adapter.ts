@@ -56,6 +56,7 @@ import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 import { parseAssessmentRequirement, type GenerationAssessmentRequirement } from '@/domain/assessment/visual-rubric'
 import type { IntentAssessmentRunBinding } from '@/domain/assessment/intent-assessment'
 import { QueueExecutionError } from './durable-queue-coordinator'
+import { NovelAiModelCapabilityError, validateNovelAiGenerationParams } from '@/services/nai/adapter'
 import {
     assertGenerationAtomicBatchAvailable,
     getRuntimeQueueRepository,
@@ -565,6 +566,14 @@ async function prepareSceneQueueReviewOnce(
                 })
                 if (!built.success) {
                     throw new QueueExecutionError('fatal', 'Scene composition plan is invalid')
+                }
+                try {
+                    validateNovelAiGenerationParams(built.params)
+                } catch (error) {
+                    if (!(error instanceof NovelAiModelCapabilityError)) throw error
+                    const targetIndex = targets.findIndex(item => item.presetId === preset.id && item.sceneId === scene.id)
+                    throw new NovelAiModelCapabilityError(error.message,
+                        `source.targets[${targetIndex}].${error.fieldPath}`, error.nextAction)
                 }
                 const fileName = planSceneFileName({
                     targetFileName: target.fileNames?.[count],

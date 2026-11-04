@@ -1,3 +1,4 @@
+import type { SceneImageSource } from './scene-image-source'
 import type {
     CharacterSlotPatch,
     Extensions,
@@ -77,6 +78,8 @@ export interface SceneV1AuthoringRecord {
     readonly height?: number
     readonly metadataMode?: 'embedded' | 'sidecar-only' | 'strip-and-sidecar' | 'strip-only'
     readonly generationFolderId?: string
+    readonly imageSource?: SceneImageSource | null
+    readonly promptTextMode?: 'standard' | 'verbatim'
     readonly productionCount?: number
     readonly filenameTemplate?: string
     readonly excludePinned?: boolean
@@ -133,6 +136,8 @@ export interface SceneAuthoringRecord {
     readonly height?: number
     readonly metadataMode?: 'embedded' | 'sidecar-only' | 'strip-and-sidecar' | 'strip-only'
     readonly generationFolderId?: string
+    readonly imageSource?: SceneImageSource | null
+    readonly promptTextMode?: 'standard' | 'verbatim'
     /** Optional saved quantity; old documents remain valid and transient queue counts stay excluded. */
     readonly productionCount?: number
     readonly filenameTemplate?: string

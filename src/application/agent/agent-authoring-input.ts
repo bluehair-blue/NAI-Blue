@@ -40,9 +40,14 @@ const revision = number(0, Number.MAX_SAFE_INTEGER - 1)
 const prompts = object({}, Object.fromEntries(['base', 'additional', 'character', 'negative', 'characterNegative'].map(key => [key, text(16_384)])))
 const generation = object({}, { model: text(100, 1), sampler: text(100, 1), scheduler: text(100, 1), steps: number(1, 50),
     cfgScale: number(0, 100, false), cfgRescale: number(0, 1, false), smea: literal(false), smeaDyn: literal(false),
-    variety: boolean, qualityToggle: boolean, ucPreset: number(0, 3), seed: number(0, 0xffff_ffff), seedLocked: boolean })
+    variety: boolean, qualityToggle: boolean, ucPreset: number(0, 4), seed: number(0, 0xffff_ffff), seedLocked: boolean })
 const sceneChange = object({ sceneId: id }, { name: text(200, 1), prompts, generation, width: number(64, 4096), height: number(64, 4096),
-    generationFolderId: id, productionCount: number(1, 100), filenameTemplate: text(200) })
+    promptTextMode: { schema: { enum: ['standard', 'verbatim'] }, valid: value => value === 'standard' || value === 'verbatim' },
+    generationFolderId: id, productionCount: number(1, 100), filenameTemplate: text(200),
+    imageSource: { schema: { oneOf: [{ type: 'null' }, object({ mode: literal('img2img'), artifactId: id,
+        contentChecksum: hash, strength: number(0, 1, false), noise: number(0, 1, false) }).schema] },
+    valid: value => value === null || object({ mode: literal('img2img'), artifactId: id,
+        contentChecksum: hash, strength: number(0, 1, false), noise: number(0, 1, false) }).valid(value) } })
 const inheritedOptions = [object({ mode: literal('inherit') }), object({ mode: literal('clear') }), object({ mode: literal('set'), value: text(200, 1) })]
 const inherited: Field = { schema: { oneOf: inheritedOptions.map(option => option.schema) }, valid: value => inheritedOptions.some(option => option.valid(value)) }
 const folderPreferences = { commonPrompt: text(16_384), autoUpload: boolean,

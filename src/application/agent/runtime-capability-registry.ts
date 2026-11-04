@@ -24,6 +24,7 @@ export const AGENT_COMMAND_EFFECTS: Readonly<Record<AgentCommandName, 'read' | '
     'production.list': 'read',
     'production.get': 'read',
     'production.plan_next': 'plan',
+    'artifact.get_image': 'read',
 })
 
 export interface AgentCommandHandler {
@@ -45,6 +46,13 @@ export interface AgentCommandRuntimeState {
     readonly mode: 'observe' | 'suggest' | 'bounded-auto'
     readonly globalPause: boolean
     readonly allowSceneChanges?: boolean
+}
+
+/** Native startup facts only; no private path or credential crosses MCP. */
+export interface AgentRuntimeIdentity {
+    readonly version: string
+    readonly processId: number
+    readonly executableHash: string
 }
 
 export interface RuntimeCapabilityDescriptor {

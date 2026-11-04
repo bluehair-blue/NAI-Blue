@@ -21,6 +21,21 @@ function serialized(value: unknown): string {
 }
 
 describe('sync payload sanitizer', () => {
+    it('treats prompt and label prose as inert text while retaining hard boundaries', () => {
+        const text = '#눈/시선\nblack leather shoes, head: tilted slightly toward image right, open space to complete the other heart half'
+        const prompts = Object.fromEntries(['base', 'character', 'additional', 'negative', 'characterNegative'].map(key => [key, text]))
+        const value = { presetName: 'Lapis cut4 chin rest challenge', changes: [{ name: 'Cut4 sideways L chin support V5 A', prompts }] }
+        const before = JSON.stringify(value)
+        expect(() => assertSyncPayloadSafe(value)).not.toThrow()
+        expect(JSON.stringify(value)).toBe(before)
+        expect(() => assertSyncPayloadSafe({ prompts: { character: 'agaa agaa agaa agaa' } })).not.toThrow()
+        expect(() => assertSyncPayloadSafe({ untyped: 'agaa agaa agaa agaa' })).toThrow()
+        for (const bad of ['../private/file', '/비밀/file', '눈/etc/passwd', 'C:/Private/file',
+            'Bearer synthetic-secret-value', 'data:application/octet-stream;base64,AAAA', 'iVBORw0KGgo=']) {
+            expect(() => assertSyncPayloadSafe({ prompts: { character: bad } })).toThrow()
+        }
+        expect(() => assertSyncPayloadSafe({ prompts: { character: new Uint8Array([1, 2]) } })).toThrow()
+    })
     it('recognizes native stopped-job IDs without exempting other payload fields', () => {
         const jobId = 'main-job-agent-dbe4f2d96161f10b48104a1522e7269abfb8a16ee223c7514912b5c8afc282d2-0'
         expect(() => assertSyncPayloadSafe({ previouslyStoppedJobIds: [jobId] })).not.toThrow()
@@ -401,12 +416,10 @@ describe('sync payload sanitizer', () => {
             label: 'raw binary image string',
             value: String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0),
         },
-    ])('rejects forbidden material hidden in an allowed text field without echoing it: $label', ({ value: canary }) => {
+    ])('rejects forbidden material in untyped fields without echoing it: $label', ({ value: canary }) => {
         let error: unknown
         try {
-            sanitizeSyncPayload('scene.card', {
-                id: 'scene:1', name: 'Scene', scenePrompt: canary, createdAt: 1, orderKey: '0001',
-            })
+            assertSyncPayloadSafe({ untyped: canary })
         } catch (caught) {
             error = caught
         }
@@ -446,10 +459,7 @@ describe('sync payload sanitizer', () => {
                             suffixLength > 0 ? 'b'.repeat(suffixLength) : '',
                         ].filter(Boolean).join(' ')
                         try {
-                            sanitizeSyncPayload('scene.card', {
-                                id: 'scene:matrix', name: 'Scene', scenePrompt: value,
-                                createdAt: 1, orderKey: '0001',
-                            })
+                            assertSyncPayloadSafe({ untyped: value })
                             accepted += 1
                         } catch (error) {
                             expect(error).toBeInstanceOf(SyncSanitizationError)
@@ -470,10 +480,7 @@ describe('sync payload sanitizer', () => {
                 wrapped += `${(mask & (1 << (index - 1))) === 0 ? '' : ' '}${encoded[index]}`
             }
             try {
-                sanitizeSyncPayload('scene.card', {
-                    id: 'scene:partition', name: 'Scene', scenePrompt: `a ${wrapped} b`,
-                    createdAt: 1, orderKey: '0001',
-                })
+                assertSyncPayloadSafe({ untyped: `a ${wrapped} b` })
                 accepted += 1
             } catch (error) {
                 expect(error).toBeInstanceOf(SyncSanitizationError)
@@ -492,10 +499,7 @@ describe('sync payload sanitizer', () => {
                 wrapped += `${(mask & (1 << (index - 1))) === 0 ? '' : ' '}${encoded[index]}`
             }
             try {
-                sanitizeSyncPayload('scene.card', {
-                    id: 'scene:binary-partition', name: 'Scene', scenePrompt: `a ${wrapped} b`,
-                    createdAt: 1, orderKey: '0001',
-                })
+                assertSyncPayloadSafe({ untyped: `a ${wrapped} b` })
                 accepted += 1
             } catch (error) {
                 // This exhaustive 2^15 loop verifies the error type once at the boundary;
@@ -591,6 +595,50 @@ describe('sync payload sanitizer', () => {
         for (const id of ['Qk', 'QkModel2026', 'UklGR-project', 'SUkq-id', 'TU0A-value', 'R0lGOD-task']) {
             expect(() => assertSyncPayloadSafe({ opId: id })).not.toThrow()
         }
+    })
+
+    it('preserves gesture prose whose compacted suffix resembles control bytes', () => {
+        for (const character of [
+            'back of hand facing viewer',
+            'left hand gesture: sideways v, sideways peace sign, back of hand facing viewer,',
+        ]) {
+            const input = { changes: [{ prompts: { character } }] }
+            const before = JSON.stringify(input)
+            expect(() => assertSyncPayloadSafe(input)).not.toThrow()
+            expect(JSON.stringify(input)).toBe(before)
+        }
+    })
+
+    it('rejects encoded payloads attached inside prose tokens', () => {
+        const payloads = [
+            'iVBORw0KGgo=',
+            btoa(String.fromCharCode(...Array.from({ length: 15 }, (_entry, index) => index))),
+            btoa(String.fromCharCode(...Array.from({ length: 12 }, (_entry, index) => 0xa0 + index))),
+        ]
+        for (const encoded of payloads) {
+            for (const width of [2, 3, 4, 5]) {
+                const wrapped = encoded.match(new RegExp(`.{1,${width}}`, 'g'))!.join(' ')
+                for (const prefix of ['a', 'of', 'the', 'back']) {
+                    expect(() => assertSyncPayloadSafe({ untyped: `${prefix}${wrapped} viewer` }))
+                        .toThrow(SyncSanitizationError)
+                }
+            }
+        }
+    })
+
+    it('recognizes only structured literal filename metadata without relaxing payload or path checks', () => {
+        const filenameTemplate = 'LPS_KV_20261016_cut4_V45_g'
+        expect(() => assertSyncPayloadSafe({ filenameTemplate })).not.toThrow()
+        expect(() => assertSyncPayloadSafe({ filenameTemplate: 'ASSET_20261016_cut12_V45_g' })).not.toThrow()
+        expect(() => assertSyncPayloadSafe({ prompt: filenameTemplate })).not.toThrow()
+        expect(() => assertSyncPayloadSafe({ untyped: filenameTemplate })).toThrow(SyncSanitizationError)
+        for (const value of [
+            'AAECAwQFBgcICQoL', 'AAAAAAAAAAAAAAAA', 'AAAA_AAAA_AAAA_AAAA', 'c2VjcmV0Y2FuYXJ5',
+            'c2VjcmV0LWNhbmFyeQ==', 'iVBORw0KGgo=', 'data:image/png;base64,iVBORw0KGgo=',
+            'LPS_20261016_89504e470d0a1a0a', 'Bearer secretvalue01234567890123456789',
+            'sk-secretvalue0123456789', 'C:/Private/LPS_20261016_cut4',
+            ' LPS_KV_20261016_cut4_V45_g ', 'LPS%5fKV_20261016_cut4_V45_g',
+        ]) expect(() => assertSyncPayloadSafe({ filenameTemplate: value })).toThrow(SyncSanitizationError)
     })
 
     it('scans the full bounded value of nested Composition identifiers for encoded image bytes', () => {

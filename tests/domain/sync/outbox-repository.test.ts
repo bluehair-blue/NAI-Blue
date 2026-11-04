@@ -351,7 +351,21 @@ describe('transactional sync outbox repository', () => {
         expect(await sync.listOutbox({ includeAcked: true })).toEqual([])
     })
 
-    it('rejects encoded image identifiers and binary text before any outbox write', async () => {
+    it('round-trips inert encoded-looking prompt text without decoding or rewriting it', async () => {
+        for (const [index, scenePrompt] of ['AAECAwQFBgcICQoL', 'oKGio6Slpqeoqaqr',
+            'AAAA AAAA AAAA AAAA', 'a AAAA AAAA AAAA AAAA b',
+            'AAECA wQFBg cICQo LDA0O Dw==', 'binary:AAECA wQFBg cICQo LDA0O Dw==;end',
+            'binary AAECA wQFBg cICQo LDA0O a', 'binary c2Vj cmV0 LWNh bmFy eQ== end',
+            'a c 2 VjcmV 0 LWNhbmFyeQ b', 'a c 2V jcm V0 LWN hbm Fye QB'].entries()) {
+            const sync = repository(`inert-text-${index}`)
+            const result = await sync.applyLocalMutation(localSceneInput({
+                payload: { ...localSceneInput().payload, scenePrompt },
+            }))
+            expect(result.payload.scenePrompt).toBe(scenePrompt)
+        }
+    })
+
+    it('rejects encoded image identifiers and explicit binary material before any outbox write', async () => {
         const sync = repository('forbidden-material-atomic')
         await expect(sync.applyLocalMutation(localSceneInput({
             opId: 'AAAAGGZ0eXBhdmlmAAAAAGF2aWZtaWYx',
@@ -367,11 +381,11 @@ describe('transactional sync outbox repository', () => {
         }))).rejects.toBeDefined()
         await expect(sync.applyLocalMutation(localSceneInput({
             opId: 'op:binary-text',
-            payload: { ...localSceneInput().payload, scenePrompt: 'AAECAwQFBgcICQoL' },
+            payload: { ...localSceneInput().payload, scenePrompt: String.fromCharCode(0, 1, 2) },
         }))).rejects.toBeDefined()
         await expect(sync.applyLocalMutation(localSceneInput({
             opId: 'op:high-byte-binary-text',
-            payload: { ...localSceneInput().payload, scenePrompt: 'oKGio6Slpqeoqaqr' },
+            payload: { ...localSceneInput().payload, scenePrompt: 'data:application/octet-stream;base64,AAAA' },
         }))).rejects.toBeDefined()
         await expect(sync.applyLocalMutation(localSceneInput({
             opId: 'op:svg-text',
@@ -387,20 +401,12 @@ describe('transactional sync outbox repository', () => {
         for (const [opId, scenePrompt] of [
             ['op:mime-image-text', 'iVBO Rw0K GgoA AAAA'],
             ['op:mime-uneven-image-text', 'iVBOR w0KGg oAAAA A'],
-            ['op:mime-zero-text', 'AAAA AAAA AAAA AAAA'],
-            ['op:mime-surrounded-zero-text', 'a AAAA AAAA AAAA AAAA b'],
-            ['op:mime-uneven-binary-text', 'AAECA wQFBg cICQo LDA0O Dw=='],
-            ['op:mime-embedded-binary-text', 'binary:AAECA wQFBg cICQo LDA0O Dw==;end'],
             ['op:mime-embedded-image-text', 'image:iVBOR w0KGg oAAAA A;end'],
             ['op:mime-nbsp-image-text', 'image:iVBO\u00a0Rw0K\u00a0Ggo='],
             ['op:mime-greedy-prefix-image-text', `image ${wrappedImageCanary()}`],
             ['op:mime-irregular-image-text', 'a iVBORw 0 KGgoAAAAA b'],
             ['op:mime-minimal-image-text', 'a iVBO Rw0K Ggo= b'],
             ['op:mime-padded-trailing-image-text', `image ${wrappedImageCanary(true)} end`],
-            ['op:mime-unpadded-trailing-binary-text', 'binary AAECA wQFBg cICQo LDA0O a'],
-            ['op:mime-padded-printable-text', 'binary c2Vj cmV0 LWNh bmFy eQ== end'],
-            ['op:mime-irregular-unpadded-printable-text', 'a c 2 VjcmV 0 LWNhbmFyeQ b'],
-            ['op:mime-word-shaped-unpadded-printable-text', 'a c 2V jcm V0 LWN hbm Fye QB'],
             ['op:wrapped-hex-image-text', 'note=8950 4e47 0d0a 1a0a=end'],
         ]) {
             await expect(sync.applyLocalMutation(localSceneInput({

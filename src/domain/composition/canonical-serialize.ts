@@ -86,25 +86,36 @@ function throwInvalidValue(path: CanonicalPath, reason: string): never {
     throw new TypeError(`Value at ${formatPath(path)} is not canonical JSON: ${reason}`)
 }
 
-function serializeString(value: string): string {
-    return JSON.stringify(value)
+function* serializeString(value: string): Generator<string> {
+    yield '"'
+    for (let offset = 0; offset < value.length;) {
+        let end = Math.min(offset + 16_384, value.length)
+        if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff
+            && value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff) end--
+        yield JSON.stringify(value.slice(offset, end)).slice(1, -1)
+        offset = end
+    }
+    yield '"'
 }
 
-function serializeCanonicalValue(
+function* serializeCanonicalValue(
     value: unknown,
     path: CanonicalPath,
     ancestors: Set<object>,
-): string {
-    if (value === null) return 'null'
+): Generator<string> {
+    if (value === null) { yield 'null'; return }
 
     switch (typeof value) {
         case 'string':
-            return serializeString(value)
+            yield* serializeString(value)
+            return
         case 'boolean':
-            return value ? 'true' : 'false'
+            yield value ? 'true' : 'false'
+            return
         case 'number':
             if (!Number.isFinite(value)) throwInvalidValue(path, 'number must be finite')
-            return JSON.stringify(Object.is(value, -0) ? 0 : value)
+            yield JSON.stringify(Object.is(value, -0) ? 0 : value)
+            return
         case 'undefined':
         case 'function':
         case 'symbol':
@@ -120,14 +131,16 @@ function serializeCanonicalValue(
 
     try {
         if (Array.isArray(value)) {
-            const entries: string[] = []
+            yield '['
             for (let index = 0; index < value.length; index += 1) {
                 if (!Object.prototype.hasOwnProperty.call(value, index)) {
                     throwInvalidValue([...path, index], 'sparse array entry')
                 }
-                entries.push(serializeCanonicalValue(value[index], [...path, index], ancestors))
+                if (index > 0) yield ','
+                yield* serializeCanonicalValue(value[index], [...path, index], ancestors)
             }
-            return `[${entries.join(',')}]`
+            yield ']'
+            return
         }
 
         const prototype = Object.getPrototypeOf(value)
@@ -139,12 +152,16 @@ function serializeCanonicalValue(
         }
 
         const record = value as Record<string, unknown>
-        const entries = Object.keys(record)
-            .sort()
-            .map(key => (
-                `${serializeString(key)}:${serializeCanonicalValue(record[key], [...path, key], ancestors)}`
-            ))
-        return `{${entries.join(',')}}`
+        yield '{'
+        let first = true
+        for (const key of Object.keys(record).sort()) {
+            if (!first) yield ','
+            first = false
+            yield* serializeString(key)
+            yield ':'
+            yield* serializeCanonicalValue(record[key], [...path, key], ancestors)
+        }
+        yield '}'
     } finally {
         ancestors.delete(objectValue)
     }
@@ -156,7 +173,19 @@ function serializeCanonicalValue(
  * coerced or dropped.
  */
 export function canonicalSerialize(value: unknown): string {
+    return Array.from(canonicalSerializeChunks(value)).join('')
+}
+
+/** Same canonical JSON ABI, with bounded string fragments for large archives. */
+export function canonicalSerializeChunks(value: unknown): Generator<string> {
     return serializeCanonicalValue(value, [], new Set())
+}
+
+export function canonicalUtf8ByteLength(value: unknown): number {
+    const encoder = new TextEncoder()
+    let length = 0
+    for (const part of canonicalSerializeChunks(value)) length += encoder.encode(part).length
+    return length
 }
 
 function pathsEqual(left: CanonicalPath, right: CanonicalPath): boolean {
@@ -297,33 +326,6 @@ export function fnv1a64Utf8(value: string): string {
     return hash.toString(16).padStart(16, '0')
 }
 
-function utf8Bytes(value: string): number[] {
-    const bytes: number[] = []
-    for (const character of value) {
-        let codePoint = character.codePointAt(0) as number
-        if (codePoint >= 0xd800 && codePoint <= 0xdfff) codePoint = 0xfffd
-        if (codePoint <= 0x7f) {
-            bytes.push(codePoint)
-        } else if (codePoint <= 0x7ff) {
-            bytes.push(0xc0 | (codePoint >>> 6), 0x80 | (codePoint & 0x3f))
-        } else if (codePoint <= 0xffff) {
-            bytes.push(
-                0xe0 | (codePoint >>> 12),
-                0x80 | ((codePoint >>> 6) & 0x3f),
-                0x80 | (codePoint & 0x3f),
-            )
-        } else {
-            bytes.push(
-                0xf0 | (codePoint >>> 18),
-                0x80 | ((codePoint >>> 12) & 0x3f),
-                0x80 | ((codePoint >>> 6) & 0x3f),
-                0x80 | (codePoint & 0x3f),
-            )
-        }
-    }
-    return bytes
-}
-
 const SHA256_INITIAL_STATE = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -344,19 +346,15 @@ function rotateRight(value: number, bits: number): number {
     return (value >>> bits) | (value << (32 - bits))
 }
 
-/** Pure, platform-independent SHA-256 over WHATWG-compatible UTF-8 bytes. */
-export function sha256Utf8(value: string): string {
-    const bytes = utf8Bytes(value)
-    const bitLength = BigInt(bytes.length) * 8n
-    bytes.push(0x80)
-    while (bytes.length % 64 !== 56) bytes.push(0)
-    for (let shift = 56n; shift >= 0n; shift -= 8n) {
-        bytes.push(Number((bitLength >> shift) & 0xffn))
-    }
-
+/** Canonical fragments end at code point boundaries; SHA state spans all fragments. */
+function sha256Utf8Parts(parts: Iterable<string>): string {
     const state: number[] = [...SHA256_INITIAL_STATE]
     const words = new Uint32Array(64)
-    for (let offset = 0; offset < bytes.length; offset += 64) {
+    // Automatic backups can exceed 180 MB. A boxed number[] for every byte
+    // exhausts the renderer heap; encode/compress fixed chunks with the same hash ABI.
+    const encoder = new TextEncoder()
+    const bytes = new Uint8Array(65_536)
+    const compressBlock = (offset: number): void => {
         for (let index = 0; index < 16; index += 1) {
             const byteIndex = offset + index * 4
             words[index] = (
@@ -402,12 +400,47 @@ export function sha256Utf8(value: string): string {
         state[7] = (state[7] + h) >>> 0
     }
 
+    let buffered = 0
+    let byteLength = 0n
+    for (const value of parts) {
+        let characterOffset = 0
+        while (characterOffset < value.length) {
+            let end = Math.min(characterOffset + 16_384, value.length)
+            // A valid surrogate pair must reach TextEncoder together. Lone surrogates
+            // retain the existing WHATWG replacement-character behavior.
+            const lastCodeUnit = value.charCodeAt(end - 1)
+            if (end < value.length && lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) end -= 1
+            const encoded = encoder.encodeInto(value.slice(characterOffset, end), bytes.subarray(buffered))
+            characterOffset += encoded.read
+            byteLength += BigInt(encoded.written)
+            const available = buffered + encoded.written
+            const completeBytes = available - available % 64
+            for (let offset = 0; offset < completeBytes; offset += 64) compressBlock(offset)
+            buffered = available - completeBytes
+            bytes.copyWithin(0, completeBytes, available)
+        }
+    }
+
+    const paddedLength = buffered < 56 ? 64 : 128
+    bytes.fill(0, buffered, paddedLength)
+    bytes[buffered] = 0x80
+    const bitLength = byteLength * 8n
+    for (let index = 0; index < 8; index += 1) {
+        bytes[paddedLength - 1 - index] = Number((bitLength >> BigInt(index * 8)) & 0xffn)
+    }
+    for (let offset = 0; offset < paddedLength; offset += 64) compressBlock(offset)
+
     return state.map(word => word.toString(16).padStart(8, '0')).join('')
 }
 
-/** Canonicalizes first, then returns the unprefixed 64-character digest. */
+/** Pure, platform-independent SHA-256 over WHATWG-compatible UTF-8 bytes. */
+export function sha256Utf8(value: string): string {
+    return sha256Utf8Parts([value])
+}
+
+/** Hashes canonical JSON without constructing a backup-sized intermediate string. */
 export function hashCanonicalValue(value: unknown): string {
-    return sha256Utf8(canonicalSerialize(value))
+    return sha256Utf8Parts(canonicalSerializeChunks(value))
 }
 
 export function createCompositionPlanHash(

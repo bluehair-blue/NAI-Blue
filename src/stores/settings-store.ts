@@ -5,6 +5,14 @@ import {
     DEFAULT_AGENT_EXECUTION_POLICY, normalizeAgentExecutionPolicy, updateAgentExecutionPolicy,
     type AgentExecutionPolicy,
 } from '@/application/agent/agent-execution-policy'
+import {
+    DEFAULT_AGENT_AUTHORING_CONSENT, normalizeAgentAuthoringConsent, updateAgentAuthoringConsent,
+    type AgentAuthoringConsent,
+} from '@/application/agent/agent-authoring-consent'
+import {
+    DEFAULT_AGENT_GENERATION_CONSENT, normalizeAgentGenerationConsent, updateAgentGenerationConsent,
+    type AgentGenerationConsent,
+} from '@/application/agent/agent-generation-consent'
 import { DEFAULT_METADATA_MODE, type MetadataMode } from '@/lib/generation-metadata'
 import {
     DEFAULT_GENERATION_FOLDER_ID,
@@ -92,6 +100,8 @@ export interface SettingsState {
     productGuidanceVersion: number
     remoteImageProcessingConsentVersion: number
     agentExecutionPolicy: AgentExecutionPolicy
+    agentAuthoringConsent: AgentAuthoringConsent
+    agentGenerationConsent: AgentGenerationConsent
 
     // Output folders shared by Guided, Main, and Scene workflows.
     /** Compatibility projection only; GenerationFolderDocument is durable authority. */
@@ -100,6 +110,8 @@ export interface SettingsState {
     activeGenerationFolderId: string
 
     // Actions
+    setAgentAuthoringConsent: (expectedRevision: number, workspaceId: string, clientId: string, enabled: boolean) => Promise<AgentAuthoringConsent>
+    setAgentGenerationConsent: (expectedRevision: number, workspaceId: string, clientId: string, enabled: boolean) => Promise<AgentGenerationConsent>
     setSavePath: (path: string, useAbsolute?: boolean) => Promise<void>
     setSceneSavePath: (path: string, useAbsolute?: boolean) => void
     setSceneSubfoldersEnabled: (enabled: boolean) => void
@@ -269,6 +281,8 @@ export function normalizePersistedSettingsState(persistedState: unknown): Partia
         ...persisted,
         ...folderProjection,
         agentExecutionPolicy: normalizeAgentExecutionPolicy(persisted.agentExecutionPolicy),
+        agentAuthoringConsent: normalizeAgentAuthoringConsent(persisted.agentAuthoringConsent),
+        agentGenerationConsent: normalizeAgentGenerationConsent(persisted.agentGenerationConsent),
         activeGenerationFolderId,
         sceneSubfoldersEnabled: typeof persisted.sceneSubfoldersEnabled === 'boolean'
             ? persisted.sceneSubfoldersEnabled
@@ -317,6 +331,8 @@ export const useSettingsStore = create<SettingsState>()(
             productGuidanceVersion: 0,
             remoteImageProcessingConsentVersion: 0,
             agentExecutionPolicy: structuredClone(DEFAULT_AGENT_EXECUTION_POLICY),
+            agentAuthoringConsent: structuredClone(DEFAULT_AGENT_AUTHORING_CONSENT),
+            agentGenerationConsent: structuredClone(DEFAULT_AGENT_GENERATION_CONSENT),
             generationFolders: [createDefaultGenerationFolder()],
             generationFolderDocument: null,
             activeGenerationFolderId: DEFAULT_GENERATION_FOLDER_ID,
@@ -372,6 +388,60 @@ export const useSettingsStore = create<SettingsState>()(
             setRemoteImageProcessingConsentVersion: (remoteImageProcessingConsentVersion) => set({
                 remoteImageProcessingConsentVersion: Math.max(0, Math.trunc(remoteImageProcessingConsentVersion)),
             }),
+            setAgentAuthoringConsent: async (expectedRevision, workspaceId, clientId, enabled) => {
+                if (agentPolicyUpdatePending) throw new Error('An agent policy change is already being saved')
+                const candidate = updateAgentAuthoringConsent(useSettingsStore.getState().agentAuthoringConsent,
+                    expectedRevision, workspaceId, clientId, enabled)
+                agentPolicyUpdatePending = true
+                try {
+                    // Keep the normal Folder-authority exclusions while staging consent before publishing it.
+                    const persistence = useSettingsStore.persist.getOptions()
+                    if (!persistence.storage || !persistence.name) throw new Error('Editing consent storage is unavailable')
+                    await persistence.storage.setItem(persistence.name, {
+                        state: partializePersistedSettingsState({ ...useSettingsStore.getState(), agentAuthoringConsent: candidate }),
+                        version: persistence.version,
+                    })
+                    await flushIndexedDBKey('nai-blue-settings')
+                    const raw = await getIndexedDBItemStrict('nai-blue-settings')
+                    const saved = raw === null ? undefined : JSON.parse(raw).state?.agentAuthoringConsent
+                    if (JSON.stringify(saved) !== JSON.stringify(candidate)) throw new Error('Editing consent persistence could not be verified')
+                    set({ agentAuthoringConsent: candidate })
+                    return candidate
+                } catch (error) {
+                    // Failed OFF never restores ON; failed ON never exposes an unverified active grant.
+                    set({ agentAuthoringConsent: { ...candidate, approvedClients: candidate.approvedClients.filter(
+                        client => client.workspaceId !== workspaceId || client.clientId !== clientId) } })
+                    await flushIndexedDBKey('nai-blue-settings').catch(() => undefined)
+                    throw error
+                } finally { agentPolicyUpdatePending = false }
+            },
+            setAgentGenerationConsent: async (expectedRevision, workspaceId, clientId, enabled) => {
+                if (agentPolicyUpdatePending) throw new Error('An agent policy change is already being saved')
+                const candidate = updateAgentGenerationConsent(useSettingsStore.getState().agentGenerationConsent,
+                    expectedRevision, workspaceId, clientId, enabled)
+                agentPolicyUpdatePending = true
+                try {
+                    // Persist with the normal exclusions before exposing paid-generation authority.
+                    const persistence = useSettingsStore.persist.getOptions()
+                    if (!persistence.storage || !persistence.name) throw new Error('Generation consent storage is unavailable')
+                    await persistence.storage.setItem(persistence.name, {
+                        state: partializePersistedSettingsState({ ...useSettingsStore.getState(), agentGenerationConsent: candidate }),
+                        version: persistence.version,
+                    })
+                    await flushIndexedDBKey('nai-blue-settings')
+                    const raw = await getIndexedDBItemStrict('nai-blue-settings')
+                    const saved = raw === null ? undefined : JSON.parse(raw).state?.agentGenerationConsent
+                    if (JSON.stringify(saved) !== JSON.stringify(candidate)) throw new Error('Generation consent persistence could not be verified')
+                    set({ agentGenerationConsent: candidate })
+                    return candidate
+                } catch (error) {
+                    // A failed ON never grants authority, and a failed OFF never restores ON.
+                    set({ agentGenerationConsent: { ...candidate, approvedClients: candidate.approvedClients.filter(
+                        client => client.workspaceId !== workspaceId || client.clientId !== clientId) } })
+                    await flushIndexedDBKey('nai-blue-settings').catch(() => undefined)
+                    throw error
+                } finally { agentPolicyUpdatePending = false }
+            },
             setAgentExecutionPolicy: async (expectedRevision, next) => {
                 if (agentPolicyUpdatePending) throw new Error('An agent policy change is already being saved')
                 const candidate = updateAgentExecutionPolicy(useSettingsStore.getState().agentExecutionPolicy, expectedRevision, next)

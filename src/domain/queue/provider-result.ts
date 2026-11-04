@@ -1,3 +1,10 @@
+import { sha256Utf8 } from '@/domain/composition/canonical-serialize'
+
+/** One stable identity binds a retained response to the exact Queue attempt. */
+export function providerResultSpoolId(attemptId: string): string {
+    return `provider-${sha256Utf8(attemptId).slice(0, 48)}`
+}
+
 export type ProviderDispatchState = 'prepared'
     | 'connect-failed-before-dispatch'
     | 'possibly-dispatched'

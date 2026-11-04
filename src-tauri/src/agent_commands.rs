@@ -19,6 +19,7 @@ pub struct AgentInitialization {
     available: bool,
     workspace_id: String,
     clients: Vec<AgentClient>,
+    runtime_identity: Option<crate::agent_runtime_identity::AgentRuntimeIdentity>,
 }
 
 #[derive(Serialize)]
@@ -534,6 +535,7 @@ mod native {
             available: true,
             workspace_id: registry.workspace_id,
             clients: registry.clients,
+            runtime_identity: crate::agent_runtime_identity::capture(),
         })
     }
     pub fn change_client(
@@ -821,6 +823,7 @@ mod native {
         idempotency_key: String,
         correlation_id: Option<String>,
         approval_token: Option<String>,
+        expected_runtime_hash: Option<String>,
     }
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -869,6 +872,10 @@ mod native {
             || envelope.submitted_at.len() != 24
             || envelope.expires_at.as_ref().is_some_and(|v| v.len() != 24)
             || context.api_version != "nai-blue.agent/v1alpha1"
+            || context.expected_runtime_hash.as_ref().is_some_and(|v| {
+                !v.strip_prefix("sha256:").is_some_and(|hash| hash.len() == 64
+                    && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+            })
             || context.workspace_id != registry.workspace_id
             || !identifier(&context.idempotency_key)
             || context
@@ -904,6 +911,7 @@ mod native {
                     | "production.list"
                     | "production.get"
                     | "production.plan_next"
+                    | "artifact.get_image"
             )
             || envelope.authentication.scheme != "hmac-sha256"
         {
@@ -1080,6 +1088,7 @@ assert result["accepted"] is False and result["status"] == "submitted-to-inbox"
                 "production.list",
                 "production.get",
                 "production.plan_next",
+                "artifact.get_image",
             ] {
                 let mut payload = signed();
                 payload["command"]["name"] = json!(name);

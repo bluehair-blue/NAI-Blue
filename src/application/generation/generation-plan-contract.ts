@@ -70,6 +70,7 @@ export type CompatibilityStatus = 'captured-pass'
     | 'unsupported'
 
 export interface CompatibilitySnapshot {
+    readonly evidence?: { readonly kind: 'live-canary'; readonly resourceId: string; readonly responseDigest: Sha256Digest }
     readonly compatibilityProfileId: string
     readonly status: CompatibilityStatus
 }

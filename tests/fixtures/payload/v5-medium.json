@@ -1,0 +1,10 @@
+{
+  "sourceKind": "synthetic-only",
+  "model": "nai-diffusion-5-full-medium",
+  "inpaintModel": "nai-diffusion-5-full-medium-inpainting",
+  "steps": 14,
+  "sampler": "k_euler_ancestral",
+  "cfgRescale": 0,
+  "ucPreset": 0,
+  "customNegativeSupported": false
+}

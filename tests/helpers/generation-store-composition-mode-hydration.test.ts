@@ -22,6 +22,20 @@ vi.mock('@/lib/toast', () => ({
 }))
 
 describe('Main composition mode persistence', () => {
+    it('applies Medium numeric requirements on explicit selection while retaining authored negatives', async () => {
+        persistence.value = null
+        vi.resetModules()
+        const { useGenerationStore } = await import('@/stores/generation-store')
+        useGenerationStore.setState({ steps: 28, sampler: 'k_euler', cfgRescale: 0.5, ucPreset: 2, negativePrompt: 'keep this user input' })
+        useGenerationStore.getState().setModel('nai-diffusion-5-full-medium')
+        expect(useGenerationStore.getState()).toMatchObject({
+            steps: 14, sampler: 'k_euler_ancestral', cfgRescale: 0, ucPreset: 0,
+            negativePrompt: 'keep this user input',
+        })
+        useGenerationStore.getState().setSteps(23)
+        useGenerationStore.getState().setModel('nai-diffusion-5-full')
+        expect(useGenerationStore.getState().steps).toBe(23)
+    })
     it.each(['legacy', 'shadow', 'v2', 'unknown', undefined] as const)(
         'normalizes a persisted %s request and excludes the rollout mode from future writes',
         async persistedMode => {

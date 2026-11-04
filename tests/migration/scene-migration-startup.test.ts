@@ -36,8 +36,9 @@ function legacy(): SceneV1CompatibilityProjection {
 
 class MemoryRepository implements SceneRepositoryPort {
     readonly documents = new Map<string, SceneDocument>()
+    projection = legacy()
     failCommit = false
-    async readLegacyProjection() { return legacy() }
+    async readLegacyProjection() { return structuredClone(this.projection) }
     async getDocument(presetId: string) { return structuredClone(this.documents.get(presetId) ?? null) }
     async listDocuments() {
         return [...this.documents.values()].map(document => ({
@@ -59,6 +60,78 @@ class MemoryRepository implements SceneRepositoryPort {
 }
 
 describe('Scene V1 materialization and authority', () => {
+    function compositionBridge() {
+        const repository = new MemoryRepository()
+        const original = JSON.stringify({ version: 0, state: repository.projection })
+        const ref = {
+            recipeId: 'scene-recipe:migrated:fixture', selectionKind: 'asset' as const,
+            recipeRevision: 0, migrationMarker: { kind: 'legacy-scene-prompt' as const, schemaVersion: 2 as const },
+        }
+        const originalDocument = migrateSceneDocuments(repository.projection, NOW)[0]!
+        repository.documents.set('preset-a', {
+            ...originalDocument, revision: 2,
+            scenes: originalDocument.scenes.map(scene => ({ ...scene, scenePrompt: 'V2 user edit' })),
+        })
+        repository.projection = {
+            presets: repository.projection.presets.map(preset => ({
+                ...preset, scenes: preset.scenes.map(scene => ({ ...scene, compositionRef: ref })),
+            })),
+        }
+        let marker: SceneAuthorityMarker = { reader: 'v2', v1Preimage: original, verifiedAt: NOW }
+        const dependencies = {
+            repository, now: () => NOW,
+            legacyPreimage: { readSerialized: async () => JSON.stringify({ version: 0, state: repository.projection }) },
+            marker: { read: async () => marker, write: async (next: SceneAuthorityMarker) => { marker = next } },
+        }
+        return { repository, dependencies, ref, original, readMarker: () => marker }
+    }
+
+    it('bridges additive Composition references using CAS and retains V2 edits, images, and exact V1 backup on reopen', async () => {
+        const { repository, dependencies, ref, original, readMarker } = compositionBridge()
+        const legacyImages = structuredClone(repository.projection.presets[0]!.scenes[0]!.images)
+        const result = await runSceneMigrationStartup(dependencies)
+        expect(result.status).toBe('V2_ACTIVE')
+        expect(repository.documents.get('preset-a')).toMatchObject({
+            revision: 3, scenes: [{ scenePrompt: 'V2 user edit', compositionRef: ref, artifactRefs: [] }],
+        })
+        expect(readMarker().v1Preimage).toBe(original)
+        expect(repository.projection.presets[0]!.scenes[0]!.images).toEqual(legacyImages)
+        expect((await runSceneMigrationStartup(dependencies)).status).toBe('V2_ACTIVE')
+        expect(repository.documents.get('preset-a')!.revision).toBe(3)
+    })
+
+    it('retains an existing authoritative V2 reference instead of replacing it with compatibility metadata', async () => {
+        const { repository, dependencies } = compositionBridge()
+        const existing = repository.documents.get('preset-a')!
+        repository.documents.set('preset-a', {
+            ...existing, scenes: existing.scenes.map(scene => ({ ...scene, compositionRef: { recipeId: 'user-recipe' } })),
+        })
+        expect((await runSceneMigrationStartup(dependencies)).status).toBe('V2_ACTIVE')
+        expect(repository.documents.get('preset-a')).toMatchObject({ revision: 2, scenes: [{ compositionRef: { recipeId: 'user-recipe' } }] })
+    })
+
+    it.each(['prompt', 'image', 'reference'])('rejects genuine legacy %s changes without overwriting either authority', async change => {
+        const { repository, dependencies, original, readMarker } = compositionBridge()
+        const scene = repository.projection.presets[0]!.scenes[0]!
+        repository.projection = { presets: [{ ...repository.projection.presets[0]!, scenes: [{
+            ...scene,
+            ...(change === 'prompt' ? { scenePrompt: 'changed V1' } : {}),
+            ...(change === 'image' ? { images: [] } : {}),
+            ...(change === 'reference' ? { compositionRef: { recipeId: 'not-a-migration' } } : {}),
+        }] }] }
+        expect(await runSceneMigrationStartup(dependencies)).toEqual({ status: 'V1_FALLBACK', reason: 'INVALID_V2' })
+        expect(readMarker().v1Preimage).toBe(original)
+        expect(repository.documents.get('preset-a')!.revision).toBe(2)
+    })
+
+    it('preserves the authority marker after a compatibility CAS failure and honors human rollback', async () => {
+        const { repository, dependencies, original, readMarker } = compositionBridge()
+        repository.failCommit = true
+        expect(await runSceneMigrationStartup(dependencies)).toEqual({ status: 'V1_FALLBACK', reason: 'COMMIT_FAILED' })
+        expect(readMarker()).toEqual({ reader: 'v2', v1Preimage: original, verifiedAt: NOW })
+        await rollbackSceneAuthority(dependencies.marker)
+        expect(await runSceneMigrationStartup(dependencies)).toEqual({ status: 'V1_FALLBACK', reason: 'ROLLED_BACK' })
+    })
     it('projects authoring only without mutating or copying legacy image bytes', () => {
         const source = legacy()
         const before = JSON.stringify(source)

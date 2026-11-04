@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 mod nai_transport;
 mod agent_commands;
+mod agent_runtime_identity;
 mod novelai_credentials;
 mod r2_native;
 mod sync_transport;
@@ -30,6 +31,8 @@ pub struct OpusGenerationUsage {
     pub percent: f64,
     pub is_negative: bool,
     pub time_until_next_percent: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purchased_percent: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,6 +70,11 @@ fn parse_opus_generation_usage(value: &serde_json::Value) -> Option<OpusGenerati
         percent: percent.clamp(0.0, 100.0),
         is_negative,
         time_until_next_percent,
+        purchased_percent: record
+            .get("purchasedPercent")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|value| value.is_finite())
+            .map(|value| value.clamp(0.0, 400.0)),
     })
 }
 
@@ -88,6 +96,7 @@ mod subscription_usage_tests {
                 percent: 87.5,
                 is_negative: false,
                 time_until_next_percent: 143.25,
+                purchased_percent: None,
             }),
         );
         assert_eq!(
@@ -113,6 +122,7 @@ mod subscription_usage_tests {
                     percent: expected,
                     is_negative: percent < 0.0,
                     time_until_next_percent: 1.0,
+                    purchased_percent: None,
                 }),
             );
         }
@@ -131,6 +141,24 @@ mod subscription_usage_tests {
 
         assert_eq!(response.tier, Some(3));
         assert!(response.usage.is_none());
+    }
+
+    #[test]
+    fn keeps_extra_usage_separate_from_the_regular_allowance() {
+        for (extra, expected) in [(75.0, 75.0), (450.0, 400.0), (-2.0, 0.0)] {
+            let parsed = parse_opus_generation_usage(&json!({
+                "percent": 0, "isNegative": true, "timeUntilNextPercent": 143.25,
+                "purchasedPercent": extra,
+            })).expect("regular quota is valid");
+            assert_eq!(parsed.percent, 0.0);
+            assert_eq!(parsed.purchased_percent, Some(expected));
+            assert_eq!(serde_json::to_value(parsed).unwrap()["purchasedPercent"], json!(expected));
+        }
+        let parsed = parse_opus_generation_usage(&json!({
+            "percent": 20, "isNegative": false, "timeUntilNextPercent": 1,
+            "purchasedPercent": "invalid",
+        })).unwrap();
+        assert_eq!(parsed.purchased_percent, None);
     }
 
     #[test]
@@ -1071,6 +1099,9 @@ pub fn run() {
             sync_transport::sync_transport_cancel_request,
         ])
         .setup(|_app| {
+            // Public capabilities bind this process to the installed executable,
+            // including different builds that intentionally share a version.
+            let _ = agent_runtime_identity::capture();
             #[cfg(target_os = "macos")]
             {
                 if let Some(window) = _app.get_webview_window("main") {

@@ -2,7 +2,9 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { inspectAgentCommand, inspectPath, readText } from './inspect-agent-command.mjs'
+import { inspectAgentCommand, inspectPath, readText, readBytes } from './inspect-agent-command.mjs'
+import { createHash } from 'node:crypto'
+import { adapterFingerprint, createRuntimeGuard, resolveInstalledRuntime } from './agent-runtime-guard.mjs'
 
 const repo = fileURLToPath(new URL('../', import.meta.url))
 const maxBytes = 65_536
@@ -63,6 +65,8 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
             context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: connection.workspaceId,
                 clientId: connection.clientId, actor: { kind: connection.actorKind }, idempotencyKey: requestId },
             command, authentication: { scheme: 'hmac-sha256', keyId: connection.keyId, signature: `hmac-sha256:${'0'.repeat(64)}` } }
+        const expectedRuntimeHash = options.getRuntimeHash?.()
+        if (expectedRuntimeHash) envelope.context.expectedRuntimeHash = expectedRuntimeHash
         return parseAgentCommandEnvelope({ ...envelope, requestHash: agentRequestHash(envelope) })
     }
     build({ name: 'system.describe_capabilities', input: {} }, 'mcp-connection-check')
@@ -95,6 +99,21 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
 
     return {
         inspect,
+        async readImage(requestId, signal) {
+            assertAgentRequestId(requestId)
+            const observed = await inspect(requestId, signal)
+            const receipt = observed.receipt
+            requireInput(observed.status === 'application-receipt' && receipt?.state === 'completed'
+                && receipt.command === 'artifact.get_image' && receipt.result?.found === true)
+            const image = receipt.result.resource
+            requireInput(image && image.requestId === requestId && image.mimeType === 'image/png'
+                && Number.isSafeInteger(image.byteLength) && image.byteLength > 0 && image.byteLength <= 1_048_576
+                && /^sha256:[a-f0-9]{64}$/.test(image.contentChecksum))
+            const bytes = await readBytes(path.join(inboxDir, '..', 'images', `${requestId}.png`), 1_048_576)
+            requireInput(bytes.length === image.byteLength && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a'
+                && `sha256:${createHash('sha256').update(bytes).digest('hex')}` === image.contentChecksum)
+            return { data: bytes.toString('base64'), mimeType: 'image/png' }
+        },
         async invoke(command, requestId, signal) {
             assertAgentRequestId(requestId)
             const contract = getAgentCommandInputContract(command.name)
@@ -131,10 +150,12 @@ async function main() {
         if (values.help) {
             console.log('NAI Blue development MCP stdio spike.\n'
                 + 'node scripts/run-agent-mcp-stdio.mjs --connection <public connection JSON> --inbox-dir <existing inbox> --python <Python executable> [--wait-ms 0..30000]\n'
-                + 'Requires a client already registered by a human in the Windows app. No app launch, installation or MCP configuration changes.')
+                + 'Requires an existing registered client. Resolves and normally launches the registered Windows installation; never installs, kills a process, or changes approval. Read nai-blue://runtime for freshness diagnostics.')
             return
         }
         requireInput(values.connection && values['inbox-dir'] && values.python && /^\d+$/.test(values['wait-ms']))
+        requireInput(process.platform === 'win32')
+        const initialFingerprint = await adapterFingerprint(repo)
         const connection = JSON.parse(await readText(values.connection, 4096))
         const { createServer } = await import('vite')
         loader = await createServer({ root: repo, configFile: false, logLevel: 'silent',
@@ -145,8 +166,14 @@ async function main() {
             '/src/application/agent/agent-command-input.ts', '/src/adapters/agent/mcp/inbox-result-projection.ts',
             '/src/adapters/agent/mcp/mcp-stdio-server.ts',
         ].map(file => loader.ssrLoadModule(file)))
+        let targetRuntimeHash
         const inbox = await createAgentMcpInbox({ connection, inboxDir: values['inbox-dir'], python: values.python,
+            getRuntimeHash: () => targetRuntimeHash,
             waitMs: Number(values['wait-ms']) }, { contract, canonical, inputs, projection })
+        const guard = createRuntimeGuard({ inbox, initialFingerprint,
+            fingerprint: () => adapterFingerprint(repo), resolve: () => resolveInstalledRuntime(repo),
+            onTarget: value => { targetRuntimeHash = value } })
+        inbox.runtimeStatus = () => guard.status()
         const { serveStdio, StdioServerTransport } = await import('@modelcontextprotocol/server/stdio')
         const transport = new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: 262_144 })
         handle = serveStdio(() => adapter.createAgentMcpServer(inbox), { transport,

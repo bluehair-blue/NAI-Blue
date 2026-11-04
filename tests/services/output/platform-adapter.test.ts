@@ -7,6 +7,7 @@ const fsCapture = vi.hoisted(() => ({
     existing: new Set<string>(),
     files: new Map<string, Uint8Array>(),
     entries: [] as Array<{ name: string; isFile: boolean; isDirectory: boolean; isSymlink: boolean }>,
+    denied: false,
 }))
 
 const nativeScopeCapture = vi.hoisted(() => ({
@@ -33,6 +34,7 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
     BaseDirectory: { AppData: 1, Picture: 2 },
     exists: async (path: string, options?: unknown) => {
         fsCapture.calls.push({ operation: 'exists', path, options })
+        if (fsCapture.denied) throw new Error('Plugin filesystem scope denied')
         return fsCapture.existing.has(path) || fsCapture.files.has(path)
     },
     mkdir: async (path: string, options?: unknown) => {
@@ -89,6 +91,7 @@ import {
 } from '@/services/output/tauri-output-adapter'
 
 beforeEach(() => {
+    fsCapture.denied = false
     fsCapture.calls.length = 0
     fsCapture.existing.clear()
     fsCapture.files.clear()
@@ -98,6 +101,27 @@ beforeEach(() => {
 })
 
 describe('Tauri output platform adapters', () => {
+    it('registers a scoped standard output directory for native publication after plugin access succeeds', async () => {
+        const adapter = new DesktopOutputPlatformAdapter()
+        const directory = { path: 'Standard-canary-output', displayPath: 'C:/Synthetic/Pictures/Standard-canary-output', baseDir: 2 }
+        await adapter.ensureDirectory(directory)
+        expect(fsCapture.calls.map(call => call.operation)).toEqual(['exists', 'mkdir'])
+        expect(nativeScopeCapture.paths).toEqual(['C:/Synthetic/Pictures/Standard-canary-output'])
+    })
+
+    it('does not authorize a directory rejected by plugin scope checks', async () => {
+        fsCapture.denied = true
+        const adapter = new DesktopOutputPlatformAdapter()
+        await expect(adapter.ensureDirectory({ path: '../denied-output', displayPath: 'denied', baseDir: 2 })).rejects.toThrow('scope denied')
+        expect(nativeScopeCapture.paths).toEqual([])
+        expect(fsCapture.calls.map(call => call.operation)).toEqual(['exists'])
+    })
+
+    it('keeps app-scoped output free of desktop directory grants', async () => {
+        const adapter = new AppScopedOutputPlatformAdapter()
+        await adapter.ensureDirectory({ path: 'Mobile-canary-output', displayPath: 'Mobile-canary-output', baseDir: 1 })
+        expect(nativeScopeCapture.paths).toEqual([])
+    })
     it('fingerprints resolved directories with runtime filesystem semantics', () => {
         const directory = (path: string) => ({
             path, displayPath: path, capabilityFallbackUsed: false,

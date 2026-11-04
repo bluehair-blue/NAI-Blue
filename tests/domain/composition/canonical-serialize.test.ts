@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 
 import {
     CANONICAL_HASH_ALGORITHM,
@@ -6,6 +7,8 @@ import {
     COMPOSITION_PLAN_HASH_VERSION,
     canonicalProject,
     canonicalSerialize,
+    canonicalSerializeChunks,
+    canonicalUtf8ByteLength,
     createCompositionPlanHash,
     fnv1a64Utf8,
     hashCanonicalValue,
@@ -14,6 +17,16 @@ import {
 } from '@/domain/composition/canonical-serialize'
 
 describe('composition canonical serialization', () => {
+    it('streams the legacy JSON bytes and SHA256 across escaped Unicode value and key boundaries', () => {
+        const text = '한글🙂"\\\n\u0000\ud800x\udfff'.repeat(5000)
+        const value = { [text]: text, a: [-0, null, true] }
+        const expected = `{"a":[0,null,true],${JSON.stringify(text)}:${JSON.stringify(text)}}`
+        const pieces = [...canonicalSerializeChunks(value)]
+        expect(pieces.join('')).toBe(expected)
+        expect(canonicalSerialize(value)).toBe(expected)
+        expect(canonicalUtf8ByteLength(value)).toBe(Buffer.byteLength(expected, 'utf8'))
+        expect(hashCanonicalValue(value)).toBe(createHash('sha256').update(expected, 'utf8').digest('hex'))
+    })
     it.each([
         { value: null, expected: 'null' },
         { value: -0, expected: '0' },
@@ -110,6 +123,16 @@ describe('composition plan hash', () => {
     it('encodes lone UTF-16 surrogates as the UTF-8 replacement character', () => {
         expect(fnv1a64Utf8('\ud800')).toBe(fnv1a64Utf8('\ufffd'))
         expect(sha256Utf8('\ud800')).toBe(sha256Utf8('\ufffd'))
+    })
+
+    it.each([55, 56, 63, 64, 65, 16383, 16384, 16385])('preserves SHA padding and Unicode chunk boundaries at %i', length => {
+        const input = `${'x'.repeat(length)}😀한글\ud800`
+        expect(sha256Utf8(input)).toBe(createHash('sha256').update(input).digest('hex'))
+    })
+
+    it('hashes a large backup string with the same native SHA digest', () => {
+        const input = 'backup-한글-😀\n'.repeat(500_000)
+        expect(sha256Utf8(input)).toBe(createHash('sha256').update(input).digest('hex'))
     })
 
     it.each([

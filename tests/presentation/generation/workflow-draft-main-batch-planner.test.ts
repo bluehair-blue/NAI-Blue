@@ -46,6 +46,21 @@ function readyBatch(mode: 'same-settings' | 'variations' | 'scenes' = 'same-sett
 }
 
 describe('Workflow Draft Main batch Planner', () => {
+    it('rejects executor-only model incompatibility before returning a prepared workflow batch', async () => {
+        const source = readyDraft()
+        const draft = reviseSingleImageDraft(source, {
+            updatedAt: NOW,
+            payload: {
+                ...source.payload,
+                generation: { ...source.payload.generation, transparentBackground: true },
+            },
+        })
+        const planner = createWorkflowDraftMainBatchPlanner(draft)
+        const error = await planner.prepareBatch().then(() => null, failure => failure)
+
+        expect(error).toMatchObject({ name: 'NovelAiModelCapabilityError' })
+    })
+
     it('materializes one non-streaming PreparedMainGeneration from the detached draft', async () => {
         const planner = createWorkflowDraftMainBatchPlanner(readyDraft())
         const prepared = await planner.prepareBatch()

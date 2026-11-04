@@ -6,7 +6,7 @@ import {
     ucPresetTagHint,
     type UcPresetIndex,
 } from '@/services/nai/presets'
-import { getNovelAiModelProfile, isNovelAiV5Model } from '@/services/nai/model-catalog'
+import { getNovelAiModelProfile, isNovelAiV5Model, mediumSettingsIssue, novelAiVerbatimSettingsIssue } from '@/services/nai/model-catalog'
 import { assembleV5TextPrompt } from '@/services/nai/text-assembly'
 
 // Release-supported builder authority is V4/V4.5/V5. Retired model identifiers
@@ -20,6 +20,7 @@ export interface CharacterPromptInput {
 }
 
 export interface GenerationRequest {
+    promptTextMode?: 'verbatim'
     prompt: string
     negativePrompt: string
     model: string
@@ -98,16 +99,25 @@ export function buildGenerateImagePayload(
     req: GenerationRequest,
     opts: BuildOptions = {},
 ): NaiImagePayload {
+    const settingsIssue = mediumSettingsIssue({
+        ...req,
+        characterNegatives: req.characterPrompts.filter(char => char.enabled && char.prompt.trim())
+            .map(char => char.negativePrompt ?? ''),
+    })
+    if (settingsIssue !== null) throw new Error(settingsIssue)
     const presetModel = getNovelAiModelProfile(req.model)?.modelId ?? req.model
+    const verbatim = req.promptTextMode === 'verbatim'
+    const verbatimIssue = novelAiVerbatimSettingsIssue(req)
+    if (verbatimIssue !== null) throw new Error(verbatimIssue)
     const isV5 = isNovelAiV5Model(presetModel)
     const skipCfgAboveSigma = varietySigma({ ...req, model: presetModel })
-    const prompt = mergeQualityTags(
+    const prompt = verbatim ? req.prompt : mergeQualityTags(
         removeComments(req.prompt),
         req.qualityToggle,
         presetModel,
         req.transparentBackground,
     )
-    const negative = mergeUcPreset(removeComments(req.negativePrompt), req.ucPreset, presetModel)
+    const negative = verbatim ? req.negativePrompt : mergeUcPreset(removeComments(req.negativePrompt), req.ucPreset, presetModel)
     const activeChars = req.characterPrompts.filter(char => char.enabled && char.prompt.trim())
     const center = (char: CharacterPromptInput) =>
         req.useCoords ? (char.center ?? { x: 0.5, y: 0.5 }) : { x: 0.5, y: 0.5 }
@@ -115,7 +125,7 @@ export function buildGenerateImagePayload(
         model: presetModel,
         basePrompt: prompt,
         characterPrompts: activeChars.map(char => ({
-            prompt: removeComments(char.prompt),
+            prompt: verbatim ? char.prompt : removeComments(char.prompt),
             center: center(char),
         })),
         useCoords: req.useCoords,
@@ -189,7 +199,7 @@ export function buildGenerateImagePayload(
                 caption: {
                     base_caption: expandedPrompt,
                     char_captions: activeChars.map(char => ({
-                        char_caption: removeComments(char.prompt),
+                        char_caption: verbatim ? char.prompt : removeComments(char.prompt),
                         centers: [center(char)],
                     })),
                 },
@@ -200,14 +210,14 @@ export function buildGenerateImagePayload(
                 caption: {
                     base_caption: negative,
                     char_captions: activeChars.map(char => ({
-                        char_caption: removeComments(char.negativePrompt),
+                        char_caption: verbatim ? char.negativePrompt : removeComments(char.negativePrompt),
                         centers: [center(char)],
                     })),
                 },
             },
             characterPrompts: activeChars.map(char => ({
-                prompt: removeComments(char.prompt),
-                uc: removeComments(char.negativePrompt),
+                prompt: verbatim ? char.prompt : removeComments(char.prompt),
+                uc: verbatim ? char.negativePrompt : removeComments(char.negativePrompt),
                 center: center(char),
                 enabled: true,
             })),

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en.json'
 import ko from '@/i18n/locales/ko.json'
 import ja from '@/i18n/locales/ja.json'
+import { DEFAULT_AGENT_AUTHORING_CONSENT } from '@/application/agent/agent-authoring-consent'
 import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execution-policy'
 import type { ForegroundAgentCommandRuntime, ForegroundAgentSnapshot } from '@/composition-root/foreground-agent-command-runtime'
 
@@ -13,9 +14,32 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 import { AgentCommandPanel } from '@/presentation/agent/AgentCommandPanel'
 
 describe('human execution controls in the existing inbox panel', () => {
+    it('renders per-client persisted editing toggles with disabled revoked clients and no automatic grant', () => {
+        const client = { clientId: 'client-active', keyId: 'key-1', label: 'Active client', actorKind: 'agent' as const,
+            createdAt: '2026-10-17T00:00:00.000Z', revokedAt: null }
+        const snapshot: ForegroundAgentSnapshot = { status: 'ready', workspaceId: 'workspace',
+            clients: [client, { ...client, clientId: 'client-revoked', label: 'Revoked client', revokedAt: '2026-10-17T01:00:00.000Z' }],
+            capabilities: [], changingClient: false, changingExecution: false, policy: DEFAULT_AGENT_EXECUTION_POLICY,
+            generationConsent: DEFAULT_AGENT_AUTHORING_CONSENT,
+            authoringConsent: { schemaVersion: 1, revision: 1, approvedClients: [{ workspaceId: 'workspace', clientId: 'client-active' }] },
+            recent: [], pendingApprovals: [] }
+        const changeAuthoringApproval = vi.fn()
+        const runtime = { subscribe: () => () => undefined, getSnapshot: () => snapshot, changeAuthoringApproval } as unknown as ForegroundAgentCommandRuntime
+        const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(AgentCommandPanel, { runtime })))
+        const active = html.slice(html.indexOf('Active client')).split('</li>')[0]
+        const revoked = html.slice(html.indexOf('Revoked client')).split('</li>')[0]
+        expect(active).not.toContain('agentInbox.alwaysApproveEditingScope')
+        expect(active).toContain('agentInbox.alwaysApproveGeneration')
+        expect(active).not.toContain('aria-label="agentInbox.alwaysApproveGenerationFor" checked=""')
+        expect(html).not.toContain('type="number"')
+        expect(active).toContain('aria-label="agentInbox.alwaysApproveEditingFor" checked=""')
+        expect(revoked).toContain('type="checkbox" disabled=""')
+        expect(revoked).not.toContain('checked=""')
+        expect(changeAuthoringApproval).not.toHaveBeenCalled()
+    })
     it('renders bound pending review facts and the existing batch link without automatic approval', () => {
         const snapshot: ForegroundAgentSnapshot = { status: 'ready', workspaceId: 'workspace', clients: [], capabilities: [],
-            changingClient: false, changingExecution: false, policy: DEFAULT_AGENT_EXECUTION_POLICY,
+            authoringConsent: DEFAULT_AGENT_AUTHORING_CONSENT, generationConsent: DEFAULT_AGENT_AUTHORING_CONSENT, changingClient: false, changingExecution: false, policy: DEFAULT_AGENT_EXECUTION_POLICY,
             recent: [{ requestId: 'request-done', state: 'completed', batchId: 'batch-existing' }],
             pendingApprovals: [{ requestId: 'request-review', clientId: 'client-human', requestHash: `sha256:${'1'.repeat(64)}`,
                 planHash: `sha256:${'2'.repeat(64)}`, planId: `sha256:${'2'.repeat(64)}`, policyRevision: 0,
@@ -40,12 +64,19 @@ describe('human execution controls in the existing inbox panel', () => {
         expect(html).not.toContain('type="number"')
         expect(html).toContain('agentInbox.queuePacing')
         expect(decideApproval).not.toHaveBeenCalled()
+        const canarySnapshot = { ...snapshot, pendingApprovals: [{ ...snapshot.pendingApprovals[0], canaryEligible: true }] }
+        const canaryRuntime = { ...runtime, getSnapshot: () => canarySnapshot } as unknown as ForegroundAgentCommandRuntime
+        const canaryHtml = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(AgentCommandPanel, { runtime: canaryRuntime })))
+        expect(canaryHtml).toContain('agentInbox.canaryNotice')
+        expect(canaryHtml).toContain('agentInbox.approveCanary')
+        expect(canaryHtml).not.toContain('>agentInbox.approveOnce</button>')
+        expect(decideApproval).not.toHaveBeenCalled()
     })
     it('keeps all inbox policy and approval messages available in Korean, English and Japanese', () => {
         expect(Object.keys(ko.agentInbox).sort()).toEqual(Object.keys(en.agentInbox).sort())
         expect(Object.keys(ja.agentInbox).sort()).toEqual(Object.keys(en.agentInbox).sort())
         for (const locale of [ko, en, ja]) {
-            for (const key of ['approveOnce', 'rejectApproval', 'autoExpiry', 'policySaveFailed', 'queuePacing', 'unavailableChanges', 'cancelAction', 'cancelEffect', 'cancelRequested', 'storageAction', 'storageEffect', 'storageRegistered'] as const) {
+            for (const key of ['approveOnce', 'approveCanary', 'canaryNotice', 'rejectApproval', 'autoExpiry', 'policySaveFailed', 'queuePacing', 'unavailableChanges', 'cancelAction', 'cancelEffect', 'cancelRequested', 'storageAction', 'storageEffect', 'storageRegistered'] as const) {
                 expect(locale.agentInbox[key].length).toBeGreaterThan(0)
             }
         }
@@ -53,7 +84,7 @@ describe('human execution controls in the existing inbox panel', () => {
 
     it('shows the exact cancellation scope and keeps its approval available during generation pause', () => {
         const snapshot: ForegroundAgentSnapshot = { status: 'ready', workspaceId: 'workspace', clients: [], capabilities: [],
-            changingClient: false, changingExecution: false,
+            authoringConsent: DEFAULT_AGENT_AUTHORING_CONSENT, generationConsent: DEFAULT_AGENT_AUTHORING_CONSENT, changingClient: false, changingExecution: false,
             policy: { ...DEFAULT_AGENT_EXECUTION_POLICY, globalPause: true },
             recent: [{ requestId: 'cancel-done', state: 'completed', batchId: 'reviewed-batch', cancelRequested: true }],
             pendingApprovals: [{ command: 'generation.cancel', requestId: 'cancel-review', clientId: 'client-reviewer',
@@ -80,7 +111,7 @@ describe('human execution controls in the existing inbox panel', () => {
 
     it('shows the one-job storage registration scope and acknowledgement while generation is paused', () => {
         const snapshot: ForegroundAgentSnapshot = { status: 'ready', workspaceId: 'workspace', clients: [], capabilities: [],
-            changingClient: false, changingExecution: false, policy: { ...DEFAULT_AGENT_EXECUTION_POLICY, globalPause: true },
+            authoringConsent: DEFAULT_AGENT_AUTHORING_CONSENT, generationConsent: DEFAULT_AGENT_AUTHORING_CONSENT, changingClient: false, changingExecution: false, policy: { ...DEFAULT_AGENT_EXECUTION_POLICY, globalPause: true },
             recent: [{ requestId: 'storage-done', state: 'completed', batchId: 'existing-batch', storageRegistered: true }],
             pendingApprovals: [{ command: 'generation.retry_storage', requestId: 'storage-review', clientId: 'client-reviewer',
                 requestHash: `sha256:${'1'.repeat(64)}`, targetHash: `sha256:${'2'.repeat(64)}`, runId: 'existing-batch',

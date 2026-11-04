@@ -7,6 +7,7 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import { hashGenerationSemanticIntent } from '@/application/generation/plan-generation'
 import { projectMainGenerationSemantic } from '@/services/generation/main-generation-semantic'
 import { NovelAIHttpError } from '@/services/novelai-types'
+import { NovelAiModelCapabilityError } from '@/services/nai/adapter'
 import { createR2ProfileV2, hashR2ProfileV2 } from '@/domain/r2/types'
 import { createAnlasCostConsentSnapshot } from '@/domain/queue/anlas-cost-consent'
 
@@ -376,6 +377,19 @@ describe('Main Queue Provider result safety', () => {
         expect(mocks.transport).toHaveBeenCalledTimes(1)
         expect(mocks.commit).toHaveBeenCalledTimes(2)
         expect(current.transitions[current.transitions.length - 1]?.evidence.dispatchState).toBe('result-spooled')
+    })
+
+    it('does not turn deterministic local model errors into retryable connections', async () => {
+        const current = context(prepared)
+        mocks.transport.mockRejectedValue(new NovelAiModelCapabilityError('V5 requires standard mode', 'promptTextMode'))
+        await expect(executeMainQueueJob(job(), current.value)).rejects.toMatchObject({
+            kind: 'fatal', message: 'V5 requires standard mode',
+        })
+        expect(current.transitions.at(-1)?.evidence).toMatchObject({
+            dispatchState: 'connect-failed-before-dispatch', providerOutcome: 'known-failure', billingRisk: 'none',
+        })
+        expect(mocks.transport).toHaveBeenCalledTimes(1)
+        expect(mocks.write).not.toHaveBeenCalled()
     })
 
     it('classifies a transport-proven pre-dispatch failure as safely retryable', async () => {

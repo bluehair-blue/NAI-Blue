@@ -1,6 +1,4 @@
 import {
-    COMPOSITION_MIGRATION_BACKUP_STORAGE_KEY,
-    COMPOSITION_REPOSITORY_STORAGE_KEY,
     CompositionRepository,
     CompositionRepositoryError,
     type CompositionAuthority,
@@ -14,7 +12,6 @@ import {
     runCompositionMigration,
 } from '@/domain/composition/migrations'
 import {
-    exportRawIndexedDBEntries,
     exportWildcardContentSnapshot,
     compareAndSetIndexedDBItem,
     getIndexedDBItemStrict,
@@ -101,9 +98,15 @@ export function mergeLegacyLocalStorageAliases(
 }
 
 export async function collectCompositionMigrationSource(): Promise<CompositionMigrationSourceSnapshot> {
-    let serializedStores = await exportRawIndexedDBEntries()
-    delete serializedStores[COMPOSITION_REPOSITORY_STORAGE_KEY]
-    delete serializedStores[COMPOSITION_MIGRATION_BACKUP_STORAGE_KEY]
+    // Capture only authorities the legacy migrator consumes. Operational journals
+    // and growing rollback archives must never become new migration preimages.
+    const aliases = [...new Set(Object.values(LEGACY_COMPOSITION_STORE_ALIASES).flat())]
+    const entries = await Promise.all(aliases.map(async key => (
+        [key, await getIndexedDBItemStrict(key)] as const
+    )))
+    let serializedStores: Record<string, string> = Object.fromEntries(
+        entries.filter((entry): entry is readonly [typeof aliases[number], string] => entry[1] !== null),
+    )
 
     // Some pre-IndexedDB releases used non-canonical localStorage aliases.
     // Capture them under the migration lock without deleting or rewriting the

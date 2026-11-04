@@ -28,6 +28,7 @@ export function projectMainGenerationSemantic(
         steps: params.steps,
         seed: params.seed,
         generationParameters: {
+            ...(params.promptTextMode === undefined ? {} : { promptTextMode: params.promptTextMode }),
             cfgScale: params.cfg_scale,
             cfgRescale: params.cfg_rescale,
             sampler: params.sampler,

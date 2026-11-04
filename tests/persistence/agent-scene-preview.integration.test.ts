@@ -59,6 +59,7 @@ it('restores an agent-created preset and its real linked previews, preserving hi
         flushScenes: flushSceneAuthorityRuntime, projectScene: publishAgentSceneDocument,
         projectFolders: () => { throw new Error('This Scene proof never projects folders') },
         hasPreset: id => useSceneStore.getState().presets.some(preset => preset.id === id),
+        validateImageSource: async source => source.artifactId === 'agent-artifact-2' && source.contentChecksum === `sha256:${'2'.repeat(64)}`,
     })
     const input: JsonObject = { presetId, presetName: 'Agent-created previews', expectedRevision: 0,
         changes: [{ sceneId, name: 'A new scene', generationFolderId: folderId,
@@ -105,11 +106,17 @@ it('restores an agent-created preset and its real linked previews, preserving hi
     expect((await scenes.getDocument(presetId))?.revision).toBe(4)
     expect(await authoring.apply('scene.patch_many', patch, staleTarget, grant(staleTarget)))
         .toEqual({ status: 'rejected', code: 'AGENT_AUTHORING_TARGET_CHANGED' })
-    const currentPatch = { ...patch, expectedRevision: 4 }
+    const imageSource = { mode: 'img2img' as const, artifactId: 'agent-artifact-2', contentChecksum: `sha256:${'2'.repeat(64)}` as const, strength: 0.45, noise: 0 }
+    const rawNegative = 'nsfw, lowres, nsfw,  lowres,\n'
+    const currentPatch = { ...patch, expectedRevision: 4, changes: [{ sceneId, productionCount: 4, imageSource,
+        promptTextMode: 'verbatim', prompts: { negative: rawNegative }, generation: { ucPreset: 4, qualityToggle: false } }] }
     const freshTarget = (await authoring.inspect('scene.patch_many', currentPatch))!
     expect(await authoring.apply('scene.patch_many', currentPatch, freshTarget, grant(freshTarget)))
         .toMatchObject({ status: 'authoring-committed', revision: 5 })
     const saved = (await scenes.getDocument(presetId))!
+    expect(saved.scenes[0].imageSource).toEqual(imageSource)
+    expect(saved.scenes[0]).toMatchObject({ promptTextMode: 'verbatim', prompts: { negative: rawNegative }, generation: { ucPreset: 4 } })
+    expect(rows()[0].scene.promptTextMode).toBe('verbatim')
     expect(saved.scenes[0]).toMatchObject({ scenePrompt: 'User revised the scene', productionCount: 4 })
     expect(saved.scenes[0].artifactRefs.map(ref => ref.artifactId).sort()).toEqual(['agent-artifact-1', 'agent-artifact-2'])
     expect(rows()[0].scene.images).toHaveLength(2)
@@ -137,4 +144,6 @@ it('restores an agent-created preset and its real linked previews, preserving hi
     expect(rows()[0].scene.images.map(image => image.id)).toEqual(['agent-artifact-2', 'agent-artifact-1'])
     expect(folderAssetLatestImage(rows()[0].scene)).toMatchObject({ id: 'agent-artifact-2', url: 'E:/Synthetic/preview-2.png' })
     expect((await reopened.getDocument(presetId))?.revision).toBe(5)
+    expect((await reopened.getDocument(presetId))?.scenes[0].imageSource).toEqual(imageSource)
+    expect((await reopened.getDocument(presetId))?.scenes[0]).toMatchObject({ promptTextMode: 'verbatim', prompts: { negative: rawNegative } })
 })

@@ -58,6 +58,7 @@ import {
     DEFAULT_NAI_IMAGE_MODEL,
     NAI_IMAGE_MODELS,
     isNovelAiV5Model,
+    naiModelSelectionDefaults,
     isSelectableNaiImageModel,
 } from '@/services/nai/model-catalog'
 import { releaseGeneratedOutputToR2 } from '@/services/r2/generated-release'
@@ -707,6 +708,7 @@ export const useGenerationStore = create<GenerationState>()(
                 const nextModel = normalizeSelectableGenerationModel(model)
                 return {
                     model: nextModel,
+                    ...naiModelSelectionDefaults(nextModel),
                     scheduler: isNovelAiV5Model(nextModel) ? 'karras' : state.scheduler,
                     transparentBackground: isNovelAiV5Model(nextModel)
                         ? state.transparentBackground

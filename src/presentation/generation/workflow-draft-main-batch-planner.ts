@@ -411,7 +411,11 @@ export function createWorkflowDraftGenerationPlanDependencies(
         },
         classifyPreparationError: error => {
             let classified: PlanIssue | null = null
-            if (error instanceof WorkflowDraftPromptModuleResolutionError) {
+            if (error instanceof NovelAiModelCapabilityError) {
+                classified = { code: 'invalid-model-settings', severity: 'blocking',
+                    fieldPath: `source.draft.payload.generation.${error.fieldPath}`,
+                    message: `${error.message} ${error.nextAction}` }
+            } else if (error instanceof WorkflowDraftPromptModuleResolutionError) {
                 classified = {
                     code: 'prompt-module-unavailable',
                     severity: 'blocking',
@@ -457,3 +461,4 @@ export function planWorkflowDraftGeneration(
 ): Promise<PlanGenerationResult<PreparedMainGeneration>> {
     return planGeneration(input, createWorkflowDraftGenerationPlanDependencies(options))
 }
+import { NovelAiModelCapabilityError } from '@/services/nai/adapter'

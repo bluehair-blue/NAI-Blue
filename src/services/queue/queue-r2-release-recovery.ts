@@ -10,6 +10,27 @@ import type { IndexedDBR2UploadRepository } from '@/services/r2/indexeddb-r2-upl
 import { getRuntimeMainQueueDependencies } from './main-queue-runtime-dependencies'
 import { decodeMainJobSnapshot } from './main-job-snapshot-codec'
 import { decodeSceneJobSnapshot } from './scene-job-snapshot-codec'
+import { isR2QueueDeliverySnapshot } from '@/domain/r2/types'
+import { isTerminalJobState } from '@/domain/queue/state-machine'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Completed pre-R2 jobs need no modern Provider decode when their original
+ * output explicitly carries no release activation. Ambiguous/planned jobs stay strict. */
+function isTerminalWithoutR2Delivery(job: GenerationJob): boolean {
+    if (!isTerminalJobState(job.state) || !isRecord(job.snapshot.parameters)) return false
+    const workflow = job.workflow === 'main' ? job.snapshot.parameters.mainWorkflow
+        : job.workflow === 'scene' ? job.snapshot.parameters.sceneWorkflow : null
+    if (!isRecord(workflow)) return false
+    const output = job.workflow === 'main' ? workflow.output : workflow.outputContext
+    if (!isRecord(output) || output.autoR2UploadProfileId != null || output.deleteOriginalAfterRelease === true) return false
+    return (workflow.r2Delivery === undefined && workflow.r2DeliveryVersion === undefined)
+        || (isR2QueueDeliverySnapshot(workflow.r2Delivery)
+            && workflow.r2Delivery.requirement === 'disabled'
+            && (workflow.r2DeliveryVersion === undefined || workflow.r2DeliveryVersion === 1))
+}
 
 export interface QueueR2ReleaseRecoveryDependencies {
     readonly artifacts: Pick<QueueArtifactRepository, 'get'>
@@ -30,6 +51,7 @@ export async function recoverQueueR2Release(
     },
 ): Promise<DurableR2ReleaseHandle | null> {
     if (job.artifactReference === null) return null
+    if (isTerminalWithoutR2Delivery(job)) return null
     const delivery = job.workflow === 'main'
         ? decodeMainJobSnapshot(job.snapshot).mainWorkflow.r2Delivery
         : job.workflow === 'scene' ? decodeSceneJobSnapshot(job.snapshot).sceneWorkflow.r2Delivery : null

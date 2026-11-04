@@ -58,7 +58,8 @@ async function appFixture(heldRequestId?: string) {
         execute: async (input, { envelope }): Promise<JsonObject> => {
             executions.push({ command, requestId: envelope.requestId })
             if (envelope.requestId === heldRequestId) await held
-            if (command === 'generation.get_run') return { found: true, runId: input.runId, batchId: input.runId, stage: 'running' }
+            if (command === 'generation.get_run') return { found: true, runId: input.runId, batchId: input.runId, stage: 'running',
+                ...(input.jobId === undefined ? {} : { selectedJobId: input.jobId }) }
             if (command === 'generation.plan') return { status: 'ready', planId: `sha256:${'a'.repeat(64)}`,
                 planHash: `sha256:${'b'.repeat(64)}`, estimatedAnlas: (input.budget as JsonObject).maxAnlas }
             return { workflowDrafts: [], totalDrafts: 0 }
@@ -124,6 +125,16 @@ async function connect(root: string, waitMs = 700, clientId?: string) {
     client.onerror = error => { errors.push(error) }
     clients.push(client)
     await client.connect(transport, { timeout: 10_000 })
+    const call = client.callTool.bind(client)
+    let admission = Promise.resolve()
+    vi.spyOn(client, 'callTool').mockImplementation((...args) => {
+        const result = admission.then(async () => {
+            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
+            return call(...args)
+        })
+        admission = result.then(() => {}, () => {})
+        return result
+    })
     expect(client.getServerVersion()).toMatchObject({ name: 'nai-blue-agent-spike' })
     expect(client.getNegotiatedProtocolVersion()).toBeDefined()
     return { client, transport, errors, stderr: () => stderr }
@@ -141,7 +152,7 @@ async function assertWire(root: string) {
 }
 
 describe('real SDK stdio child + authenticated application/inbox integration', () => {
-    it('negotiates, advertises exact registry schemas and correlates concurrent reads and decimal plan handles', async () => {
+    it('negotiates, advertises exact registry schemas and correlates guide-ordered reads and decimal plan handles', async () => {
         const app = await appFixture(), sidecar = await connect(app.root)
         const listed = await sidecar.client.listTools({}, { cache: 'refresh' })
         const bound = app.dispatcher.capabilities().filter(item => getAgentCommandInputContract(item.command) !== undefined)
@@ -161,16 +172,18 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
             { name: 'generation.plan', arguments: { requestId: 'wire-decimal-plan', input: {
                 source: { kind: 'workflow-draft', draftId: 'fixture-draft', expectedRevision: 0 }, count: 1,
                 seedPolicy: { kind: 'random' }, budget: { maxImages: 1, maxAnlas: 1.5 } } } },
+            { name: 'generation.get_run', arguments: { requestId: 'wire-exact-job', input: { runId: 'retained-run', jobId: 'job-23' } } },
         ]
         const results = await Promise.all(requests.map(request => sidecar.client.callTool(request)))
         for (const [index, result] of results.entries()) {
-            expect(result.isError).toBe(false)
+            expect(result.isError, JSON.stringify(result)).toBe(false)
             expect(result.structuredContent).toMatchObject({ status: 'application-receipt', requestId: requests[index].arguments.requestId })
             expect(result.structuredContent?.receipt).toEqual(await app.receipts.get(requests[index].arguments.requestId))
         }
         expect((results[1].structuredContent?.receipt as JsonObject).result).toMatchObject({ runId: 'retained-run', batchId: 'retained-run', stage: 'running' })
         expect((results[2].structuredContent?.receipt as JsonObject).result).toMatchObject({ estimatedAnlas: 1.5 })
-        expect(app.executions).toHaveLength(3)
+        expect((results[3].structuredContent?.receipt as JsonObject).result).toMatchObject({ selectedJobId: 'job-23' })
+        expect(app.executions).toHaveLength(4)
         expect(sidecar.errors).toEqual([])
         expect(sidecar.stderr()).toBe('')
         await assertWire(app.root)
@@ -213,6 +226,26 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         expect(other.stderr()).toBe('')
         await assertWire(app.root)
     }, 35_000)
+
+    it('resolves a delayed capability probe from its saved resource over real stdio without resubmission', async () => {
+        const app = await appFixture()
+        app.setOnline(false)
+        const sidecar = await connect(app.root, 100)
+        const pending = JSON.parse(String((await sidecar.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
+        expect(pending).toMatchObject({ status: 'app-state-unconfirmed', observationStatus: 'submitted-to-inbox',
+            requestResource: `nai-blue://requests/${pending.requestId}` })
+        const archive = await app.archive(pending.requestId)
+        expect(await app.receipts.get(pending.requestId)).toBeNull()
+        app.setOnline(true)
+        await vi.waitFor(async () => expect(await app.receipts.get(pending.requestId)).toMatchObject({ state: 'completed' }), { timeout: 3000, interval: 20 })
+        const completed = JSON.parse(String((await sidecar.client.readResource({ uri: pending.requestResource })).contents[0].text))
+        expect(completed).toMatchObject({ status: 'application-receipt', requestId: pending.requestId,
+            receipt: { state: 'completed', result: { capabilities: expect.arrayContaining([expect.objectContaining({ command: 'workspace.get_snapshot', available: true })]) } } })
+        expect(await app.archive(pending.requestId)).toBe(archive)
+        expect(app.hasReady(pending.requestId)).toBe(false)
+        expect(sidecar.stderr()).toBe('')
+        await assertWire(app.root)
+    }, 15_000)
 
     it('keeps bindings during app-off submission and cancels only observation while preserving the submitted command', async () => {
         const app = await appFixture(), sidecar = await connect(app.root, 1000)

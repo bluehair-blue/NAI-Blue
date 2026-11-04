@@ -112,10 +112,15 @@ function parseOpusGenerationUsage(value: unknown): OpusGenerationUsage | undefin
         || !Number.isFinite(timeUntilNextPercent)
         || timeUntilNextPercent < 0
     ) return undefined
+    const purchasedPercent = typeof record.purchasedPercent === 'number'
+        && Number.isFinite(record.purchasedPercent)
+        ? Math.min(400, Math.max(0, record.purchasedPercent))
+        : undefined
     return {
         percent: Math.min(100, Math.max(0, percent)),
         isNegative,
         timeUntilNextPercent,
+        ...(purchasedPercent === undefined ? {} : { purchasedPercent }),
     }
 }
 

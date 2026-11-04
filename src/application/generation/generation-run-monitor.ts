@@ -73,11 +73,20 @@ export function summarizeGenerationRun(run: GenerationFulfillmentProjection): Ge
 }
 
 /** Keep the established get_run result while adding bounded monitoring and recovery hints. */
-export function projectGenerationRunStatus(run: GenerationFulfillmentProjection): JsonObject {
-    return { found: true, runId: run.runId, state: run.overall, queueState: run.queue.state,
+export function projectGenerationRunStatus(run: GenerationFulfillmentProjection, jobId?: string): JsonObject {
+    const selected = jobId === undefined ? run.jobs : run.jobs.filter(job => job.jobId === jobId)
+    const result: JsonObject = { found: true, runId: run.runId, state: run.overall, queueState: run.queue.state,
         jobCount: run.jobs.length, truncated: run.jobs.length > 100,
+        ...(jobId === undefined ? {} : { requestedJobFound: selected.length > 0 }),
         monitor: summarizeGenerationRun(run) as unknown as JsonObject,
-        jobs: run.jobs.slice(0, 100).map(job => ({ jobId: job.jobId, queueState: job.queue.state,
+        jobs: selected.slice(0, 100).map(job => ({ jobId: job.jobId, queueState: job.queue.state,
             providerState: job.provider.state, storageState: job.storage.state, releaseState: job.release.state,
-            acceptanceState: job.acceptance.state })) }
+            acceptanceState: job.acceptance.state,
+            ...(job.providerExecution === undefined ? {} : { providerExecution: job.providerExecution as unknown as JsonObject }),
+        })) }
+    // Keep ledger detail within the public wire bound while counts cover the whole run.
+    const jobs = result.jobs as JsonObject[]
+    while (jobs.length > 1 && new TextEncoder().encode(JSON.stringify(result)).byteLength > 40_000) jobs.pop()
+    result.truncated = jobs.length < run.jobs.length
+    return result
 }

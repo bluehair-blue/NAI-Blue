@@ -1,11 +1,13 @@
-import { exists, mkdir, readDir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs'
+import { exists, mkdir, readDir, readFile, remove } from '@tauri-apps/plugin-fs'
+import { writeUtf8TextFile } from './write-utf8-text-file'
+import { startupCheckpoint } from './startup-checkpoint'
 import { isTauri } from '@tauri-apps/api/core'
 import packageMetadata from '../../package.json'
 import {
     CANONICAL_HASH_ALGORITHM,
     CANONICAL_SERIALIZATION_VERSION,
-    canonicalSerialize,
-    sha256Utf8,
+    canonicalUtf8ByteLength,
+    hashCanonicalValue,
 } from '@/domain/composition/canonical-serialize'
 import { safeParseCompositionDocument } from '@/domain/composition/schema'
 import { validateCompositionSemantics } from '@/domain/composition/validation'
@@ -362,19 +364,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function detachedJsonValue<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value)) as T
+    // Rollback archives contain very large immutable strings. A stringify/parse
+    // clone duplicates their entire escaped representation before hashing.
+    const ancestors = new Set<object>()
+    const omitted = (item: unknown) => item === undefined || typeof item === 'function' || typeof item === 'symbol'
+    const clone = (item: unknown): unknown => {
+        if (item === null || typeof item === 'string' || typeof item === 'boolean') return item
+        if (typeof item === 'number') return Number.isFinite(item) ? (Object.is(item, -0) ? 0 : item) : null
+        if (item && typeof item === 'object') {
+            const prototype = Object.getPrototypeOf(item)
+            if ((Array.isArray(item) || prototype === Object.prototype || prototype === null)
+                && typeof (item as { toJSON?: unknown }).toJSON !== 'function') {
+                if (ancestors.has(item)) throw new TypeError('Circular backup payload')
+                ancestors.add(item)
+                try {
+                    return Array.isArray(item)
+                        ? Array.from(item, child => omitted(child) ? null : clone(child))
+                        : Object.fromEntries(Object.entries(item).filter(([, child]) => !omitted(child))
+                            .map(([key, child]) => [key, clone(child)]))
+                } finally { ancestors.delete(item) }
+            }
+        }
+        // Preserve JSON conversion for uncommon non-JSON inputs such as Dates,
+        // and its rejection of BigInt or an unsupported root value.
+        return JSON.parse(JSON.stringify(item)) as unknown
+    }
+    return clone(value) as T
 }
 
 function contentHash(value: unknown): BackupContentHash {
     return {
         algorithm: CANONICAL_HASH_ALGORITHM,
         canonicalization: CANONICAL_SERIALIZATION_VERSION,
-        digest: sha256Utf8(canonicalSerialize(value)),
+        digest: hashCanonicalValue(value),
     }
 }
 
 function jsonByteLength(value: unknown): number {
-    return encoder.encode(canonicalSerialize(value)).byteLength
+    return canonicalUtf8ByteLength(value)
 }
 
 function storeSchemaVersion(value: unknown): string | number | null {
@@ -639,6 +666,7 @@ export function createBackupEnvelopeV3(
     }
 
     const compositionDocument = detachedJsonValue(parsedDocument.data)
+    void startupCheckpoint('backup:payloads-detached')
     const repositoryPayload = stores[COMPOSITION_REPOSITORY_STORE_KEY]
     if (repositoryPayload !== undefined) {
         let repository: CompositionRepositoryRecord
@@ -652,7 +680,9 @@ export function createBackupEnvelopeV3(
             throw new TypeError('Cannot export mismatched CompositionDocument and committed repository document.')
         }
     }
+    void startupCheckpoint('backup:store-manifest')
     const storeManifest = createStoreManifest(stores, legacyStores)
+    void startupCheckpoint('backup:file-manifest')
     const fileManifest: BackupFileManifest = {
         included: [
             ...includedPayloadFiles(
@@ -1389,11 +1419,14 @@ function createEmptyCompositionDocument(createdAt: string): CompositionDocument 
 export async function createCurrentBackupEnvelopeV3(
     options: CreateCurrentBackupEnvelopeV3Options = {},
 ): Promise<BackupEnvelopeV3> {
+    await startupCheckpoint('backup:export-stores')
     let rawBackup = await (options.readBackupData ?? (() => exportAllData({
         strict: true,
         purpose: options.purpose ?? 'manual-full',
     })))()
+    await startupCheckpoint('backup:export-raw')
     const rawEntries = await (options.readRawIndexedEntries ?? exportRawIndexedDBEntries)()
+    await startupCheckpoint('backup:merge-raw')
     for (const [key, raw] of Object.entries(rawEntries)) {
         if (rawBackup[key] !== undefined) continue
         try {
@@ -1443,7 +1476,8 @@ export async function createCurrentBackupEnvelopeV3(
     const compositionDocument = providedDocument
         ?? extractedDocument
         ?? createEmptyCompositionDocument(createdAt)
-    return createBackupEnvelopeV3(rawBackup, {
+    await startupCheckpoint('backup:build-envelope')
+    const envelope = createBackupEnvelopeV3(rawBackup, {
         compositionDocument,
         createdAt,
         appVersion: options.appVersion ?? CURRENT_APP_VERSION,
@@ -1451,6 +1485,8 @@ export async function createCurrentBackupEnvelopeV3(
         assetProfileJson,
         purpose: options.purpose,
     })
+    await startupCheckpoint('backup:envelope-ready')
+    return envelope
 }
 
 function tsStamp(d = new Date()): string {
@@ -1528,7 +1564,11 @@ export async function createFullAutoBackup(options: CreateFullAutoBackupOptions 
     const fileName = `${FULL_BACKUP_PREFIX}_${timestamp}.json`
     const relPath = `${FULL_BACKUP_DIR}/${fileName}`
 
-    await writeFile(relPath, encoder.encode(JSON.stringify(backup, null, 2)), { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
+    await startupCheckpoint('backup:serialize-json')
+    const serialized = JSON.stringify(backup, null, 2)
+    await startupCheckpoint('backup:write-file')
+    await writeUtf8TextFile(relPath, serialized, { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
+    await startupCheckpoint('backup:file-written')
     localStorage.setItem(DISK_AUTO_BACKUP_LAST_KEY, String(now))
     localStorage.setItem('nai-blue-last-disk-auto-backup-file', relPath)
     await rotateFullBackups()

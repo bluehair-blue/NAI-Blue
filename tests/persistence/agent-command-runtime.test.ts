@@ -21,7 +21,7 @@ import { createWorkflowDraftGenerationPlanDependencies } from '@/presentation/ge
 const now = '2026-09-05T00:00:01.000Z'
 const subtle = webcrypto.subtle as unknown as SubtleCrypto
 
-async function fixture() {
+async function fixture(runtimeIdentity?: () => { version: string; processId: number; executableHash: string }) {
     const key = await subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
     let revoked = false
     const authentication = new WebCryptoAgentAuthentication(async (clientId, keyId) => (
@@ -39,13 +39,14 @@ async function fixture() {
     const repository = new IndexedDbCommandReceiptRepository()
     const dispatcher = (receipts: CommandReceiptRepository = repository) => new AgentCommandDispatcher({
         workspaceId: 'workspace-1', authentication, receipts, handlers, runtime: () => state, now: () => observedAt,
+        runtimeIdentity,
     })
-    async function sign(requestId: string, name: AgentCommandName = 'workspace.get_snapshot', input: JsonObject = {}) {
+    async function sign(requestId: string, name: AgentCommandName = 'workspace.get_snapshot', input: JsonObject = {}, expectedRuntimeHash?: `sha256:${string}`) {
         const envelope: AgentCommandEnvelope = {
             schemaVersion: 1, requestId, requestHash: `sha256:${'0'.repeat(64)}`,
             submittedAt: '2026-09-05T00:00:00.000Z', expiresAt: '2026-09-05T01:00:00.000Z',
             context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'workspace-1', clientId: 'client-1',
-                actor: { kind: 'agent' }, idempotencyKey: requestId },
+                actor: { kind: 'agent' }, idempotencyKey: requestId, ...(expectedRuntimeHash ? { expectedRuntimeHash } : {}) },
             command: { name, input },
             authentication: { scheme: 'hmac-sha256', keyId: 'key-1', signature: `hmac-sha256:${'0'.repeat(64)}` },
         }
@@ -63,6 +64,21 @@ beforeEach(() => { resetIndexedDBConnectionForRetry(); vi.stubGlobal('indexedDB'
 afterEach(() => { resetIndexedDBConnectionForRetry(); vi.unstubAllGlobals() })
 
 describe('authenticated durable command integration (simulated file port)', () => {
+    it('rejects fresh work after an executable update while preserving authenticated historical replay', async () => {
+        let executableHash = `sha256:${'a'.repeat(64)}` as const
+        const f = await fixture(() => ({ version: '1.3.6', processId: 10, executableHash }))
+        const dispatcher = f.dispatcher()
+        const request = await f.sign('runtime-bound', 'workspace.get_snapshot', {}, executableHash)
+        const saved = await dispatcher.dispatch(request)
+        executableHash = `sha256:${'b'.repeat(64)}`
+        expect(await dispatcher.dispatch(request)).toEqual(saved)
+        const stale = await f.sign('runtime-stale', 'workspace.get_snapshot', {}, request.context.expectedRuntimeHash)
+        await expect(dispatcher.dispatch(stale)).rejects.toMatchObject({ code: 'APP_RUNTIME_CHANGED' })
+        expect(await f.repository.get('runtime-stale')).toBeNull()
+        expect(f.execute).toHaveBeenCalledTimes(1)
+        const capability = await dispatcher.dispatch(await f.sign('runtime-capabilities', 'system.describe_capabilities'))
+        expect(capability.result?.runtimeIdentity).toEqual({ version: '1.3.6', processId: 10, executableHash })
+    })
     it('preserves the actual saved-draft revision conflict through handler, dispatcher and durable replay', async () => {
         const f = await fixture()
         const drafts = getWorkflowDraftRepository()

@@ -6,9 +6,17 @@ import {
     getNovelAiModelProfile,
     isNovelAiV5Model,
     normalizeNaiImageModelId,
+    novelAiVerbatimSettingsIssue,
 } from '@/services/nai/model-catalog'
 
 describe('NovelAI model catalog', () => {
+    it('accepts explicit standard mode and limits exact verbatim to its supported settings', () => {
+        expect(novelAiVerbatimSettingsIssue({ model: 'nai-diffusion-5-full', promptTextMode: 'standard', ucPreset: 4 })).toBeNull()
+        expect(novelAiVerbatimSettingsIssue({ model: 'nai-diffusion-4-5-full', promptTextMode: 'verbatim',
+            ucPreset: 4, qualityToggle: false })).toBeNull()
+        expect(novelAiVerbatimSettingsIssue({ model: 'nai-diffusion-5-full', promptTextMode: 'verbatim',
+            ucPreset: 4, qualityToggle: false })).toContain('V4.5')
+    })
     it('keeps V5 Full and Curated as the first selectable models with verified V5 contracts', () => {
         expect(DEFAULT_NAI_IMAGE_MODEL).toBe('nai-diffusion-5-full')
         expect(NAI_IMAGE_MODELS.slice(0, 2).map(model => model.id)).toEqual([
@@ -27,13 +35,13 @@ describe('NovelAI model catalog', () => {
                 transparentBackground: true,
                 vibeTransfer: false,
                 preciseReference: false,
-                enhanceMax: false,
+                enhanceMax: true,
                 maxCharacters: 32,
             },
         })
         expect(NAI_IMAGE_MODELS[1]).toMatchObject({
             inpaintId: 'nai-diffusion-5-curated-inpainting',
-            capabilities: { enhanceMax: false, maxCharacters: 32 },
+            capabilities: { enhanceMax: true, maxCharacters: 32 },
         })
     })
 

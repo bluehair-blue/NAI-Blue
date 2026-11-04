@@ -4,7 +4,7 @@
  */
 import { createHmac } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { link, readFile, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
@@ -34,10 +34,12 @@ const [contract, canonical, inputs, projection, adapter] = await Promise.all([
 ].map(file => loader.ssrLoadModule(file)))
 
 async function publishExact(file, bytes) {
-    try { await writeFile(file, bytes, { flag: 'wx' }) }
-    catch (error) {
-        if (error.code !== 'EEXIST' || await readFile(file, 'utf8') !== bytes) throw error
-    }
+    const staged = `${file}.partial`
+    await writeFile(staged, bytes, { flag: 'wx' })
+    // A ready file is visible to the app pump only after its complete immutable contents exist.
+    try { await link(staged, file) }
+    catch (error) { if (error.code !== 'EEXIST' || await readFile(file, 'utf8') !== bytes) throw error }
+    finally { await unlink(staged) }
 }
 
 const inbox = await createAgentMcpInbox({ connection, inboxDir: path.join(root, 'inbox'),

@@ -23,8 +23,10 @@ export function projectAgentInboxResult(envelope: unknown, result: unknown | nul
             // The parser separately bounds the 64 KiB public result. Scan the full
             // wrapper without applying that payload limit again to receipt overhead;
             // the already-validated identity uses the scanner's public reference name.
+            // Parsed SHA256 metadata is not binary: a genuine digest can contain an
+            // image magic-byte sequence. Its shape/result integrity were checked above.
             const projected = { status: 'application-receipt', requestId: archived.requestId, requiresAppProcess: true, receipt }
-            const { authenticatedClientId, ...publicReceipt } = receipt
+            const { authenticatedClientId, requestHash: _requestHash, resultDigest: _resultDigest, ...publicReceipt } = receipt
             assertSyncPayloadSafe({ ...projected, receipt: { ...publicReceipt, clientId: authenticatedClientId } })
             return projected as unknown as JsonObject
         }

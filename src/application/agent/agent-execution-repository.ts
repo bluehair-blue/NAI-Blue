@@ -7,6 +7,8 @@ import { AgentCommandError, agentRequestHash, assertAgentPublicValue, parseAgent
 import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationGrant, type AgentCancellationTarget } from './agent-cancellation-contract'
 import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, type AgentStorageRetryGrant, type AgentStorageRetryTarget } from './agent-storage-retry-contract'
 
+export const MAX_AGENT_CANARY_ANLAS = 17
+
 /** Durable authority is local: public inbox results contain only a projection of these records. */
 export interface AgentExecutionGrant {
     readonly requestId: string
@@ -19,7 +21,8 @@ export interface AgentExecutionGrant {
     readonly scopeId: string
     readonly policyRevision: number
     readonly consentedAt: string
-    readonly authorization: 'human' | 'bounded-auto'
+    readonly authorization: 'human' | 'bounded-auto' | 'human-canary' | 'client-always-generate'
+    readonly consentRevision?: number
     readonly estimatedAnlas: number
     readonly imageCount: number
 }
@@ -27,6 +30,8 @@ export interface AgentGenerationExecutionRecord {
     readonly envelope: AgentCommandEnvelope
     readonly originalPolicyRevision: number
     readonly policyRevision: number
+    /** Present only when this new request was admitted with saved generation consent. */
+    readonly consentRevision?: number
     readonly expiresAt: string
     readonly estimatedAnlas: number
     readonly imageCount: number
@@ -126,12 +131,13 @@ export function parseAgentExecutionLedger(value: unknown, workspaceId: string): 
                 || !Number.isSafeInteger(record.policyRevision) || record.policyRevision < 0
                 || !Number.isSafeInteger(record.originalPolicyRevision) || record.originalPolicyRevision < 0
                 || record.originalPolicyRevision > record.policyRevision
+                || (record.consentRevision !== undefined && (!Number.isSafeInteger(record.consentRevision) || record.consentRevision < 1))
                 || !Number.isSafeInteger(record.imageCount) || record.imageCount < 1
                 || !Number.isFinite(record.estimatedAnlas) || record.estimatedAnlas < 0
                 || !Number.isFinite(Date.parse(record.expiresAt)) || new Date(record.expiresAt).toISOString() !== record.expiresAt
                 || record.expiresAt !== envelope.expiresAt
                 || !['pending', 'reserved', 'unknown', 'completed', 'rejected'].includes(record.state)
-                || Object.keys(record).sort().join() !== 'envelope,estimatedAnlas,expiresAt,exposureSettledAt,grant,imageCount,originalPolicyRevision,policyRevision,result,state') throw new Error()
+                || Object.keys(record).filter(key => key !== 'consentRevision').sort().join() !== 'envelope,estimatedAnlas,expiresAt,exposureSettledAt,grant,imageCount,originalPolicyRevision,policyRevision,result,state') throw new Error()
             ids.add(envelope.requestId)
             assertAgentPublicValue(record.result)
             if (record.state === 'pending' && (record.grant !== null || record.result.code !== 'AGENT_APPROVAL_REQUIRED')) throw new Error()
@@ -149,11 +155,15 @@ export function parseAgentExecutionLedger(value: unknown, workspaceId: string): 
                     || grant.planId !== envelope.command.input.planId || grant.planHash !== envelope.command.input.planHash
                     || grant.scopeId !== agentExecutionScope(envelope) || grant.policyRevision !== record.policyRevision
                     || grant.estimatedAnlas !== record.estimatedAnlas || grant.imageCount !== record.imageCount
-                    || !['human', 'bounded-auto'].includes(grant.authorization)
+                    || !['human', 'bounded-auto', 'human-canary', 'client-always-generate'].includes(grant.authorization)
+                    || (grant.authorization === 'client-always-generate'
+                        ? !Number.isSafeInteger(grant.consentRevision) || grant.consentRevision !== record.consentRevision
+                        : grant.consentRevision !== undefined)
+                    || (grant.authorization === 'human-canary' && (grant.imageCount !== 1 || grant.estimatedAnlas > MAX_AGENT_CANARY_ANLAS))
                     || !Number.isFinite(Date.parse(grant.consentedAt))
                     || new Date(grant.consentedAt).toISOString() !== grant.consentedAt
                     || grant.consentedAt < envelope.submittedAt || grant.consentedAt >= record.expiresAt
-                    || Object.keys(grant).sort().join() !== 'actorKind,authorization,clientId,consentedAt,estimatedAnlas,imageCount,planHash,planId,policyRevision,requestHash,requestId,scopeId,workspaceId') throw new Error()
+                    || Object.keys(grant).filter(key => key !== 'consentRevision').sort().join() !== 'actorKind,authorization,clientId,consentedAt,estimatedAnlas,imageCount,planHash,planId,policyRevision,requestHash,requestId,scopeId,workspaceId') throw new Error()
                 if (record.state === 'completed' && !isAgentExecutionCommitResult(record.result, grant)) throw new Error()
             }
         }
@@ -226,10 +236,15 @@ function validateAuthoringRecord(record: AgentAuthoringRecord, envelope: AgentCo
     const grant = record.grant
     if (!grant) return
     assertAgentAuthoringTarget(grant.target)
-    if (Object.keys(grant).sort().join() !== 'actorKind,authorization,clientId,consentedAt,expiresAt,policyRevision,requestHash,requestId,target,workspaceId'
+    const alwaysEdit = grant.authorization === 'client-always-edit'
+    const grantKeys = alwaysEdit
+        ? 'actorKind,authorization,clientId,consentRevision,consentedAt,expiresAt,policyRevision,requestHash,requestId,target,workspaceId'
+        : 'actorKind,authorization,clientId,consentedAt,expiresAt,policyRevision,requestHash,requestId,target,workspaceId'
+    if (Object.keys(grant).sort().join() !== grantKeys
+        || (alwaysEdit && (!Number.isSafeInteger(grant.consentRevision) || grant.consentRevision! < 1 || grant.consentRevision! >= Number.MAX_SAFE_INTEGER))
         || grant.requestId !== envelope.requestId || grant.requestHash !== envelope.requestHash
         || grant.workspaceId !== workspaceId || grant.clientId !== envelope.context.clientId
-        || grant.actorKind !== envelope.context.actor.kind || !['human', 'bounded-auto'].includes(grant.authorization)
+        || grant.actorKind !== envelope.context.actor.kind || !['human', 'bounded-auto', 'client-always-edit'].includes(grant.authorization)
         || grant.policyRevision !== record.policyRevision || grant.expiresAt !== record.expiresAt
         || canonicalSerialize(grant.target) !== canonicalSerialize(record.target)
         || !Number.isFinite(Date.parse(grant.consentedAt)) || new Date(grant.consentedAt).toISOString() !== grant.consentedAt

@@ -192,7 +192,16 @@ async function createSceneCompositionSnapshot(
     mask: string | null
     runtimeCharacterOverride?: SceneRuntimeCharacterOverride
 }> {
-    const generation = useGenerationStore.getState()
+    const currentGeneration = useGenerationStore.getState()
+    const explicitSourceImage = scene.imageSource
+        ? await (await import('@/services/agent/saved-artifact-image')).materializeSceneImageSource(scene.imageSource) : null
+    // A saved opaque binding owns the exact input bytes; it cannot inherit Main's mask/source.
+    const generation = scene.imageSource === undefined ? currentGeneration : {
+        ...currentGeneration, mask: null,
+        sourceImage: explicitSourceImage,
+        strength: scene.imageSource?.strength ?? currentGeneration.strength,
+        noise: scene.imageSource?.noise ?? currentGeneration.noise,
+    }
     const scenePrompts = {
         ...resolveScenePrompts(scene),
         // Compatibility previews may still supply the old single-prompt field.
@@ -241,6 +250,7 @@ async function createSceneCompositionSnapshot(
     const snapshot: SceneCompositionSnapshot = {
         profile: useAssetModuleStore.getState().profile,
         scene: {
+            ...(scene.promptTextMode === undefined ? {} : { promptTextMode: scene.promptTextMode }),
             id: scene.id,
             name: scene.name,
             // Legacy `scenePrompt` is no longer appended as a workflow slot;
@@ -519,6 +529,7 @@ async function materializeV2GenerationParams(
             negative: plan.promptParts.negative,
         },
         compositionMode: 'v2',
+        ...(plan.promptTextMode === undefined ? {} : { promptTextMode: plan.promptTextMode }),
         engineVersion: plan.engineVersion,
         sourceRevision: plan.documentRevision,
         compositionPlanHash: clonePlanHash(plan),

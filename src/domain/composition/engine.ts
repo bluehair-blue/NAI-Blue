@@ -112,6 +112,7 @@ export interface CompositionEngineResolveInput {
     conditionSnapshot?: CompositionConditionSnapshot
     randomScope?: string
     dedupePolicy?: PromptDedupePolicy
+    promptTextMode?: 'verbatim'
     sceneOverride?: CompositionEngineOverrideLayer
     workflowRuntimeOverride?: CompositionEngineOverrideLayer
     transportDerivedOverride?: CompositionEngineOverrideLayer
@@ -167,6 +168,7 @@ export interface CompositionEngineIssue {
 }
 
 export type CompositionEnginePlan = Omit<ResolvedGenerationPlan, 'issues'> & {
+    promptTextMode?: 'verbatim'
     engineVersion: typeof COMPOSITION_ENGINE_VERSION
     issues: CompositionEngineIssue[]
     filenamePolicyInput: FilenamePolicyInput
@@ -1310,6 +1312,7 @@ function semanticFilenamePolicyInput(input: FilenamePolicyInput): unknown {
 
 function semanticPlanProjection(plan: Omit<CompositionEnginePlan, 'planHash' | 'planId'>): unknown {
     return {
+        ...(plan.promptTextMode === undefined ? {} : { promptTextMode: plan.promptTextMode }),
         schemaVersion: plan.schemaVersion,
         positivePrompt: plan.positivePrompt,
         negativePrompt: plan.negativePrompt,
@@ -1631,11 +1634,17 @@ export function resolveComposition(
     )
 
     const fragmentSession = new FragmentResolutionSession(input, generationSeed, warnings, errors)
+    const verbatim = input.promptTextMode === 'verbatim'
 
     const sortedCharacterStates = [...characters.values()]
         .sort((left, right) => compareOrdered(left.definition, right.definition))
     const resolvedContributionText = new Map<EntityId, string>()
     const resolveContribution = (collected: CollectedContribution): void => {
+        // Final source text is literal: no comment removal, expansion, or trimming.
+        if (verbatim) {
+            resolvedContributionText.set(collected.contribution.id, collected.contribution.text)
+            return
+        }
         const contributionRef = createEntityProvenanceRef('prompt-contribution', collected.contribution)
         const sourceChain = dedupeProvenanceChain([contributionRef, ...collected.sourceChain])
         const cleanedText = removePromptCommentLines(collected.contribution.text).trim()
@@ -1655,6 +1664,11 @@ export function resolveComposition(
     const fragmentCharacterStates = [...sortedCharacterStates]
         .sort((left, right) => compareStableText(left.definition.id, right.definition.id))
     for (const character of fragmentCharacterStates) {
+        if (verbatim) {
+            activeContributions.filter(collected => collected.contribution.target.kind === 'character'
+                && collected.contribution.target.characterId === character.definition.id).forEach(resolveContribution)
+            continue
+        }
         if (!character.enabled) {
             character.positive = removePromptCommentLines(character.positive).trim()
             character.negative = removePromptCommentLines(character.negative).trim()
@@ -1700,10 +1714,10 @@ export function resolveComposition(
     const draft = composePromptContributions(
         resolvedCollected.map(collected => collected.contribution),
         { characters: initialCharacterText },
-        { comments: 'preserve' },
+        { comments: 'preserve', ...(verbatim ? { whitespace: 'preserve' as const } : {}) },
     )
     const finalized = finalizePromptComposition(draft, {
-        dedupe: input.dedupePolicy ?? 'exact-token',
+        dedupe: verbatim ? 'verbatim' : input.dedupePolicy ?? 'exact-token',
     })
     const finalizedCharactersById = new Map(
         finalized.characters.map(character => [character.characterId, character]),
@@ -1934,6 +1948,7 @@ export function resolveComposition(
     }
     const sortedWarnings = sortIssues(warnings)
     const basePlan: Omit<CompositionEnginePlan, 'planHash' | 'planId'> = {
+        ...(verbatim ? { promptTextMode: 'verbatim' as const } : {}),
         engineVersion: COMPOSITION_ENGINE_VERSION,
         schemaVersion: document.schemaVersion,
         requestId: input.request.requestId,

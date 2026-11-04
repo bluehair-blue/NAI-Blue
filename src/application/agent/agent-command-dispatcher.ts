@@ -4,6 +4,7 @@ import type { JsonObject } from '@/domain/composition/types'
 import { AgentCommandError, assertAgentPublicValue, parseAgentCommandEnvelope, type AgentCommandAuthenticator } from './agent-command-contract'
 import { agentResultDigest, type AgentCommandReceipt, type CommandReceiptRepository } from './command-receipt-repository'
 import { AGENT_COMMAND_EFFECTS, describeAgentCommandCapabilities, type AgentCommandHandler, type AgentCommandRuntimeState } from './runtime-capability-registry'
+import type { AgentRuntimeIdentity } from './runtime-capability-registry'
 
 export interface AgentCommandDispatcherOptions {
     readonly workspaceId: string
@@ -12,6 +13,7 @@ export interface AgentCommandDispatcherOptions {
     readonly handlers: readonly AgentCommandHandler[]
     readonly runtime: () => AgentCommandRuntimeState
     readonly now?: () => string
+    readonly runtimeIdentity?: () => AgentRuntimeIdentity | null
 }
 
 /** Authenticated receipts precede handlers; transport retries only project saved facts. */
@@ -27,7 +29,9 @@ export class AgentCommandDispatcher {
         this.handlers = [...options.handlers.map(handler => Object.freeze({ ...handler })), {
             command: 'system.describe_capabilities', effect: 'read',
             validate: getAgentCommandInputContract('system.describe_capabilities')!.validate,
-            execute: async () => ({ capabilities: this.capabilities() } as unknown as JsonObject),
+            execute: async () => ({ capabilities: this.capabilities(),
+                ...(options.runtimeIdentity ? { runtimeIdentity: options.runtimeIdentity() } : {}),
+            } as unknown as JsonObject),
         }]
     }
 
@@ -54,6 +58,13 @@ export class AgentCommandDispatcher {
             if (existing.requestHash !== envelope.requestHash || existing.authenticatedClientId !== identity.clientId
                 || existing.command !== envelope.command.name) throw new AgentCommandError('IDEMPOTENCY_CONFLICT')
             return existing
+        }
+        // Bind new work to the executable selected by MCP, even if an update
+        // occurs between preflight and inbox consumption. Historical replay is
+        // intentionally above this check and never re-executes a command.
+        if (envelope.context.expectedRuntimeHash !== undefined
+            && envelope.context.expectedRuntimeHash !== this.options.runtimeIdentity?.()?.executableHash) {
+            throw new AgentCommandError('APP_RUNTIME_CHANGED')
         }
         if (envelope.expiresAt !== undefined && Date.parse(envelope.expiresAt) <= Date.parse(now())) {
             throw new AgentCommandError('REQUEST_EXPIRED')

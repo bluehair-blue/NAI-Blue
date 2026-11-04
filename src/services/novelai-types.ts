@@ -33,6 +33,8 @@ export interface OpusGenerationUsage {
     percent: number
     isNegative: boolean
     timeUntilNextPercent: number
+    /** Purchased Extra Usage is separate from the regular recharging allowance. */
+    purchasedPercent?: number
 }
 
 export interface NovelAIUserInfo {
@@ -42,6 +44,7 @@ export interface NovelAIUserInfo {
 }
 
 export interface GenerationParams {
+    promptTextMode?: 'verbatim'
     prompt: string
     negative_prompt: string
     model: string

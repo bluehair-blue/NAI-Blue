@@ -12,6 +12,14 @@ import {
 } from '@/services/nai/compatibility'
 
 describe('NovelAI compatibility registry', () => {
+    it('binds Medium to its own synthetic fixture without claiming live acceptance', async () => {
+        const result = queryNaiCompatibility({ model: 'nai-diffusion-5-full-medium-inpainting',
+            action: 'infill', features: [], payloadBuilderRevision: CURRENT_NAI_PAYLOAD_BUILDER_REVISION })
+        const fixture = await readFile(resolve(process.cwd(), result.fixture!.path), 'utf8')
+        expect(result.fixture!.sha256).toBe(`sha256:${createHash('sha256').update(fixture.replace(/\r\n/g, '\n')).digest('hex')}`)
+        expect(result.status).toBe('synthetic-only')
+        expect(result.fixture!.path).toBe('tests/fixtures/payload/v5-medium.json')
+    })
     it.each([
         LEGACY_NAI_PAYLOAD_BUILDER_REVISION,
         CURRENT_NAI_PAYLOAD_BUILDER_REVISION,

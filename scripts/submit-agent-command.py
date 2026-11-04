@@ -37,7 +37,7 @@ COMMAND_NAMES = frozenset((
     "generation.enqueue", "generation.get_run", "generation.cancel",
     "generation.retry_storage", "scene.retry_link", "output.abandon_reservation",
     "scene.resolve_many", "scene.patch_many", "folder.plan_changes", "folder.apply_changes", "r2.get_readiness",
-    "production.create", "production.list", "production.get", "production.plan_next",
+    "production.create", "production.list", "production.get", "production.plan_next", "artifact.get_image",
 ))
 FORBIDDEN_KEYS = re.compile(
     r"token|secret|password|credential|authorization|cookie|session|apikey|accesskey|privatekey|"

@@ -185,7 +185,7 @@ describe('Queue startup Provider reconciliation', () => {
         expect(mocks.reconcileStyleLab).toHaveBeenCalledOnce()
     })
 
-    it('keeps the inbox ready when a terminal legacy job has an undecodable R2 snapshot', async () => {
+    it('blocks inbox readiness when a terminal job still has an undecodable R2 delivery', async () => {
         mocks.listJobs
             .mockResolvedValueOnce({ items: [], nextCursor: null })
             .mockResolvedValueOnce({
@@ -208,13 +208,10 @@ describe('Queue startup Provider reconciliation', () => {
 
         const result = await initializeQueueAfterRestart({ providerResultSpool: spool([]) })
 
-        expect(result.inboxReady).toBe(true)
-        expect(result.recoveryIssues).toEqual([])
+        expect(result.inboxReady).toBe(false)
+        expect(result.recoveryIssues).toEqual(['r2-release-reconcile'])
         expect(mocks.reportDiagnostic).toHaveBeenCalledWith(expect.any(QueueExecutionError), expect.objectContaining({
-            stage: 'r2-release-reconcile-skipped',
-            category: 'r2_upload',
-            severity: 'warning',
-            recoverable: true,
+            stage: 'r2-release-reconcile',
         }))
     })
 

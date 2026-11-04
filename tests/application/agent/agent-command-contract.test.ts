@@ -109,6 +109,14 @@ describe('agent command wire boundary', () => {
         expect(parseAgentCommandEnvelope(value)).toEqual(value)
         expect(parseAgentCommandEnvelope(value)).not.toBe(value)
     })
+    it('accepts only a SHA-256 target runtime binding', () => {
+        const value = unsigned()
+        expect(parseAgentCommandEnvelope({ ...value, context: { ...value.context,
+            expectedRuntimeHash: `sha256:${'a'.repeat(64)}` } }).context.expectedRuntimeHash).toBe(`sha256:${'a'.repeat(64)}`)
+        for (const hash of ['', 'latest', `sha256:${'A'.repeat(64)}`, 'C:\\Old\\app.exe', null]) {
+            expect(() => parseAgentCommandEnvelope({ ...value, context: { ...value.context, expectedRuntimeHash: hash } })).toThrow()
+        }
+    })
     it.each(['../x', 'x/y', 'x\\y', 'x.tmp', 'x.ready.json', '', 'x'.repeat(101), 'CON', 'nul', 'Com1', 'lpt9', 'a:b'])('rejects unsafe filename ID %s', value => {
         expect(() => assertAgentRequestId(value)).toThrow()
     })

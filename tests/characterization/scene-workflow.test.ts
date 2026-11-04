@@ -3,6 +3,8 @@ import 'fake-indexeddb/auto'
 import JSZip from 'jszip'
 import { encode } from '@msgpack/msgpack'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+const savedImageSource = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,SAVED_ARTIFACT_ORIGINAL'))
+vi.mock('@/services/agent/saved-artifact-image', () => ({ materializeSceneImageSource: savedImageSource }))
 import { NovelAIHttpError, type GenerationParams } from '@/services/novelai-types'
 import { readNaiBlueParams } from '@/lib/nai-blue-metadata'
 import { SCENE_DIRECT_RECIPE_ID } from '@/lib/composition/scene-adapter'
@@ -321,6 +323,8 @@ function scene(id: string, queueCount: number, overrides: Record<string, unknown
         ...(overrides.generation === undefined ? {} : { generation: overrides.generation }),
         ...(overrides.compositionRef === undefined ? {} : { compositionRef: overrides.compositionRef }),
         ...(overrides.filenameTemplate === undefined ? {} : { filenameTemplate: overrides.filenameTemplate }),
+        ...(overrides.imageSource === undefined ? {} : { imageSource: overrides.imageSource }),
+        ...(overrides.promptTextMode === undefined ? {} : { promptTextMode: overrides.promptTextMode }),
         ...(overrides.queuedFileNames === undefined ? {} : { queuedFileNames: overrides.queuedFileNames }),
         createdAt: FIXED_TIME,
     }
@@ -1294,6 +1298,53 @@ describe('Scene Composition v2 caller contract', () => {
                 seedAffectsSelection: false,
             }),
         }))
+    })
+
+    it('preserves final Scene text through composition, materialization and the V4.5 payload', async () => {
+        const base = ' 0.6::artist:test::, blue, blue,  sky,\n'
+        const negative = 'nsfw, lowres, logo, logo,  lowres,\n# literal UC\n__missing_fragment__'
+        const character = '1girl,\n\nblue hair, blue hair,  coat,\n'
+        const characterNegative = 'bad hands, bad hands,\n'
+        resetRuntime(211, [scene('scene-verbatim', 1, { promptTextMode: 'verbatim',
+            prompts: { base, additional: '', negative, character, characterNegative },
+            generation: { model: 'nai-diffusion-4-5-full', ucPreset: 4, qualityToggle: false } })])
+        const target = runtime.useSceneStore.getState().presets[0]!.scenes[0]!
+        const { buildSceneGenerationParams } = await import('@/lib/scene-generation/build-scene-params')
+        const built = await buildSceneGenerationParams(target, { seed: 1 })
+        expect(built.success).toBe(true)
+        if (!built.success) throw new Error('Expected verbatim Scene plan')
+        expect(built.params).toMatchObject({ promptTextMode: 'verbatim', prompt: base, negative_prompt: negative,
+            characterPrompts: [expect.objectContaining({ prompt: character, negative: characterNegative })] })
+        const { adaptGenerationParams } = await import('@/services/nai/adapter')
+        const { buildGenerateImagePayload } = await import('@/services/nai/payload')
+        const adapted = await adaptGenerationParams('synthetic-no-provider', built.params)
+        const payload = buildGenerateImagePayload(adapted.request, adapted.buildOptions)
+        expect(payload.input).toBe(base)
+        expect(payload.parameters.negative_prompt).toBe(negative)
+        expect(payload.parameters.v4_prompt.caption.base_caption).toBe(base)
+        expect(payload.parameters.v4_negative_prompt.caption.base_caption).toBe(negative)
+        expect(payload.parameters.v4_prompt.caption.char_captions[0].char_caption).toBe(character)
+        expect(payload.parameters.v4_negative_prompt.caption.char_captions[0].char_caption).toBe(characterNegative)
+        expect(payload.parameters.ucPreset).toBe(4)
+        expect(payload.parameters.qualityToggle).toBe(false)
+    })
+
+    it('binds an explicit saved original as Image2Image and excludes the unrelated Main source/mask', async () => {
+        const binding = { mode: 'img2img' as const, artifactId: 'artifact:saved',
+            contentChecksum: `sha256:${'a'.repeat(64)}` as const, strength: 0.45, noise: 0 }
+        resetRuntime(210, [scene('scene-saved-image', 1, { imageSource: binding, generation: { model: 'nai-diffusion-4-5-full' } })])
+        runtime.useGenerationStore.setState({ sourceImage: 'data:image/png;base64,UNRELATED', mask: 'data:image/png;base64,UNRELATED_MASK' })
+        const target = runtime.useSceneStore.getState().presets[0]!.scenes[0]!
+        const { buildSceneGenerationParams } = await import('@/lib/scene-generation/build-scene-params')
+        const result = await buildSceneGenerationParams(target, { seed: 1 })
+        expect(savedImageSource).toHaveBeenCalledWith(binding)
+        expect(result.success).toBe(true)
+        if (!result.success) throw new Error('Expected valid bound Image2Image plan')
+        expect(result.params).toMatchObject({ model: 'nai-diffusion-4-5-full',
+            sourceImage: 'data:image/png;base64,SAVED_ARTIFACT_ORIGINAL', strength: 0.45, noise: 0 })
+        expect(result.params.mask).toBeUndefined()
+        const { queryNaiGenerationCompatibility } = await import('@/services/nai/compatibility')
+        expect(queryNaiGenerationCompatibility(result.params, 'nai-blue-payload-v1', false).action).toBe('img2img')
     })
 
     it('materializes the source snapshot that produced the plan even if live state changes during hydration', async () => {

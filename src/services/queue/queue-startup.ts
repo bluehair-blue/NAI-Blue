@@ -16,9 +16,6 @@ import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 import { addDiagnosticBreadcrumb, reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { recoverQueueR2Release } from './queue-r2-release-recovery'
-import { isTerminalJobState } from '@/domain/queue/state-machine'
-import type { GenerationJob } from '@/domain/queue/types'
-import { QueueExecutionError } from './durable-queue-coordinator'
 
 /** Safe readiness codes; exception text, paths, and Provider payloads stay out of the inbox gate. */
 export type QueueStartupRecoveryIssue =
@@ -41,19 +38,6 @@ export interface QueueStartupRecoveryResult {
 }
 
 let startupPromise: Promise<QueueStartupRecoveryResult> | null = null
-
-/**
- * A terminal legacy job cannot safely reconstruct an R2 plan from an invalid snapshot.
- * It is already durable Queue truth, so startup may preserve the artifact and continue
- * without inventing delivery settings or issuing an automatic remote retry.
- */
-function canSkipTerminalLegacyR2Failure(job: Pick<GenerationJob, 'workflow' | 'state'>, error: unknown): boolean {
-    return job.workflow === 'main'
-        && isTerminalJobState(job.state)
-        && error instanceof QueueExecutionError
-        && error.kind === 'fatal'
-        && error.message === 'Main queue snapshot parameters are invalid'
-}
 
 /** Queue-linked journals must reconcile before generic rollback and lease expiry. */
 async function reconcileProviderAttempts(
@@ -160,17 +144,6 @@ export async function reconcileR2ReleaseJobs(
                 const handle = await recoverQueueR2Release(job)
                 enqueued += handle?.jobIds.length ?? 0
             } catch (error) {
-                if (canSkipTerminalLegacyR2Failure(job, error)) {
-                    reportDiagnostic(error, {
-                        operation: 'queue.startup',
-                        stage: 'r2-release-reconcile-skipped',
-                        category: 'r2_upload',
-                        severity: 'warning',
-                        recoverable: true,
-                        jobId: job.id,
-                    })
-                    continue
-                }
                 onRecoveryFailure?.()
                 reportDiagnostic(error, { operation: 'queue.startup', stage: 'r2-release-reconcile', jobId: job.id })
             }

@@ -34,6 +34,28 @@ describe('NovelAI subscription usage adapter', () => {
         expect(tauri.invoke).toHaveBeenCalledWith('get_anlas_balance', { token: 'fixture-token' })
     })
 
+    it.each([[75, 75], [450, 400], [-2, 0]])('retains purchased Extra Usage independently (%s)', async (extra, expected) => {
+        tauri.invoke.mockResolvedValue({
+            success: true, fixed: 4, purchased: 5,
+            usage: { percent: 0, isNegative: true, timeUntilNextPercent: 1, purchasedPercent: extra },
+        })
+        await expect(getUserInfo('fixture-token')).resolves.toMatchObject({
+            anlas: { total: 9 },
+            usage: { percent: 0, isNegative: true, timeUntilNextPercent: 1, purchasedPercent: expected },
+        })
+    })
+
+    it('ignores an invalid optional Extra Usage value while retaining valid regular usage', async () => {
+        tauri.invoke.mockResolvedValue({
+            success: true, fixed: 4, purchased: 5,
+            usage: { percent: 20, isNegative: false, timeUntilNextPercent: 1, purchasedPercent: 'invalid' },
+        })
+        await expect(getUserInfo('fixture-token')).resolves.toEqual({
+            anlas: { fixed: 4, purchased: 5, total: 9 },
+            usage: { percent: 20, isNegative: false, timeUntilNextPercent: 1 },
+        })
+    })
+
     it('preserves older successful responses that do not include usage', async () => {
         tauri.invoke.mockResolvedValue({ success: true, fixed: 4, purchased: 5 })
 

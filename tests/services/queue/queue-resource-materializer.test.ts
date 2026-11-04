@@ -45,7 +45,9 @@ describe('managed AppData queue resource materialization', () => {
         const storage = new MemoryResourceStorage()
         const materializer = new QueueResourceMaterializer(storage, () => '2026-07-14T10:00:00.000Z')
 
-        const dehydrated = await dehydrateGenerationParams(params(), materializer)
+        const rawNegative = 'nsfw, lowres, lowres,  logo,\n'
+        const dehydrated = await dehydrateGenerationParams({ ...params(), promptTextMode: 'verbatim',
+            ucPreset: 4, qualityToggle: false, negative_prompt: rawNegative }, materializer)
         const serialized = JSON.stringify(dehydrated)
         expect(serialized).not.toContain(';base64,')
         expect(serialized).not.toContain('fixture-encoded-vibe-payload')
@@ -59,6 +61,7 @@ describe('managed AppData queue resource materialization', () => {
             materializer,
         )
         expect(restored).toMatchObject({
+            promptTextMode: 'verbatim', ucPreset: 4, qualityToggle: false, negative_prompt: rawNegative,
             sourceImage: params().sourceImage,
             mask: params().mask,
             charImages: params().charImages,

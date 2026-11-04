@@ -113,7 +113,7 @@ export function allocateExactOutputCommitSets(input: {
             }
             if (request.collisionPolicy === 'fail') break
         }
-        throw new Error(`Output destination is already occupied: ${request.fileName}`)
+        throw new OutputDestinationOccupiedError(request.fileName)
     }))
 }
 
@@ -135,5 +135,12 @@ export function assertExactOutputCommitSetAllocation(
     if (allocation.commitSetHash !== expected.commitSetHash
         || canonicalSerialize(allocation.commitSet) !== canonicalSerialize(expected.commitSet)) {
         throw new Error('Output planner returned a non-canonical commit set')
+    }
+}
+/** Exact reviewed filenames cannot silently replace an existing output. */
+export class OutputDestinationOccupiedError extends Error {
+    constructor(fileName: string) {
+        super(`Output destination is already occupied: ${fileName}`)
+        this.name = 'OutputDestinationOccupiedError'
     }
 }

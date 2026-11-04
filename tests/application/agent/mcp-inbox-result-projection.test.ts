@@ -35,6 +35,13 @@ function expectCode(action: () => unknown, code: string) {
 }
 
 describe('Phase 10A pre-spike inbox result projection', () => {
+    it('preserves a verified result digest containing coincidental image magic bytes', () => {
+        const saved = receipt(envelope(), { found: true, sequence: 2963 })
+        expect(saved.resultDigest).toBe('sha256:38e1c9c9b9636a6ff0a69d26a9a080269dd9ba604ef981c97ffd9b4086e3b0c9')
+        expect(projectAgentInboxResult(envelope(), saved, null).receipt).toEqual(saved)
+        expectCode(() => projectAgentInboxResult(envelope(), { ...saved, result: { found: false } }, null), 'INVALID_RECEIPT')
+    })
+
     it('preserves the application receipt exactly without claiming generation success or exporting authentication', () => {
         const saved = receipt()
         const projected = projectAgentInboxResult(envelope(), saved, null)

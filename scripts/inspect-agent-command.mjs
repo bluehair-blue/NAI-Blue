@@ -31,7 +31,7 @@ async function inspectPath(target, directory = false) {
     return absolute
 }
 
-async function readText(target, limit, optional = false) {
+export async function readBytes(target, limit, optional = false) {
     let handle
     try {
         await inspectPath(target)
@@ -46,13 +46,18 @@ async function readText(target, limit, optional = false) {
             length += bytesRead
         }
         requireInput(length <= limit)
-        return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length))
+        return bytes.subarray(0, length)
     } catch (error) {
         if (optional && error.code === 'ENOENT') return null
         throw error
     } finally {
         await handle?.close()
     }
+}
+
+async function readText(target, limit, optional = false) {
+    const bytes = await readBytes(target, limit, optional)
+    return bytes === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 }
 
 /** Observe one saved request; never submit/replay, create IDs, or cancel a Queue operation. */

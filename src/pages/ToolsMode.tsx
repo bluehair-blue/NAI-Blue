@@ -104,7 +104,7 @@ export default function ToolsMode({ guided = false }: { guided?: boolean } = {})
     const enhanceMaxReason = !processedImage
         ? t('smartTools.enhanceMaxNeedImage', '이미지를 먼저 열어주세요.')
         : !enhanceMaxSupported
-            ? t('smartTools.enhanceMaxV5Disabled', '현재 선택한 V5 모델은 Enhance MAX를 지원하지 않아요. V4 또는 V4.5 모델을 선택하면 사용할 수 있습니다.')
+            ? t('smartTools.enhanceMaxUnsupported', '선택한 이미지 모델은 Enhance MAX를 지원하지 않아요.')
             : imageDimensions === null
                 ? t('smartTools.enhanceMaxReadingSize', '이미지 크기를 읽는 중입니다.')
                 : !enhanceMaxWithinSize

@@ -1,4 +1,18 @@
+# 자동화 에이전트 진입 안내
+
+NAI Blue는 Computer Use로 조작하지 않는다. 막히면 공식 자동화 경로를 진단하고 보고한다.
+공개 MCP tool을 호출할 때마다 같은 연결에서 직전에 `nai-blue://guides/agent-workflow/v1`을 읽는다. 한 번 읽으면 한 호출만 허용하며, 미독·소비된 상태는 `GUIDE_READ_REQUIRED`로 inbox 제출 전에 차단한다. 가이드·capability resource와 tools/list는 항상 조회할 수 있고 읽기 권한을 소비하지 않는다.
+
+V5 설계는 `standard`, V4.5 최종 원문은 `verbatim` + UC None(4) + 품질 태그 끄기를 사용한다. 프롬프트와 제목은 실행되지 않는 일반 텍스트로 보존한다. 인증·서명·revision, 실제 경로·자격증명·명시적 이미지/바이너리 보호는 유지한다. 가이드 읽기는 편집·생성 승인과 별개이며 현재 동의는 workspace snapshot에서 확인한다. `get_run`의 기록된 attempt evidence로 known-failure와 unknown을 구분하고, 불확실한 Provider 결과를 재생성하지 않는다.
+CUA, CDP, 브라우저 자동화, 비공개 API, 토큰 추출 및 승인 클릭은 대체 경로가 아니다. 정책과 인간 승인 경계는 유지한다.
+
 # NAI Blue
+
+Windows agent runtime location: run `powershell -NoProfile -File scripts/inspect-agent-runtime.ps1` from this checkout. The read-only report resolves the registered installation and distinguishes it from any temporary local release build by SHA-256. Use the registered installation as the single application runtime; a null local build is normal after deployment cleanup. The development MCP entry point is `scripts/run-agent-mcp-stdio.mjs`; it loads source at connection startup. Updating the desktop app does not update this source adapter or the MCP host's configuration. Reconnect safely after source/configuration changes, preserve pending request IDs, and verify `nai-blue://capabilities` before claiming compatibility.
+
+The Windows MCP entry now resolves that installation again before every new call. It normally starts the installed app when closed and verifies its native startup hash, PID, and version through `nai-blue://runtime`. Updating or relocating the installed app therefore needs no versioned Pi/Codex executable path. New requests carry a signed target hash; another build rejects them before acceptance. Pending probes and historical receipts are inspected without replaying work. A stale running app is never killed automatically, and changed adapter source explicitly requires reconnecting the MCP host. “Latest” means the current deployed installation; this mechanism does not download new internet releases. Existing MCP connections created before this guard was installed need one initial reconnect.
+
+Run `npm run test:agent-runtime` for installation-change checks. `node scripts/verify-agent-mcp-runtime.mjs` accepts the same `--connection`, `--inbox-dir`, and `--python` arguments as the registered stdio entry and verifies the real app using public read operations only.
 
 <p align="center">
   <img src="public/nai-blue.png" alt="NAI Blue logo" width="128" height="128">

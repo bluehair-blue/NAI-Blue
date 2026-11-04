@@ -91,6 +91,7 @@ export interface SceneCompositionRef {
 }
 
 export interface SceneCompositionCardSnapshot {
+    promptTextMode?: 'standard' | 'verbatim'
     id: EntityId
     name: string
     scenePrompt: string
@@ -522,6 +523,7 @@ export function resolveSceneComposition(input: BuildSceneCompositionInput): Scen
         referencePolicy: 'strict',
         randomScope: `scene:${input.snapshot.scene.id}`,
         dedupePolicy: 'exact-token',
+        ...(input.snapshot.scene.promptTextMode === 'verbatim' ? { promptTextMode: 'verbatim' as const } : {}),
         sceneOverride: built.sceneOverride,
         transportDerivedOverride: built.transportDerivedOverride,
     })

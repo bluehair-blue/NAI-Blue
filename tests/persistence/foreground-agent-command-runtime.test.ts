@@ -10,6 +10,8 @@ import { resetIndexedDBConnectionForRetry } from '@/lib/indexed-db'
 import { createAgentExecutionCoordinator } from '@/application/agent/agent-execution-coordinator'
 import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-agent-execution-repository'
 import { DEFAULT_AGENT_EXECUTION_POLICY } from '@/application/agent/agent-execution-policy'
+import { DEFAULT_AGENT_AUTHORING_CONSENT, updateAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
+import { DEFAULT_AGENT_GENERATION_CONSENT, updateAgentGenerationConsent } from '@/application/agent/agent-generation-consent'
 import type { GenerationPlan } from '@/application/generation/generation-plan-contract'
 import type { JsonObject } from '@/domain/composition/types'
 import type { AgentCancellationGrant, AgentCancellationTarget } from '@/application/agent/agent-cancellation-contract'
@@ -72,6 +74,7 @@ async function executionFixture(command?: 'generation.cancel' | 'generation.retr
         sourceBindings: [{ resourceId: 'draft-1' }], budget: { maxImages: 1, maxAnlas: 7 },
         executionPolicy: { maxConcurrency: 1 } } as unknown as GenerationPlan
     let policy = structuredClone(DEFAULT_AGENT_EXECUTION_POLICY)
+    let generationConsent = structuredClone(DEFAULT_AGENT_GENERATION_CONSENT)
     let saving = false
     const listeners = new Set<() => void>()
     const receipts = new IndexedDbCommandReceiptRepository()
@@ -108,9 +111,16 @@ async function executionFixture(command?: 'generation.cancel' | 'generation.retr
     const createRuntime = () => f.createRuntime({ receipts, policy: {
         get: () => policy, set: persistPolicy, isSaving: () => saving,
         subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    }, generationConsent: {
+        get: () => generationConsent,
+        set: async (revision, workspaceId, clientId, enabled) => {
+            generationConsent = updateAgentGenerationConsent(generationConsent, revision, workspaceId, clientId, enabled)
+            return generationConsent
+        },
     }, createExecution: async (workspaceId, isClientAuthorized) => createAgentExecutionCoordinator({
         workspaceId, isClientAuthorized, receipts, repository: new IndexedDbAgentExecutionRepository(),
         plans: { get: async () => plan, putIfAbsent: async () => 'same' }, getPolicy: () => policy,
+        getGenerationConsent: () => generationConsent,
         ports: { enqueue, validate: async () => true, reconcile: async grant => facts.get(grant.scopeId) ?? null,
             isOutstanding: async () => false },
         ...(command === 'generation.cancel' ? { cancellation: { inspect: async () => cancellationTarget, cancel,
@@ -118,7 +128,7 @@ async function executionFixture(command?: 'generation.cancel' | 'generation.retr
         ...(command === 'generation.retry_storage' ? { storageRetry: { inspect: async () => storageTarget, retry: retryStorage,
             reconcile: async (grant: AgentStorageRetryGrant) => storageFacts.get(grant.requestId) ?? null } } : {}),
     }) })
-    return { ...f, createRuntime, receipts, enqueue, cancel, retryStorage, persistPolicy,
+    return { ...f, createRuntime, receipts, enqueue, cancel, retryStorage, persistPolicy, plan,
         getPolicy: () => policy, setSaving: (value: boolean) => { saving = value },
         submitEnqueue: (id: string) => f.submit(id, { name: 'generation.enqueue', input: { planId: digest, planHash: digest } }) }
 }
@@ -129,6 +139,86 @@ afterEach(async () => {
 })
 
 describe('foreground native inbox composition', () => {
+    it('processes signed commands while the window is hidden and unfocused', async () => {
+        vi.stubGlobal('document', { visibilityState: 'hidden', hidden: true, hasFocus: () => false })
+        const f = await fixture()
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await f.submit('hidden-unfocused-read')
+        await runtime.poll()
+        expect(runtime.getSnapshot().status).toBe('ready')
+        expect(f.results.get('hidden-unfocused-read')).toMatchObject({ state: 'completed' })
+        expect(f.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('only the human registered-client action enables future signed generation and never replays pending work', async () => {
+        const f = await executionFixture()
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await f.submitEnqueue('signed-before-generation-on')
+        await runtime.poll()
+        await expect(runtime.changeGenerationApproval(0, 'unknown', true)).rejects.toThrow('unavailable')
+        await runtime.changeGenerationApproval(0, 'client-1', true)
+        expect(runtime.getSnapshot().generationConsent).toMatchObject({ revision: 1,
+            approvedClients: [{ workspaceId: 'workspace-1', clientId: 'client-1' }] })
+        expect(f.enqueue).not.toHaveBeenCalled()
+        expect(runtime.getSnapshot().pendingApprovals.map(item => item.requestId)).toContain('signed-before-generation-on')
+        await f.submitEnqueue('signed-generation-first')
+        await f.submitEnqueue('signed-generation-second')
+        await runtime.poll()
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
+        await runtime.stop()
+        const reopened = f.createRuntime()
+        await reopened.start(Promise.resolve({ inboxReady: true }))
+        expect(reopened.getSnapshot().generationConsent.revision).toBe(1)
+        await reopened.changeGenerationApproval(1, 'client-1', false)
+        await f.submitEnqueue('signed-after-generation-off')
+        await reopened.poll()
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
+        await reopened.changeClient('revoke', 'client-1')
+        await expect(reopened.changeGenerationApproval(2, 'client-1', true)).rejects.toThrow('unavailable')
+        expect(reopened.getSnapshot().policy).toEqual(DEFAULT_AGENT_EXECUTION_POLICY)
+        expect(reopened.getSnapshot().authoringConsent).toEqual(DEFAULT_AGENT_AUTHORING_CONSENT)
+    })
+    it('allows only a current registered client to receive human editing consent and leaves policy/revoked/new clients unchanged', async () => {
+        const f = await fixture()
+        let consent = structuredClone(DEFAULT_AGENT_AUTHORING_CONSENT)
+        const set = vi.fn(async (revision, workspaceId, clientId, enabled) => {
+            consent = updateAgentAuthoringConsent(consent, revision, workspaceId, clientId, enabled)
+            return consent
+        })
+        const runtime = f.createRuntime({ authoringConsent: { get: () => consent, set } })
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await expect(runtime.changeAuthoringApproval(0, 'unknown', true)).rejects.toThrow('unavailable')
+        expect(set).not.toHaveBeenCalled()
+        await runtime.changeAuthoringApproval(0, 'client-1', true)
+        expect(runtime.getSnapshot().authoringConsent).toEqual({ schemaVersion: 1, revision: 1,
+            approvedClients: [{ workspaceId: 'workspace-1', clientId: 'client-1' }] })
+        expect(runtime.getSnapshot().policy).toEqual(DEFAULT_AGENT_EXECUTION_POLICY)
+        await runtime.changeClient('register', 'New connection')
+        expect(runtime.getSnapshot().authoringConsent.approvedClients).toHaveLength(1)
+        await runtime.changeAuthoringApproval(1, 'client-1', false)
+        expect(runtime.getSnapshot().authoringConsent.approvedClients).toEqual([])
+        await runtime.changeClient('revoke', 'client-1')
+        await expect(runtime.changeAuthoringApproval(2, 'client-1', true)).rejects.toThrow('unavailable')
+        expect(set).toHaveBeenCalledTimes(2)
+    })
+    it('routes the separate human canary decision through the signed request and normal receipt publication', async () => {
+        const f = await executionFixture()
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        const runtime = f.createRuntime()
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await f.submitEnqueue('signed-canary')
+        await runtime.poll()
+        const [review] = runtime.getSnapshot().pendingApprovals
+        expect(review).toMatchObject({ canaryEligible: true, reasons: ['AGENT_COMPATIBILITY_DENIED'] })
+        expect(f.enqueue).not.toHaveBeenCalled()
+        await runtime.decideApproval(review.requestId, 'approve-canary', review)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(f.results.get(review.requestId)).toMatchObject({ state: 'completed' })
+        expect(f.getPolicy().generation.allowedCompatibilityStatuses).toEqual(['captured-pass', 'live-canary-pass'])
+    })
     it('restores signed storage review and publishes its exact completion without generating work', async () => {
         const f = await executionFixture('generation.retry_storage')
         const runtime = f.createRuntime()

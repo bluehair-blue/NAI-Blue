@@ -49,7 +49,7 @@ function invalid(): never {
     throw new SyncSanitizationError('E_SYNC_PAYLOAD_INVALID', 'Sync payload is not bounded canonical JSON.')
 }
 
-function hasImageByteSignature(bytes: readonly number[], offset = 0): boolean {
+function hasImageByteSignature(bytes: readonly number[], offset = 0, scanShortJpegXL = true): boolean {
     const startsWith = (signature: readonly number[]) => (
         signature.every((entry, index) => bytes[offset + index] === entry)
     )
@@ -80,7 +80,8 @@ function hasImageByteSignature(bytes: readonly number[], offset = 0): boolean {
         || iconHeader
         || psdHeader
         || qoiHeader
-        || startsWith([0xff, 0x0a])
+        // A short JPEG XL marker must not be invented by the secondary half-byte hex scan.
+        || (scanShortJpegXL && startsWith([0xff, 0x0a]))
         || startsWith([0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a])
         || startsWith([0x49, 0x49, 0x2a, 0x00])
         || startsWith([0x4d, 0x4d, 0x00, 0x2a])
@@ -104,9 +105,9 @@ function hasImageByteSignature(bytes: readonly number[], offset = 0): boolean {
         || (asciiPrefix.startsWith('<?xml') && asciiPrefix.includes('<svg'))
 }
 
-function containsImageByteSignature(bytes: readonly number[]): boolean {
+function containsImageByteSignature(bytes: readonly number[], scanShortJpegXL = true): boolean {
     for (let offset = 0; offset < bytes.length; offset += 1) {
-        if (hasImageByteSignature(bytes, offset)) return true
+        if (hasImageByteSignature(bytes, offset, scanShortJpegXL)) return true
     }
     return false
 }
@@ -228,7 +229,19 @@ function looksLikeWhitespaceEncodedImage(value: string): boolean {
 }
 
 function looksLikeWhitespaceEncodedBinary(value: string): boolean {
-    return whitespaceEncodedOffsets(value, true).some(compactValueLooksLikeControlBinary)
+    if (!looksLikeWhitespaceSeparatedProse(value)) {
+        return whitespaceEncodedOffsets(value, true).some(compactValueLooksLikeControlBinary)
+    }
+    // Keep each decoder phase at a word boundary so ordinary prose is not decoded mid-word.
+    const parts = value.trim().split(/\s+/)
+    const offsets = new Map<number, number>()
+    let length = 0
+    for (const part of parts) {
+        if (!offsets.has(length % 4)) offsets.set(length % 4, length)
+        length += part.length
+    }
+    const compact = parts.join('')
+    return [...offsets.values()].some(offset => compactValueLooksLikeControlBinary(compact.slice(offset)))
 }
 
 function looksLikeWhitespacePaddedBase64(value: string): boolean {
@@ -271,7 +284,7 @@ function looksLikeEncodedImage(value: string): boolean {
     return containsImageByteSignature(bytes)
 }
 
-function looksLikeHexEncodedImage(value: string): boolean {
+function looksLikeHexEncodedImage(value: string, scanShortJpegXL = true): boolean {
     const compact = value.trim().replace(/\s+/g, '')
     if (compact.length < 16 || !/^[a-f0-9]+$/i.test(compact)) return false
     const chunkSize = 8_192
@@ -286,7 +299,7 @@ function looksLikeHexEncodedImage(value: string): boolean {
             for (let index = 0; index < chunk.length; index += 2) {
                 bytes.push(Number.parseInt(chunk.slice(index, index + 2), 16))
             }
-            if (containsImageByteSignature(bytes)) return true
+            if (containsImageByteSignature(bytes, nibbleOffset === 0 && scanShortJpegXL)) return true
         }
     }
     return false
@@ -367,9 +380,22 @@ function containsEncodedBinary(
     value: string,
     allowOpaqueIdentifier = false,
     allowDigestOrReference = false,
+    inertText = false,
+    scanShortHexJpegXL = true,
 ): boolean {
+    // Prompt/label strings are never decoded or executed. Keep explicit image
+    // signatures, but do not infer a binary payload from ordinary text entropy.
+    if (inertText) {
+        if (looksLikeEncodedImage(value) || looksLikeWhitespaceEncodedImage(value)
+            || looksLikeHexEncodedImage(value)) return true
+        const runs = value.match(/[a-z0-9+/_=-]+(?:\s+[a-z0-9+/_=-]+)*/gi) ?? []
+        return runs.some(candidate => looksLikeEncodedImage(candidate)
+            || looksLikeWhitespaceEncodedImage(candidate) || looksLikeHexEncodedImage(candidate))
+            || (value.match(/[a-f0-9]{16,}/gi) ?? []).some(candidate => looksLikeHexEncodedImage(candidate))
+            || (value.match(/[a-f0-9]+(?:\s+[a-f0-9]+)+/gi) ?? []).some(candidate => looksLikeHexEncodedImage(candidate))
+    }
     if (looksLikeEncodedImage(value) || looksLikeWhitespaceEncodedImage(value)
-        || looksLikeHexEncodedImage(value) || looksLikeWhitespaceEncodedBinary(value)
+        || looksLikeHexEncodedImage(value, scanShortHexJpegXL) || looksLikeWhitespaceEncodedBinary(value)
         || (!allowOpaqueIdentifier && looksLikeWhitespacePaddedBase64(value))
         || (!allowOpaqueIdentifier && looksLikeWhitespaceGenericBase64(value))
         || (!allowOpaqueIdentifier && looksLikeGenericBase64(value))) return true
@@ -388,10 +414,10 @@ function containsEncodedBinary(
             looksLikeEncodedImage(candidate) || (!allowOpaqueIdentifier && looksLikeGenericBase64(candidate))
         ))
         || hexCandidates.some(candidate => (
-            looksLikeHexEncodedImage(candidate)
+            looksLikeHexEncodedImage(candidate, scanShortHexJpegXL)
             || (!allowOpaqueIdentifier && !allowDigestOrReference && looksLikeHighEntropyHex(candidate))
         ))
-        || whitespaceHexCandidates.some(looksLikeHexEncodedImage)
+        || whitespaceHexCandidates.some(candidate => looksLikeHexEncodedImage(candidate, scanShortHexJpegXL))
 }
 
 const OPAQUE_IDENTIFIER_FIELDS = new Set([
@@ -399,6 +425,7 @@ const OPAQUE_IDENTIFIER_FIELDS = new Set([
     // random IDs are not generic encoded payloads; credential/image/path checks
     // still run, exactly as for the existing id/requestId/planId fields below.
     'clientid', 'workspaceid', 'correlationid', 'idempotencykey', 'draftid', 'runid', 'batchid', 'jobid', 'jobids',
+    'attemptid', 'diagnosticeventid',
     'previouslystoppedjobids', 'productionid',
     'outputtransactionid',
     'id', 'actionid', 'activeprofileid', 'artifactid', 'artifactids', 'baseopid', 'bookmarkid', 'characterid', 'characterids',
@@ -413,6 +440,29 @@ function isOpaqueIdentifierField(fieldKey: string | undefined): boolean {
     return fieldKey !== undefined && OPAQUE_IDENTIFIER_FIELDS.has(normalizeSyncFieldKey(fieldKey))
 }
 
+/** Only complete generated references receive the human-approved short hex-marker exception. */
+function isGeneratedNaiQueueReference(value: string, fieldKey: string | undefined): boolean {
+    if (fieldKey === undefined || value.length > 200) return false
+    let match: RegExpMatchArray | null
+    switch (normalizeSyncFieldKey(fieldKey)) {
+        case 'runid': case 'batchid':
+            match = value.match(/^(?:main|scene)-batch-agent-[a-f0-9]{64}$/)
+            break
+        case 'jobid': case 'jobids': case 'sourcejobid': case 'previouslystoppedjobids':
+            match = value.match(/^(?:main|scene)-job-agent-[a-f0-9]{64}-(0|[1-9][0-9]*)$/)
+            break
+        case 'artifactid': case 'artifactids':
+            match = value.match(/^artifact:(?:main|scene)-job-agent-[a-f0-9]{64}-(0|[1-9][0-9]*)$/)
+            break
+        case 'attemptid':
+            match = value.match(/^(?:main|scene)-job-agent-[a-f0-9]{64}-(0|[1-9][0-9]*):([1-9][0-9]*)$/)
+            break
+        default:
+            return false
+    }
+    return match !== null && match.slice(1).every(counter => Number.isSafeInteger(Number(counter)))
+}
+
 function isMachineCode(value: string, fieldKey: string | undefined): boolean {
     if (fieldKey === undefined || !['code', 'issuecodes'].includes(normalizeSyncFieldKey(fieldKey))) return false
     // Protocol enum labels such as SOURCE_REVISION_CONFLICT can accidentally
@@ -420,6 +470,17 @@ function isMachineCode(value: string, fieldKey: string | undefined): boolean {
     // existing generic-entropy exemption; all credential/image/path checks stay.
     return value.length <= 128
         && /^(?:[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)+|[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)$/.test(value)
+}
+
+function isStructuredFilename(value: string, fieldKey: string | undefined): boolean {
+    if (fieldKey === undefined || normalizeSyncFieldKey(fieldKey) !== 'filenametemplate'
+        || value.length > 180 || !/[0-9]/.test(value)) return false
+    const parts = value.split(/[_-]/)
+    // Literal machine basenames (e.g. PREFIX_KV_20261016_cut4_V45_g) are
+    // identifiers, not generic Base64. Constrain every component; never exempt
+    // arbitrary template text, paths, or mixed-case encoded payload chunks.
+    return parts.length >= 3 && parts.every(part => part.length <= 32
+        && /^(?:[A-Z]+[0-9]*|[a-z]+[0-9]*|[A-Z][a-z]+[0-9]*|[0-9]+)$/.test(part))
 }
 
 function isDigestOrReferenceField(fieldKey: string | undefined): boolean {
@@ -474,18 +535,33 @@ function containsCredentialMaterial(value: string): boolean {
         || /\b(?:authorization|proxy-authorization|(?:set-)?cookie|session|api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|sig|signature|hmac|policy)\s*[:=]/i.test(value)
 }
 
-function containsLocalPathMaterial(value: string): boolean {
+function containsLocalPathMaterial(value: string, inertText = false): boolean {
     return /[a-z]:[\\/]|\\\\/i.test(value)
         || /(?:\$(?:\{)?(?:HOME|USERPROFILE|TMPDIR)(?:\})?|%(?:USERPROFILE|APPDATA|LOCALAPPDATA|HOMEDRIVE|HOMEPATH|TEMP|TMP)%)(?:[\\/]|$)/i
             .test(value)
         || /\/(?:home|users|tmp|var|etc|storage|sdcard|data|private|volumes|root|opt|usr|mnt|media)(?:\/|$)/i
             .test(value)
-        || /(?:^|[^a-z0-9_])\/(?:\/|$|[^/\s"'<>]+)/i.test(value)
+        || (inertText
+            ? /(?:^|[^\p{L}\p{N}_])\/(?:\/|$|[^/\s"'<>]+)/u.test(value)
+            : /(?:^|[^a-z0-9_])\/(?:\/|$|[^/\s"'<>]+)/i.test(value))
+        || /(?:^|[\s/\\])\.\.(?:[/\\]|$)/.test(value)
         || /(?:^|[^a-z0-9_])~[\\/]/i.test(value)
         || /(?:^|[^a-z0-9_])\\[^\\\s"'<>]+/i.test(value)
 }
 
-function unsafeString(value: string, fieldKey?: string): boolean {
+function isInertTextField(fieldKey?: string, parentFieldKey?: string): boolean {
+    const field = fieldKey === undefined ? '' : normalizeSyncFieldKey(fieldKey)
+    const parent = parentFieldKey === undefined ? '' : normalizeSyncFieldKey(parentFieldKey)
+    return ['name', 'presetname', 'title', 'displayname', 'text', 'prompt', 'sceneprompt',
+        'baseprompt', 'additionalprompt', 'negativeprompt', 'characterprompt', 'characternegativeprompt',
+        'positiveprompt', 'promptpreview'].includes(field)
+        || (['prompts', 'promptparts', 'prompt'].includes(parent)
+            && ['base', 'character', 'additional', 'negative', 'characternegative', 'positive',
+                'inpainting', 'workflow', 'detail'].includes(field))
+}
+
+function unsafeString(value: string, fieldKey?: string, parentFieldKey?: string): boolean {
+    const inertText = isInertTextField(fieldKey, parentFieldKey)
     if (value.length > MAX_STRING_LENGTH) return true
     const decodedMaterial = decodePercentMaterial(value.trim())
     if (decodedMaterial === null) return true
@@ -524,11 +600,13 @@ function unsafeString(value: string, fieldKey?: string): boolean {
             nonUrlMaterial = nonUrlMaterial.replace(decodePercentMaterial(candidate) ?? candidate, ' ')
         }
     }
-    if (containsLocalPathMaterial(nonUrlMaterial)) return true
+    if (containsLocalPathMaterial(nonUrlMaterial, inertText)) return true
     if (containsEncodedBinary(
         normalized,
-        isOpaqueIdentifierField(fieldKey) || isMachineCode(normalized, fieldKey),
+        isOpaqueIdentifierField(fieldKey) || isMachineCode(normalized, fieldKey) || isStructuredFilename(value, fieldKey),
         isDigestOrReferenceField(fieldKey),
+        inertText,
+        normalized !== value || !isGeneratedNaiQueueReference(value, fieldKey),
     )) return true
     return false
 }
@@ -544,13 +622,14 @@ function assertSafeValue(
     budget: ScanBudget,
     depth: number,
     fieldKey?: string,
+    parentFieldKey?: string,
 ): void {
     budget.nodes += 1
     if (budget.nodes > MAX_NODES || depth > MAX_DEPTH) invalid()
     if (typeof value === 'string') {
         budget.stringCharacters += value.length
         if (budget.stringCharacters > MAX_TOTAL_STRING_LENGTH) invalid()
-        if (unsafeString(value, fieldKey)) {
+        if (unsafeString(value, fieldKey, parentFieldKey)) {
             throw new SyncSanitizationError('E_SYNC_PAYLOAD_FORBIDDEN', 'Sync payload contains forbidden string material.')
         }
         return
@@ -571,7 +650,7 @@ function assertSafeValue(
                 && containsImageByteSignature(value as number[])) {
                 throw new SyncSanitizationError('E_SYNC_PAYLOAD_FORBIDDEN', 'Sync payload contains image byte material.')
             }
-            value.forEach(entry => assertSafeValue(entry, ancestors, budget, depth + 1, fieldKey))
+            value.forEach(entry => assertSafeValue(entry, ancestors, budget, depth + 1, fieldKey, parentFieldKey))
             return
         }
         const prototype = Object.getPrototypeOf(value)
@@ -584,7 +663,7 @@ function assertSafeValue(
                 || unsafeString(key)) {
                 throw new SyncSanitizationError('E_SYNC_PAYLOAD_FORBIDDEN', 'Sync payload contains a forbidden field.')
             }
-            assertSafeValue(child, ancestors, budget, depth + 1, key)
+            assertSafeValue(child, ancestors, budget, depth + 1, key, fieldKey)
         }
     } finally {
         ancestors.delete(value)

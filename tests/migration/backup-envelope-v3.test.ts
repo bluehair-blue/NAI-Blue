@@ -70,6 +70,26 @@ function rawBackup(compositionDocument = document()): Record<string, unknown> {
 }
 
 describe('Backup Envelope v3', () => {
+    it('detaches mutable backup data without copying archive strings through JSON, preserving JSON normalization', () => {
+        const compositionDocument = document()
+        const raw = rawBackup(compositionDocument)
+        const source = raw['nai-blue-generation'] as { state: Record<string, unknown> }
+        const archiveText = '한글🙂\\"\n'.repeat(16000)
+        source.state.archives = [{ raw: archiveText }, { raw: archiveText }]
+        source.state.unset = undefined
+        source.state.nonfinite = Number.POSITIVE_INFINITY
+        source.state.zero = -0
+        source.state.list = [undefined, Number.NaN, 'kept']
+        source.state.special = JSON.parse('{"__proto__":{"safe":true}}')
+        const expected = JSON.parse(JSON.stringify(source))
+        const envelope = createBackupEnvelopeV3(raw, { compositionDocument })
+        const exported = (envelope.legacyStores?.['nai-blue-generation'] ?? envelope.stores['nai-blue-generation']) as typeof source
+        expect(exported).toEqual(expected)
+        ;(source.state.archives as { raw: string }[])[0].raw = 'changed later'
+        ;(source.state.list as unknown[]).push('changed later')
+        expect(exported).toEqual(expected)
+        expect(Object.prototype.hasOwnProperty.call(exported.state.special, '__proto__')).toBe(true)
+    })
     it.each([
         ['profile', (value: CompositionDocument) => { value.activeProfileId = 'profile:missing' }],
         ['module', (value: CompositionDocument) => { value.profiles[0].moduleIds = ['module:missing'] }],

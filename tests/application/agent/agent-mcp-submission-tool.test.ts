@@ -15,11 +15,11 @@ const python = existsSync(bundledPython) ? bundledPython : process.platform === 
 const script = path.resolve('scripts/submit-agent-mcp-command.py')
 const connection = { workspaceId: 'workspace-1', clientId: 'client-1', keyId: 'key-1', actorKind: 'agent' }
 
-function payload(input: JsonObject = { budget: 1.5, tiny: 1e-7, larger: 1e21, text: '한글 🙂' }, name: AgentCommandName = 'generation.plan') {
+function payload(input: JsonObject = { budget: 1.5, tiny: 1e-7, larger: 1e21, text: '한글 🙂' }, name: AgentCommandName = 'generation.plan', expectedRuntimeHash?: `sha256:${string}`) {
     const unsigned = { schemaVersion: 1 as const, requestId: 'decimal-request', submittedAt: '2026-09-06T00:00:00.000Z',
         expiresAt: '2026-09-06T01:00:00.000Z', context: { apiVersion: 'nai-blue.agent/v1alpha1' as const,
             workspaceId: connection.workspaceId, clientId: connection.clientId, actor: { kind: 'agent' as const },
-            idempotencyKey: 'decimal-operation' }, command: { name, input } }
+            idempotencyKey: 'decimal-operation', ...(expectedRuntimeHash ? { expectedRuntimeHash } : {}) }, command: { name, input } }
     const envelope = parseAgentCommandEnvelope({ ...unsigned, requestHash: agentRequestHash(unsigned),
         authentication: { scheme: 'hmac-sha256', keyId: connection.keyId, signature: `hmac-sha256:${'0'.repeat(64)}` } })
     return { connection, unsignedPayload: canonicalSerialize(unsigned), signingPayload: canonicalAgentSigningPayload(envelope) }
@@ -50,6 +50,14 @@ def rejected(call):
 }
 
 describe('Phase 10 TS-canonical Python signing bridge (fixture credentials, no app)', () => {
+    it.skipIf(process.platform !== 'win32')('signs the selected executable hash through the real Python validation boundary', () => {
+        const expectedRuntimeHash = `sha256:${'a'.repeat(64)}` as const
+        const result = JSON.parse(runPython(`
+connection, signed = module.validate_payload(payload, "decimal-request")
+print(json.dumps(signed["context"]))
+`, payload({}, 'workspace.get_snapshot', expectedRuntimeHash)))
+        expect(result.expectedRuntimeHash).toBe(expectedRuntimeHash)
+    })
     it('keeps Python signing and native authentication command admission aligned with the application catalog', () => {
         expect(JSON.parse(runPython('print(json.dumps(sorted(module.base.COMMAND_NAMES)))'))).toEqual([...AGENT_COMMAND_NAMES].sort())
         // Native input semantics still belong to the application; this checks only the cross-language name boundary.

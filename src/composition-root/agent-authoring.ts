@@ -11,6 +11,7 @@ import { applyGenerationFolderDocumentProjection, useSettingsStore } from '@/sto
 import { useSceneStore } from '@/stores/scene-store'
 import { getRuntimeR2UploadRepository } from '@/services/r2/runtime'
 import { getR2ProfileReadiness } from '@/services/r2/readiness'
+import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 
 /** Runtime wiring retains the existing Scene/Folder CAS, directory grants and UI projection authorities. */
 export function createRuntimeAgentAuthoring() {
@@ -21,6 +22,12 @@ export function createRuntimeAgentAuthoring() {
         applyFolders: applyRuntimeGenerationFolderChanges, flushScenes: flushSceneAuthorityRuntime,
         projectScene: publishAgentSceneDocument, projectFolders: applyGenerationFolderDocumentProjection,
         hasPreset: presetId => useSceneStore.getState().presets.some(preset => preset.id === presetId),
+        validateImageSource: async source => {
+            const artifact = await getRuntimeArtifactRepository().get(source.artifactId)
+            return artifact !== null && artifact.original.contentChecksum === source.contentChecksum
+                && artifact.original.size !== null && artifact.original.size <= 25 * 1024 * 1024
+                && ['png', 'webp'].includes(artifact.original.format)
+        },
     })
 }
 
@@ -29,6 +36,8 @@ function publicScene(scene: SceneAuthoringRecord): JsonObject {
     return JSON.parse(JSON.stringify({ sceneId: scene.id, name: scene.name, prompts: scene.prompts ?? { additional: scene.scenePrompt },
         generation: scene.generation ?? {}, width: scene.width, height: scene.height, generationFolderId: scene.generationFolderId,
         productionCount: scene.productionCount ?? 1, filenameTemplate: scene.filenameTemplate,
+        imageSource: scene.imageSource,
+        promptTextMode: scene.promptTextMode,
         artifactIds: [...scene.artifactRefs].reverse().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
             .slice(0, 100).map(ref => ref.artifactId), totalArtifactCount: scene.artifactRefs.length })) as JsonObject
 }

@@ -7,7 +7,7 @@ export const AGENT_COMMAND_NAMES = [
     'system.describe_capabilities', 'workspace.get_snapshot', 'generation.plan', 'generation.enqueue',
     'generation.get_run', 'generation.cancel', 'generation.retry_storage', 'scene.retry_link',
     'output.abandon_reservation', 'scene.resolve_many', 'scene.patch_many', 'folder.plan_changes', 'folder.apply_changes', 'r2.get_readiness',
-    'production.create', 'production.list', 'production.get', 'production.plan_next',
+    'production.create', 'production.list', 'production.get', 'production.plan_next', 'artifact.get_image',
 ] as const
 export type AgentCommandName = typeof AGENT_COMMAND_NAMES[number]
 export interface AgentCommand { readonly name: AgentCommandName; readonly input: JsonObject }
@@ -25,6 +25,7 @@ export interface AgentCommandEnvelope {
         readonly correlationId?: string
         readonly idempotencyKey: string
         readonly approvalToken?: string
+        readonly expectedRuntimeHash?: Sha256Digest
     }
     readonly command: AgentCommand
     readonly authentication: {
@@ -104,7 +105,9 @@ export function parseAgentCommandEnvelope(value: unknown): AgentCommandEnvelope 
             if (value.expiresAt <= value.submittedAt) invalid()
         }
         record(value.context)
-        fields(value.context, ['apiVersion', 'workspaceId', 'clientId', 'actor', 'idempotencyKey'], ['correlationId', 'approvalToken'])
+        fields(value.context, ['apiVersion', 'workspaceId', 'clientId', 'actor', 'idempotencyKey'], ['correlationId', 'approvalToken', 'expectedRuntimeHash'])
+        if (value.context.expectedRuntimeHash !== undefined && (typeof value.context.expectedRuntimeHash !== 'string'
+            || !/^sha256:[a-f0-9]{64}$/.test(value.context.expectedRuntimeHash))) invalid()
         const context = value.context
         if (context.apiVersion !== 'nai-blue.agent/v1alpha1') invalid()
         for (const key of ['workspaceId', 'clientId', 'idempotencyKey']) identifier(context[key])

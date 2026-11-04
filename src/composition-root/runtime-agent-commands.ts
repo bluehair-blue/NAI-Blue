@@ -24,6 +24,11 @@ import { createRuntimeAgentAuthoring, createAgentAuthoringReadHandlers, getAgent
 import { createAgentSceneGenerationPlanHandler } from './agent-scene-generation-plan'
 import { createProductionRequestHandlers } from './production-requests'
 import { summarizeWorkflowDraft } from '@/application/agent/agent-workflow-draft-summary'
+import { createAgentArtifactImageHandler } from './agent-artifact-image'
+import { getRuntimeQueueRepository } from '@/services/queue/indexeddb-queue-repository'
+import { hasAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
+import { hasAgentGenerationConsent } from '@/application/agent/agent-generation-consent'
+import { inspectGenerationRecovery } from './agent-generation-recovery-inspection'
 
 const receipts = new IndexedDbCommandReceiptRepository()
 
@@ -47,13 +52,24 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
     } }, {
         command: 'workspace.get_snapshot', effect: 'read',
         validate: getAgentCommandInputContract('workspace.get_snapshot')!.validate,
-        execute: async input => {
+        execute: async (input, { envelope }) => {
             const offset = Number(input.offset ?? 0)
             const limit = Math.min(Number(input.limit ?? 20), 50)
             const all = [...await drafts.list()].sort((a, b) => a.id.localeCompare(b.id))
             const authoring = await getAgentAuthoringSnapshot(offset, limit)
+            const settings = useSettingsStore.getState()
+            const alwaysApproved = hasAgentAuthoringConsent(settings.agentAuthoringConsent, workspaceId, envelope.context.clientId)
+            const generationApproved = hasAgentGenerationConsent(settings.agentGenerationConsent, workspaceId, envelope.context.clientId)
+            // Read-only counts support safe app maintenance; consent is projected only for the authenticated caller.
+            const queueActivity = await getRuntimeQueueRepository().getActivitySummary()
             const hasMore = offset + limit < Math.max(all.length, Number(authoring.totalScenes), Number(authoring.totalPresets), Number(authoring.totalFolders))
-            return { workspaceId, ...authoring,
+            return { workspaceId, ...authoring, queueActivity: { ...queueActivity },
+                editingApproval: { alwaysApproved, active: alwaysApproved && settings.agentExecutionPolicy.mode !== 'observe'
+                    && !settings.agentExecutionPolicy.globalPause, consentRevision: settings.agentAuthoringConsent.revision },
+                generationApproval: { alwaysApproved: generationApproved,
+                    active: generationApproved && settings.agentExecutionPolicy.mode !== 'observe' && !settings.agentExecutionPolicy.globalPause,
+                    allowsSyntheticOnly: generationApproved && settings.agentExecutionPolicy.mode !== 'observe' && !settings.agentExecutionPolicy.globalPause,
+                    consentRevision: settings.agentGenerationConsent.revision },
                 workflowDrafts: all.slice(offset, offset + limit).map(summarizeWorkflowDraft),
                 totalDrafts: all.length, truncated: hasMore, nextOffset: hasMore ? offset + limit : null }
         },
@@ -63,9 +79,18 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
         execute: async (input): Promise<JsonObject> => {
             const run = await getRuntimeGenerationRun(input.runId as string)
             if (run === null) return { found: false }
-            return projectGenerationRunStatus(run)
+            const jobId = typeof input.jobId === 'string' ? input.jobId : undefined
+            const result = projectGenerationRunStatus(run, jobId)
+            result.jobs = await Promise.all((result.jobs as JsonObject[]).map(async job => {
+                const stored = job.storageState === 'succeeded' ? await getRuntimeQueueRepository().getJob(job.jobId as string) : null
+                return stored?.artifactReference ? { ...job, artifactId: stored.artifactReference.artifactId } : job
+            }))
+            if (jobId !== undefined && result.requestedJobFound === true) {
+                result.recoveryInspection = await inspectGenerationRecovery(input.runId as string, jobId)
+            }
+            return result
         },
-    }, ...createAgentAuthoringReadHandlers(), ...createProductionRequestHandlers()]
+    }, createAgentArtifactImageHandler(), ...createAgentAuthoringReadHandlers(), ...createProductionRequestHandlers()]
 }
 
 /** Singleton is shared by Data Hub and post-recovery startup; no second Queue or credential authority. */
@@ -79,10 +104,20 @@ export const runtimeAgentCommands = new ForegroundAgentCommandRuntime({
         }),
         isSaving: isAgentExecutionPolicyUpdatePending,
     },
+    authoringConsent: {
+        get: () => useSettingsStore.getState().agentAuthoringConsent,
+        set: (revision, workspaceId, clientId, enabled) => useSettingsStore.getState().setAgentAuthoringConsent(revision, workspaceId, clientId, enabled),
+    },
+    generationConsent: {
+        get: () => useSettingsStore.getState().agentGenerationConsent,
+        set: (revision, workspaceId, clientId, enabled) => useSettingsStore.getState().setAgentGenerationConsent(revision, workspaceId, clientId, enabled),
+    },
     createExecution: async (workspaceId, isClientAuthorized) => createAgentExecutionCoordinator({
         workspaceId, receipts, isClientAuthorized,
         repository: new IndexedDbAgentExecutionRepository(), plans: new IndexedDbGenerationPlanRepository(),
         getPolicy: () => useSettingsStore.getState().agentExecutionPolicy,
+        getAuthoringConsent: () => useSettingsStore.getState().agentAuthoringConsent,
+        getGenerationConsent: () => useSettingsStore.getState().agentGenerationConsent,
         ports: createAgentGenerationExecutionPort(),
         cancellation: createAgentGenerationCancellationPort(),
         storageRetry: createAgentGenerationStorageRetryPort(),

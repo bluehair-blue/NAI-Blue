@@ -69,6 +69,34 @@ export interface GenerationJobFulfillmentProjection {
     readonly release: StageProjection
     readonly acceptance: AcceptanceProjection
     readonly issues: readonly FulfillmentIssue[]
+    readonly providerExecution?: ProviderExecutionSummary
+}
+
+/** Public ledger evidence only; never includes tokens, payloads or storage paths. */
+export interface ProviderExecutionSummary {
+    readonly attemptCount: number
+    readonly diagnosticEventId: string | null
+    readonly evidenceKind: 'direct' | 'derived' | 'none'
+    readonly attemptsTruncated: boolean
+    readonly attempts: readonly {
+        readonly attemptId: string
+        readonly attemptNumber: number
+        readonly outcome: string
+        readonly startedAt: string
+        readonly finishedAt: string | null
+        readonly diagnosticEventId: string | null
+        readonly dispatchState: string | null
+        readonly providerOutcome: string | null
+        readonly billingRisk: string | null
+        readonly transitionsTruncated: boolean
+        readonly transitions: readonly {
+            readonly occurredAt: string
+            readonly dispatchState: string
+            readonly providerOutcome: string
+            readonly billingRisk: string
+            readonly diagnosticEventId: string | null
+        }[]
+    }[] | null
 }
 
 export interface GenerationFulfillmentProjection {
@@ -108,6 +136,7 @@ export interface GenerationFulfillmentJobFacts {
     readonly interpretation?: ObservedTechnicalFact
     /** Phase 3 receipts can be supplied here without changing the public projection. */
     readonly provider?: ObservedTechnicalFact
+    readonly providerExecution?: ProviderExecutionSummary
     readonly storage?: ObservedTechnicalFact
     readonly release: {
         readonly policy: 'not-required' | 'best-effort' | 'required'
@@ -267,6 +296,7 @@ export function deriveGenerationFulfillment(facts: GenerationFulfillmentFacts): 
         queue: { state: job.queueState },
         interpretation: projectFact(job.interpretation),
         provider: projectProvider(job),
+        ...(job.providerExecution === undefined ? {} : { providerExecution: job.providerExecution }),
         storage: projectFact(job.storage),
         release: projectRelease(job),
         acceptance: projectAcceptance(job.acceptance.required, job.acceptance.assessment, requiredAcceptedCount),

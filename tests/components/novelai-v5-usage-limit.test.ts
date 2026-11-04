@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OpusGenerationUsage } from '@/services/novelai-types'
 
 const stores = vi.hoisted(() => {
     const defaults = {
@@ -13,8 +14,8 @@ const stores = vi.hoisted(() => {
             slot2Enabled: true,
             tier: null as string | null,
             tier2: null as string | null,
-            opusUsage: null as { percent: number, isNegative: boolean, timeUntilNextPercent: number } | null,
-            opusUsage2: null as { percent: number, isNegative: boolean, timeUntilNextPercent: number } | null,
+            opusUsage: null as OpusGenerationUsage | null,
+            opusUsage2: null as OpusGenerationUsage | null,
             refreshAnlas: vi.fn(),
         },
         layout: {
@@ -61,6 +62,7 @@ vi.mock('react-i18next', () => ({
 import {
     NovelAiV5UsageLimit,
     normalizeOpusV5UsagePercent,
+    normalizeOpusV5PurchasedUsagePercent,
     resolveOpusV5UsagePanelPolicy,
 } from '@/components/credentials/NovelAiV5UsageLimit'
 
@@ -77,6 +79,20 @@ function renderPanel(model = 'nai-diffusion-5-full'): string {
 describe('NovelAiV5UsageLimit', () => {
     beforeEach(() => {
         stores.reset()
+    })
+
+    it('shows Extra Usage separately and does not claim paid fallback while it remains', () => {
+        const usage = { percent: 0, isNegative: true, timeUntilNextPercent: 7200, purchasedPercent: 75 }
+        stores.setAuth({ token: 'secret-slot-one', isVerified: true, tier: 'opus', opusUsage: usage })
+        expect(normalizeOpusV5PurchasedUsagePercent(usage)).toBe(75)
+        expect(normalizeOpusV5PurchasedUsagePercent({ ...usage, purchasedPercent: 500 })).toBe(400)
+        expect(resolveOpusV5UsagePanelPolicy({ usage, width: 1024, height: 1024, steps: 28, alwaysShow: false }))
+            .toMatchObject({ displayPercent: 0, displayPurchasedPercent: 75, forcedOpen: false })
+        const html = renderPanel()
+        expect(html).toContain('Extra Usage: 75%')
+        expect(html).toContain('max="400"')
+        expect(html).not.toContain('paid Anlas fallback is expected')
+        expect(html).not.toContain('secret-slot-one')
     })
 
     it('renders nothing outside V5 or without an active verified Opus slot', () => {

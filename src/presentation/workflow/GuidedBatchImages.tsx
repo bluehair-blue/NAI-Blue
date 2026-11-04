@@ -62,6 +62,7 @@ import {
     getNaiImageModelName,
     getNovelAiModelProfile,
     isNovelAiV5Model,
+    naiModelSelectionDefaults,
 } from '@/services/nai/model-catalog'
 import { childOutputRef } from '@/services/output/platform-adapter'
 import { createRuntimeOutputPlatformAdapter } from '@/services/output/tauri-output-adapter'
@@ -1724,6 +1725,7 @@ export function GuidedBatchImages() {
                                 model,
                                 generation: {
                                     ...current.payload.generation,
+                                    ...naiModelSelectionDefaults(model),
                                     scheduler: isNovelAiV5Model(model)
                                         ? 'karras'
                                         : current.payload.generation.scheduler,

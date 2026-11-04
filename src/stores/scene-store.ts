@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { SceneImageSource } from '@/application/scene/scene-image-source'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import {
@@ -112,6 +113,10 @@ export interface SceneCard {
     generationFolderId?: string
     /** Scene-wide filename template. Empty/undefined keeps the resolved output policy. */
     filenameTemplate?: string
+    /** Explicit Artifact-backed Image2Image input; null clears inherited source images. */
+    imageSource?: SceneImageSource | null
+    /** Explicit final text: retain spacing/order/repetitions through planning and transport. */
+    promptTextMode?: 'standard' | 'verbatim'
     /** FIFO overrides aligned with pending queue entries; blanks inherit filenameTemplate. */
     queuedFileNames?: string[]
     excludePinned?: boolean // Rotation-only: skip pinned characters for this scene.

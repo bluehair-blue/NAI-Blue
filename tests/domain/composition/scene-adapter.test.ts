@@ -183,6 +183,21 @@ function recipeProfile(recipeId = 'recipe:common'): AssetProfile {
 }
 
 describe('Scene composition direct adapter', () => {
+    it('binds verbatim processing into the plan hash even when canonical text happens to be identical', () => {
+        const snapshot = baseSnapshot()
+        snapshot.prompt.base = 'fixed style'
+        snapshot.prompt.negative = 'fixed negative'
+        snapshot.params.ucPreset = 4
+        snapshot.params.qualityToggle = false
+        const standard = successfulPlan(resolveSceneComposition(adapterInput(snapshot)))
+        snapshot.scene.promptTextMode = 'verbatim'
+        const verbatim = successfulPlan(resolveSceneComposition(adapterInput(snapshot)))
+        expect(verbatim.positivePrompt).toBe(standard.positivePrompt)
+        expect(verbatim.negativePrompt).toBe(standard.negativePrompt)
+        expect(verbatim.promptTextMode).toBe('verbatim')
+        expect(verbatim.planHash.digest).not.toBe(standard.planHash.digest)
+    })
+
     it('accepts an old SceneCard snapshot without compositionRef', () => {
         const snapshot = baseSnapshot()
         snapshot.prompt.base = 'common prompt'

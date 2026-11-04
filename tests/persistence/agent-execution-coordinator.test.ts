@@ -11,10 +11,13 @@ import { describeAgentCommandCapabilities } from '@/application/agent/runtime-ca
 import type { GenerationPlan } from '@/application/generation/generation-plan-contract'
 import type { JsonObject } from '@/domain/composition/types'
 import { resetIndexedDBConnectionForRetry, setIndexedDBItemStrict } from '@/lib/indexed-db'
+import { DEFAULT_AGENT_AUTHORING_CONSENT, updateAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
+import { DEFAULT_AGENT_GENERATION_CONSENT, updateAgentGenerationConsent } from '@/application/agent/agent-generation-consent'
 
 const initialTime = '2026-09-05T00:00:01.000Z'
 const digest = `sha256:${'a'.repeat(64)}` as const
 function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
+    let generationConsent = structuredClone(DEFAULT_AGENT_GENERATION_CONSENT)
     let time = initialTime
     let authorized = true
     let policy: AgentExecutionPolicy = { ...structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), mode,
@@ -41,7 +44,7 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
     const receipts = new IndexedDbCommandReceiptRepository()
     const opts: AgentExecutionCoordinatorOptions = { workspaceId: 'workspace-1', repository: new IndexedDbAgentExecutionRepository(),
         receipts, plans: { get: async () => structuredClone(plan), putIfAbsent: async () => 'same' },
-        getPolicy: () => policy, now: () => time, isClientAuthorized: async () => authorized,
+        getPolicy: () => policy, getGenerationConsent: () => generationConsent, now: () => time, isClientAuthorized: async () => authorized,
         ports: { validate, enqueue, reconcile: async grant => facts.get(grant.scopeId) ?? null, isOutstanding } }
     function reopen() {
         const coordinator = createAgentExecutionCoordinator({ ...opts, repository: new IndexedDbAgentExecutionRepository() })
@@ -60,6 +63,9 @@ function fixture(mode: AgentExecutionPolicy['mode'] = 'suggest') {
         return { ...envelope, requestHash: agentRequestHash(envelope) }
     }
     return { ...reopen(), reopen, request, enqueue, validate, isOutstanding, receipts, opts, facts, plan,
+        generationApproval: (enabled: boolean, workspaceId = 'workspace-1', clientId = 'client-1') => {
+            generationConsent = updateAgentGenerationConsent(generationConsent, generationConsent.revision, workspaceId, clientId, enabled)
+        },
         setPolicy: (next: AgentExecutionPolicy) => { policy = next }, getPolicy: () => structuredClone(policy),
         setTime: (next: string) => { time = next }, revoke: () => { authorized = false } }
 }
@@ -67,6 +73,139 @@ beforeEach(() => { resetIndexedDBConnectionForRetry(); vi.stubGlobal('indexedDB'
 afterEach(() => { resetIndexedDBConnectionForRetry(); vi.unstubAllGlobals() })
 
 describe('durable agent execution authority', () => {
+    it('uses human-owned persistent generation consent for new synthetic-only poses and random seeds without relabelling evidence', async () => {
+        const f = fixture()
+        f.generationApproval(true)
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        expect((await f.dispatcher.dispatch(f.request('synthetic-repeat-first'))).state).toBe('completed')
+        const nextHash = `sha256:${'b'.repeat(64)}` as const
+        Object.assign(f.plan, { planId: nextHash, planHash: nextHash })
+        Object.assign(f.plan.jobs[0].semantic, { seed: 123456789, prompt: 'new hand pose' })
+        const nextRequest = (id: string) => {
+            const envelope = { ...f.request(id), command: { name: 'generation.enqueue' as const,
+                input: { planId: nextHash, planHash: nextHash } } }
+            return { ...envelope, requestHash: agentRequestHash(envelope) }
+        }
+        expect((await f.dispatcher.dispatch(nextRequest('synthetic-repeat-new-seed'))).state).toBe('completed')
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
+        expect(f.enqueue.mock.calls.map(call => call[1].authorization)).toEqual(['client-always-generate', 'client-always-generate'])
+        expect(f.plan.jobs[0].compatibility.status).toBe('synthetic-only')
+        expect(f.getPolicy().generation.allowedCompatibilityStatuses).toEqual(['captured-pass', 'live-canary-pass'])
+        f.generationApproval(false)
+        expect(await f.dispatcher.dispatch(nextRequest('synthetic-repeat-off'))).toMatchObject({ state: 'needs-input',
+            result: { issueCodes: ['AGENT_COMPATIBILITY_DENIED'] } })
+        f.setPolicy({ ...f.getPolicy(), mode: 'bounded-auto', boundedAutoExpiresAt: '2026-09-05T01:00:00.000Z' })
+        expect((await f.dispatcher.dispatch(nextRequest('synthetic-repeat-legacy'))).state).toBe('needs-input')
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
+    })
+    it('uses independent saved generation consent for two new requests across reopen, then stops after OFF', async () => {
+        const f = fixture()
+        f.generationApproval(true)
+        expect((await f.dispatcher.dispatch(f.request('generation-always-first'))).state).toBe('completed')
+        expect(f.enqueue.mock.calls[0][1]).toMatchObject({ authorization: 'client-always-generate', consentRevision: 1 })
+        resetIndexedDBConnectionForRetry()
+        const reopened = f.reopen()
+        await reopened.coordinator.recover()
+        expect((await reopened.dispatcher.dispatch(f.request('generation-always-second'))).state).toBe('completed')
+        f.generationApproval(false)
+        expect((await reopened.dispatcher.dispatch(f.request('generation-always-off'))).state).toBe('needs-input')
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
+        const ledger = await f.opts.repository.get('workspace-1')
+        expect(parseAgentExecutionLedger(ledger, 'workspace-1').records).toHaveLength(3)
+        const tampered = structuredClone(ledger)!
+        Object.assign(tampered.records[0].grant!, { consentRevision: 2 })
+        expect(() => parseAgentExecutionLedger(tampered, 'workspace-1')).toThrow()
+    })
+    it('does not lend persistent compatibility authority to an approve-once path or replay same-revision pending work', async () => {
+        const f = fixture()
+        f.generationApproval(true)
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        f.setPolicy({ ...f.getPolicy(), globalPause: true })
+        const old = f.request('synthetic-pending-same-consent')
+        await f.dispatcher.dispatch(old)
+        expect((await f.opts.repository.get('workspace-1'))!.records[0]).toMatchObject({ consentRevision: 1, state: 'pending', grant: null })
+        f.setPolicy({ ...f.getPolicy(), globalPause: false })
+        await f.coordinator.recover()
+        expect((await f.dispatcher.dispatch(old)).state).toBe('needs-input')
+        expect(f.enqueue).not.toHaveBeenCalled()
+        const [review] = await f.coordinator.pending()
+        f.validate.mockImplementationOnce(async () => { f.generationApproval(false); return true })
+        await f.coordinator.approve(old.requestId, review)
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('does not infer generation consent from editing or grant it to another client/workspace', async () => {
+        const f = fixture()
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        Object.assign(f.opts, { getAuthoringConsent: () => updateAgentAuthoringConsent(DEFAULT_AGENT_AUTHORING_CONSENT, 0, 'workspace-1', 'client-1', true) })
+        expect((await f.reopen().dispatcher.dispatch(f.request('editing-only-generation'))).state).toBe('needs-input')
+        f.generationApproval(true, 'workspace-other', 'client-1')
+        f.generationApproval(true, 'workspace-1', 'client-other')
+        expect((await f.dispatcher.dispatch(f.request('generation-foreign'))).state).toBe('needs-input')
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('does not replay old pending/unknown records when generation consent becomes active', async () => {
+        const f = fixture()
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        const old = f.request('generation-pending-before-on')
+        await f.dispatcher.dispatch(old)
+        f.generationApproval(true)
+        const reopened = f.reopen()
+        await reopened.coordinator.recover()
+        expect((await reopened.dispatcher.dispatch(old)).state).toBe('needs-input')
+        expect(f.enqueue).not.toHaveBeenCalled()
+        f.enqueue.mockRejectedValueOnce(new Error('unknown Provider outcome'))
+        const uncertain = f.request('generation-consent-unknown')
+        await reopened.dispatcher.dispatch(uncertain)
+        f.generationApproval(false); f.generationApproval(true)
+        await f.reopen().coordinator.recover()
+        await f.reopen().dispatcher.dispatch(uncertain)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+    })
+    it.each(['before', 'after'] as const)('blocks consent revocation %s durable reservation', async timing => {
+        const f = fixture()
+        f.generationApproval(true)
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        if (timing === 'before') f.validate.mockImplementationOnce(async () => { f.generationApproval(false); return true })
+        else {
+            let checks = 0
+            Object.assign(f.opts, { isClientAuthorized: async () => { if (++checks === 3) f.generationApproval(false); return true } })
+        }
+        const result = await f.reopen().dispatcher.dispatch(f.request(`generation-revoke-${timing}`))
+        expect(result.state).not.toBe('completed')
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it.each(['observe', 'pause', 'known-divergence', 'unsupported', 'credential', 'budget', 'output', 'r2', 'revoked', 'expired'] as const)(
+        'retains %s validation under saved generation consent', async fault => {
+            const f = fixture()
+            f.generationApproval(true)
+            ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+            if (fault === 'observe') f.setPolicy({ ...f.getPolicy(), mode: 'observe' })
+            if (fault === 'pause') f.setPolicy({ ...f.getPolicy(), globalPause: true })
+            if (fault === 'known-divergence' || fault === 'unsupported') (f.plan.jobs[0].compatibility as { status: string }).status = fault
+            if (fault === 'credential') f.validate.mockResolvedValue(false)
+            if (fault === 'budget') (f.plan as { estimatedAnlas: number }).estimatedAnlas = 11
+            if (fault === 'output') (f.plan.jobs[0].destination as { collisionPolicy: string }).collisionPolicy = 'overwrite'
+            if (fault === 'r2') Object.assign(f.plan.jobs[0].destination, { r2: { profileId: 'unapproved-profile' } })
+            if (fault === 'revoked') f.revoke()
+            if (fault === 'expired') f.setTime('2026-09-06T00:00:00.000Z')
+            if (fault === 'expired') await expect(f.reopen().dispatcher.dispatch(f.request(`generation-gate-${fault}`))).rejects.toThrow()
+            else expect((await f.reopen().dispatcher.dispatch(f.request(`generation-gate-${fault}`))).state).not.toBe('completed')
+            expect(f.enqueue).not.toHaveBeenCalled()
+        })
+    it('adds no image/Anlas quota and preserves separate bounded-auto authority after consent OFF', async () => {
+        const f = fixture()
+        f.generationApproval(true)
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        Object.assign(f.plan, { jobs: Array.from({ length: 10 }, (_, ordinal) => ({ ...f.plan.jobs[0], ordinal })),
+            estimatedAnlas: 12345, budget: { maxImages: 10, maxAnlas: 12345 } })
+        expect((await f.dispatcher.dispatch(f.request('generation-no-new-quota'))).state).toBe('completed')
+        expect(f.enqueue.mock.calls[0][1]).toMatchObject({ authorization: 'client-always-generate', imageCount: 10, estimatedAnlas: 12345 })
+        f.generationApproval(false)
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'captured-pass'
+        f.setPolicy({ ...f.getPolicy(), mode: 'bounded-auto', boundedAutoExpiresAt: '2026-09-05T01:00:00.000Z' })
+        expect((await f.dispatcher.dispatch(f.request('generation-legacy-after-off'))).state).toBe('completed')
+        expect(f.enqueue.mock.calls[1][1]).toMatchObject({ authorization: 'bounded-auto' })
+    })
     it.each(['suggest', 'observe', 'bounded-auto', 'paused', 'expired', 'unmanaged'] as const)('projects effective human approval authority for %s', scenario => {
         const f = fixture('bounded-auto')
         const base = f.getPolicy()
@@ -184,6 +323,80 @@ describe('durable agent execution authority', () => {
         expect(f.enqueue).toHaveBeenCalledTimes(1)
         expect((await f.opts.repository.get('workspace-1'))!.records[0].originalPolicyRevision).toBe(0)
     })
+
+    it('requires the distinct human canary action, consumes it once across restart, and preserves policy and evidence classification', async () => {
+        const f = fixture('bounded-auto')
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        const originalPolicy = structuredClone(f.getPolicy())
+        const envelope = f.request('human-canary')
+        expect((await f.dispatcher.dispatch(envelope)).result).toEqual({ code: 'AGENT_APPROVAL_REQUIRED',
+            issueCodes: ['AGENT_COMPATIBILITY_DENIED'], nextAction: 'review-one-image-canary-in-app' })
+        let [review] = await f.coordinator.pending()
+        expect(review).toMatchObject({ canaryEligible: true, compatibilityStatuses: ['synthetic-only'] })
+        await f.coordinator.approve(review.requestId, review)
+        expect(f.enqueue).not.toHaveBeenCalled()
+        const reopened = f.reopen()
+        ;[review] = await reopened.coordinator.pending()
+        await Promise.all([reopened.coordinator.approveCanary(review.requestId, review),
+            f.coordinator.approveCanary(review.requestId, review)])
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(f.enqueue.mock.calls[0][1]).toMatchObject({ authorization: 'human-canary', planHash: f.plan.planHash,
+            imageCount: 1, estimatedAnlas: 7, policyRevision: 0, requestHash: envelope.requestHash })
+        expect(f.getPolicy()).toEqual(originalPolicy)
+        expect(f.plan.jobs[0].compatibility.status).toBe('synthetic-only')
+        resetIndexedDBConnectionForRetry()
+        await f.reopen().coordinator.recover()
+        await f.reopen().dispatcher.dispatch(envelope)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        expect(parseAgentExecutionLedger(await f.opts.repository.get('workspace-1'), 'workspace-1').records[0].grant)
+            .toMatchObject({ authorization: 'human-canary' })
+        const forged = structuredClone((await f.opts.repository.get('workspace-1'))!)
+        const forgedRecord = forged.records[0] as any
+        forgedRecord.imageCount = forgedRecord.grant.imageCount = 2
+        expect(() => parseAgentExecutionLedger(forged, 'workspace-1')).toThrow()
+    })
+    it.each(['multiple', 'budget-images', 'budget-anlas', 'r2', 'overwrite', 'unsupported', 'divergence',
+        'expiry', 'revoked', 'pause', 'observe', 'source-changed', 'wrong-binding', 'policy-changed'])(
+        'does not dispatch a validation image when %s invalidates exact human consent', async kind => {
+        const f = fixture()
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        const envelope = f.request('canary-invalid-' + kind)
+        await f.dispatcher.dispatch(envelope)
+        const [review] = await f.coordinator.pending()
+        const mutable = f.plan as any
+        if (kind === 'multiple') mutable.jobs.push(structuredClone(mutable.jobs[0]))
+        if (kind === 'budget-images') mutable.budget.maxImages = 2
+        if (kind === 'budget-anlas') mutable.budget.maxAnlas = 18
+        if (kind === 'r2') mutable.jobs[0].destination.r2 = { profileId: 'profile-1' }
+        if (kind === 'overwrite') mutable.jobs[0].destination.collisionPolicy = 'overwrite'
+        if (kind === 'unsupported') mutable.jobs[0].compatibility.status = 'unsupported'
+        if (kind === 'divergence') mutable.jobs[0].compatibility.status = 'known-divergence'
+        if (kind === 'expiry') f.setTime('2026-09-05T02:00:00.000Z')
+        if (kind === 'revoked') f.revoke()
+        if (kind === 'pause') f.setPolicy({ ...f.getPolicy(), globalPause: true })
+        if (kind === 'observe') f.setPolicy({ ...f.getPolicy(), mode: 'observe' })
+        if (kind === 'source-changed') f.validate.mockResolvedValue(false)
+        if (kind === 'policy-changed') f.setPolicy({ ...f.getPolicy(), revision: 1 })
+        if (kind === 'wrong-binding') await expect(f.coordinator.approveCanary(review.requestId,
+            { ...review, planHash: `sha256:${'b'.repeat(64)}` })).rejects.toMatchObject({ code: 'AGENT_APPROVAL_BINDING_CHANGED' })
+        else await f.coordinator.approveCanary(review.requestId, review)
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('never retries a canary after an unknown Queue outcome', async () => {
+        const f = fixture()
+        ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
+        f.enqueue.mockRejectedValue(new Error('unknown outcome'))
+        const envelope = f.request('canary-unknown')
+        await f.dispatcher.dispatch(envelope)
+        const [review] = await f.coordinator.pending()
+        expect(await f.coordinator.approveCanary(review.requestId, review)).toEqual({ code: 'AGENT_EXECUTION_UNKNOWN' })
+        const reopened = f.reopen()
+        await reopened.coordinator.recover()
+        await reopened.coordinator.approveCanary(review.requestId, review)
+        await reopened.dispatcher.dispatch(envelope)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+    })
+
     it('allows opaque batch/job result IDs while still rejecting their path and credential contents', () => {
         expect(() => assertAgentPublicValue({ batchId: `main-batch-agent-${'abcdef0123456789'.repeat(4)}`,
             jobIds: [`main-job-${'abcdef0123456789'.repeat(4)}`] })).not.toThrow()
@@ -211,7 +424,7 @@ describe('durable agent execution authority', () => {
         expect(f.enqueue).not.toHaveBeenCalled()
         if (kind === 'expired-auto' || kind === 'pause') expect(result.state).toBe('needs-input')
     })
-    it('accepts synthetic-only only with an explicit policy allowlist', async () => {
+    it('requires the explicit policy allowlist for synthetic-only without persistent consent', async () => {
         const f = fixture('bounded-auto')
         const policy = f.getPolicy()
         ;(f.plan.jobs[0].compatibility as { status: string }).status = 'synthetic-only'
@@ -378,6 +591,8 @@ describe('durable agent execution authority', () => {
 describe('durable local authoring through the shared execution authority', () => {
     function authoring(mode: AgentExecutionPolicy['mode'] = 'suggest') {
         const f = fixture(mode)
+        let consent = structuredClone(DEFAULT_AGENT_AUTHORING_CONSENT)
+        f.opts.getAuthoringConsent = () => consent
         const target = { command: 'scene.patch_many' as const, resourceId: 'preset-1', expectedRevision: 0,
             targetHash: digest, changeCount: 1, createsFolders: false, renamesPathSegments: false }
         let committed: JsonObject | null = null
@@ -392,8 +607,109 @@ describe('durable local authoring through the shared execution authority', () =>
         const unsigned = { ...base, command: { name: 'scene.patch_many' as const,
             input: { presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', name: 'Rain' }] } } }
         const envelope = { ...unsigned, requestHash: agentRequestHash(unsigned) }
-        return { ...f, ...f.reopen(), envelope, target, inspect, apply, clearFacts: () => { committed = null } }
+        return { ...f, ...f.reopen(), envelope, target, inspect, apply, clearFacts: () => { committed = null },
+            consent: (enabled: boolean, workspaceId = 'workspace-1', clientId = 'client-1') => {
+                consent = updateAgentAuthoringConsent(consent, consent.revision, workspaceId, clientId, enabled)
+            } }
     }
+    it('performs two successive opted-in edits across restart, deduplicates, then requires approval immediately after OFF', async () => {
+        const f = authoring()
+        const initialPolicy = f.getPolicy()
+        f.consent(true)
+        const request = (id: string, revision: number) => {
+            const value = { ...f.envelope, requestId: id, context: { ...f.envelope.context, idempotencyKey: id },
+                command: { ...f.envelope.command, input: { ...f.envelope.command.input, expectedRevision: revision } } }
+            return { ...value, requestHash: agentRequestHash(value) }
+        }
+        const first = request('always-edit-first', 0)
+        expect(await f.dispatcher.dispatch(first)).toMatchObject({ state: 'completed', result: { revision: 1 } })
+        expect(await f.dispatcher.dispatch(first)).toMatchObject({ state: 'completed' })
+        f.inspect.mockResolvedValue({ ...f.target, expectedRevision: 1 })
+        const reopened = f.reopen()
+        await reopened.coordinator.recover()
+        expect(await reopened.dispatcher.dispatch(request('always-edit-second', 1))).toMatchObject({ state: 'completed', result: { revision: 2 } })
+        expect(f.apply).toHaveBeenCalledTimes(2)
+        const ledger = (await f.opts.repository.get('workspace-1'))!
+        expect(parseAgentExecutionLedger(ledger, 'workspace-1')).toEqual(ledger)
+        expect(ledger.records.map(record => record.grant)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ authorization: 'client-always-edit', consentRevision: 1 }),
+        ]))
+        expect(await reopened.dispatcher.dispatch(f.request('generation-still-asks'))).toMatchObject({ state: 'needs-input', result: { code: 'AGENT_APPROVAL_REQUIRED' } })
+        expect(f.enqueue).not.toHaveBeenCalled()
+        f.consent(false)
+        f.inspect.mockResolvedValue({ ...f.target, expectedRevision: 2 })
+        expect(await reopened.dispatcher.dispatch(request('always-edit-off', 2))).toMatchObject({ state: 'needs-input', result: { code: 'AGENT_APPROVAL_REQUIRED' } })
+        expect(f.apply).toHaveBeenCalledTimes(2)
+        expect(f.getPolicy()).toEqual(initialPolicy)
+        // Restoring opt-in does not replay a request already awaiting its own human decision.
+        f.consent(true)
+        expect(await reopened.dispatcher.dispatch(request('always-edit-off', 2))).toMatchObject({ state: 'needs-input' })
+        expect(f.apply).toHaveBeenCalledTimes(2)
+    })
+    it.each(['foreign-client', 'foreign-workspace', 'paused', 'observe', 'revoked', 'stale-target', 'off-during-inspect'])('retains editing safeguards for %s', async scenario => {
+        const f = authoring()
+        f.consent(true, scenario === 'foreign-workspace' ? 'workspace-other' : 'workspace-1', scenario === 'foreign-client' ? 'client-other' : 'client-1')
+        if (scenario === 'paused') f.setPolicy({ ...f.getPolicy(), globalPause: true })
+        if (scenario === 'observe') f.setPolicy({ ...f.getPolicy(), mode: 'observe' })
+        if (scenario === 'revoked') f.revoke()
+        if (scenario === 'stale-target') f.inspect.mockResolvedValueOnce(f.target).mockResolvedValueOnce({ ...f.target, targetHash: `sha256:${'b'.repeat(64)}` })
+        if (scenario === 'off-during-inspect') f.inspect.mockImplementationOnce(async () => f.target).mockImplementationOnce(async () => { f.consent(false); return f.target })
+        expect((await f.dispatcher.dispatch(f.envelope)).state).not.toBe('completed')
+        expect(f.apply).not.toHaveBeenCalled()
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('keeps pending generation approval binding unchanged when editing consent changes', async () => {
+        const f = authoring()
+        await f.dispatcher.dispatch(f.request('pending-generation'))
+        const before = (await f.coordinator.pending()).find(item => item.requestId === 'pending-generation')!
+        f.consent(true)
+        const after = (await f.coordinator.pending()).find(item => item.requestId === 'pending-generation')!
+        expect(after).toEqual(before)
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('keeps explicit editing consent independent from expired bounded-auto and preserves a separate valid bounded-auto grant after OFF', async () => {
+        const f = authoring('bounded-auto')
+        f.setPolicy({ ...f.getPolicy(), boundedAutoExpiresAt: initialTime })
+        f.consent(true)
+        expect((await f.dispatcher.dispatch(f.envelope)).state).toBe('completed')
+        expect((await f.opts.repository.get('workspace-1'))!.records[0].grant?.authorization).toBe('client-always-edit')
+        const separate = authoring('bounded-auto')
+        separate.setPolicy({ ...separate.getPolicy(), authoring: { allowSceneChanges: true } })
+        separate.consent(true); separate.consent(false)
+        // OFF withdraws only this consent; an independently enabled legacy policy keeps its original scope/expiry.
+        const value = { ...separate.envelope, requestId: 'independent-bounded', context: { ...separate.envelope.context, idempotencyKey: 'independent-bounded' } }
+        expect((await separate.dispatcher.dispatch({ ...value, requestHash: agentRequestHash(value) })).state).toBe('completed')
+        const ledger = (await separate.opts.repository.get('workspace-1'))!
+        expect(ledger.records.find(record => record.envelope.requestId === 'independent-bounded')?.grant?.authorization).toBe('bounded-auto')
+    })
+    it.each(['patch', 'create-denied', 'create-allowed', 'rename-denied', 'rename-allowed'])('scopes client folder editing consent for %s', async scenario => {
+        const f = authoring()
+        f.consent(true)
+        const createsFolders = scenario.startsWith('create')
+        const renamesPathSegments = scenario.startsWith('rename')
+        const allowed = scenario === 'patch' || scenario.endsWith('allowed')
+        f.setPolicy({ ...f.getPolicy(), output: { ...f.getPolicy().output,
+            allowCreateFolders: createsFolders && allowed, allowRenamePathSegments: renamesPathSegments && allowed } })
+        f.inspect.mockResolvedValue({ ...f.target, command: 'folder.apply_changes', resourceId: 'local', createsFolders, renamesPathSegments })
+        const value = { ...f.envelope, command: { name: 'folder.apply_changes' as const,
+            input: { expectedRevision: 0, expectedPlanHash: digest, changes: [createsFolders
+                ? { op: 'create', folderId: 'folder-1', parentId: 'root', displayName: 'Folder', pathSegment: 'Folder' }
+                : { op: 'patch', folderId: 'folder-1', ...(renamesPathSegments ? { pathSegment: 'Updated' } : { commonPrompt: 'Reviewed text' }) }] } } }
+        expect((await f.dispatcher.dispatch({ ...value, requestHash: agentRequestHash(value) })).state).toBe(allowed ? 'completed' : 'needs-input')
+        expect(f.apply).toHaveBeenCalledTimes(allowed ? 1 : 0)
+        expect(f.enqueue).not.toHaveBeenCalled()
+    })
+    it('rejects altered client-consent authorization evidence in the durable ledger', async () => {
+        const f = authoring()
+        f.consent(true)
+        await f.dispatcher.dispatch(f.envelope)
+        const ledger = (await f.opts.repository.get('workspace-1'))!
+        for (const revision of [undefined, -1, 0, 1.5, Number.MAX_SAFE_INTEGER]) {
+            const corrupt = structuredClone(ledger)
+            ;(corrupt.records[0].grant as any).consentRevision = revision
+            expect(() => parseAgentExecutionLedger(corrupt, 'workspace-1')).toThrow()
+        }
+    })
     it('requires review, persists one grant, survives restart and replays exact saved completion', async () => {
         const f = authoring()
         expect(await f.dispatcher.dispatch(f.envelope)).toMatchObject({ state: 'needs-input', result: { code: 'AGENT_APPROVAL_REQUIRED' } })

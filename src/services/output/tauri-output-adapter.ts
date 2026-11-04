@@ -137,6 +137,12 @@ abstract class TauriOutputPlatformAdapter implements OutputPlatformAdapter {
         if (!await exists(directory.path, optionsFor(directory))) {
             await mkdir(directory.path, { ...optionsFor(directory), recursive: true })
         }
+        // Plugin command scopes authorize standard storage, while the native
+        // no-replace command checks the dynamic scope. Register this exact directory
+        // only after plugin I/O proves access; denied paths never gain a grant.
+        if (directory.baseDir !== undefined && this.capabilities.absolutePaths) {
+            await authorizeNativeDirectory(await absoluteOutputPath(directory))
+        }
     }
 
     exists(file: OutputFileRef): Promise<boolean> {

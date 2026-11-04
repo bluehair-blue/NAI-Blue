@@ -6,6 +6,7 @@
 
 | Fixture | 출처 | 모델 | 캡처 날짜 | 변환 | 민감정보 제거 |
 | --- | --- | --- | --- | --- | --- |
+| `payload/v5-medium.json` | 공식 Effort 공지와 공개 웹 클라이언트의 합성 설정 계약; Provider 미검증 | `nai-diffusion-5-full-medium` | 2026-10-14 | 아니오 | 예 |
 | `image-metadata-release-v2.json` | 사용자 제공 release/v2 sidecar 구조를 고정 합성 값으로 정리한 메타데이터 import contract | `nai-diffusion-4-5-full` | 2026-08-12 | 예 | 예 |
 | `metadata/data-hub-sample.nai-blue.json` | Data Hub parser와 대량 읽기 contract를 위한 합성 Metadata v2 sidecar | `nai-diffusion-4-5-full` | 2026-07-26 | 아니오 | 예 |
 | `payload/v4-5-text.request.json` | current NAI verifier/request contract | `nai-diffusion-4-5-full` | 2026-07-11 | 예 | 예 |

@@ -9,9 +9,14 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import { CURRENT_MAIN_QUEUE_POLICY } from '@/domain/queue/types'
 import { projectMainGenerationSemantic } from '@/services/generation/main-generation-semantic'
-import { CURRENT_NAI_PAYLOAD_BUILDER_REVISION, queryNaiGenerationCompatibility } from '@/services/nai/compatibility'
+import { CURRENT_NAI_PAYLOAD_BUILDER_REVISION } from '@/services/nai/compatibility'
 import { enqueueReviewedSceneQueue, getSceneQueuePlanningFacts, prepareSceneQueueReview,
     type SceneQueueReplayIdentity, type SceneQueueSubmission } from '@/services/queue/scene-queue-adapter'
+import { reportDiagnostic } from '@/services/diagnostics/error-registry'
+import { OutputDestinationOccupiedError } from '@/services/output/generation-output-commit-set'
+import { SceneQueueReviewConflict } from '@/services/queue/scene-queue-adapter'
+import { queryVerifiedNaiGenerationCompatibility } from '@/services/nai/verified-compatibility'
+import { NovelAiModelCapabilityError } from '@/services/nai/adapter'
 
 export interface AgentSceneGenerationInput {
     readonly source: { readonly kind: 'scene'; readonly targets: readonly {
@@ -64,9 +69,10 @@ function validatedInput(value: unknown): AgentSceneGenerationInput {
     return structuredClone(input) as unknown as AgentSceneGenerationInput
 }
 
-function previewText(value: string, limit: number): string | null {
+function previewText(value: string, limit: number, fieldKey: string): string | null {
     const preview = value.slice(0, limit)
-    try { assertAgentPublicValue({ text: preview }); return preview } catch { return null }
+    // Match the final output key so an optional preview cannot invalidate the whole receipt.
+    try { assertAgentPublicValue({ [fieldKey]: preview }); return preview } catch { return null }
 }
 
 /** A bounded public sample identifies reviewed work without exporting local paths or resource bytes. */
@@ -75,22 +81,27 @@ export function publicAgentScenePreview(plan: GenerationPlan<AgentScenePreparedJ
     const targets = plan.jobs[0].prepared.replay!.input.source.targets
     const sources = targets.slice(0, 20).map(target => ({ ...target,
         name: previewText(facts.prepared.find(item => item.presetId === target.presetId && item.sceneId === target.sceneId)!
-            .prepared.scene.name, 96),
+            .prepared.scene.name, 96, 'name'),
     }))
     const jobs = plan.jobs.slice(0, 10).map(job => ({
         ordinal: job.ordinal, presetId: facts.prepared[job.ordinal].presetId, sceneId: facts.prepared[job.ordinal].sceneId,
-        prompt: previewText(job.semantic.prompt, 256), negativePrompt: previewText(job.semantic.negativePrompt, 96),
+        prompt: previewText(job.semantic.prompt, 256, 'prompt'), negativePrompt: previewText(job.semantic.negativePrompt, 96, 'negativePrompt'),
         promptDigest: digest({ positive: job.semantic.prompt, negative: job.semantic.negativePrompt }),
-        model: previewText(job.semantic.model, 96), width: job.semantic.width, height: job.semantic.height,
+        model: previewText(job.semantic.model, 96, 'model'), width: job.semantic.width, height: job.semantic.height,
         steps: job.semantic.steps, seed: job.semantic.seed, estimatedAnlas: job.estimatedAnlas,
+        ...((job.semantic.generationParameters as JsonObject).promptTextMode === undefined ? {} : {
+            promptTextMode: (job.semantic.generationParameters as JsonObject).promptTextMode,
+            ucPreset: (job.semantic.generationParameters as JsonObject).ucPreset,
+            qualityToggle: (job.semantic.generationParameters as JsonObject).qualityToggle }),
+        compatibility: { ...job.compatibility },
         destination: { generationFolderId: job.destination.generationFolderId === null ? null
-            : previewText(job.destination.generationFolderId, 200),
-        fileName: previewText(`${job.destination.expectedBaseName}.${job.destination.extension}`, 255),
+            : previewText(job.destination.generationFolderId, 200, 'generationFolderId'),
+        fileName: previewText(`${job.destination.expectedBaseName}.${job.destination.extension}`, 255, 'fileName'),
         collisionPolicy: job.destination.collisionPolicy,
         r2ProfileId: job.destination.r2?.profileId ?? null,
         r2DestinationDigest: job.destination.r2 === undefined ? null : digest(job.destination.r2) },
     }))
-    return { sources, jobs, sourceCount: targets.length,
+    return { sources, jobs, compatibilityStatuses: [...new Set(plan.jobs.map(job => job.compatibility.status))], sourceCount: targets.length,
         omittedSources: Math.max(0, targets.length - sources.length), omittedJobs: Math.max(0, plan.jobs.length - jobs.length) }
 }
 
@@ -159,6 +170,10 @@ export async function planAgentSceneGeneration(
         credentialReadinessFingerprint: digest({ pricingBasis }),
     }
     const capture = { ...captureContent, contentHash: hashDetachedGenerationCapture(captureContent) }
+    const compatibilityEvidence = await Promise.all(facts.prepared.map(item => queryVerifiedNaiGenerationCompatibility(
+        item.prepared.params, CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
+        facts.streaming && !Boolean(item.prepared.params.sourceImage || item.prepared.params.mask),
+    )))
     const result = await planGeneration({ source: { kind: 'detached-generation-capture', capture }, count,
         seedPolicy: { kind: 'replay', traceId: capture.captureId }, budget: input.budget }, {
         // Detached planning never reads a WorkflowDraft or enters its planner.
@@ -166,10 +181,11 @@ export async function planAgentSceneGeneration(
         executionPolicy: capture.executionPolicy,
         estimateAnlas: job => facts.prepared[job.prepared.ordinal].estimatedAnlas,
         resolveCompatibility: job => {
-            const params = facts.prepared[job.prepared.ordinal].prepared.params
-            const compatibility = queryNaiGenerationCompatibility(params, CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
-                facts.streaming && !Boolean(params.sourceImage || params.mask))
-            return { compatibilityProfileId: compatibility.compatibilityProfileId, status: compatibility.status }
+            const compatibility = compatibilityEvidence[job.prepared.ordinal]
+            return { compatibilityProfileId: compatibility.compatibilityProfileId, status: compatibility.status,
+                ...(compatibility.status === 'live-canary-pass' && compatibility.fixture ? { evidence: {
+                    kind: 'live-canary' as const, resourceId: compatibility.fixture.path, responseDigest: compatibility.fixture.sha256,
+                } } : {}) }
         },
     })
     return { result, submission: review.submission }
@@ -201,9 +217,22 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
                         : {}),
                     nextAction: 'revise-scene-source-or-settings',
                 }
-            } catch {
+            } catch (error) {
+                if (error instanceof NovelAiModelCapabilityError) return {
+                    status: 'invalid', issueCodes: ['invalid-model-settings'],
+                    issues: [{ code: 'invalid-model-settings', fieldPath: error.fieldPath, message: error.message }],
+                    nextAction: error.nextAction,
+                }
                 // Local paths and repository details must not cross the public receipt boundary.
-                return { status: 'invalid', issueCodes: ['scene-plan-unavailable'], nextAction: 'refresh-scene-snapshot' }
+                if (error instanceof OutputDestinationOccupiedError) return { status: 'conflict',
+                    issueCodes: ['output-destination-occupied'],
+                    nextAction: 'revise-scene-filename-template' }
+                if (error instanceof SceneQueueReviewConflict) return { status: 'conflict',
+                    issueCodes: [error.issue.reason],
+                    nextAction: 'refresh-scene-snapshot' }
+                const diagnostic = reportDiagnostic(error, { operation: 'agent.scene.plan', stage: 'prepare' })
+                return { status: 'invalid', issueCodes: ['scene-planning-failed'],
+                    diagnostic: { resourceId: diagnostic.eventId }, nextAction: 'inspect-local-diagnostic' }
             }
         },
     }

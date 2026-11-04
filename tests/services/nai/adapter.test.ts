@@ -46,6 +46,14 @@ describe('adaptGenerationParams V5 capability boundary', () => {
         prepareReferences.mockResolvedValue({ newlyEncodedVibes: [] })
     })
 
+    it('rejects conflicting verbatim settings before reference encoding or Provider work', async () => {
+        for (const change of [{ ucPreset: 0 }, { qualityToggle: true }, { model: 'nai-diffusion-5-full' }]) {
+            await expect(adaptGenerationParams('token', params({ model: 'nai-diffusion-4-5-full',
+                promptTextMode: 'verbatim', ucPreset: 4, qualityToggle: false, ...change }))).rejects.toThrow('원문 보존')
+        }
+        expect(prepareReferences).not.toHaveBeenCalled()
+    })
+
     it('normalizes V5 transport fields without changing user-owned generation values', async () => {
         const adapted = await adaptGenerationParams('token', params({ transparentBackground: true }))
 
@@ -116,7 +124,7 @@ describe('adaptGenerationParams V5 capability boundary', () => {
         ]) } })
     })
 
-    it('allows Enhance MAX only on V4/V4.5 models and keeps it on img2img payloads', async () => {
+    it('allows V5 Enhance MAX while preserving the V4/V4.5 img2img payload', async () => {
         prepareReferences.mockResolvedValue({
             newlyEncodedVibes: [],
             source: {
@@ -136,7 +144,7 @@ describe('adaptGenerationParams V5 capability boundary', () => {
             model: 'nai-diffusion-5-full',
             sourceImage: 'data:image/png;base64,source',
             upscaledEnhance: true,
-        }))).rejects.toThrow('Enhance MAX')
+        }))).resolves.toMatchObject({ buildOptions: { enhanceMax: true }, request: { model: 'nai-diffusion-5-full' } })
 
         const adapted = await adaptGenerationParams('token', params({
             model: 'nai-diffusion-4-5-full',

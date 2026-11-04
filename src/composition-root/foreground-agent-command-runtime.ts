@@ -1,4 +1,5 @@
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
+import type { AgentRuntimeIdentity } from '@/application/agent/runtime-capability-registry'
 import { AgentCommandDispatcher } from '@/application/agent/agent-command-dispatcher'
 import type { CommandReceiptRepository } from '@/application/agent/command-receipt-repository'
 import { describeAgentCommandCapabilities, type AgentCommandHandler, type RuntimeCapabilityDescriptor } from '@/application/agent/runtime-capability-registry'
@@ -10,6 +11,8 @@ import type { AgentApprovalExpectation, AgentExecutionCoordinator, AgentPendingA
 import type { AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
 import type { AgentCommandReceipt } from '@/application/agent/command-receipt-repository'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
+import { DEFAULT_AGENT_AUTHORING_CONSENT, type AgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
+import { DEFAULT_AGENT_GENERATION_CONSENT, type AgentGenerationConsent } from '@/application/agent/agent-generation-consent'
 
 export interface ForegroundAgentSnapshot {
     readonly status: 'unsupported' | 'starting' | 'ready' | 'busy' | 'app-unavailable' | 'stopping' | 'stopped'
@@ -19,6 +22,8 @@ export interface ForegroundAgentSnapshot {
     readonly changingClient: boolean
     readonly changingExecution: boolean
     readonly policy: AgentExecutionPolicy
+    readonly authoringConsent: AgentAuthoringConsent
+    readonly generationConsent: AgentGenerationConsent
     readonly pendingApprovals: readonly AgentPendingApproval[]
     readonly recent: readonly { requestId: string; state: string; batchId?: string; cancelRequested?: boolean; storageRegistered?: boolean }[]
 }
@@ -27,9 +32,12 @@ export interface ForegroundAgentSnapshot {
 export class ForegroundAgentCommandRuntime {
     private snapshot: ForegroundAgentSnapshot = { status: 'unsupported', workspaceId: null, clients: [],
         capabilities: describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false }),
-        changingClient: false, changingExecution: false, policy: structuredClone(DEFAULT_AGENT_EXECUTION_POLICY), pendingApprovals: [], recent: [] }
+        changingClient: false, changingExecution: false, policy: structuredClone(DEFAULT_AGENT_EXECUTION_POLICY),
+        authoringConsent: structuredClone(DEFAULT_AGENT_AUTHORING_CONSENT),
+        generationConsent: structuredClone(DEFAULT_AGENT_GENERATION_CONSENT), pendingApprovals: [], recent: [] }
     private listeners = new Set<() => void>()
     private dispatcher: AgentCommandDispatcher | null = null
+    private runtimeIdentity: AgentRuntimeIdentity | null = null
     private owner: string | null = null
     private timer: ReturnType<typeof setTimeout> | undefined
     private polling: Promise<void> | null = null
@@ -53,13 +61,23 @@ export class ForegroundAgentCommandRuntime {
             subscribe(listener: () => void): () => void
             isSaving(): boolean
         }
+        readonly authoringConsent?: {
+            get(): AgentAuthoringConsent
+            set(expectedRevision: number, workspaceId: string, clientId: string, enabled: boolean): Promise<AgentAuthoringConsent>
+        }
+        readonly generationConsent?: {
+            get(): AgentGenerationConsent
+            set(expectedRevision: number, workspaceId: string, clientId: string, enabled: boolean): Promise<AgentGenerationConsent>
+        }
     }) {}
 
     getSnapshot = (): ForegroundAgentSnapshot => this.snapshot
     subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
 
     private update(patch: Partial<ForegroundAgentSnapshot>): void {
-        this.snapshot = { ...this.snapshot, ...patch, policy: this.dependencies.policy?.get() ?? this.snapshot.policy }
+        this.snapshot = { ...this.snapshot, ...patch, policy: this.dependencies.policy?.get() ?? this.snapshot.policy,
+            authoringConsent: this.dependencies.authoringConsent?.get() ?? this.snapshot.authoringConsent,
+            generationConsent: this.dependencies.generationConsent?.get() ?? this.snapshot.generationConsent }
         this.snapshot = { ...this.snapshot, capabilities: this.dispatcher?.capabilities()
             ?? describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false }) }
         for (const listener of this.listeners) listener()
@@ -118,6 +136,7 @@ export class ForegroundAgentCommandRuntime {
                 migrate: async () => {
                     try {
                         const workspace = await native.initialize()
+                        this.runtimeIdentity = workspace.runtimeIdentity ?? null
                         this.update({ workspaceId: workspace.workspaceId, clients: workspace.clients })
                     } catch (error) {
                         reportStartupFailure('native-initialize', error)
@@ -149,6 +168,7 @@ export class ForegroundAgentCommandRuntime {
                                 ...(this.execution?.storageRetryHandler === undefined ? [] : [this.execution.storageRetryHandler]),
                                 ...(this.execution?.authoringHandlers ?? [])],
                             authentication, receipts: this.dependencies.receipts, runtime: () => this.runtimeState(),
+                            runtimeIdentity: () => this.runtimeIdentity,
                         })
                         this.unsubscribePolicy?.()
                         this.unsubscribePolicy = this.dependencies.policy?.subscribe(() => this.update({})) ?? null
@@ -281,10 +301,39 @@ export class ForegroundAgentCommandRuntime {
         })
     }
 
-    decideApproval(requestId: string, decision: 'approve' | 'reject', expected: AgentApprovalExpectation): Promise<void> {
+    /** Human-only client control; draining dispatch and re-reading registration prevents stale-row grants. */
+    changeAuthoringApproval(expectedRevision: number, clientId: string, enabled: boolean): Promise<void> {
+        return this.runHumanExecution(async () => {
+            if (!this.dependencies.authoringConsent) throw new Error('Editing consent is unavailable')
+            const workspace = await this.dependencies.native.initialize()
+            if (workspace.workspaceId !== this.snapshot.workspaceId
+                || !workspace.clients.some(client => client.clientId === clientId && client.revokedAt === null)) {
+                throw new Error('Registered AI client is unavailable')
+            }
+            await this.dependencies.authoringConsent.set(expectedRevision, workspace.workspaceId, clientId, enabled)
+            this.update({ clients: workspace.clients })
+        })
+    }
+
+    /** Changing the future-request grant never decides or replays existing approvals. */
+    changeGenerationApproval(expectedRevision: number, clientId: string, enabled: boolean): Promise<void> {
+        return this.runHumanExecution(async () => {
+            if (!this.dependencies.generationConsent) throw new Error('Generation consent is unavailable')
+            const workspace = await this.dependencies.native.initialize()
+            if (workspace.workspaceId !== this.snapshot.workspaceId
+                || !workspace.clients.some(client => client.clientId === clientId && client.revokedAt === null)) {
+                throw new Error('Registered AI client is unavailable')
+            }
+            await this.dependencies.generationConsent.set(expectedRevision, workspace.workspaceId, clientId, enabled)
+            this.update({ clients: workspace.clients })
+        })
+    }
+
+    decideApproval(requestId: string, decision: 'approve' | 'approve-canary' | 'reject', expected: AgentApprovalExpectation): Promise<void> {
         return this.runHumanExecution(async () => {
             if (this.execution === null) throw new Error('Agent approval is unavailable')
             if (decision === 'approve') await this.execution.approve(requestId, expected)
+            else if (decision === 'approve-canary' && 'planHash' in expected) await this.execution.approveCanary(requestId, expected)
             else await this.execution.reject(requestId, expected)
             const receipt = await this.dependencies.receipts.get(requestId)
             if (receipt === null) throw new Error('Agent receipt is unavailable')

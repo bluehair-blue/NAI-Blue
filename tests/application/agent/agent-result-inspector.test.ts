@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { webcrypto } from 'node:crypto'
+import { webcrypto, createHash } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, link } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -7,7 +7,8 @@ import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { inspectAgentCommand } from '../../../scripts/inspect-agent-command.mjs'
 import { projectAgentInboxResult } from '@/adapters/agent/mcp/inbox-result-projection'
-import { agentRequestHash, canonicalAgentSigningPayload, type AgentCommandEnvelope } from '@/application/agent/agent-command-contract'
+import { agentRequestHash, canonicalAgentSigningPayload, type AgentCommandEnvelope, type AgentCommand } from '@/application/agent/agent-command-contract'
+import { createAgentMcpInbox } from '../../../scripts/run-agent-mcp-stdio.mjs'
 import { agentResultDigest } from '@/application/agent/command-receipt-repository'
 import { AgentCommandDispatcher } from '@/application/agent/agent-command-dispatcher'
 import { IndexedDbCommandReceiptRepository } from '@/adapters/agent/indexeddb-command-receipt-repository'
@@ -17,7 +18,7 @@ import { resetIndexedDBConnectionForRetry } from '@/lib/indexed-db'
 const folders: string[] = []
 afterEach(async () => { await Promise.all(folders.splice(0).map(folder => rm(folder, { recursive: true, force: true }))) })
 
-async function fixture(requestId = 'inspect-request') {
+async function fixture(requestId = 'inspect-request', command?: AgentCommand) {
     const root = await mkdtemp(path.join(tmpdir(), 'nai-phase10-inspection-'))
     folders.push(root)
     await Promise.all(['inbox', 'results', 'rejections'].map(name => mkdir(path.join(root, name))))
@@ -25,7 +26,7 @@ async function fixture(requestId = 'inspect-request') {
         schemaVersion: 1, requestId, requestHash: `sha256:${'0'.repeat(64)}`, submittedAt: '2026-09-06T00:00:00.000Z',
         context: { apiVersion: 'nai-blue.agent/v1alpha1', workspaceId: 'fixture-workspace', clientId: 'fixture-client',
             actor: { kind: 'agent' }, idempotencyKey: requestId },
-        command: { name: 'workspace.get_snapshot', input: {} },
+        command: command ?? { name: 'workspace.get_snapshot', input: {} },
         authentication: { scheme: 'hmac-sha256', keyId: 'fixture-key', signature: `hmac-sha256:${'0'.repeat(64)}` },
     }
     const saved = { ...envelope, requestHash: agentRequestHash(envelope) }
@@ -44,6 +45,29 @@ async function fixture(requestId = 'inspect-request') {
 }
 
 describe('Phase 10 read-only inbox inspection prerequisite (fixture files, no native app or MCP)', () => {
+    it('reads only a same-client completed image receipt and verified bounded cache bytes, rejecting tampering and other clients', async () => {
+        const f = await fixture('saved-image-1', { name: 'artifact.get_image', input: { artifactId: 'artifact:job' } })
+        const modules = { contract: await import('@/application/agent/agent-command-contract'),
+            canonical: await import('@/domain/composition/canonical-serialize'), inputs: await import('@/application/agent/agent-command-input'),
+            projection: await import('@/adapters/agent/mcp/inbox-result-projection') }
+        const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5ioAAAAASUVORK5CYII=', 'base64')
+        const result = { found: true, artifactId: 'artifact:job', resource: { requestId: f.requestId, mimeType: 'image/png',
+            byteLength: bytes.length, contentChecksum: `sha256:${createHash('sha256').update(bytes).digest('hex')}` } }
+        const receipt = { ...f.receipt, result, resultDigest: agentResultDigest(result) }
+        await mkdir(path.join(f.root, 'images'))
+        await writeFile(path.join(f.root, 'images', `${f.requestId}.png`), bytes)
+        await writeFile(f.resultPath, JSON.stringify(receipt))
+        const connection = { workspaceId: 'fixture-workspace', clientId: 'fixture-client', keyId: 'fixture-key', actorKind: 'agent' }
+        const signer = vi.fn(async () => { throw new Error('Read must not sign or generate') })
+        const inbox = await createAgentMcpInbox({ connection, inboxDir: f.inboxDir, python: 'unused', waitMs: 0 }, modules, signer)
+        expect(await inbox.readImage(f.requestId)).toEqual({ mimeType: 'image/png', data: bytes.toString('base64') })
+        await writeFile(path.join(f.root, 'images', `${f.requestId}.png`), Buffer.from('changed'))
+        await expect(inbox.readImage(f.requestId)).rejects.toThrow()
+        await expect(inbox.readImage('../../private')).rejects.toThrow()
+        const other = await createAgentMcpInbox({ connection: { ...connection, clientId: 'other-client' }, inboxDir: f.inboxDir, python: 'unused', waitMs: 0 }, modules, signer)
+        await expect(other.readImage(f.requestId)).rejects.toThrow()
+        expect(signer).not.toHaveBeenCalled()
+    })
     it('distinguishes an archive before publication from an actually published pending request without writing', async () => {
         const f = await fixture()
         expect(await f.inspect()).toMatchObject({ status: 'submission-unconfirmed', accepted: false })

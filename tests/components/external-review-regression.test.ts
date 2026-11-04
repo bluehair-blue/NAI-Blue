@@ -121,9 +121,8 @@ describe('External review regression fixes', () => {
         const toolsMode = await source('src/pages/ToolsMode.tsx')
 
         expect(toolsMode).toContain('smartTools.enhanceMax')
-        expect(toolsMode).toContain('smartTools.enhanceMaxV5Disabled')
-        expect(ko.smartTools.enhanceMaxV5Disabled).toContain('V5')
-        expect(ko.smartTools.enhanceMaxV5Disabled).toContain('V4')
+        expect(toolsMode).toContain('smartTools.enhanceMaxUnsupported')
+        expect(ko.smartTools.enhanceMaxUnsupported).toContain('선택한 이미지 모델')
         expect(ko.smartTools.enhanceMaxTooLarge).toContain('80%')
     })
 })

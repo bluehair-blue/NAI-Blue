@@ -124,9 +124,10 @@ describe('Smart Tools Enhance MAX', () => {
         }))
     })
 
-    it('keeps V5 Enhance MAX disabled before spending Anlas', async () => {
+    it('routes supported V5 Enhance MAX through the existing generation client', async () => {
         vi.stubGlobal('Image', TestImage)
         const { smartTools } = await import('@/services/smart-tools')
+        generateImageMock.mockResolvedValue({ success: true, imageData: btoa('enhanced') })
 
         await expect(smartTools.enhanceMax(
             `data:image/png;base64,${btoa('source')}`,
@@ -137,8 +138,10 @@ describe('Smart Tools Enhance MAX', () => {
                 smea: false, smea_dyn: false, variety: false, strength: 0.7, noise: 0,
                 qualityToggle: false, ucPreset: 0,
             },
-        )).rejects.toThrow(/V4\/V4\.5/)
-        expect(generateImageMock).not.toHaveBeenCalled()
+        )).resolves.toBe(`data:image/png;base64,${btoa('enhanced')}`)
+        expect(generateImageMock).toHaveBeenCalledWith('token', expect.objectContaining({
+            model: 'nai-diffusion-5-full', upscaledEnhance: true,
+        }))
     })
 
     it('blocks images at or above 80% of the 3MP target before generation', async () => {

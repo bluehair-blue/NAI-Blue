@@ -327,7 +327,7 @@ class SmartToolsService {
     ): Promise<string> {
         const profile = getNovelAiModelProfile(settings.model)
         if (!profile?.capabilities.enhanceMax) {
-            throw new Error('Enhance MAX는 현재 V4/V4.5 이미지 모델에서만 사용할 수 있습니다.')
+            throw new Error('선택한 이미지 모델은 Enhance MAX를 지원하지 않습니다.')
         }
 
         let imageBase64 = imageInput

@@ -1,4 +1,4 @@
-import { getNovelAiModelProfile } from './model-catalog'
+import { getNovelAiModelProfile, isNovelAiMediumModel } from './model-catalog'
 import type { GenerationParams } from '../novelai-types'
 
 export const CURRENT_NAI_PAYLOAD_BUILDER_REVISION = 'nai-blue-payload-v1' as const
@@ -52,6 +52,12 @@ const SYNTHETIC_FIXTURE = Object.freeze({
     path: 'tests/fixtures/payload/supported-online-matrix.json',
     provenance: 'synthetic-only',
     sha256: 'sha256:eb263442cae34dd96c011af6830b7c9a0bd9b2dc974c08bf6cea2b86ae6710dd',
+} as const)
+
+const MEDIUM_SYNTHETIC_FIXTURE = Object.freeze({
+    path: 'tests/fixtures/payload/v5-medium.json',
+    provenance: 'synthetic-only',
+    sha256: 'sha256:7004eab537b8c36152464f4640b37287c273ce268bcaf8ead4f5adba78eab2e0',
 } as const)
 
 /**
@@ -111,7 +117,9 @@ export function queryNaiCompatibility(query: NaiCompatibilityQuery): NaiCompatib
         action: query.action,
         features,
         payloadBuilderRevision: query.payloadBuilderRevision,
-        fixture: supportedRevision && supportedModel ? SYNTHETIC_FIXTURE : null,
+        fixture: supportedRevision && supportedModel
+            ? isNovelAiMediumModel(query.model) ? MEDIUM_SYNTHETIC_FIXTURE : SYNTHETIC_FIXTURE
+            : null,
         warnings: status === 'synthetic-only'
             ? Object.freeze(['W_NAI_COMPATIBILITY_SYNTHETIC_ONLY'] as const)
             : Object.freeze([]),

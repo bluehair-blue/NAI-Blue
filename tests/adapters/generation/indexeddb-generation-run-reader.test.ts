@@ -516,6 +516,37 @@ describe('IndexedDbGenerationRunReader', () => {
         expect(result?.overall).toBe('needs-attention')
     })
 
+    it('reports recorded no-dispatch failure without inventing uncertainty or requiring reservation abandonment', async () => {
+        const { queueJob, reservation } = reservedJob()
+        const known: GenerationAttempt = { ...providerAttempt('possibly-dispatched'),
+            outcome: 'failed', finishedAt: observedAt, providerEvidence: {
+                dispatchState: 'connect-failed-before-dispatch', providerOutcome: 'known-failure', billingRisk: 'none',
+                responseDigest: null, spoolReceipt: null,
+            } }
+        const result = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob, {
+            reservation: { ...reservation, state: 'reserved' }, attempts: [known],
+        })), 'batch-1')
+        expect(result?.provider.state).toBe('failed')
+        expect(result?.issues).toEqual([])
+        const conflict = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(queueJob, {
+            reservation, attempts: [known],
+        })), 'batch-1')
+        expect(conflict?.issues[0]?.action.kind).toBe('abandon-reservation')
+        expect(result?.jobs[0].providerExecution).toMatchObject({ attemptCount: 1, evidenceKind: 'direct',
+            attempts: [{ attemptId: 'job-1:1', dispatchState: 'connect-failed-before-dispatch',
+                providerOutcome: 'known-failure', billingRisk: 'none' }] })
+        const unknown = { ...providerAttempt('possibly-dispatched'), id: 'job-1:2', attemptNumber: 2 }
+        const later = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(
+            { ...queueJob, attemptCount: 2 }, { reservation, attempts: [known, unknown] },
+        )), 'batch-1')
+        expect(later?.provider.state).toBe('uncertain')
+        expect(later?.issues[0]?.action.kind).toBe('review-provider-unknown')
+        const missing = await getGenerationRun(new IndexedDbGenerationRunReader(authorities(
+            { ...queueJob, attemptCount: 2 }, { reservation, attempts: [known] },
+        )), 'batch-1')
+        expect(missing?.provider.state).toBe('uncertain')
+    })
+
     it('emits storage recovery only for an exact files-committed journal', async () => {
         const current = job({
             state: 'running', outputTransactionId: 'transaction-1',

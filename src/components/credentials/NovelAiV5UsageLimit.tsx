@@ -33,6 +33,11 @@ export function normalizeOpusV5UsagePercent(usage: OpusGenerationUsage | null): 
     return Math.min(100, Math.max(0, usage.percent))
 }
 
+export function normalizeOpusV5PurchasedUsagePercent(usage: OpusGenerationUsage | null): number | null {
+    const percent = usage?.purchasedPercent
+    return percent === undefined || !Number.isFinite(percent) ? null : Math.min(400, Math.max(0, percent))
+}
+
 export function resolveOpusV5UsagePanelPolicy(input: {
     usage: OpusGenerationUsage | null
     width: number
@@ -42,6 +47,7 @@ export function resolveOpusV5UsagePanelPolicy(input: {
     alwaysShow: boolean
 }): {
     displayPercent: number | null
+    displayPurchasedPercent: number | null
     eligible: boolean
     ineligibleReason: IneligibleReason | null
     forcedOpen: boolean
@@ -57,11 +63,14 @@ export function resolveOpusV5UsagePanelPolicy(input: {
                 ? 'character'
                 : null
     const displayPercent = normalizeOpusV5UsagePercent(input.usage)
-    const forcedOpen = ineligibleReason !== null || displayPercent === null || displayPercent < 5
+    const displayPurchasedPercent = normalizeOpusV5PurchasedUsagePercent(input.usage)
+    const forcedOpen = ineligibleReason !== null || displayPercent === null
+        || (displayPercent < 5 && (displayPurchasedPercent ?? 0) < 5)
     const timer = input.usage?.timeUntilNextPercent ?? 0
 
     return {
         displayPercent,
+        displayPurchasedPercent,
         eligible: ineligibleReason === null,
         ineligibleReason,
         forcedOpen,
@@ -190,6 +199,17 @@ export function NovelAiV5UsageLimit({
                                     </progress>
                                 </>
                             )}
+                            {policy.displayPurchasedPercent !== null ? (
+                                <>
+                                    <p className="mt-2 text-xs">
+                                        {t('credentials.v5UsageLimit.extraRemaining', 'Extra Usage: {{percent}}%', { percent: Math.round(policy.displayPurchasedPercent) })}
+                                    </p>
+                                    <progress className="mt-1 h-2 w-full" max={400} value={policy.displayPurchasedPercent}
+                                        aria-label={t('credentials.v5UsageLimit.extraProgress', 'Opus slot {{slot}} Extra Usage remaining', { slot })}>
+                                        {policy.displayPurchasedPercent}
+                                    </progress>
+                                </>
+                            ) : null}
                             <p className="mt-2 text-xs text-muted-foreground">
                                 {policy.eligible
                                     ? t('credentials.v5UsageLimit.eligible', 'Current settings can use the included V5 allowance when it is available.')
@@ -200,7 +220,7 @@ export function NovelAiV5UsageLimit({
                                     ? t('credentials.v5UsageLimit.refillUnknown', 'Refill speed is unavailable.')
                                     : t('credentials.v5UsageLimit.refilling', 'Currently refilling at about {{rate}}% per hour.', { rate: policy.refillPercentPerHour.toFixed(1) })}
                             </p>
-                            {usage?.isNegative ? (
+                            {usage?.isNegative && (policy.displayPurchasedPercent ?? 0) <= 0 ? (
                                 <p className="mt-1 text-xs font-medium text-destructive">
                                     {t('credentials.v5UsageLimit.negative', 'Allowance is below zero, so paid Anlas fallback is expected.')}
                                 </p>

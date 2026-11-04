@@ -10,12 +10,14 @@ const plan = (): JsonObject => ({ source: { kind: 'workflow-draft', draftId: 'ì 
     count: 1, seedPolicy: { kind: 'random' }, budget: { maxImages: 100, maxAnlas: 1.25 } })
 const digest = `sha256:${'a'.repeat(64)}`
 const fixtures: Partial<Record<AgentCommandName, { valid: JsonObject[]; invalid: unknown[] }>> = {
+    'artifact.get_image': { valid: [{ artifactId: 'artifact:job-1' }], invalid: [{ artifactId: '../private.png' }, { artifactId: 'artifact:job-1', path: 'C:/private' }] },
     'production.create': { valid: [{ title: 'Batch', source: { kind: 'preset', presetId: 'preset-1', expectedRevision: 0 }, seedPolicy: { kind: 'random' }, budget: { maxImages: 2400, maxAnlas: 10 } }], invalid: [{}] },
     'production.list': { valid: [{}], invalid: [{ extra: true }] },
     'production.get': { valid: [{ productionId: 'production-1' }], invalid: [{ productionId: '../bad' }] },
     'production.plan_next': { valid: [{ productionId: 'production-1', expectedRevision: 0 }], invalid: [{ productionId: 'production-1' }] },
     'scene.resolve_many': { valid: [{ targets: [{ presetId: 'preset-1', sceneId: 'scene-1' }] }], invalid: [{ targets: [] }] },
-    'scene.patch_many': { valid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', prompts: { base: 'rainy street' }, generation: { cfgScale: 4.5 } }] }],
+    'scene.patch_many': { valid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', prompts: { base: 'rainy street' }, generation: { cfgScale: 4.5 } }] },
+        { presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', promptTextMode: 'verbatim', generation: { ucPreset: 4, qualityToggle: false } }] }],
         invalid: [{ presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-1', artifactRefs: [] }] }] },
     'folder.plan_changes': { valid: [{ expectedRevision: 0, changes: [{ op: 'create', folderId: 'folder-1', parentId: 'root', displayName: 'Scenes', pathSegment: 'Scenes', autoUpload: true, r2ProfilePolicy: { mode: 'set', value: 'profile-1' } }] }],
         invalid: [{ expectedRevision: 0, changes: [{ op: 'create', folderId: 'folder-1', parentId: null, displayName: 'Scenes', pathSegment: 'Scenes' }] }] },
@@ -24,7 +26,10 @@ const fixtures: Partial<Record<AgentCommandName, { valid: JsonObject[]; invalid:
     'r2.get_readiness': { valid: [{}], invalid: [{ extra: true }] },
     'system.describe_capabilities': { valid: [{}], invalid: [{ extra: true }] },
     'workspace.get_snapshot': { valid: [{}], invalid: [{ extra: true }] },
-    'generation.get_run': { valid: [{ runId: 'run-1' }], invalid: [{}, { runId: '' }, { runId: '../private' }, { runId: 'a'.repeat(201) }, { runId: 'run-1', extra: true }] },
+    'generation.get_run': { valid: [{ runId: 'run-1' }, { runId: 'run-1', jobId: 'job-23' }],
+        invalid: [{}, { runId: '' }, { runId: '../private' }, { runId: 'a'.repeat(201) },
+            { runId: 'run-1', extra: true }, { runId: 'run-1', jobId: '' }, { runId: 'run-1', jobId: '../private' },
+            { runId: 'run-1', jobId: 23 }, { runId: 'run-1', jobId: 'job-23', path: 'private' }] },
     'generation.cancel': { valid: [{ runId: 'run-1' }], invalid: [{}, { runId: 1 }, { runId: 'run 1' }] },
     'generation.retry_storage': { valid: [{ runId: 'run-1', jobId: 'job-1' }], invalid: [{ runId: 'run-1' }, { runId: 'run-1', jobId: '' }, { runId: 'run-1', jobId: 'job-1', extra: true }] },
     'generation.enqueue': { valid: [{ planId: digest, planHash: digest }], invalid: [{ planId: 'plan-1', planHash: digest }, { planId: digest }, { planId: digest, planHash: digest, extra: true }] },
@@ -91,6 +96,19 @@ describe('shared application command input contracts', () => {
         const capabilities = describeAgentCommandCapabilities(handlers, { ready: true, mode: 'suggest', globalPause: false })
         expect(() => assertAgentPublicValue({ capabilities })).not.toThrow()
         expect(JSON.stringify(capabilities)).not.toContain('$schema')
+    })
+    it('accepts only opaque Image2Image bindings and explicit clear, rejecting paths and other reference semantics', () => {
+        const contract = getAgentCommandInputContract('scene.patch_many')!
+        const source = { mode: 'img2img', artifactId: 'artifact:job', contentChecksum: digest, strength: 0.45, noise: 0 }
+        const patch = (imageSource: unknown) => ({ presetId: 'preset', expectedRevision: 1,
+            changes: [{ sceneId: 'scene', imageSource }] }) as JsonObject
+        expect(contract.validate(patch(source))).toEqual(patch(source))
+        expect(() => assertAgentPublicValue(patch(source))).not.toThrow()
+        expect(contract.validate(patch(null))).toEqual(patch(null))
+        for (const invalid of [{ ...source, path: 'C:/private.png' }, { ...source, artifactId: '../file' },
+            { ...source, mode: 'precise-reference' }, { ...source, strength: 2 }, { ...source, contentChecksum: 'wrong' }]) {
+            expect(() => contract.validate(patch(invalid))).toThrow()
+        }
     })
 })
 

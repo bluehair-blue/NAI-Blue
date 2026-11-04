@@ -1,4 +1,5 @@
-import { exists, mkdir, readDir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs'
+import { exists, mkdir, readDir, readFile, remove } from '@tauri-apps/plugin-fs'
+import { writeUtf8TextFile } from './write-utf8-text-file'
 import { isTauri } from '@tauri-apps/api/core'
 import {
     BACKUP_STORE_KEYS,
@@ -39,7 +40,6 @@ export interface StoreSnapshotGroup {
     entries: StoreSnapshotEntry[]
 }
 
-const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const timers = new Map<BackupStoreKey, ReturnType<typeof setTimeout>>()
 const inflight = new Set<BackupStoreKey>()
@@ -134,7 +134,7 @@ async function writeStoreSnapshot(storeKey: BackupStoreKey): Promise<StoreSnapsh
     const fileName = `${storeKey}_${timestamp}.json`
     const relPath = `${storeSnapshotDir(storeKey)}/${fileName}`
 
-    await writeFile(relPath, encoder.encode(JSON.stringify(backup, null, 2)), { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
+    await writeUtf8TextFile(relPath, JSON.stringify(backup, null, 2), { baseDir: MEDIA_STORAGE_BASE_DIRECTORY })
     await rotateStoreSnapshots(storeKey)
 
     return { storeKey, fileName, relPath, timestamp, exportedAt }

@@ -11,12 +11,14 @@ import type { AgentExecutionReview, AgentGenerationExecutionReview } from '@/app
 import { useQueueStore } from '@/stores/queue-store'
 import type { JsonObject, JsonValue } from '@/domain/composition/types'
 import { AgentPolicyForm } from './AgentPolicyForm'
+import { hasAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
+import { hasAgentGenerationConsent } from '@/application/agent/agent-generation-consent'
 
 /** Show every signed input field for review; display labels never alter the consent binding. */
 function authoringRows(value: JsonValue, prefix = ''): { label: string; value: string }[] {
     const labels: Record<string, string> = { presetId: '프리셋 ID', presetName: '프리셋 이름', expectedRevision: '기준 버전',
         expectedPlanHash: '검토 계획 확인값', changes: '변경 항목', sceneId: '에셋 ID', name: '에셋 이름', prompts: '프롬프트',
-        base: '기본', additional: '추가', character: '캐릭터', negative: '제외', characterNegative: '캐릭터 제외',
+        base: '기본', additional: '추가', character: '캐릭터', negative: '제외', characterNegative: '캐릭터 제외', promptTextMode: '프롬프트 처리 방식',
         generation: '생성 설정', model: '모델', steps: '단계', cfgScale: '프롬프트 강도', cfgRescale: '강도 보정', sampler: '샘플러',
         scheduler: '노이즈 일정', smea: 'SMEA', smeaDyn: '동적 SMEA', variety: '다양성', qualityToggle: '품질 태그',
         strength: '강도', noise: '노이즈', characterStrength: '캐릭터 강도', characterFidelity: '캐릭터 충실도',
@@ -36,7 +38,7 @@ function authoringRows(value: JsonValue, prefix = ''): { label: string; value: s
 const visibleGenerationSettings = new Set([
     'cfgScale', 'cfgRescale', 'sampler', 'scheduler', 'smea', 'smeaDyn', 'variety', 'strength', 'noise',
     'characterStrength', 'characterFidelity', 'characterReferenceType', 'characterPositionEnabled',
-    'imageFormat', 'upscaledEnhance', 'qualityToggle', 'ucPreset', 'transparentBackground',
+    'imageFormat', 'upscaledEnhance', 'qualityToggle', 'ucPreset', 'transparentBackground', 'promptTextMode',
 ])
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
@@ -92,7 +94,7 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
     const [label, setLabel] = useState('')
     const [message, setMessage] = useState<string | null>(null)
     const ready = state.status === 'ready' && !state.changingClient && !state.changingExecution
-    const decide = async (item: AgentExecutionReview, decision: 'approve' | 'reject') => {
+    const decide = async (item: AgentExecutionReview, decision: 'approve' | 'approve-canary' | 'reject') => {
         setMessage(null)
         try {
             // Each human decision binds the reviewed plan or exact existing Queue result.
@@ -119,6 +121,20 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
         setMessage(null)
         try { if (state.status === 'ready') await runtime.stop(); else await runtime.start() }
         catch { setMessage(t('agentInbox.toggleFailed', '수신 상태를 변경하지 못했습니다. 앱을 다시 시작해 주세요.')) }
+    }
+    const changeEditingApproval = async (clientId: string, enabled: boolean) => {
+        setMessage(null)
+        try {
+            await runtime.changeAuthoringApproval(state.authoringConsent.revision, clientId, enabled)
+            setMessage(t('agentInbox.editApprovalSaved'))
+        } catch { setMessage(t('agentInbox.editApprovalFailed')) }
+    }
+    const changeGenerationApproval = async (clientId: string, enabled: boolean) => {
+        setMessage(null)
+        try {
+            await runtime.changeGenerationApproval(state.generationConsent.revision, clientId, enabled)
+            setMessage(t('agentInbox.approvalChanged'))
+        } catch { setMessage(t('agentInbox.policySaveFailed')) }
     }
     const statusLabels = {
         unsupported: t('agentInbox.windowsOnly', 'Windows 앱에서 사용 가능'),
@@ -160,6 +176,20 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                     <div className="min-w-0"><p className="break-words text-sm font-medium">{client.label}</p>
                         <p className="break-all text-xs text-muted-foreground">{client.clientId}</p>
                         {client.revokedAt && <p className="text-xs text-muted-foreground">{t('agentInbox.revoked', '권한 폐기됨')}</p>}
+                        <label className="choice-row mt-3">
+                            <input className="choice-checkbox" type="checkbox" disabled={!ready || client.revokedAt !== null}
+                                aria-label={t('agentInbox.alwaysApproveEditingFor', { client: client.label })}
+                                checked={state.workspaceId !== null && hasAgentAuthoringConsent(state.authoringConsent, state.workspaceId, client.clientId)}
+                                onChange={event => void changeEditingApproval(client.clientId, event.target.checked)} />
+                            <span>{t('agentInbox.alwaysApproveEditing')}</span>
+                        </label>
+                        <label className="choice-row mt-3">
+                            <input className="choice-checkbox" type="checkbox" disabled={!ready || client.revokedAt !== null}
+                                aria-label={t('agentInbox.alwaysApproveGenerationFor', { client: client.label })}
+                                checked={state.workspaceId !== null && hasAgentGenerationConsent(state.generationConsent, state.workspaceId, client.clientId)}
+                                onChange={event => void changeGenerationApproval(client.clientId, event.target.checked)} />
+                            <span>{t('agentInbox.alwaysApproveGeneration')}</span>
+                        </label>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <Button variant="outline" size="sm" disabled={!ready || client.revokedAt !== null} onClick={() => {
@@ -211,13 +241,15 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                         <p>{t('agentInbox.reviewCost', { count: item.imageCount, anlas: item.estimatedAnlas })}</p>
                         <p>{t('agentInbox.outputEffect')}: {t(item.outputEffect === 'local-output-and-r2' ? 'agentInbox.outputLocalR2' : 'agentInbox.outputLocal')}</p>
                         <p>{t('agentInbox.allowedCompatibility')}: {item.compatibilityStatuses.join(', ')}</p>
+                        {item.canaryEligible && <p>{t('agentInbox.canaryNotice')}</p>}
                         {renderGenerationPreview(item)}
                     </>}
                     <p>{t('agentInbox.approvalExpiry')}: <time dateTime={item.expiresAt}>{new Date(item.expiresAt).toLocaleString()}</time></p>
                     <p>{t('agentInbox.approvalReasons')}: {item.reasons.map(reason => t(`agentInbox.reason_${reason}`, { defaultValue: reason })).join(', ')}</p>
                     <div className="flex flex-wrap gap-2">
                         <Button size="sm" disabled={!ready || (!['generation.cancel', 'generation.retry_storage'].includes(item.command ?? 'generation.enqueue') && state.policy.globalPause) || state.policy.mode === 'observe' || Date.parse(item.expiresAt) <= Date.now()}
-                            onClick={() => void decide(item, 'approve')}>{t('agentInbox.approveOnce')}</Button>
+                            onClick={() => void decide(item, 'canaryEligible' in item && item.canaryEligible ? 'approve-canary' : 'approve')}>
+                            {t('canaryEligible' in item && item.canaryEligible ? 'agentInbox.approveCanary' : 'agentInbox.approveOnce')}</Button>
                         <Button size="sm" variant="outline" disabled={!ready} onClick={() => void decide(item, 'reject')}>{t('agentInbox.rejectApproval')}</Button>
                     </div>
                 </li>)}</ul>

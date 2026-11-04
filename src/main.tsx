@@ -7,6 +7,7 @@ import { BACKUP_STORE_KEYS, migrateFromLocalStorage, initializeIndexedDB, resetI
 import { createCurrentBackupEnvelopeV3, createFullAutoBackup } from './lib/auto-backup'
 import { runStartupGate } from './lib/startup-mode'
 import { scheduleAfterVisiblePaint } from './lib/after-visible-paint'
+import { startupCheckpoint } from './lib/startup-checkpoint'
 import { reportDiagnostic, reportPersistenceFault } from './services/diagnostics/error-registry'
 import type { DiagnosticEvent } from './domain/diagnostics/types'
 import type { SceneRepositoryPort } from './application/scene/scene-repository'
@@ -370,13 +371,14 @@ async function reconcileSceneArtifactsAfterStartup(): Promise<void> {
 }
 
 async function runPostRenderStartupTasks(): Promise<void> {
+    await startupCheckpoint('startup:post-render')
     const [
         { startAssetProfileDiskSync },
         { useCharacterStore },
         { startStoreSnapshotScheduler },
         { initializeQueueAfterRestart },
         { startAgentWorkspaceBridge },
-        { startRuntimeAgentCommands },
+        { startRuntimeAgentCommands, runtimeAgentCommands },
     ] = await Promise.all([
         import('./stores/asset-module-store'),
         import('./stores/character-store'),
@@ -386,15 +388,20 @@ async function runPostRenderStartupTasks(): Promise<void> {
         import('./composition-root/runtime-agent-commands'),
     ])
     const queueRecovery = initializeQueueAfterRestart()
+    void queueRecovery.then(() => startupCheckpoint('startup:queue-recovered')).catch(() => undefined)
     // The native command owner waits for this same recovery authority. A resolved
     // partial recovery or rejected recovery keeps every inbox handler unavailable.
-    void startRuntimeAgentCommands(queueRecovery).catch(err => {
+    // Agent receipt recovery shares the IndexedDB object store with full backups.
+    // Finish its durable replay before starting projection/export work; otherwise
+    // a healthy database can time out behind a large startup transaction.
+    await startRuntimeAgentCommands(queueRecovery).catch(err => {
         reportDiagnostic(err, { operation: 'startup.agent-commands', stage: 'initialize', category: 'persistence' })
     })
+    await startupCheckpoint(`startup:agent-commands:${runtimeAgentCommands.getSnapshot().status}`)
     // Queue startup owns the readiness gate and also reconciles Scene links. Run
     // the independent projection pass only after that authority settles so both
     // paths do not contend on the same IndexedDB Scene document transaction.
-    void queueRecovery.then(async recovery => {
+    await queueRecovery.then(async recovery => {
         const results = [...recovery.linkedOutputs, ...recovery.orphanOutputs]
         const failures = results.filter(result => result.action === 'failed')
         if (results.length > 0) {
@@ -414,21 +421,20 @@ async function runPostRenderStartupTasks(): Promise<void> {
     // Agent Workspace takes an initial Scene snapshot. Wait for the Queue
     // recovery authority first so that this read-only projection cannot race
     // the same IndexedDB-backed Scene collection during startup.
-    void queueRecovery
+    await queueRecovery
         .then(() => startAssetProfileDiskSync())
         .then(() => startAgentWorkspaceBridge())
         .catch(err => {
             reportDiagnostic(err, { operation: 'startup.agent-workspace', stage: 'sync', category: 'sync' })
         })
 
-    startStoreSnapshotScheduler()
-
     // Queue recovery performs durable reads/writes of the same IndexedDB store.
     // Run integrity and both full-backup paths after that gate, and serialize the
     // browser fallback with the native disk backup so startup never launches two
     // full exports against a busy WebView database.
     const afterQueueRecovery = queueRecovery.catch(() => undefined)
-    void afterQueueRecovery.then(async () => {
+    await afterQueueRecovery.then(async () => {
+        await startupCheckpoint('startup:integrity-check')
         try {
             const isHealthy = await checkDataIntegrity()
             if (!isHealthy) console.warn('[Startup] Data integrity check reported possible data loss')
@@ -445,6 +451,7 @@ async function runPostRenderStartupTasks(): Promise<void> {
         // The disk backup is the native recovery authority. It restores through
         // importAllData, so its full IndexedDB export remains schema-authoritative.
         try {
+            await startupCheckpoint('startup:disk-backup')
             const result = await createFullAutoBackup({ minIntervalMs: AUTO_BACKUP_INTERVAL })
             if (result.status === 'created') {
                 console.log(`[Startup] Disk auto-backup written: ${result.entry.fileName}`)
@@ -453,6 +460,9 @@ async function runPostRenderStartupTasks(): Promise<void> {
             reportDiagnostic(err, { operation: 'startup.disk-auto-backup', stage: 'backup', category: 'persistence' })
         }
     })
+
+    // Periodic snapshots must not compete with the initial full backup either.
+    startStoreSnapshotScheduler()
 
     // FragmentStore owns embedded-content migration and verified repository
     // writes. Startup must not strip/delete legacy wildcard content first.

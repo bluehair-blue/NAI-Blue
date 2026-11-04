@@ -1,4 +1,5 @@
-import { canonicalSerialize, hashCanonicalValue, sha256Utf8 } from '@/domain/composition/canonical-serialize'
+import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
+import { providerResultSpoolId } from '@/domain/queue/provider-result'
 import type { GenerationSnapshotResource } from '@/domain/queue/types'
 import type {
     ProviderAttemptEvidence,
@@ -8,6 +9,7 @@ import type {
 } from '@/domain/queue/provider-result'
 import { ProviderResultSpoolError, type ProviderResultSpool } from '@/application/generation/provider-result-spool'
 import type { GenerationParams } from '@/services/novelai-types'
+import { NovelAiModelCapabilityError } from '@/services/nai/adapter'
 import { NovelAIHttpError as NovelAIHttpErrorClass } from '@/services/novelai-types'
 import type { NaiProviderObservation, NaiProviderFaultInjector } from '@/services/nai/transport'
 import { executeNovelAIImageTransport } from '@/services/generation/novelai-image-transport'
@@ -158,6 +160,8 @@ export async function dispatchAndSpool(
         }
         if (evidence.dispatchState === 'prepared') {
             await advance({ ...evidence, dispatchState: 'connect-failed-before-dispatch', providerOutcome: 'known-failure' })
+            // A deterministic local settings error cannot become a network retry.
+            if (error instanceof NovelAiModelCapabilityError) throw new QueueExecutionError('fatal', error.message)
             throw new QueueExecutionError('transient', 'Provider connection failed before dispatch')
         }
         if (evidence.dispatchState === 'possibly-dispatched' || evidence.dispatchState === 'response-started') {
@@ -198,7 +202,7 @@ export async function dispatchAndSpool(
     }
     const attemptId = context.providerAttempt.id
     const commitInput = {
-        spoolId: `provider-${sha256Utf8(attemptId).slice(0, 48)}`,
+        spoolId: providerResultSpoolId(attemptId),
         attemptId,
         contentType: `image/${imageFormat}`,
         bytes,

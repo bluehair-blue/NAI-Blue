@@ -13,7 +13,7 @@ export const CANONICAL_MAIN_PROMPT_SLOT_ORDER = [
 ] as const
 
 export type CanonicalMainPromptSlot = typeof CANONICAL_MAIN_PROMPT_SLOT_ORDER[number]
-export type PromptDedupePolicy = 'exact-token' | 'none'
+export type PromptDedupePolicy = 'exact-token' | 'none' | 'verbatim'
 
 export interface MainPromptText {
     base: string
@@ -65,6 +65,7 @@ export interface FinalizePromptOptions {
 export interface ComposePromptOptions {
     /** Preserve text when the caller already ran the pipeline's comment stage. */
     comments?: 'remove-full-line' | 'preserve'
+    whitespace?: 'trim' | 'preserve'
 }
 
 const SEPARATORS = {
@@ -141,9 +142,10 @@ function applyContribution(
     contribution: PromptContribution,
     options: ComposePromptOptions,
 ): string {
-    const text = (options.comments === 'preserve'
+    const cleaned = (options.comments === 'preserve'
         ? contribution.text
-        : removePromptCommentLines(contribution.text)).trim()
+        : removePromptCommentLines(contribution.text))
+    const text = options.whitespace === 'preserve' ? cleaned : cleaned.trim()
 
     switch (contribution.merge) {
         case 'append':
@@ -168,6 +170,7 @@ function mergeContributionGroup(
 }
 
 function finalizeText(text: string, policy: PromptDedupePolicy, seen?: Set<string>): string {
+    if (policy === 'verbatim') return text
     const knownTokens = seen ?? new Set<string>()
     const result: string[] = []
 

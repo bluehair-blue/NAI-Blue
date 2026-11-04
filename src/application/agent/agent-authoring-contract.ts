@@ -22,7 +22,9 @@ export interface AgentAuthoringGrant {
     readonly policyRevision: number
     readonly expiresAt: string
     readonly consentedAt: string
-    readonly authorization: 'human' | 'bounded-auto'
+    readonly authorization: 'human' | 'bounded-auto' | 'client-always-edit'
+    /** Present only for persisted client editing consent; never generation authority. */
+    readonly consentRevision?: number
     readonly target: AgentAuthoringTarget
 }
 /** Existing Scene/Folder authorities own commit and exact grant evidence; recovery is read-only. */

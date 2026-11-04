@@ -82,12 +82,19 @@ const empty: AgentCommandInputContract = { schema: { $schema: dialect, ...object
     return input
 } }
 const run = referenceContract({ runId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/)
+const selectedRun = referenceContract({ runId: identifier, jobId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/)
+const runInspection: AgentCommandInputContract = {
+    schema: { ...run.schema, properties: { runId: identifier, jobId: identifier } },
+    validate: input => Object.prototype.hasOwnProperty.call(input, 'jobId')
+        ? selectedRun.validate(input) : run.validate(input),
+}
 const contracts: Partial<Record<AgentCommandName, AgentCommandInputContract>> = {
     'system.describe_capabilities': empty,
     'workspace.get_snapshot': workspaceSnapshotInputContract,
     ...agentAuthoringInputContracts,
     ...agentProductionInputContracts,
-    'generation.get_run': run,
+    'generation.get_run': runInspection,
+    'artifact.get_image': referenceContract({ artifactId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
     'generation.cancel': run,
     'generation.retry_storage': referenceContract({ jobId: identifier, runId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
     'generation.enqueue': referenceContract({ planId: digest, planHash: digest }, /^sha256:[a-f0-9]{64}$/),

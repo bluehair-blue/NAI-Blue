@@ -4,6 +4,7 @@ export const QUALITY_TAGS_SUFFIX = ', very aesthetic, masterpiece, no text'
 
 export const QUALITY_TAGS_BY_SELECTABLE_MODEL: Readonly<Record<string, string>> = Object.freeze({
     'nai-diffusion-5-full': 'very aesthetic, masterpiece, no text',
+    'nai-diffusion-5-full-medium': 'very aesthetic, masterpiece, no text',
     'nai-diffusion-5-curated': 'very aesthetic, masterpiece, no text',
     'nai-diffusion-4-5-full': 'location, very aesthetic, masterpiece, no text',
     'nai-diffusion-4-5-curated': 'location, masterpiece, no text, -0.8::feet::, rating:general',
@@ -67,6 +68,7 @@ export const UC_PRESETS_V5: UcPresetTable = Object.freeze({
 /** Official model-scoped UC wire text; missing preset families fail closed to no injected text. */
 export const UC_PRESETS_BY_SELECTABLE_MODEL: Readonly<Record<string, UcPresetTable>> = Object.freeze({
     'nai-diffusion-5-full': UC_PRESETS_V5,
+    'nai-diffusion-5-full-medium': UC_PRESETS_V5,
     'nai-diffusion-5-curated': UC_PRESETS_V5,
     'nai-diffusion-4-5-full': UC_PRESETS_V45_FULL,
     'nai-diffusion-4-5-curated': UC_PRESETS_V45_CURATED,

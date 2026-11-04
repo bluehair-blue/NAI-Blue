@@ -80,6 +80,7 @@ export interface PrepareMainGenerationOptions {
 export function prepareMainGeneration(
     options: PrepareMainGenerationOptions,
 ): PreparedMainGeneration {
+    validateNovelAiGenerationParams(options.params)
     const imageFormat = options.params.imageFormat ?? options.fallbackImageFormat
     const sourceEdit = Boolean(options.params.sourceImage || options.params.mask)
     const fileName = ensureImageFileExtension(options.output.fileName, imageFormat)
@@ -116,3 +117,4 @@ export function prepareMainGeneration(
         output,
     })
 }
+import { validateNovelAiGenerationParams } from '@/services/nai/adapter'
