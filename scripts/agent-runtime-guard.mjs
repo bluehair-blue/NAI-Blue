@@ -29,10 +29,10 @@ export async function adapterFingerprint(repo) {
 }
 
 /** Registry is the only executable locator; PowerShell serializes normal launch across hosts. */
-export async function resolveInstalledRuntime(repo) {
+export async function resolveInstalledRuntime(repo, allowLaunch = false) {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe')
     const { stdout } = await execute(powershell, ['-NoProfile', '-NonInteractive', '-File',
-        path.join(repo, 'scripts/inspect-agent-runtime.ps1'), '-EnsureRunning'],
+        path.join(repo, 'scripts/inspect-agent-runtime.ps1'), ...(allowLaunch ? ['-EnsureRunning'] : [])],
     { windowsHide: true, timeout: 30_000, maxBuffer: 131_072, encoding: 'utf8' })
     return JSON.parse(stdout.replace(/^\uFEFF/, ''))
 }
@@ -45,9 +45,9 @@ export async function resolveInstalledRuntime(repo) {
 export function createRuntimeGuard({ inbox, resolve, fingerprint, initialFingerprint, onTarget = () => {} }) {
     let key, probeId, attested = false, flight
     const blocked = (code, extra = {}) => ({ status: 'unavailable', code, ...extra })
-    async function inspect() {
+    async function inspect(allowLaunch) {
         if (await fingerprint() !== initialFingerprint) return blocked('MCP_ADAPTER_RECONNECT_REQUIRED')
-        const state = await resolve()
+        const state = await resolve(allowLaunch)
         const registrations = state.registeredInstallations
         if (!Array.isArray(registrations) || registrations.length === 0) return blocked('APP_INSTALLATION_NOT_FOUND')
         if (registrations.some(item => !item.executable)) return blocked('APP_INSTALLATION_INVALID')
@@ -58,7 +58,12 @@ export function createRuntimeGuard({ inbox, resolve, fingerprint, initialFingerp
             return blocked('APP_INSTALLATION_INVALID')
         }
         const running = state.runningProcesses
-        if (!Array.isArray(running) || running.length === 0) return blocked('APP_STARTING')
+        if (!Array.isArray(running)) return blocked('APP_RUNTIME_CHECK_FAILED')
+        if (running.length === 0) {
+            key = probeId = undefined
+            attested = false
+            return blocked(allowLaunch ? 'APP_STARTING' : 'APP_NOT_RUNNING')
+        }
         if (running.length !== 1 || !samePath(running[0].ExecutablePath, installed.path)
             || !Number.isSafeInteger(running[0].ProcessId)) return blocked('APP_RUNTIME_RESTART_REQUIRED')
         const expected = { version: version(installed.version), processId: running[0].ProcessId,
@@ -91,9 +96,14 @@ export function createRuntimeGuard({ inbox, resolve, fingerprint, initialFingerp
         return { status: 'ready', ...expected }
     }
     return {
-        status() {
-            // Coalesce simultaneous discovery/tool calls without a stale TTL.
-            if (!flight) flight = inspect().catch(() => blocked('APP_RUNTIME_CHECK_FAILED')).finally(() => { flight = undefined })
+        async status(allowLaunch = false) {
+            if (flight) {
+                const current = await flight
+                // A work request racing passive discovery still gets one launch check.
+                if (allowLaunch && current.code === 'APP_NOT_RUNNING') return this.status(true)
+                return current
+            }
+            flight = inspect(allowLaunch).catch(() => blocked('APP_RUNTIME_CHECK_FAILED')).finally(() => { flight = undefined })
             return flight
         },
     }

@@ -4,6 +4,8 @@
 
 - 정식 소스: `E:/AI_Project_Library/projects/nais/NAI-Blue`.
 - 실제 실행 경로: `E:/AI_Project_Library/projects/nais/NAI Blue/NAI-Blue.exe`. 등록된 Windows 설치 하나만 사용한다.
+- MCP 자동 실행 수정 (2026-11-06 12:41 KST): [정식 연결 프로그램](../scripts/run-agent-mcp-stdio.mjs)과 [명령 분류](../src/adapters/agent/mcp/mcp-stdio-server.ts)를 새 연결에서 검증했다. 목록·상태·읽기는 닫힌 앱을 그대로 두고, 계획·변경 요청만 앱을 시작한다. 기존 연결은 재연결 시 적용된다.
+- [실제 설치본 검증](../scripts/verify-agent-mcp-runtime.mjs): 앱을 닫고 등록된 연결 인수에 `--verify-launch`를 추가해 재현한다. 목록·기능·상태 조회 후에도 프로세스가 없었고, 폴더 변경 미리보기 요청에서만 시작해 완료 응답을 받았다. 실행 전후 설치본 SHA-256과 워크스페이스 응답 다이제스트가 일치했다. 회귀 테스트 38개 통과. 변경 커밋은 `git log -- scripts/agent-runtime-guard.mjs`에서 확인한다.
 - 대표 결과: [저장 이미지 폴더 탐색](./releases/저장%20이미지%20폴더%20탐색.md). 상태: 사용본 설치·공개 MCP 검증 완료, 빌드 출력 부재 확인. 생성: 2026-11-06 12:10 KST, 수정: 12:28 KST.
 - 사용본 SHA-256: `e3682de6e13de99d978981ab4ec4238fb4b01d7e18be8b2f959349cbe74e5bbf` (1.3.6 로컬 빌드).
 - 이전 결과: [시작 응답성 개선 기록](./releases/시작%20응답성.md), 소스 변경 이력은 Git에 보존한다.

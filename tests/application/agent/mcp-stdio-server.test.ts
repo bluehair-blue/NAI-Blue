@@ -74,6 +74,29 @@ async function fixture(overrides: Partial<McpAgentInbox> = {}, autoReadGuide = t
 }
 
 describe('Phase 10 official SDK server with simulated inbox', () => {
+    it('leaves discovery, status polling and invalid requests passive; validated work can launch', async () => {
+        const modes: boolean[] = []
+        const f = await fixture({ runtimeStatus: async allowLaunch => {
+            modes.push(allowLaunch)
+            return allowLaunch ? { status: 'ready' } : { status: 'unavailable', code: 'APP_NOT_RUNNING' }
+        } })
+        await f.client.listTools()
+        for (const uri of ['nai-blue://runtime', 'nai-blue://capabilities']) {
+            const read = await f.client.readResource({ uri })
+            expect(read.contents[0].text).toContain('APP_NOT_RUNNING')
+        }
+        const call = (name: string, input: JsonObject) => f.client.callTool({
+            name, arguments: { requestId: 'launch-' + modes.length, input } })
+        for (const [name, input] of [['system.describe_capabilities', {}], ['generation.get_run', { runId: 'run-1' }]] as const) {
+            expect((await call(name, input)).structuredContent).toMatchObject({ code: 'APP_NOT_RUNNING', submissionAttempted: false })
+        }
+        expect((await call('generation.cancel', {})).isError).toBe(true)
+        expect(modes).toEqual([false, false, false, false, false])
+        expect(f.invokes).toHaveLength(0)
+        expect((await call('generation.cancel', { runId: 'run-1' })).isError).toBe(false)
+        expect(modes.at(-1)).toBe(true)
+        expect(f.invokes).toHaveLength(1)
+    })
     it('blocks stale runtimes before submitting work but keeps guide and historical receipts readable', async () => {
         const f = await fixture({ runtimeStatus: async () => ({ status: 'unavailable', code: 'APP_RUNTIME_RESTART_REQUIRED' }) })
         const result = await f.client.callTool({ name: 'workspace.get_snapshot', arguments: { requestId: 'blocked-runtime', input: {} } })

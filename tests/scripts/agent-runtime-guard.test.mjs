@@ -60,6 +60,31 @@ test('blocks an old process at the same path and version by executable hash', as
     assert.equal((await f.guard.status()).code, 'APP_RUNTIME_RESTART_REQUIRED')
 })
 
+test('overlapping passive checks keep the app closed; waiting work requests share one launch', async () => {
+    const { state, executable } = fixture()
+    state.runningProcesses = []
+    const modes = []
+    let probes = 0
+    const guard = createRuntimeGuard({ initialFingerprint: 'a', fingerprint: async () => 'a',
+        resolve: async allowLaunch => {
+            modes.push(allowLaunch)
+            if (allowLaunch) state.runningProcesses = [{ ProcessId: 10, ExecutablePath: executable.path }]
+            return state
+        },
+        inbox: { invoke: async () => {
+            probes++
+            return { status: 'application-receipt', receipt: { state: 'completed', result: { runtimeIdentity: {
+                version: executable.version, processId: 10, executableHash: `sha256:${executable.sha256}` } } } }
+        } } })
+    assert.equal((await guard.status()).code, 'APP_NOT_RUNNING')
+    assert.equal(probes, 0)
+    const [read, first, second] = await Promise.all([guard.status(), guard.status(true), guard.status(true)])
+    assert.equal(read.code, 'APP_NOT_RUNNING')
+    assert.deepEqual([first.status, second.status], ['ready', 'ready'])
+    assert.deepEqual(modes, [false, false, true])
+    assert.equal(probes, 1)
+})
+
 test('adapter content changes block before probing; unknown and ambiguous installations never guess', async () => {
     const f = fixture()
     f.changeAdapter()

@@ -150,7 +150,7 @@ async function main() {
         if (values.help) {
             console.log('NAI Blue development MCP stdio spike.\n'
                 + 'node scripts/run-agent-mcp-stdio.mjs --connection <public connection JSON> --inbox-dir <existing inbox> --python <Python executable> [--wait-ms 0..30000]\n'
-                + 'Requires an existing registered client. Resolves and normally launches the registered Windows installation; never installs, kills a process, or changes approval. Read nai-blue://runtime for freshness diagnostics.')
+                + 'Requires an existing registered client. Only plan and mutation requests can launch the registered Windows app. Read nai-blue://runtime for passive status.')
             return
         }
         requireInput(values.connection && values['inbox-dir'] && values.python && /^\d+$/.test(values['wait-ms']))
@@ -171,9 +171,9 @@ async function main() {
             getRuntimeHash: () => targetRuntimeHash,
             waitMs: Number(values['wait-ms']) }, { contract, canonical, inputs, projection })
         const guard = createRuntimeGuard({ inbox, initialFingerprint,
-            fingerprint: () => adapterFingerprint(repo), resolve: () => resolveInstalledRuntime(repo),
+            fingerprint: () => adapterFingerprint(repo), resolve: allowLaunch => resolveInstalledRuntime(repo, allowLaunch),
             onTarget: value => { targetRuntimeHash = value } })
-        inbox.runtimeStatus = () => guard.status()
+        inbox.runtimeStatus = allowLaunch => guard.status(allowLaunch)
         const { serveStdio, StdioServerTransport } = await import('@modelcontextprotocol/server/stdio')
         const transport = new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: 262_144 })
         handle = serveStdio(() => adapter.createAgentMcpServer(inbox), { transport,

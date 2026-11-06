@@ -1,7 +1,7 @@
 import { Server, ProtocolError, INTERNAL_ERROR, type JsonSchemaType, type CallToolResult } from '@modelcontextprotocol/server'
 import { AGENT_COMMAND_NAMES, AgentCommandError, assertAgentPublicValue, assertAgentRequestId, type AgentCommand, type AgentCommandName } from '@/application/agent/agent-command-contract'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
-import { describeAgentCommandCapabilities, type RuntimeCapabilityDescriptor } from '@/application/agent/runtime-capability-registry'
+import { AGENT_COMMAND_EFFECTS, describeAgentCommandCapabilities, type RuntimeCapabilityDescriptor } from '@/application/agent/runtime-capability-registry'
 import { parseAgentCommandReceipt } from '@/application/agent/command-receipt-repository'
 import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
@@ -11,7 +11,7 @@ import { AGENT_MCP_INSTRUCTIONS, AGENT_TOOL_DESCRIPTIONS, AGENT_WORKFLOW_GUIDE, 
 
 /** The Node entry owns signing/file I/O; application commands still own all business decisions. */
 export interface McpAgentInbox {
-    runtimeStatus?(): Promise<JsonObject>
+    runtimeStatus?(allowLaunch: boolean): Promise<JsonObject>
     readImage?(requestId: string, signal?: AbortSignal): Promise<{ data: string; mimeType: 'image/png' }>
     invoke(command: AgentCommand, requestId: string, signal?: AbortSignal): Promise<JsonObject>
     inspect(requestId: string, signal?: AbortSignal): Promise<JsonObject>
@@ -20,7 +20,7 @@ export interface McpAgentInbox {
 const capabilitiesUri = 'nai-blue://capabilities'
 const runtimeUri = 'nai-blue://runtime'
 const runtimeCodes = new Set(['MCP_ADAPTER_RECONNECT_REQUIRED', 'APP_INSTALLATION_NOT_FOUND', 'APP_INSTALLATION_INVALID',
-    'APP_INSTALLATION_AMBIGUOUS', 'APP_STARTING', 'APP_RUNTIME_RESTART_REQUIRED', 'APP_RUNTIME_UPGRADE_REQUIRED', 'APP_RUNTIME_CHECK_FAILED'])
+    'APP_INSTALLATION_AMBIGUOUS', 'APP_NOT_RUNNING', 'APP_STARTING', 'APP_RUNTIME_RESTART_REQUIRED', 'APP_RUNTIME_UPGRADE_REQUIRED', 'APP_RUNTIME_CHECK_FAILED'])
 const requestUriPrefix = 'nai-blue://requests/'
 const requestIdSchema = { type: 'string', minLength: 1, maxLength: 100,
     pattern: '^[A-Za-z0-9_-]+$', not: { pattern: '^(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9]|[lL][pP][tT][0-9])$' } }
@@ -99,9 +99,9 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     })
 
     /** The local locator exports only bounded public identity, never executable paths. */
-    async function runtimeStatus(): Promise<JsonObject | undefined> {
+    async function runtimeStatus(allowLaunch = false): Promise<JsonObject | undefined> {
         if (!inbox.runtimeStatus) return undefined
-        const value = await inbox.runtimeStatus()
+        const value = await inbox.runtimeStatus(allowLaunch)
         const { requestResource, ...publicValue } = value
         assertAgentPublicValue(publicValue)
         if (value.status !== 'ready' && (value.status !== 'unavailable' || !runtimeCodes.has(String(value.code)))) {
@@ -174,6 +174,10 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             if (contract === undefined) return []
             const availability = snapshot.status === 'app-state-unconfirmed'
                 ? `Availability unconfirmed (${descriptor.reason}); inspect ${snapshot.requestResource} for the existing probe.`
+                : snapshot.runtime?.code === 'APP_NOT_RUNNING'
+                ? (AGENT_COMMAND_EFFECTS[descriptor.command] === 'read'
+                    ? 'App closed. This read leaves it closed.'
+                    : 'App closed. A valid request for this work can start the registered app.')
                 : snapshot.status === 'runtime-unavailable'
                 ? `Runtime check required (${snapshot.runtime?.code ?? 'APP_RUNTIME_UNAVAILABLE'}); read nai-blue://runtime. Do not search old executable copies.`
                 : descriptor.available
@@ -217,7 +221,8 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             assertAgentPublicValue(args.input)
             const input = contract.validate(args.input as JsonObject)
             if (context.mcpReq.signal.aborted) throw new AgentCommandError('REQUEST_CANCELLED')
-            const runtime = await runtimeStatus()
+            const effect = AGENT_COMMAND_EFFECTS[name]
+            const runtime = await runtimeStatus(effect === 'plan' || effect === 'mutation')
             if (runtime && runtime.status !== 'ready') {
                 const result = { status: 'adapter-error', code: String(runtime.code), requiresAppProcess: true,
                     accepted: false, submissionAttempted: false }
@@ -249,7 +254,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
 
     server.setRequestHandler('resources/list', async () => ({ resources: [{ uri: runtimeUri,
         name: 'Installed runtime freshness', mimeType: 'application/json',
-        description: 'Resolve the registered installation, normally launch it if closed, and verify the live PID/version/executable hash. No process termination or installation. Reuse the pending probe resource.' }, { uri: capabilitiesUri,
+        description: 'Inspect the registered installation without launching it. If running, verify the live PID/version/executable hash. Reuse the pending probe resource.' }, { uri: capabilitiesUri,
         name: 'Current application capabilities', mimeType: 'application/json',
         description: 'Fresh command-runtime probe. Unconfirmed means no valid completed receipt was observed; inspect its requestResource. Window focus is not required.' }, {
         uri: AGENT_WORKFLOW_GUIDE_URI, name: 'Agent workflow guide v1', mimeType: 'text/markdown',
