@@ -78,7 +78,7 @@
 
 ## 구현 계획
 
-진행(2026-11-22): 단계 1과 단계 2를 구현했고 자동 검사를 통과했다. 설계와 검증은 [ADR-017](../architecture/ADR-017-mcp-call-deadline-and-execution-history.md)에 있다. 단계 1은 MCP 재연결로 적용된다. 단계 2는 설치본에 올려야 적용되고, 올린 뒤 실측표를 다시 잰다. 단계 3과 4는 시작하지 않았다.
+진행(2026-11-22): 단계 1과 단계 2를 구현했고 자동 검사를 통과했다. 설계와 검증은 [ADR-017](../architecture/ADR-017-mcp-call-deadline-and-execution-history.md)에 있다. 단계 1은 MCP 재연결로 적용된다. 단계 2는 설치본에 올려야 적용되고, 올린 뒤 `node scripts/measure-agent-command-latency.mjs --since <시각>`으로 실측표를 다시 잰다. 단계 3과 4는 시작하지 않았다.
 
 설정만 바꾸는 일, 어댑터만 바꾸는 일, 앱을 다시 빌드하는 일을 나눈다. 설치본 교체는 사용자가 실행하므로 앱 변경은 두 번의 빌드로 묶는다.
 

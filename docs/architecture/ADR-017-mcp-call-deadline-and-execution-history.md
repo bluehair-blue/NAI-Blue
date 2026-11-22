@@ -88,7 +88,9 @@ ADR-016 5절의 "`waitSeconds`는 완료 대기 시간"이 "호출 전체의 예
 - 전체 테스트 2,898개 통과(4개 건너뜀), 런타임 가드 테스트 7개, 타입 검사, 린트, 구조 검사, 의존성 검사 통과
 - 새 시험: 호출 마감(`mcp-token-efficiency.test.ts`), 재발행 없는 재개(`mcp-request-resume.test.ts`), 캐시와 Worker 재사용(`agent-ledger-cache.test.ts`), 이력 정리(`agent-ledger-compaction.test.ts`), 호환성 일괄 조회, 출력 점유 키, 파일명 예외, job 행의 파일명
 - `agent-mcp-stdio-process.test.ts`의 프로세스 종료 시험은 전체 실행 세 번 중 두 번 실패하고 단독으로는 세 번 모두 통과했다. 변경 전 커밋의 전체 실행에서도 같은 시험이 실패했다. ADR-016에 적힌 불안정 시험이다
-- 하지 않은 것: 설치본 교체, 실제 생성으로 처리 시간 다시 재기, 실제 이력(약 650건)의 첫 정리, 실제 Python 발행기와 호스트(Pi, Codex, Claude Code)에서의 재개
+- 실행 중인 설치본(1.3.6, 이전 빌드)과 실제 서명 프로그램으로 새 어댑터를 확인했다. `scripts/verify-agent-mcp-runtime.mjs`의 읽기가 완료됐다. 같은 `requestId`의 `workspace.get_snapshot`을 다시 부르면 같은 결과가 1.3초에 돌아왔고 ready 파일이 다시 생기지 않았으며 결과 파일도 다시 쓰이지 않았다. 같은 ID에 다른 입력은 `REQUEST_ID_INPUT_MISMATCH`였다
+- 처리 시간은 `scripts/measure-agent-command-latency.mjs --since <시각>`으로 잰다. 변경 전 기준(2026-11-22 세션, 중앙값): 편집 12.7초, 계획 9.2초, 등록 44.3초
+- 하지 않은 것: 설치본 교체, 새 빌드에서 처리 시간 다시 재기, 실제 이력(약 650건)의 첫 정리, 실제 생성에서의 `generation.run` 재개, 호스트(Pi, Codex, Claude Code)별 동작
 
 ## 알려진 한계
 
