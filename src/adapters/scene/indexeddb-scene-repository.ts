@@ -20,6 +20,7 @@ import {
     compareAndSetIndexedDBItem,
     getIndexedDBItemStrict,
 } from '@/lib/indexed-db'
+import { measureSpan, measureSpanSync } from '@/lib/user-timing'
 
 const SCENE_STORAGE_KEY = 'nai-blue-scenes'
 // Zustand persist defaults to version 0 when the store does not specify one.
@@ -167,7 +168,18 @@ function emptyCollection(): SceneDocumentCollection {
     return { schemaVersion: SCENE_COLLECTION_SCHEMA_VERSION, documents: [] }
 }
 
+/** Every read parses and validates the whole collection, so its size is the cost driver worth recording. */
 function parseCollection(serialized: string | null): SceneDocumentCollection {
+    return measureSpanSync('scene-repo:parse', detail => {
+        detail.rawLength = serialized?.length ?? 0
+        const collection = parseCollectionOnce(serialized)
+        detail.documents = collection.documents.length
+        detail.scenes = collection.documents.reduce((total, document) => total + document.scenes.length, 0)
+        return collection
+    })
+}
+
+function parseCollectionOnce(serialized: string | null): SceneDocumentCollection {
     if (serialized === null) return emptyCollection()
     let parsed: unknown
     try {
@@ -294,7 +306,7 @@ export class IndexedDbSceneRepository implements SceneRepositoryPort {
 
     async getDocument(presetId: string): Promise<SceneDocument | null> {
         if (!isNonEmptyString(presetId)) throw new TypeError('Scene preset ID is invalid')
-        const collection = parseCollection(await this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY))
+        const collection = parseCollection(await measureSpan('scene-repo:read', () => this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY)))
         const document = collection.documents.find(candidate => candidate.presetId === presetId)
         return document === undefined ? null : cloneDocument(document)
     }
@@ -322,15 +334,19 @@ export class IndexedDbSceneRepository implements SceneRepositoryPort {
             || next.revision !== expectedRevision + 1) {
             throw new TypeError('Scene document CAS input is invalid')
         }
-        return runtimeWorkspaceMutationGate.runExclusive(
+        const requestedAt = globalThis.performance?.now?.() ?? Date.now()
+        return measureSpan('scene-repo:commit', commit => runtimeWorkspaceMutationGate.runExclusive(
             generationFolderDocumentMutationKey('local'),
             async () => {
+                // Time spent waiting for another workspace mutation before this body ran.
+                commit.waitMs = (globalThis.performance?.now?.() ?? Date.now()) - requestedAt
                 const compareAndSet = this.persistence.compareAndSet
                 if (compareAndSet === undefined) throw new TypeError('Scene document persistence is read-only')
                 const candidate = cloneDocument(next)
 
                 for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt += 1) {
-                    const serialized = await this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY)
+                    commit.attempts = attempt + 1
+                    const serialized = await measureSpan('scene-repo:read', () => this.persistence.getItem(SCENE_DOCUMENT_STORE_KEY))
                     const collection = parseCollection(serialized)
                     const index = collection.documents.findIndex(document => document.presetId === candidate.presetId)
                     const current = index === -1 ? null : collection.documents[index]
@@ -345,14 +361,14 @@ export class IndexedDbSceneRepository implements SceneRepositoryPort {
                     const documents = [...collection.documents]
                     if (index === -1) documents.push(candidate)
                     else documents[index] = candidate
-                    if (await compareAndSet(
-                        SCENE_DOCUMENT_STORE_KEY,
-                        serialized,
-                        serializeCollection(documents),
-                    )) return { status: 'COMMITTED', document: cloneDocument(candidate) }
+                    const nextSerialized = measureSpanSync('scene-repo:serialize', () => serializeCollection(documents))
+                    if (await measureSpan('scene-repo:cas-write', write => {
+                        write.serializedLength = nextSerialized.length
+                        return compareAndSet(SCENE_DOCUMENT_STORE_KEY, serialized, nextSerialized)
+                    })) return { status: 'COMMITTED', document: cloneDocument(candidate) }
                 }
                 return { status: 'STORAGE_CONFLICT' }
             },
-        )
+        ))
     }
 }

@@ -10,6 +10,7 @@ import type { ArtifactRecord } from '@/domain/organizer/types'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import { inputBudget } from '@/lib/yield-to-input'
 import { flushIndexedDBKey, SCENE_PRESENTATION_STORE_KEY } from '@/lib/indexed-db'
+import { measureSpan, measureSpanSync, type SpanDetail } from '@/lib/user-timing'
 import {
     sceneImagePresentationKey,
     useSceneStore,
@@ -423,16 +424,16 @@ export async function activateSceneAuthorityRuntime(
                     if (removesArtifactReference(current, scenes)) {
                         // The tombstone is the crash-recovery guard. It must reach disk before
                         // a successful Scene CAS can make the link removal externally visible.
-                        await flushArtifactTombstones()
+                        await measureSpan('scene-authority:flush-tombstones', () => flushArtifactTombstones())
                         if (stopped) break
                     }
-                    const result = await repository.commit({
+                    const result = await measureSpan('scene-authority:commit', () => repository.commit({
                         schemaVersion: 1,
                         presetId,
                         revision: expectedRevision + 1,
                         scenes,
                         updatedAt: new Date().toISOString(),
-                    }, expectedRevision)
+                    }, expectedRevision))
                     if (stopped) break
                     if (result.status === 'COMMITTED') {
                         const livePreset = useSceneStore.getState().presets
@@ -474,6 +475,7 @@ export async function activateSceneAuthorityRuntime(
     const scan = (
         state = useSceneStore.getState(),
         previous?: ReturnType<typeof useSceneStore.getState>,
+        detail?: SpanDetail,
     ): void => {
         if (applying || stopped) return
         // Zustand also notifies for scrolling, selection and progress. Those updates
@@ -488,7 +490,9 @@ export async function activateSceneAuthorityRuntime(
                 artifactPresentation?.managedIds.get(preset.id),
             )
             const hash = authoringHash(scenes)
+            if (detail) { detail.presetsProjected += 1; detail.scenesProjected += scenes.length }
             if (hashes.get(preset.id) === hash || inFlightHashes.get(preset.id) === hash) continue
+            if (detail) detail.presetsChanged += 1
             latest.set(preset.id, scenes)
             run(preset.id)
         }
@@ -540,14 +544,22 @@ export async function activateSceneAuthorityRuntime(
             }] }))
             applying = false
         },
-        async flush() {
-            scan()
-            while (running.size > 0 || latest.size > 0) {
-                for (const presetId of latest.keys()) run(presetId)
-                await Promise.all([...running.values()])
-            }
+        flush: () => measureSpan('scene-authority:flush', async () => {
+            // An explicit flush projects and hashes every preset, unlike the store subscription.
+            measureSpanSync('scene-authority:scan', detail => {
+                Object.assign(detail, { presetsProjected: 0, scenesProjected: 0, presetsChanged: 0 })
+                scan(undefined, undefined, detail)
+            })
+            if (running.size > 0 || latest.size > 0) await measureSpan('scene-authority:drain', async detail => {
+                detail.rounds = 0
+                while (running.size > 0 || latest.size > 0) {
+                    detail.rounds += 1
+                    for (const presetId of latest.keys()) run(presetId)
+                    await Promise.all([...running.values()])
+                }
+            })
             if (failure !== null) throw failure
-        },
+        }),
         stop() {
             stopped = true
             latest.clear()
@@ -577,9 +589,13 @@ export function applySceneDocumentProjection(
 /** Agent authoring publishes the committed Scene through the same revision tracker and durable navigation shell as the UI. */
 export async function publishAgentSceneDocument(document: SceneDocument, newPresetName?: string): Promise<void> {
     if (activeRuntime === null) throw new Error('Scene authority is not ready')
-    if (newPresetName !== undefined) activeRuntime.createShell(document, newPresetName)
-    if (!activeRuntime.apply(document)) throw new Error('Scene navigation shell is missing')
-    await flushIndexedDBKey(SCENE_PRESENTATION_STORE_KEY)
+    const runtime = activeRuntime
+    if (newPresetName !== undefined) runtime.createShell(document, newPresetName)
+    // apply() replaces the Zustand preset synchronously, so every store subscriber runs inside this span.
+    if (!measureSpanSync('scene-authority:apply', detail => { detail.scenes = document.scenes.length; return runtime.apply(document) })) {
+        throw new Error('Scene navigation shell is missing')
+    }
+    await measureSpan('scene-authority:flush-presentation', () => flushIndexedDBKey(SCENE_PRESENTATION_STORE_KEY))
 }
 
 /** Restores the preserved read-only V1 projection without starting a V2 writer. */

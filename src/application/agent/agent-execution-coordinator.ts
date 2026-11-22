@@ -14,6 +14,7 @@ import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCanc
 import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, sameAgentStorageRetryTarget, type AgentStorageRetryPorts } from './agent-storage-retry-contract'
 import type { AgentCommandHandler } from './runtime-capability-registry'
 import { getAgentCommandInputContract } from './agent-command-input'
+import { agentSpans } from './agent-command-dispatcher'
 
 export interface AgentGenerationApprovalBinding {
     readonly requestHash: Sha256Digest
@@ -150,23 +151,29 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         knownRecords = value?.records.length ?? 0
         return value
     }
+    const authorized = (envelope: AgentCommandEnvelope) => agentSpans.span('agent-exec:client-authorized', () => options.isClientAuthorized(envelope))
     // ponytail: a workspace CAS ledger favors auditability; partition only if measured contention requires it.
-    async function change(transform: (records: readonly AgentExecutionRecord[], compacted: readonly AgentCompactedRequest[]) =>
+    function change(transform: (records: readonly AgentExecutionRecord[], compacted: readonly AgentCompactedRequest[]) =>
         readonly AgentExecutionRecord[] | { readonly records: readonly AgentExecutionRecord[]; readonly compacted: readonly AgentCompactedRequest[] } | null): Promise<boolean> {
-        // Cached reads let a concurrent operation commit store/reserve/settle back to back; each lost CAS means it progressed.
-        for (let attempt = 0; attempt < 5; attempt++) {
-            const current = await ledger()
-            const changed = transform(current?.records ?? [], current?.compacted ?? [])
-            if (changed === null) return false
-            const { records, compacted } = 'records' in changed ? changed : { records: changed, compacted: current?.compacted ?? [] }
-            const revision = (current?.revision ?? -1) + 1
-            // Version 1 bytes stay unchanged until a compaction first needs the identity list.
-            const next: AgentExecutionLedger = compacted.length
-                ? { schemaVersion: 2, workspaceId: options.workspaceId, revision, records, compacted }
-                : { schemaVersion: 1, workspaceId: options.workspaceId, revision, records }
-            if (await options.repository.compareAndSet(current, next)) { knownRecords = records.length; return true }
-        }
-        throw new AgentCommandError('EXECUTION_STORAGE_CONFLICT')
+        return agentSpans.span('agent-exec:ledger-change', async detail => {
+            // Cached reads let a concurrent operation commit store/reserve/settle back to back; each lost CAS means it progressed.
+            for (let attempt = 0; attempt < 5; attempt++) {
+                detail.attempts = attempt + 1
+                const current = await ledger()
+                const changed = transform(current?.records ?? [], current?.compacted ?? [])
+                if (changed === null) return false
+                const { records, compacted } = 'records' in changed ? changed : { records: changed, compacted: current?.compacted ?? [] }
+                detail.records = records.length
+                detail.compacted = compacted.length
+                const revision = (current?.revision ?? -1) + 1
+                // Version 1 bytes stay unchanged until a compaction first needs the identity list.
+                const next: AgentExecutionLedger = compacted.length
+                    ? { schemaVersion: 2, workspaceId: options.workspaceId, revision, records, compacted }
+                    : { schemaVersion: 1, workspaceId: options.workspaceId, revision, records }
+                if (await options.repository.compareAndSet(current, next)) { knownRecords = records.length; return true }
+            }
+            throw new AgentCommandError('EXECUTION_STORAGE_CONFLICT')
+        })
     }
     async function replace(expected: AgentExecutionRecord, next: AgentExecutionRecord): Promise<boolean> {
         return change(records => {
@@ -180,18 +187,27 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
     async function refreshExposure(): Promise<void> {
         const isOutstanding = options.ports.isOutstanding
         if (!isOutstanding) return
-        const settled = new Set<string>()
-        for (const record of (await ledger())?.records ?? []) {
-            // A delayed Queue cannot age a reservation away before it ever dispatches.
-            if (unsettledExposure(record) && !await isOutstanding(record.grant!)) settled.add(record.envelope.requestId)
-        }
-        if (!settled.size) return
-        const settledAt = now()
-        const due = (record: AgentExecutionRecord) => unsettledExposure(record) && settled.has(record.envelope.requestId)
-        await change(records => records.some(due)
-            ? records.map(record => due(record) ? { ...record, exposureSettledAt: settledAt } : record) : null)
+        await agentSpans.span('agent-exec:refresh-exposure', async detail => {
+            const settled = new Set<string>()
+            detail.unsettled = 0
+            for (const record of (await ledger())?.records ?? []) {
+                if (!unsettledExposure(record)) continue
+                detail.unsettled += 1
+                // A delayed Queue cannot age a reservation away before it ever dispatches.
+                if (!await agentSpans.span('agent-exec:is-outstanding', () => isOutstanding(record.grant!))) settled.add(record.envelope.requestId)
+            }
+            detail.settled = settled.size
+            if (!settled.size) return
+            const settledAt = now()
+            const due = (record: AgentExecutionRecord) => unsettledExposure(record) && settled.has(record.envelope.requestId)
+            await change(records => records.some(due)
+                ? records.map(record => due(record) ? { ...record, exposureSettledAt: settledAt } : record) : null)
+        })
     }
-    async function publish(record: AgentExecutionRecord): Promise<void> {
+    function publish(record: AgentExecutionRecord): Promise<void> {
+        return agentSpans.span('agent-exec:receipt-publish', () => publishOnce(record))
+    }
+    async function publishOnce(record: AgentExecutionRecord): Promise<void> {
         const saved = await options.receipts.get(record.envelope.requestId)
         if (!saved || saved.requestHash !== record.envelope.requestHash || saved.authenticatedClientId !== record.envelope.context.clientId) {
             throw new AgentCommandError('EXECUTION_RECEIPT_CONFLICT')
@@ -205,7 +221,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             result: record.result, resultDigest: agentResultDigest(record.result) })
     }
     async function planFor(record: AgentGenerationExecutionRecord): Promise<GenerationPlan | null> {
-        const plan = await options.plans.get(String(record.envelope.command.input.planId))
+        const plan = await agentSpans.span('agent-exec:plan-get', () => options.plans.get(String(record.envelope.command.input.planId)))
         return plan?.planHash === record.envelope.command.input.planHash
             && plan.jobs.length === record.imageCount && plan.estimatedAnlas === record.estimatedAnlas ? plan : null
     }
@@ -236,21 +252,23 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         }
         return null
     }
-    async function eligibility(record: AgentGenerationExecutionRecord, current: AgentExecutionPolicy, canary = false, persistentConsent = false): Promise<{ plan: GenerationPlan | null; code: string | null }> {
-        if (Date.parse(record.expiresAt) <= Date.parse(now())) return { plan: null, code: 'REQUEST_EXPIRED' }
-        if (current.mode === 'observe') return { plan: null, code: 'AGENT_OBSERVE_ONLY' }
-        if (!await options.isClientAuthorized(record.envelope)) return { plan: null, code: 'AUTHENTICATION_FAILED' }
-        const plan = await planFor(record)
-        if (!plan) return { plan: null, code: 'AGENT_PLAN_CHANGED' }
-        const code = planIssue(plan, current, canary, persistentConsent)
-        if (code) return { plan, code }
-        if (!await options.ports.validate(plan)) return { plan, code: 'AGENT_PLAN_STALE' }
-        return { plan, code: null }
+    function eligibility(record: AgentGenerationExecutionRecord, current: AgentExecutionPolicy, canary = false, persistentConsent = false): Promise<{ plan: GenerationPlan | null; code: string | null }> {
+        return agentSpans.span('agent-exec:eligibility', async () => {
+            if (Date.parse(record.expiresAt) <= Date.parse(now())) return { plan: null, code: 'REQUEST_EXPIRED' }
+            if (current.mode === 'observe') return { plan: null, code: 'AGENT_OBSERVE_ONLY' }
+            if (!await authorized(record.envelope)) return { plan: null, code: 'AUTHENTICATION_FAILED' }
+            const plan = await planFor(record)
+            if (!plan) return { plan: null, code: 'AGENT_PLAN_CHANGED' }
+            const code = planIssue(plan, current, canary, persistentConsent)
+            if (code) return { plan, code }
+            if (!await agentSpans.span('agent-exec:validate', () => options.ports.validate(plan))) return { plan, code: 'AGENT_PLAN_STALE' }
+            return { plan, code: null }
+        })
     }
     async function settle(record: AgentExecutionRecord, result: JsonObject, state: AgentExecutionRecord['state']): Promise<JsonObject> {
         assertAgentPublicValue(result)
         const next = { ...record, state, result }
-        if (await replace(record, next)) await publish(next)
+        await agentSpans.span('agent-exec:settle', async () => { if (await replace(record, next)) await publish(next) })
         return result
     }
     /** A full body may leave only when nothing can read it again: terminal, expired, exposure settled and receipt final. */
@@ -268,11 +286,17 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
     /** Keeps the newest terminal records whole and older eligible ones as identities only, in one CAS. */
     async function compactIfDue(force = false): Promise<void> {
         if (!force && knownRecords < nextCompactionAt) return
+        await agentSpans.span('agent-exec:compaction', detail => compactNow(detail))
+    }
+    async function compactNow(detail: Record<string, number>): Promise<void> {
         const records = (await ledger())?.records ?? []
         const terminal = records.filter(record => record.state === 'completed' || record.state === 'rejected')
         const candidates = terminal.slice(0, Math.max(0, terminal.length - KEEP_TERMINAL_RECORDS))
         const eligible = await Promise.all(candidates.map(compactable))
         const removable = new Map(candidates.filter((_, index) => eligible[index]).map(record => [record.envelope.requestId, record]))
+        detail.records = records.length
+        detail.candidates = candidates.length
+        detail.removable = removable.size
         let remaining = records.length
         if (removable.size) await change((latest, compacted) => {
             const unchanged = (record: AgentExecutionRecord) => {
@@ -289,9 +313,13 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         })
         // Records that stay ineligible are not rescanned on every admission. The trigger stays reachable below capacity.
         nextCompactionAt = Math.min(MAX_FULL_RECORDS, Math.max(KEEP_TERMINAL_RECORDS, remaining) + COMPACTION_MARGIN)
+        detail.remaining = remaining
     }
     /** Every supported mutation shares operation identity and durable history capacity. */
-    async function storePending(record: AgentExecutionRecord): Promise<string | null> {
+    function storePending(record: AgentExecutionRecord): Promise<string | null> {
+        return agentSpans.span('agent-exec:store-pending', () => storePendingOnce(record))
+    }
+    async function storePendingOnce(record: AgentExecutionRecord): Promise<string | null> {
         // Maintenance never decides this request's outcome; a failed pass is retried by a later admission.
         await compactIfDue().catch(() => undefined)
         const envelope = record.envelope
@@ -336,7 +364,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         }
         if (current.mode === 'observe') return settle(record, failure('AGENT_OBSERVE_ONLY'), 'rejected')
         if (Date.parse(record.expiresAt) <= Date.parse(now())) return settle(record, failure('REQUEST_EXPIRED'), 'rejected')
-        if (!await options.isClientAuthorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
+        if (!await authorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
         const authority = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
             workspaceId: options.workspaceId, clientId: record.envelope.context.clientId, actorKind: record.envelope.context.actor.kind,
             policyRevision: current.revision, expiresAt: record.expiresAt, authorization: 'human' as const }
@@ -362,8 +390,8 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             return records.map(item => item === saved ? reserved : item)
         })
         if (!didReserve) return unknown()
-        const authorized = await options.isClientAuthorized(record.envelope)
-        if (!authorized || canonicalSerialize(policy()) !== canonicalSerialize(current) || Date.parse(record.expiresAt) <= Date.parse(now())) {
+        const stillAuthorized = await authorized(record.envelope)
+        if (!stillAuthorized || canonicalSerialize(policy()) !== canonicalSerialize(current) || Date.parse(record.expiresAt) <= Date.parse(now())) {
             return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
         }
         let result: unknown
@@ -376,7 +404,10 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         const completed = queueRepairResult(reserved, result)
         return completed ? settle(reserved, completed, 'completed') : settle(reserved, unknown(), 'unknown')
     }
-    async function execute(record: AgentGenerationExecutionRecord, human: boolean, canary = false, admitted?: AutomaticAdmission): Promise<JsonObject> {
+    function execute(record: AgentGenerationExecutionRecord, human: boolean, canary = false, admitted?: AutomaticAdmission): Promise<JsonObject> {
+        return agentSpans.span('agent-exec:execute', () => executeOnce(record, human, canary, admitted))
+    }
+    async function executeOnce(record: AgentGenerationExecutionRecord, human: boolean, canary = false, admitted?: AutomaticAdmission): Promise<JsonObject> {
         const current = policy()
         const consent = generationConsent()
         const alwaysGenerate = !human && canAlwaysGenerate(record, consent)
@@ -410,7 +441,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         if (!admitted) await refreshExposure()
         let authorityCode: string | null = null
         const reserved: AgentGenerationExecutionRecord = { ...record, state: 'reserved', grant, result: unknown() }
-        const didReserve = await change(records => {
+        const didReserve = await agentSpans.span('agent-exec:reserve', () => change(records => {
             const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
             if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)) return null
             const latest = policy()
@@ -423,16 +454,17 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             // Queue scheduling owns parallelism and pacing; the reviewed plan owns
             // its budget. Admission only reserves this exact authorized operation.
             return records.map(item => item === saved ? reserved : item)
-        })
+        }))
         if (!didReserve) return authorityCode ? settle(record, approval(authorityCode), 'pending') : unknown()
         // Authority can change while IndexedDB is committing. The grant is consumed but no Queue call follows stale consent.
-        const stillAuthorized = await options.isClientAuthorized(record.envelope)
+        const stillAuthorized = await authorized(record.envelope)
         if (!stillAuthorized || canonicalSerialize(policy()) !== canonicalSerialize(current)
             || (alwaysGenerate && !canAlwaysGenerate(record))
             || Date.parse(record.expiresAt) <= Date.parse(now())) return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
         let result: JsonObject
         try {
-            result = await options.ports.enqueue(eligible.plan, grant)
+            const plan = eligible.plan
+            result = await agentSpans.span('agent-exec:enqueue', () => options.ports.enqueue(plan, grant))
             assertAgentPublicValue(result)
         } catch { return settle(reserved, unknown(), 'unknown') }
         if (!isAgentExecutionCommitResult(result, grant)) {
@@ -444,7 +476,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         command: 'generation.enqueue', effect: 'mutation', executionGate: 'durable-approval', validate: getAgentCommandInputContract('generation.enqueue')!.validate, receiptState,
         execute: async (_input, { envelope }) => {
             const current = policy()
-            const plan = await options.plans.get(String(envelope.command.input.planId))
+            const plan = await agentSpans.span('agent-exec:plan-get', () => options.plans.get(String(envelope.command.input.planId)))
             if (!plan || plan.planHash !== envelope.command.input.planHash || !plan.jobs.length) return failure('AGENT_PLAN_CHANGED')
             if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
             const consent = generationConsent()
@@ -472,7 +504,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             if (current.mode === 'observe') return failure('AGENT_OBSERVE_ONLY')
             if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
             if (Date.parse(envelope.expiresAt) <= Date.parse(now())) return failure('REQUEST_EXPIRED')
-            if (!await options.isClientAuthorized(envelope)) return failure('AUTHENTICATION_FAILED')
+            if (!await authorized(envelope)) return failure('AUTHENTICATION_FAILED')
             const authority = { envelope: structuredClone(envelope),
                 originalPolicyRevision: current.revision, policyRevision: current.revision, expiresAt: envelope.expiresAt,
                 state: 'pending' as const, grant: null, result: approval() }
@@ -509,7 +541,10 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         if (record.target.renamesPathSegments && !current.output.allowRenamePathSegments) return 'AGENT_FOLDER_RENAME_DENIED'
         return null
     }
-    async function executeAuthoring(record: AgentAuthoringRecord, human: boolean): Promise<JsonObject> {
+    function executeAuthoring(record: AgentAuthoringRecord, human: boolean): Promise<JsonObject> {
+        return agentSpans.span('agent-exec:execute-authoring', () => executeAuthoringOnce(record, human))
+    }
+    async function executeAuthoringOnce(record: AgentAuthoringRecord, human: boolean): Promise<JsonObject> {
         const current = policy()
         const consent = authoringConsent()
         const alwaysEdit = !human && hasAgentAuthoringConsent(consent, options.workspaceId, record.envelope.context.clientId)
@@ -521,8 +556,9 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         const issue = authoringIssue(record, current, human, consent)
         if (issue) return settle(record, approval(issue), 'pending')
         if (Date.parse(record.expiresAt) <= Date.parse(now())) return settle(record, failure('REQUEST_EXPIRED'), 'rejected')
-        if (!await options.isClientAuthorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
-        const target = await options.authoring!.inspect(record.command, structuredClone(record.envelope.command.input))
+        if (!await authorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
+        const target = await agentSpans.span('agent-exec:authoring-inspect',
+            () => options.authoring!.inspect(record.command, structuredClone(record.envelope.command.input)))
         if (target) assertAgentAuthoringTarget(target)
         if (!target || canonicalSerialize(target) !== canonicalSerialize(record.target)) return settle(record, failure('AGENT_AUTHORING_TARGET_CHANGED'), 'rejected')
         const grant = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
@@ -531,21 +567,22 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             authorization: human ? 'human' as const : alwaysEdit ? 'client-always-edit' as const : 'bounded-auto' as const,
             ...(alwaysEdit ? { consentRevision: consent.revision } : {}), target: structuredClone(target) }
         const reserved: AgentAuthoringRecord = { ...record, grant, state: 'reserved', result: unknown() }
-        const didReserve = await change(records => {
+        const didReserve = await agentSpans.span('agent-exec:reserve', () => change(records => {
             const saved = records.find(item => item.envelope.requestId === record.envelope.requestId)
             if (canonicalSerialize(saved ?? null) !== canonicalSerialize(record)
                 || canonicalSerialize(policy()) !== canonicalSerialize(current)
                 || (alwaysEdit && canonicalSerialize(authoringConsent()) !== canonicalSerialize(consent))
                 || Date.parse(record.expiresAt) <= Date.parse(now())) return null
             return records.map(item => item === saved ? reserved : item)
-        })
+        }))
         if (!didReserve) return unknown()
-        if (!await options.isClientAuthorized(record.envelope) || canonicalSerialize(policy()) !== canonicalSerialize(current)
+        if (!await authorized(record.envelope) || canonicalSerialize(policy()) !== canonicalSerialize(current)
             || (alwaysEdit && canonicalSerialize(authoringConsent()) !== canonicalSerialize(consent))
             || Date.parse(record.expiresAt) <= Date.parse(now())) return settle(reserved, failure('AGENT_AUTHORITY_CHANGED'), 'rejected')
         let result: JsonObject
         try {
-            result = await options.authoring!.apply(record.command, structuredClone(record.envelope.command.input), structuredClone(target), structuredClone(grant))
+            result = await agentSpans.span('agent-exec:authoring-apply', () => options.authoring!.apply(record.command,
+                structuredClone(record.envelope.command.input), structuredClone(target), structuredClone(grant)))
             assertAgentPublicValue(result)
         } catch { return settle(reserved, unknown(), 'unknown') }
         return isAgentAuthoringResult(result, grant) ? settle(reserved, result, 'completed') : settle(reserved, unknown(), 'unknown')
@@ -558,8 +595,9 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             if (!envelope.expiresAt) return failure('AGENT_EXPIRY_REQUIRED')
             if (Date.parse(envelope.expiresAt) <= Date.parse(now())) return failure('REQUEST_EXPIRED')
             if (current.mode === 'observe') return failure('AGENT_OBSERVE_ONLY')
-            if (!await options.isClientAuthorized(envelope)) return failure('AUTHENTICATION_FAILED')
-            const target = await options.authoring!.inspect(command, structuredClone(envelope.command.input))
+            if (!await authorized(envelope)) return failure('AUTHENTICATION_FAILED')
+            const target = await agentSpans.span('agent-exec:authoring-inspect',
+                () => options.authoring!.inspect(command, structuredClone(envelope.command.input)))
             if (!target) return failure('AGENT_AUTHORING_TARGET_UNAVAILABLE')
             assertAgentAuthoringTarget(target)
             if (target.command !== command || target.expectedRevision !== envelope.command.input.expectedRevision

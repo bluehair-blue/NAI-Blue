@@ -7,6 +7,7 @@ import type { ApplyGenerationFolderChangesInput, ApplyGenerationFolderChangesRes
 import { AgentCommandError } from './agent-command-contract'
 import type { AgentAuthoringPort, AgentAuthoringTarget } from './agent-authoring-contract'
 import type { SceneImageSource } from '@/application/scene/scene-image-source'
+import { agentSpans } from './agent-command-dispatcher'
 
 type SceneChange = Partial<Omit<SceneAuthoringRecord, 'id' | 'artifactRefs' | 'createdAt' | 'compositionRef' | 'scenePrompt'>> & { sceneId: string }
 interface SceneInput { presetId: string; expectedRevision: number; presetName?: string; changes: SceneChange[] }
@@ -93,23 +94,30 @@ function folderChanges(document: GenerationFolderDocument, input: FolderInput): 
 export function createAgentAuthoringService(deps: AgentAuthoringDependencies): AgentAuthoringPort & {
     planFolders(input: JsonObject): Promise<JsonObject>
 } {
-    async function prepareScene(raw: JsonObject) {
+    function prepareScene(raw: JsonObject) {
+        return agentSpans.span('agent-authoring:prepare-scene', detail => prepareSceneOnce(raw, detail))
+    }
+    async function prepareSceneOnce(raw: JsonObject, detail: Record<string, number>) {
         const input = raw as unknown as SceneInput
-        await deps.flushScenes()
-        const current = await deps.scenes.getDocument(input.presetId)
+        detail.changes = input.changes.length
+        await agentSpans.span('agent-authoring:flush-scenes', () => deps.flushScenes())
+        const current = await agentSpans.span('agent-authoring:scene-read', () => deps.scenes.getDocument(input.presetId))
+        detail.scenes = current?.scenes.length ?? 0
         if ((current?.revision ?? 0) !== input.expectedRevision || (current !== null && !deps.hasPreset(input.presetId))) return null
         // Preset renaming is a separate navigation action, not an unversioned side effect of Scene edits.
         if (current !== null && input.presetName !== undefined) return null
-        const folders = await deps.readFolders()
+        const folders = await agentSpans.span('agent-authoring:folders-read', () => deps.readFolders())
         if (!folders || input.changes.some(change => change.generationFolderId !== undefined
             && !folders.folders.some(folder => folder.id === change.generationFolderId))) return null
         for (const change of input.changes) {
-            if (change.imageSource && (!deps.validateImageSource || !await deps.validateImageSource(change.imageSource))) return null
+            if (change.imageSource && (!deps.validateImageSource || !await agentSpans.span('agent-authoring:image-source',
+                () => deps.validateImageSource!(change.imageSource!)))) return null
         }
         const document = nextScenes(current, input, '1970-01-01T00:00:00.000Z')
         if (!document) return null
         const target: AgentAuthoringTarget = { command: 'scene.patch_many', resourceId: input.presetId,
-            expectedRevision: input.expectedRevision, targetHash: digest({ input, content: sceneContent(document) }),
+            expectedRevision: input.expectedRevision,
+            targetHash: agentSpans.spanSync('agent-authoring:target-hash', () => digest({ input, content: sceneContent(document) })),
             changeCount: input.changes.length, createsFolders: false, renamesPathSegments: false }
         return { input, current, document, target }
     }
@@ -152,9 +160,9 @@ export function createAgentAuthoringService(deps: AgentAuthoringDependencies): A
                 const prepared = await prepareScene(raw)
                 if (!prepared || canonicalSerialize(prepared.target) !== canonicalSerialize(target)) return failed('AGENT_AUTHORING_TARGET_CHANGED')
                 const document = nextScenes(prepared.current, prepared.input, grant.consentedAt)!
-                const result = await deps.scenes.commit(document, target.expectedRevision)
+                const result = await agentSpans.span('agent-authoring:scene-commit', () => deps.scenes.commit(document, target.expectedRevision))
                 if (result.status !== 'COMMITTED') return failed(result.status)
-                await deps.projectScene(result.document, prepared.input.presetName)
+                await agentSpans.span('agent-authoring:project-scene', () => deps.projectScene(result.document, prepared.input.presetName))
             } else {
                 const prepared = await prepareFolders(raw)
                 if (!prepared || canonicalSerialize(prepared.target) !== canonicalSerialize(target)) return failed('AGENT_AUTHORING_TARGET_CHANGED')

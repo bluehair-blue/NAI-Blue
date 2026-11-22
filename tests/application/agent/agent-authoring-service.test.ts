@@ -7,6 +7,8 @@ import type { GenerationFolderDocument } from '@/domain/generation-folders'
 import { applyGenerationFolderChanges } from '@/application/folder/apply-folder-changes'
 import type { JsonObject } from '@/domain/composition/types'
 import { assertAgentPublicValue } from '@/application/agent/agent-command-contract'
+import { configureAgentSpans } from '@/application/agent/agent-command-dispatcher'
+import { markSpans, measureSpan, measureSpanSync, spansSince } from '@/lib/user-timing'
 
 const time = '2026-09-08T00:00:00.000Z'
 const digest = `sha256:${'a'.repeat(64)}` as const
@@ -54,6 +56,25 @@ const createInput: JsonObject = { presetId: 'codex-assets', presetName: '교복 
 ] }
 
 describe('agent authoring through existing Scene and Folder authorities', () => {
+    it('records each step of a Scene edit as its own span with collection sizes, and the same result', async () => {
+        const f = fixture()
+        configureAgentSpans({ span: measureSpan, spanSync: measureSpanSync })
+        try {
+            const mark = markSpans()
+            const target = (await f.service.inspect('scene.patch_many', createInput))!
+            expect(await f.service.apply('scene.patch_many', createInput, target, grant(target))).toMatchObject({ status: 'authoring-committed' })
+            const spans = spansSince(mark)
+            const names = spans.map(span => span.name)
+            expect(names.filter(name => name === 'agent-authoring:prepare-scene')).toHaveLength(2)
+            expect(names).toEqual(expect.arrayContaining(['agent-authoring:flush-scenes', 'agent-authoring:scene-read', 'agent-authoring:folders-read',
+                'agent-authoring:target-hash', 'agent-authoring:scene-commit', 'agent-authoring:project-scene',
+                'scene-repo:read', 'scene-repo:parse', 'scene-repo:commit', 'scene-repo:serialize', 'scene-repo:cas-write']))
+            expect(spans.findLast(span => span.name === 'scene-repo:parse')?.detail).toMatchObject({ documents: 0, scenes: 0 })
+            expect(spans.find(span => span.name === 'scene-repo:commit')?.detail).toMatchObject({ attempts: 1 })
+            expect(spans.find(span => span.name === 'agent-authoring:prepare-scene')?.detail).toEqual({ changes: 2, scenes: 0 })
+        } finally { configureAgentSpans(null) }
+    })
+
     it('saves distinct prompts, parameters, count and folder in the real Scene CAS repository', async () => {
         const f = fixture()
         const target = (await f.service.inspect('scene.patch_many', createInput))!

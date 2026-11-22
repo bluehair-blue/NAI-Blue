@@ -92,8 +92,11 @@ describe('plan-wide compatibility evidence scan', () => {
 
     it('reads each page once for the whole plan and gives every image the single-query result', async () => {
         const batchDeps = configure(paged(pages()))
-        const batch = await queryVerifiedNaiGenerationCompatibilityBatch(requests, revision, batchDeps)
+        const stats = {}
+        const batch = await queryVerifiedNaiGenerationCompatibilityBatch(requests, revision, batchDeps, stats)
         expect(batchDeps.listJobs).toHaveBeenCalledTimes(3)
+        // Timing counters describe the scan the spans measure; they never change its result.
+        expect(stats).toEqual({ requests: 4, unresolved: 3, pagesRead: 3, jobsListed: 5, jobsMatched: 3, attemptsRead: 3, artifactsVerified: 3 })
         const single = []
         for (const request of requests) {
             single.push(await queryVerifiedNaiGenerationCompatibility(request.params, revision, request.streaming, configure(paged(pages()))))

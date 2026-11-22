@@ -108,7 +108,7 @@ async function executionFixture(command?: 'generation.cancel' | 'generation.retr
         for (const listener of listeners) listener()
         return policy
     })
-    const createRuntime = () => f.createRuntime({ receipts, policy: {
+    const createRuntime = (overrides: Partial<ConstructorParameters<typeof ForegroundAgentCommandRuntime>[0]> = {}) => f.createRuntime({ ...overrides, receipts, policy: {
         get: () => policy, set: persistPolicy, isSaving: () => saving,
         subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     }, generationConsent: {
@@ -493,5 +493,106 @@ describe('foreground native inbox composition', () => {
         vi.mocked(f.native.initialize).mockRejectedValueOnce(new Error('ACL is not private'))
         const denied = f.createRuntime(); await denied.start(Promise.resolve({ inboxReady: true }))
         expect(denied.getSnapshot().status).toBe('app-unavailable'); expect(f.execute).not.toHaveBeenCalled()
+    })
+})
+
+describe('per-request timing files', () => {
+    const timingStore = () => {
+        const files = new Map<string, Record<string, unknown> & { spans: { name: string; offsetMs: number; ms: number; detail?: Record<string, number> }[] }>()
+        return { files, write: vi.fn(async (requestId: string, content: string) => { files.set(requestId, JSON.parse(content)) }), prune: vi.fn(async () => undefined) }
+    }
+
+    it('writes one file per processed request with that request\'s spans, offsets from its start, and no text', async () => {
+        const f = await executionFixture()
+        const timings = timingStore()
+        const runtime = f.createRuntime({ timings })
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await f.submit('timed-read')
+        await f.submitEnqueue('timed-enqueue')
+        await runtime.poll()
+        await vi.waitFor(() => expect(timings.write).toHaveBeenCalledTimes(2))
+        expect([...timings.files.keys()].sort()).toEqual(['timed-enqueue', 'timed-read'])
+        const read = timings.files.get('timed-read')!
+        expect(read).toMatchObject({ schemaVersion: 1, requestId: 'timed-read', command: 'workspace.get_snapshot', outcome: 'projected' })
+        expect(read.spans.map(span => span.name)).toEqual(expect.arrayContaining(['agent-inbox:read', 'agent-dispatch:total',
+            'agent-dispatch:authenticate', 'agent-dispatch:receipt-claim', 'agent-dispatch:handler', 'agent-dispatch:receipt-finish',
+            'agent-inbox:publish-result', 'agent-inbox:retire']))
+        // Spans of the other request never leak into this file.
+        expect(read.spans.some(span => span.name.startsWith('agent-exec:'))).toBe(false)
+        const enqueue = timings.files.get('timed-enqueue')!
+        expect(enqueue.command).toBe('generation.enqueue')
+        const names = enqueue.spans.map(span => span.name)
+        // The default policy stores the request for approval: admission spans, no reservation or Queue call.
+        expect(names).toEqual(expect.arrayContaining(['agent-exec:plan-get', 'agent-exec:eligibility', 'agent-exec:client-authorized',
+            'agent-exec:validate', 'agent-exec:refresh-exposure', 'agent-exec:store-pending', 'agent-exec:ledger-change',
+            'agent-ledger:get', 'agent-ledger:read', 'agent-ledger:validation', 'agent-ledger:compare-and-set', 'agent-ledger:cas-write']))
+        expect(names).not.toContain('agent-exec:enqueue')
+        expect(enqueue.spans.find(span => span.name === 'agent-ledger:validation')?.detail).toMatchObject({ worker: 0, compacted: 0 })
+        expect(enqueue.spans.find(span => span.name === 'agent-ledger:get')?.detail).toHaveProperty('cacheHit')
+        for (const file of [read, enqueue]) {
+            expect(file.totalMs).toBeGreaterThanOrEqual(0)
+            for (const span of file.spans) {
+                expect(span.offsetMs).toBeGreaterThanOrEqual(0)
+                expect(span.offsetMs + span.ms).toBeLessThanOrEqual(Number(file.totalMs) + 0.2)
+                expect(Object.values(span.detail ?? {}).every(value => typeof value === 'number')).toBe(true)
+            }
+            // The handler is nested inside the dispatcher's total span.
+            const total = file.spans.find(span => span.name === 'agent-dispatch:total')!
+            const handler = file.spans.find(span => span.name === 'agent-dispatch:handler')!
+            expect(handler.offsetMs).toBeGreaterThanOrEqual(total.offsetMs)
+            expect(handler.offsetMs + handler.ms).toBeLessThanOrEqual(total.offsetMs + total.ms + 0.2)
+        }
+        // Pruning runs on the first write of a session, not on every request.
+        expect(timings.prune).toHaveBeenCalledTimes(1)
+    })
+
+    it('separates reservation, the Queue call and settlement on the automatic enqueue path', async () => {
+        const f = await executionFixture()
+        const timings = timingStore()
+        const runtime = f.createRuntime({ timings })
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await runtime.changePolicy(0, { ...f.getPolicy(), mode: 'bounded-auto', boundedAutoExpiresAt: new Date(Date.now() + 3_600_000).toISOString() })
+        await f.submitEnqueue('timed-auto-enqueue')
+        await runtime.poll()
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        await vi.waitFor(() => expect(timings.files.has('timed-auto-enqueue')).toBe(true))
+        const spans = timings.files.get('timed-auto-enqueue')!.spans
+        expect(spans.map(span => span.name)).toEqual(expect.arrayContaining(['agent-exec:execute', 'agent-exec:reserve',
+            'agent-exec:enqueue', 'agent-exec:settle', 'agent-exec:receipt-publish']))
+        // The handler's eligibility result is reused: one eligibility pass, one plan validation.
+        expect(spans.filter(span => span.name === 'agent-exec:eligibility')).toHaveLength(1)
+        expect(spans.filter(span => span.name === 'agent-exec:ledger-change').length).toBeGreaterThanOrEqual(3)
+    })
+
+    it('records a pre-acceptance rejection without a command name', async () => {
+        const f = await fixture()
+        const timings = timingStore()
+        const runtime = f.createRuntime({ timings })
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        f.ready.set('timed-invalid', '{"requestId":"timed-invalid"}')
+        await runtime.poll()
+        await vi.waitFor(() => expect(timings.files.get('timed-invalid')).toMatchObject({ outcome: 'rejected' }))
+        expect(timings.files.get('timed-invalid')).not.toHaveProperty('command')
+        expect(timings.files.get('timed-invalid')!.spans.map(span => span.name)).toContain('agent-inbox:publish-rejection')
+    })
+
+    it.each([
+        ['rejects', () => Promise.reject(new Error('disk full'))],
+        ['throws', () => { throw new Error('no fs') }],
+        ['never settles', () => new Promise<void>(() => undefined)],
+    ])('leaves the request outcome unchanged when the writer %s', async (_label, write) => {
+        const f = await fixture()
+        const prune = vi.fn(async () => { throw new Error('prune failed') })
+        const runtime = f.createRuntime({ timings: { write: vi.fn(write), prune } })
+        await runtime.start(Promise.resolve({ inboxReady: true }))
+        await f.submit('timed-write-fails')
+        await runtime.poll()
+        expect(f.results.get('timed-write-fails')).toMatchObject({ state: 'completed', command: 'workspace.get_snapshot' })
+        expect(f.native.retire).toHaveBeenCalledWith('owner-1', 'timed-write-fails')
+        expect(runtime.getSnapshot().status).toBe('ready')
+        await f.submit('timed-after-failure')
+        await runtime.poll()
+        expect(f.results.get('timed-after-failure')).toMatchObject({ state: 'completed' })
+        expect(f.execute).toHaveBeenCalledTimes(2)
     })
 })

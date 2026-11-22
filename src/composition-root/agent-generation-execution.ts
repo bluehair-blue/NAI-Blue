@@ -16,6 +16,7 @@ import type { PreparedMainGeneration } from '@/services/generation/main-generati
 import { enqueueReviewedMainPlan, hasStrictReviewedMainDestination } from '@/services/queue/main-queue-adapter'
 import { getRuntimeQueueRepository, type IndexedDBQueueRepository } from '@/services/queue/indexeddb-queue-repository'
 import { hashGenerationJobSnapshot } from '@/services/queue/job-snapshot'
+import { measureSpan } from '@/lib/user-timing'
 
 interface ExecutionDependencies {
     readonly repository: Pick<IndexedDBQueueRepository, 'initialize' | 'getBatch' | 'listJobs' | 'listAttempts'>
@@ -98,7 +99,7 @@ export function createAgentGenerationExecutionPort(
             try {
                 if (isScenePlan(plan)) {
                     const scene = await import('./agent-scene-generation-plan')
-                    return scene.validateAgentSceneGenerationPlan(plan)
+                    return measureSpan('agent-port:validate-scene', () => scene.validateAgentSceneGenerationPlan(plan))
                 }
                 const input = replanInput(plan)
                 if (input === null || plan.requiredApprovals.length !== 0 || plan.jobs.length > 100
@@ -112,15 +113,15 @@ export function createAgentGenerationExecutionPort(
         },
         async enqueue(plan, grant) {
             // Check original facts first: a receipt crash must not mint another batch or timestamp.
-            const existing = await checkedJobs(grant)
+            const existing = await measureSpan('agent-port:existing-jobs', () => checkedJobs(grant))
             if (existing !== null) return runResult(grant, existing[0].workflow as 'main' | 'scene')
-            if (await dependencies.repository.getBatch(`main-batch-${grant.scopeId}`) !== null
-                || await dependencies.repository.getBatch(`scene-batch-${grant.scopeId}`) !== null) {
+            if (await measureSpan('agent-port:binding-check', async () => await dependencies.repository.getBatch(`main-batch-${grant.scopeId}`) !== null
+                || await dependencies.repository.getBatch(`scene-batch-${grant.scopeId}`) !== null)) {
                 return { status: 'conflict', issueCodes: ['agent-queue-binding-conflict'] }
             }
             if (isScenePlan(plan)) {
                 const scene = await import('./agent-scene-generation-plan')
-                return scene.enqueueAgentSceneGenerationPlan(plan, grant)
+                return measureSpan('agent-port:enqueue-scene', () => scene.enqueueAgentSceneGenerationPlan(plan, grant))
             }
             const input = replanInput(plan)
             if (input === null || plan.planId !== grant.planId || plan.planHash !== grant.planHash

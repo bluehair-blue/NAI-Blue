@@ -87,6 +87,7 @@ import {
     outputFilesystemSemantics,
 } from '@/services/output/generation-output-commit-set'
 import { planR2Release, revalidateR2Release } from '@/application/r2/plan-r2-release'
+import { measureSpan, measureSpanSync } from '@/lib/user-timing'
 import type { PlannedR2Destination, R2DeliveryRequirement, R2DestinationProvenance, R2ProfileV2, R2QueueDeliverySnapshot } from '@/domain/r2/types'
 
 // Queue Center passes explicit folder/scene/count tuples; this boundary keeps
@@ -412,16 +413,19 @@ async function prepareSceneQueueReviewOnce(
         const sceneState = useSceneStore.getState()
         const settings = useSettingsStore.getState()
         const folderRepository = new IndexedDbGenerationFolderRepository()
-        const folderDocument = await folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID)
+        const folderDocument = await measureSpan('scene-review:folder-read',
+            () => folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID))
         if (folderDocument === null) {
             throw new QueueExecutionError('fatal', 'Generation folder authority is not ready')
         }
-        const folderBinding = createGenerationFolderDocumentBinding(folderDocument)
+        const folderBinding = measureSpanSync('scene-review:folder-binding', () => createGenerationFolderDocumentBinding(folderDocument))
         const sceneRepository = getRuntimeSceneRepository()
-        const repositorySources = await resolveRepositorySceneBatchTargets(sceneRepository, targets)
-            .catch(error => {
-                throw new QueueExecutionError('fatal', error instanceof Error ? error.message : 'Scene authority is unavailable')
-            })
+        const repositorySources = await measureSpan('scene-review:scene-read', detail => {
+            detail.targets = targets.length
+            return resolveRepositorySceneBatchTargets(sceneRepository, targets)
+        }).catch(error => {
+            throw new QueueExecutionError('fatal', error instanceof Error ? error.message : 'Scene authority is unavailable')
+        })
         const authorityByPreset = new Map(repositorySources.map(source => [source.document.presetId, source.document]))
         const selected: ResolvedSceneQueueTarget[] = repositorySources.map(({ document, scene: source }, index) => {
             const target = targets[index]
@@ -437,7 +441,7 @@ async function prepareSceneQueueReviewOnce(
         const reviewedAt = replayIdentity?.reviewedAt ?? new Date().toISOString()
         const requestedDay = reviewedAt.slice(0, 10)
         const reviewId = replayIdentity?.reviewId ?? `scene-review-${globalThis.crypto.randomUUID()}`
-        const canonicalRequestHash = `sha256:${hashCanonicalValue({
+        const canonicalRequestHash = `sha256:${measureSpanSync('scene-review:request-hash', () => hashCanonicalValue({
             schemaVersion: 1,
             reviewId,
             requestedDay,
@@ -451,7 +455,7 @@ async function prepareSceneQueueReviewOnce(
                 repositoryRevision: document.revision,
                 r2Requirement: target.r2Requirement ?? null,
             })),
-        })}`
+        }))}`
         const planningNow = new Date(`${requestedDay}T00:00:00.000Z`)
         planningNow.setUTCMilliseconds(Number.parseInt(canonicalRequestHash.slice(7, 15), 16) % 86_400_000)
         const r2ReadinessByProfile = new Map<string, Promise<R2ProfileV2 | null>>()
@@ -472,189 +476,196 @@ async function prepareSceneQueueReviewOnce(
         const activeCredentialsAreOpus = selectActiveCredentialsAreOpus(useAuthStore.getState())
         const prepared: Array<Omit<PlannedSceneBatchJob<PreparedSceneQueueJob>, 'ordinal'>> = []
 
-        for (const { target, preset, scene } of selected) {
-            const document = authorityByPreset.get(preset.id)
-            const sceneBinding = document === undefined
-                ? null
-                : createSceneGenerationBinding(document, scene.id)
-            if (sceneBinding === null) {
-                throw new QueueExecutionError('fatal', `Scene authority is missing ${preset.id}:${scene.id}`)
-            }
-            const preliminaryFolder = resolveGenerationFolderAuthority(
-                folderDocument,
-                settings.generationFolders,
-                scene.generationFolderId,
-                {
-                    directory: settings.sceneSavePath,
-                    useAbsolutePath: settings.useAbsoluteScenePath,
-                },
-            )
-            const r2Requirement = target.r2Requirement ?? (preliminaryFolder?.r2.autoUpload
-                ? { mode: 'best-effort' as const, profileId: preliminaryFolder.r2.profileId ?? DEFAULT_R2_PROFILE_ID }
-                : { mode: 'disabled' as const })
-            const baseR2Profile = r2Requirement.mode === 'disabled' ? null : await readR2Profile(r2Requirement.profileId)
-            const resolvedFolder = resolveGenerationFolderAuthority(
-                folderDocument,
-                settings.generationFolders,
-                scene.generationFolderId,
-                {
-                    directory: settings.sceneSavePath,
-                    useAbsolutePath: settings.useAbsoluteScenePath,
-                    r2ProfileId: baseR2Profile?.id,
-                    r2Bucket: baseR2Profile?.bucket,
-                    r2Prefix: baseR2Profile?.prefix,
-                },
-            )
-            const generationFolder = resolvedFolder
-            const reviewDestinationKey = generationFolder?.id ?? 'default-scene-output'
-            const reviewDestinationLabel = generationFolder === null
-                ? 'Default Scene output'
-                : generationFolder.path
-            const saveContext: SaveSceneResultContext = {
-                activePresetId: preset.id,
-                sceneSavePath: settings.sceneSavePath,
-                ...(rotationCharacterId === undefined ? {} : { rotationCharacterId }),
-                ...(rotationCharacterId === undefined
-                    ? {}
-                    : {
-                        rotationCharacterFolderName: getRotationCharacterFolderName(
-                            rotationCharacterId,
-                            rotation.currentIndex,
-                        ) ?? undefined,
-                    }),
-            }
-            const directory = generationFolder?.directory ?? settings.sceneSavePath
-            const capabilityFallbackDirectory = generationFolder?.useAbsolutePath
-                ? 'NAI_Blue_Scene'
-                : generationFolder?.directory ?? settings.sceneSavePath
-            const outputContextBase: SceneQueueWorkflowSnapshot['outputContext'] = {
-                useAbsoluteScenePath: generationFolder?.useAbsolutePath ?? settings.useAbsoluteScenePath,
-                metadataMode: r2Requirement.mode !== 'disabled'
-                    ? 'strip-and-sidecar'
-                    : scene.metadataMode ?? settings.metadataMode,
-                presetName: preset.name || 'Default',
-                presetPathSegments: getScenePresetPathSegments(sceneState.presets, preset.id),
-                sceneName: scene.name,
-                sceneSubfoldersEnabled: settings.sceneSubfoldersEnabled,
-                directory,
-                capabilityFallbackDirectory,
-                autoR2UploadProfileId: r2Requirement.mode === 'disabled' ? null : r2Requirement.profileId,
-                ...(generationFolder === null
-                    ? {}
-                    : {
-                        generationFolderId: generationFolder.id,
-                        generationFolderPath: generationFolder.path,
-                        r2Bucket: generationFolder.r2.bucket,
-                        r2Prefix: generationFolder.r2.prefix,
-                    }),
-            }
-            for (let count = 0; count < target.count; count += 1) {
-                const ordinal = prepared.length
-                const now = planningNow
-                const generation = resolveSceneGeneration(scene)
-                // Seed selection is pure here; the Zustand seed is consumed only after
-                // the repository commits the complete batch and its reservations.
-                const seed = replayIdentity?.materializedSeeds[ordinal] ?? (generation.seedLocked
-                    ? generation.seed
-                    : Number.parseInt(hashCanonicalValue({ canonicalRequestHash, presetId: preset.id, sceneId: scene.id, count }).slice(0, 8), 16) >>> 0)
-                const built = await buildSceneGenerationParams(scene, {
-                    requestId: `durable-enqueue:${canonicalRequestHash.slice(7, 39)}:${preset.id}:${scene.id}:${count}`,
-                    now,
-                    presetId: preset.id,
-                    generationFolder,
-                    seed,
-                })
-                if (!built.success) {
-                    throw new QueueExecutionError('fatal', 'Scene composition plan is invalid')
+        await measureSpan('scene-review:prepare-images', async imagesDetail => {
+            for (const { target, preset, scene } of selected) {
+                const document = authorityByPreset.get(preset.id)
+                const sceneBinding = document === undefined
+                    ? null
+                    : createSceneGenerationBinding(document, scene.id)
+                if (sceneBinding === null) {
+                    throw new QueueExecutionError('fatal', `Scene authority is missing ${preset.id}:${scene.id}`)
                 }
-                try {
-                    validateNovelAiGenerationParams(built.params)
-                } catch (error) {
-                    if (!(error instanceof NovelAiModelCapabilityError)) throw error
-                    const targetIndex = targets.findIndex(item => item.presetId === preset.id && item.sceneId === scene.id)
-                    throw new NovelAiModelCapabilityError(error.message,
-                        `source.targets[${targetIndex}].${error.fieldPath}`, error.nextAction)
-                }
-                const fileName = planSceneFileName({
-                    targetFileName: target.fileNames?.[count],
-                    scene,
-                    preset,
-                    params: built.params,
-                    ordinal,
-                    now,
-                })
-                const outputContext = { ...outputContextBase, fileName }
-                const pricingBasis = resolveAnlasPricingBasis({
-                    model: built.params.model,
-                    activeCredentialsAreOpus,
-                })
-                const estimatedAnlas = calculateAnlasCost({
-                    model: built.params.model,
-                    width: built.params.width,
-                    height: built.params.height,
-                    steps: built.params.steps,
-                    imageCount: 1,
-                    pricingBasis,
-                })
-                const costEstimate = Object.freeze({
-                    pricingBasis,
-                    estimatedAnlas,
-                    maxAnlas: estimatedAnlas,
-                    estimatedAt: reviewedAt,
-                })
-                prepared.push({
-                    presetId: preset.id,
-                    sceneId: scene.id,
-                    seed,
-                    fileName,
-                    sceneBinding,
-                    estimatedAnlas,
-                    prepared: {
-                        scene: { id: scene.id, name: scene.name },
-                        params: built.params,
-                        finalPrompt: built.finalPrompt,
-                        mimeType: built.mimeType,
-                        saveContext,
-                        outputContext,
-                        sequenceCommitProposal: built.sequenceCommitProposal,
-                        planHash: built.planHash,
-                        sceneBinding,
-                        costEstimate,
-                        imageFormat: built.mimeType === 'image/webp' ? 'webp' : 'png',
-                        destination: {
-                            directory,
-                            useAbsolutePath: outputContext.useAbsoluteScenePath,
-                            capabilityFallbackDirectory,
-                            workflowDefaultDirectory: 'NAI_Blue_Scene',
-                            extension: built.mimeType === 'image/webp' ? 'webp' : 'png',
-                            fileName,
-                            collisionPolicy: 'error',
-                        },
-                        compositionResult: {
-                            mode: built.mode,
-                            ...(built.planHash === null ? {} : { planHash: built.planHash }),
-                            warnings: built.warnings,
-                            errors: built.errors,
-                        },
-                        reviewDestinationKey,
-                        reviewDestinationLabel,
-                        r2Requirement,
-                        ...(generationFolder?.r2.provenance === undefined ? {} : { r2Provenance: generationFolder.r2.provenance }),
+                const preliminaryFolder = resolveGenerationFolderAuthority(
+                    folderDocument,
+                    settings.generationFolders,
+                    scene.generationFolderId,
+                    {
+                        directory: settings.sceneSavePath,
+                        useAbsolutePath: settings.useAbsoluteScenePath,
                     },
-                })
+                )
+                const r2Requirement = target.r2Requirement ?? (preliminaryFolder?.r2.autoUpload
+                    ? { mode: 'best-effort' as const, profileId: preliminaryFolder.r2.profileId ?? DEFAULT_R2_PROFILE_ID }
+                    : { mode: 'disabled' as const })
+                const baseR2Profile = r2Requirement.mode === 'disabled' ? null
+                    : await measureSpan('scene-review:r2-profile', () => readR2Profile(r2Requirement.profileId))
+                const resolvedFolder = resolveGenerationFolderAuthority(
+                    folderDocument,
+                    settings.generationFolders,
+                    scene.generationFolderId,
+                    {
+                        directory: settings.sceneSavePath,
+                        useAbsolutePath: settings.useAbsoluteScenePath,
+                        r2ProfileId: baseR2Profile?.id,
+                        r2Bucket: baseR2Profile?.bucket,
+                        r2Prefix: baseR2Profile?.prefix,
+                    },
+                )
+                const generationFolder = resolvedFolder
+                const reviewDestinationKey = generationFolder?.id ?? 'default-scene-output'
+                const reviewDestinationLabel = generationFolder === null
+                    ? 'Default Scene output'
+                    : generationFolder.path
+                const saveContext: SaveSceneResultContext = {
+                    activePresetId: preset.id,
+                    sceneSavePath: settings.sceneSavePath,
+                    ...(rotationCharacterId === undefined ? {} : { rotationCharacterId }),
+                    ...(rotationCharacterId === undefined
+                        ? {}
+                        : {
+                            rotationCharacterFolderName: getRotationCharacterFolderName(
+                                rotationCharacterId,
+                                rotation.currentIndex,
+                            ) ?? undefined,
+                        }),
+                }
+                const directory = generationFolder?.directory ?? settings.sceneSavePath
+                const capabilityFallbackDirectory = generationFolder?.useAbsolutePath
+                    ? 'NAI_Blue_Scene'
+                    : generationFolder?.directory ?? settings.sceneSavePath
+                const outputContextBase: SceneQueueWorkflowSnapshot['outputContext'] = {
+                    useAbsoluteScenePath: generationFolder?.useAbsolutePath ?? settings.useAbsoluteScenePath,
+                    metadataMode: r2Requirement.mode !== 'disabled'
+                        ? 'strip-and-sidecar'
+                        : scene.metadataMode ?? settings.metadataMode,
+                    presetName: preset.name || 'Default',
+                    presetPathSegments: getScenePresetPathSegments(sceneState.presets, preset.id),
+                    sceneName: scene.name,
+                    sceneSubfoldersEnabled: settings.sceneSubfoldersEnabled,
+                    directory,
+                    capabilityFallbackDirectory,
+                    autoR2UploadProfileId: r2Requirement.mode === 'disabled' ? null : r2Requirement.profileId,
+                    ...(generationFolder === null
+                        ? {}
+                        : {
+                            generationFolderId: generationFolder.id,
+                            generationFolderPath: generationFolder.path,
+                            r2Bucket: generationFolder.r2.bucket,
+                            r2Prefix: generationFolder.r2.prefix,
+                        }),
+                }
+                for (let count = 0; count < target.count; count += 1) {
+                    const ordinal = prepared.length
+                    const now = planningNow
+                    const generation = resolveSceneGeneration(scene)
+                    // Seed selection is pure here; the Zustand seed is consumed only after
+                    // the repository commits the complete batch and its reservations.
+                    const seed = replayIdentity?.materializedSeeds[ordinal] ?? (generation.seedLocked
+                        ? generation.seed
+                        : Number.parseInt(hashCanonicalValue({ canonicalRequestHash, presetId: preset.id, sceneId: scene.id, count }).slice(0, 8), 16) >>> 0)
+                    const built = await measureSpan('scene-review:build-params', () => buildSceneGenerationParams(scene, {
+                        requestId: `durable-enqueue:${canonicalRequestHash.slice(7, 39)}:${preset.id}:${scene.id}:${count}`,
+                        now,
+                        presetId: preset.id,
+                        generationFolder,
+                        seed,
+                    }))
+                    imagesDetail.images = (imagesDetail.images ?? 0) + 1
+                    if (!built.success) {
+                        throw new QueueExecutionError('fatal', 'Scene composition plan is invalid')
+                    }
+                    try {
+                        validateNovelAiGenerationParams(built.params)
+                    } catch (error) {
+                        if (!(error instanceof NovelAiModelCapabilityError)) throw error
+                        const targetIndex = targets.findIndex(item => item.presetId === preset.id && item.sceneId === scene.id)
+                        throw new NovelAiModelCapabilityError(error.message,
+                            `source.targets[${targetIndex}].${error.fieldPath}`, error.nextAction)
+                    }
+                    const fileName = planSceneFileName({
+                        targetFileName: target.fileNames?.[count],
+                        scene,
+                        preset,
+                        params: built.params,
+                        ordinal,
+                        now,
+                    })
+                    const outputContext = { ...outputContextBase, fileName }
+                    const pricingBasis = resolveAnlasPricingBasis({
+                        model: built.params.model,
+                        activeCredentialsAreOpus,
+                    })
+                    const estimatedAnlas = calculateAnlasCost({
+                        model: built.params.model,
+                        width: built.params.width,
+                        height: built.params.height,
+                        steps: built.params.steps,
+                        imageCount: 1,
+                        pricingBasis,
+                    })
+                    const costEstimate = Object.freeze({
+                        pricingBasis,
+                        estimatedAnlas,
+                        maxAnlas: estimatedAnlas,
+                        estimatedAt: reviewedAt,
+                    })
+                    prepared.push({
+                        presetId: preset.id,
+                        sceneId: scene.id,
+                        seed,
+                        fileName,
+                        sceneBinding,
+                        estimatedAnlas,
+                        prepared: {
+                            scene: { id: scene.id, name: scene.name },
+                            params: built.params,
+                            finalPrompt: built.finalPrompt,
+                            mimeType: built.mimeType,
+                            saveContext,
+                            outputContext,
+                            sequenceCommitProposal: built.sequenceCommitProposal,
+                            planHash: built.planHash,
+                            sceneBinding,
+                            costEstimate,
+                            imageFormat: built.mimeType === 'image/webp' ? 'webp' : 'png',
+                            destination: {
+                                directory,
+                                useAbsolutePath: outputContext.useAbsoluteScenePath,
+                                capabilityFallbackDirectory,
+                                workflowDefaultDirectory: 'NAI_Blue_Scene',
+                                extension: built.mimeType === 'image/webp' ? 'webp' : 'png',
+                                fileName,
+                                collisionPolicy: 'error',
+                            },
+                            compositionResult: {
+                                mode: built.mode,
+                                ...(built.planHash === null ? {} : { planHash: built.planHash }),
+                                warnings: built.warnings,
+                                errors: built.errors,
+                            },
+                            reviewDestinationKey,
+                            reviewDestinationLabel,
+                            r2Requirement,
+                            ...(generationFolder?.r2.provenance === undefined ? {} : { r2Provenance: generationFolder.r2.provenance }),
+                        },
+                    })
+                }
             }
-        }
+        })
 
         // Re-read the authoritative documents after composition/resource work so
         // a Scene edit that lands during enqueue cannot be paired with old output.
         const currentAuthorityByPreset = new Map<string, SceneDocument>()
-        for (const presetId of authorityByPreset.keys()) {
-            const document = await sceneRepository.getDocument(presetId)
-            if (document === null) {
-                throw new QueueExecutionError('fatal', `Scene authority disappeared for preset ${presetId}`)
+        await measureSpan('scene-review:scene-reread', async detail => {
+            detail.presets = authorityByPreset.size
+            for (const presetId of authorityByPreset.keys()) {
+                const document = await sceneRepository.getDocument(presetId)
+                if (document === null) {
+                    throw new QueueExecutionError('fatal', `Scene authority disappeared for preset ${presetId}`)
+                }
+                currentAuthorityByPreset.set(presetId, document)
             }
-            currentAuthorityByPreset.set(presetId, document)
-        }
+        })
         if (prepared.some(item => {
             const current = currentAuthorityByPreset.get(item.presetId)
             return current === undefined
@@ -663,24 +674,26 @@ async function prepareSceneQueueReviewOnce(
             throw new QueueExecutionError('fatal', 'Scene document changed before Queue reservation')
         }
         const plans = new Map<string, ReturnType<typeof planSceneBatch<PreparedSceneQueueJob>>>()
-        for (const [presetId, authority] of authorityByPreset) {
-            const presetPrepared = prepared.filter(item => item.presetId === presetId)
-            if (presetPrepared.length === 0) continue
-            const request: SceneBatchRequest = {
-                actor: { kind: 'user', id: 'scene-queue' },
-                preset: { id: presetId, expectedRevision: authority.revision },
-                items: selected
-                    .filter(item => item.preset.id === presetId)
-                    .map(({ target }) => ({ sceneId: target.sceneId, count: target.count })),
-                seedPolicy: { kind: 'replay', traceId: `scene-seeds:${canonicalRequestHash.slice(7, 39)}:${presetId}` },
-                execution: { failurePolicy: 'continue' },
-                budget: {
-                    maxImages: presetPrepared.length,
-                    maxAnlas: presetPrepared.reduce((total, item) => total + item.estimatedAnlas, 0),
-                },
+        measureSpanSync('scene-review:batch-plans', () => {
+            for (const [presetId, authority] of authorityByPreset) {
+                const presetPrepared = prepared.filter(item => item.presetId === presetId)
+                if (presetPrepared.length === 0) continue
+                const request: SceneBatchRequest = {
+                    actor: { kind: 'user', id: 'scene-queue' },
+                    preset: { id: presetId, expectedRevision: authority.revision },
+                    items: selected
+                        .filter(item => item.preset.id === presetId)
+                        .map(({ target }) => ({ sceneId: target.sceneId, count: target.count })),
+                    seedPolicy: { kind: 'replay', traceId: `scene-seeds:${canonicalRequestHash.slice(7, 39)}:${presetId}` },
+                    execution: { failurePolicy: 'continue' },
+                    budget: {
+                        maxImages: presetPrepared.length,
+                        maxAnlas: presetPrepared.reduce((total, item) => total + item.estimatedAnlas, 0),
+                    },
+                }
+                plans.set(presetId, planSceneBatch({ folderBinding, request, jobs: presetPrepared }))
             }
-            plans.set(presetId, planSceneBatch({ folderBinding, request, jobs: presetPrepared }))
-        }
+        })
         const requestIdentity = canonicalRequestHash.slice('sha256:'.length)
         const batchId = `scene-batch-${requestIdentity}`
         // Queue defaults readyAt to createdAt. The deterministic planning clock can be
@@ -718,7 +731,7 @@ async function prepareSceneQueueReviewOnce(
         if (allocations.length !== prepared.length) {
             throw new QueueExecutionError('fatal', 'Scene output allocation did not preserve the requested count')
         }
-        const r2Deliveries = await Promise.all(prepared.map(async (item, ordinal): Promise<R2QueueDeliverySnapshot> => {
+        const r2Deliveries = await measureSpan('scene-review:r2-planning', () => Promise.all(prepared.map(async (item, ordinal): Promise<R2QueueDeliverySnapshot> => {
             const planIdentity = `sha256:${hashCanonicalValue({
                 scenePlanHash: item.prepared.planHash,
                 outputCommitSetHash: allocations[ordinal].commitSetHash,
@@ -742,9 +755,9 @@ async function prepareSceneQueueReviewOnce(
                 : release.internalSnapshot.destination.requirement === 'required'
                     ? { requirement: 'required', planned: release.internalSnapshot }
                     : { requirement: 'best-effort', planned: release.internalSnapshot }
-        }))
+        })))
         const destinations = new Map<string, { label: string; filenames: string[]; imageCount: number; claimCount: number }>()
-        prepared.forEach((item, ordinal) => {
+        measureSpanSync('scene-review:allocation-check', () => prepared.forEach((item, ordinal) => {
             const allocation = allocations[ordinal]
             if (allocation.fileName !== item.fileName) {
                 throw new QueueExecutionError('fatal', 'Scene output preflight changed the exact filename')
@@ -764,7 +777,7 @@ async function prepareSceneQueueReviewOnce(
             destination.imageCount += 1
             destination.claimCount += allocation.commitSet.claims.length
             destinations.set(item.prepared.reviewDestinationKey, destination)
-        })
+        }))
         const review: SceneQueueReview = Object.freeze({
             ...(assessment === undefined ? {} : { assessment }),
             reviewId,
@@ -826,7 +839,7 @@ async function prepareSceneQueueReviewOnce(
             requestIdentity,
             createdAt,
             useStreaming: settings.useStreaming,
-            resourcePlan: createSceneQueueResourcePlan(prepared.map(item => item.prepared.params)),
+            resourcePlan: measureSpanSync('scene-review:resource-plan', () => createSceneQueueResourcePlan(prepared.map(item => item.prepared.params))),
         })
         return Object.freeze({ review, submission })
 }
@@ -894,18 +907,22 @@ async function enqueueReviewedSceneQueueOnce(
         const materializer = getRuntimeQueueResourceMaterializer()
         const resourceCache = new Map<string, Promise<MaterializedQueueResource>>()
         const resources = new Map<string, QueueResourceRecord>()
-        const dehydratedByOrdinal = await materializeApprovedSceneQueueResources(
+        const dehydratedByOrdinal = await measureSpan('scene-enqueue:dehydrate', () => materializeApprovedSceneQueueResources(
             data.resourcePlan,
             async params => {
                 const dehydrated = await dehydrateGenerationParams(params, materializer, resourceCache)
                 for (const record of dehydrated.records) resources.set(record.id, record)
                 return { parameters: dehydrated.parameters, resources: dehydrated.resources }
             },
-        )
-        const result = await runtimeWorkspaceMutationGate.runExclusive(
+        ))
+        const gateRequestedAt = globalThis.performance?.now?.() ?? Date.now()
+        const result = await measureSpan('scene-enqueue:gate', gate => runtimeWorkspaceMutationGate.runExclusive(
             generationFolderDocumentMutationKey(data.folderBinding.resourceId),
             async () => {
-                const currentFolder = await data.folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID)
+                // Time spent waiting for another workspace mutation before this body ran.
+                gate.waitMs = (globalThis.performance?.now?.() ?? Date.now()) - gateRequestedAt
+                const currentFolder = await measureSpan('scene-enqueue:folder-reread',
+                    () => data.folderRepository.getDocument(DEFAULT_GENERATION_FOLDER_WORKSPACE_ID))
                 const currentFolderBinding = currentFolder === null
                     ? null
                     : createGenerationFolderDocumentBinding(currentFolder)
@@ -914,18 +931,21 @@ async function enqueueReviewedSceneQueueOnce(
                     replan('folder-changed', 'Generation folder changed after Scene Queue review')
                 }
 
-                for (const presetId of data.authorityByPreset.keys()) {
-                    const document = await data.sceneRepository.getDocument(presetId)
-                    if (document === null || data.prepared.some(item => item.presetId === presetId
-                        && !sceneGenerationBindingMatches(item.sceneBinding, document, item.sceneId))) {
-                        replan('scene-changed', 'Scene document changed after Scene Queue review')
+                await measureSpan('scene-enqueue:scene-reread', async () => {
+                    for (const presetId of data.authorityByPreset.keys()) {
+                        const document = await data.sceneRepository.getDocument(presetId)
+                        if (document === null || data.prepared.some(item => item.presetId === presetId
+                            && !sceneGenerationBindingMatches(item.sceneBinding, document, item.sceneId))) {
+                            replan('scene-changed', 'Scene document changed after Scene Queue review')
+                        }
                     }
-                }
+                })
 
                 const activeCredentialsAreOpus = selectActiveCredentialsAreOpus(useAuthStore.getState())
                 for (const delivery of data.r2Deliveries) {
                     if (delivery.planned === null) continue
-                    const checked = await revalidateR2Release(delivery.planned, getRuntimeMainQueueDependencies().r2Planning)
+                    const checked = await measureSpan('scene-enqueue:r2-revalidate',
+                        () => revalidateR2Release(delivery.planned!, getRuntimeMainQueueDependencies().r2Planning))
                     if (checked.status === 'blocked') replan('folder-changed', checked.reason)
                 }
                 if (data.prepared.some(item => {
@@ -978,7 +998,7 @@ async function enqueueReviewedSceneQueueOnce(
                     data.prepared.map(item => item.prepared.costEstimate),
                     approvedAt,
                 )
-                data.prepared.forEach((item, ordinal) => {
+                measureSpanSync('scene-enqueue:encode-jobs', () => data.prepared.forEach((item, ordinal) => {
                     const reviewedPlan = data.plans.get(item.presetId)
                     if (reviewedPlan === undefined) replan('scene-changed', `Scene sub-plan is missing for preset ${item.presetId}`)
                     const plan = agent === undefined ? reviewedPlan : planSceneBatch({
@@ -1062,41 +1082,49 @@ async function enqueueReviewedSceneQueueOnce(
                         idempotencyKey: `scene-enqueue-${requestIdentity}-${ordinal}`,
                     })
                     reservations.push(reservation)
-                })
-                await production?.reserve(batchId)
-                return getRuntimeQueueRepository().createBatchAndEnqueue({
-                    batch: {
-                        id: batchId,
-                        workflow: 'scene',
-                        createdAt: data.createdAt,
-                        failurePolicy: 'continue',
-                        origin: data.origin,
-                        idempotencyKey: `scene-enqueue-${requestIdentity}`,
-                    },
-                    jobs,
-                    resources: [...resources.values()],
-                    reservations,
+                }))
+                if (production) await measureSpan('scene-enqueue:production-reserve', () => production.reserve(batchId))
+                return measureSpan('scene-enqueue:commit', commit => {
+                    commit.jobs = jobs.length
+                    commit.resources = resources.size
+                    return getRuntimeQueueRepository().createBatchAndEnqueue({
+                        batch: {
+                            id: batchId,
+                            workflow: 'scene',
+                            createdAt: data.createdAt,
+                            failurePolicy: 'continue',
+                            origin: data.origin,
+                            idempotencyKey: `scene-enqueue-${requestIdentity}`,
+                        },
+                        jobs,
+                        resources: [...resources.values()],
+                        reservations,
+                    })
                 })
             },
-        )
+        ))
         // Presentation changes occur only after the atomic Queue transaction commits.
-        if (data.consumePendingEntries) {
-            for (const { target } of data.selected) {
-                useSceneStore.getState().consumeSceneQueueEntries(target.presetId, target.sceneId, target.count)
+        measureSpanSync('scene-enqueue:project', () => {
+            if (data.consumePendingEntries) {
+                for (const { target } of data.selected) {
+                    useSceneStore.getState().consumeSceneQueueEntries(target.presetId, target.sceneId, target.count)
+                }
             }
-        }
-        for (const item of data.prepared) {
-            useSceneStore.getState().recordSceneCompositionResult(item.sceneId, item.prepared.compositionResult)
-        }
-        for (const { preset, scene } of data.selected) {
-            const count = data.targets.find(target => target.presetId === preset.id && target.sceneId === scene.id)?.count ?? 0
-            for (let index = 0; index < count; index += 1) {
-                useSceneStore.getState().consumeSceneGenerationSeed(preset.id, scene.id)
+            for (const item of data.prepared) {
+                useSceneStore.getState().recordSceneCompositionResult(item.sceneId, item.prepared.compositionResult)
             }
-        }
+            for (const { preset, scene } of data.selected) {
+                const count = data.targets.find(target => target.presetId === preset.id && target.sceneId === scene.id)?.count ?? 0
+                for (let index = 0; index < count; index += 1) {
+                    useSceneStore.getState().consumeSceneGenerationSeed(preset.id, scene.id)
+                }
+            }
+        })
         return result
     } finally {
-        useCharacterStore.getState().releaseImageData()
-        useQueueStore.getState().completeEnqueueOperation('scene', operationId)
+        measureSpanSync('scene-enqueue:release', () => {
+            useCharacterStore.getState().releaseImageData()
+            useQueueStore.getState().completeEnqueueOperation('scene', operationId)
+        })
     }
 }

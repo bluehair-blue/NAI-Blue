@@ -17,7 +17,7 @@ import { OutputDestinationOccupiedError } from '@/services/output/generation-out
 import { SceneQueueReviewConflict } from '@/services/queue/scene-queue-adapter'
 import { queryVerifiedNaiGenerationCompatibilityBatch } from '@/services/nai/verified-compatibility'
 import { NovelAiModelCapabilityError } from '@/services/nai/adapter'
-import { measureSpan } from '@/lib/user-timing'
+import { measureSpan, measureSpanSync } from '@/lib/user-timing'
 
 export interface AgentSceneGenerationInput {
     readonly source: { readonly kind: 'scene'; readonly targets: readonly {
@@ -131,16 +131,20 @@ async function prepareAgentScenePlan(
         reviewId: `scene-review-${globalThis.crypto.randomUUID()}`,
         reviewedAt: new Date().toISOString(), materializedSeeds,
     } }
-    const review = await prepareSceneQueueReview(input.source.targets.map((target, index) => ({ ...target,
-        ...(production?.fileNames[index] == null ? {} : { fileNames: production.fileNames[index]! }),
-    })), { replayIdentity: replay.identity })
+    const review = await measureSpan('agent-plan:scene-review', detail => {
+        detail.targets = input.source.targets.length
+        detail.images = count
+        return prepareSceneQueueReview(input.source.targets.map((target, index) => ({ ...target,
+            ...(production?.fileNames[index] == null ? {} : { fileNames: production.fileNames[index]! }),
+        })), { replayIdentity: replay.identity })
+    })
     if (review === null) throw new TypeError('Scene plan must contain at least one image')
-    const facts = getSceneQueuePlanningFacts(review.submission)
+    const facts = measureSpanSync('agent-plan:planning-facts', () => getSceneQueuePlanningFacts(review.submission))
     const pricingBasis = facts.prepared[0].prepared.costEstimate.pricingBasis
     if (facts.prepared.some(item => item.prepared.costEstimate.pricingBasis !== pricingBasis)) {
         throw new TypeError('Scene plan pricing must use one credential tier')
     }
-    const jobs = facts.prepared.map((item, ordinal) => {
+    const jobs = measureSpanSync('agent-plan:job-digests', () => facts.prepared.map((item, ordinal) => {
         const prepared = item.prepared
         const allocation = facts.allocations[ordinal]
         const delivery = facts.r2Deliveries[ordinal]
@@ -166,7 +170,7 @@ async function prepareAgentScenePlan(
             prepared: { kind: 'agent-scene-generation' as const, ordinal, executionDigest,
                 ...(ordinal === 0 ? { replay } : {}) },
         }
-    })
+    }))
     const sceneBindings = [...new Map(facts.prepared.map(item => [item.sceneBinding.resourceId, item.sceneBinding])).values()]
     const metadataModes = new Set(facts.prepared.map(item => item.prepared.outputContext.metadataMode ?? 'embedded'))
     const captureContent: Omit<DetachedGenerationCapture<AgentScenePreparedJob>, 'contentHash'> = {
@@ -178,13 +182,13 @@ async function prepareAgentScenePlan(
             metadataMode: metadataModes.size === 1 ? [...metadataModes][0] : 'mixed' },
         credentialReadinessFingerprint: digest({ pricingBasis }),
     }
-    const capture = { ...captureContent, contentHash: hashDetachedGenerationCapture(captureContent) }
-    const compatibilityEvidence = await measureSpan('agent-plan:compatibility-scan', () => queryVerifiedNaiGenerationCompatibilityBatch(
+    const capture = { ...captureContent, contentHash: measureSpanSync('agent-plan:capture-hash', () => hashDetachedGenerationCapture(captureContent)) }
+    const compatibilityEvidence = await measureSpan('agent-plan:compatibility-scan', detail => queryVerifiedNaiGenerationCompatibilityBatch(
         facts.prepared.map(item => ({ params: item.prepared.params,
             streaming: facts.streaming && !Boolean(item.prepared.params.sourceImage || item.prepared.params.mask) })),
-        CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
+        CURRENT_NAI_PAYLOAD_BUILDER_REVISION, undefined, detail,
     ))
-    const result = await planGeneration({ source: { kind: 'detached-generation-capture', capture }, count,
+    const result = await measureSpan('agent-plan:plan-generation', () => planGeneration({ source: { kind: 'detached-generation-capture', capture }, count,
         seedPolicy: { kind: 'replay', traceId: capture.captureId }, budget: input.budget }, {
         // Detached planning never reads a WorkflowDraft or enters its planner.
         drafts: { get: async () => null }, planner: { prepare: async () => [] },
@@ -197,7 +201,7 @@ async function prepareAgentScenePlan(
                     kind: 'live-canary' as const, resourceId: compatibility.fixture.path, responseDigest: compatibility.fixture.sha256,
                 } } : {}) }
         },
-    })
+    }))
     return { result, submission: review.submission }
 }
 
@@ -211,12 +215,12 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
         execute: async (input): Promise<JsonObject> => {
             try {
                 const { result, submission } = await planAgentSceneGeneration(input as unknown as AgentSceneGenerationInput)
-                await persistGenerationPlanResult(result, plans)
+                await measureSpan('agent-plan:persist', () => persistGenerationPlanResult(result, plans))
                 if (result.status === 'ready' || result.status === 'needs_input') return {
                     status: result.status, planId: result.plan.planId, planHash: result.plan.planHash,
                     jobCount: result.plan.jobs.length, estimatedAnlas: result.plan.estimatedAnlas,
                     requiredApprovals: result.plan.requiredApprovals.map(item => ({ ...item })),
-                    review: publicAgentScenePreview(result.plan, submission),
+                    review: measureSpanSync('agent-plan:preview', () => publicAgentScenePreview(result.plan, submission)),
                 }
                 const issueCodes = 'issues' in result
                     ? result.issues.map(issue => issue.code) : ['scene-source-changed']
@@ -251,16 +255,17 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
 async function rebuild(plan: GenerationPlan): Promise<SceneQueueSubmission | null> {
     const replay = replayOf(plan)
     if (replay === null || plan.requiredApprovals.length !== 0 || plan.jobs.length > 100) return null
-    const rebuilt = await planAgentSceneGeneration(replay.input, replay.identity, replay.production)
-    return rebuilt.result.status === 'ready' && compareGenerationPlans(plan, rebuilt.result.plan) === null
-        ? rebuilt.submission : null
+    const { result, submission } = await planAgentSceneGeneration(replay.input, replay.identity, replay.production)
+    return result.status === 'ready' && measureSpanSync('agent-plan:compare', () => compareGenerationPlans(plan, result.plan)) === null
+        ? submission : null
 }
 
 export async function validateAgentSceneGenerationPlan(plan: GenerationPlan): Promise<boolean> {
     try {
         const production = replayOf(plan)?.production
-        if (production && !await (await import('./production-request-state')).validateRuntimeProductionPlan(production, plan.planId)) return false
-        return await rebuild(plan) !== null
+        if (production && !await measureSpan('agent-validate:production', async () => (await import('./production-request-state'))
+            .validateRuntimeProductionPlan(production, plan.planId))) return false
+        return await measureSpan('agent-validate:rebuild', () => rebuild(plan)) !== null
     } catch { return false }
 }
 
@@ -273,10 +278,10 @@ export async function enqueueAgentSceneGenerationPlan(plan: GenerationPlan, gran
         return { status: 'invalid', issueCodes: ['agent-plan-grant-mismatch'] }
     }
     let submission: SceneQueueSubmission | null
-    try { submission = await rebuild(plan) } catch { submission = null }
+    try { submission = await measureSpan('agent-enqueue:rebuild', () => rebuild(plan)) } catch { submission = null }
     if (submission === null) return { status: 'conflict', issueCodes: ['reviewed-scene-source-conflict'] }
     const production = replayOf(plan)?.production
-    const queued = await enqueueReviewedSceneQueue(submission, {
+    const queued = await measureSpan('agent-enqueue:scene-queue', () => enqueueReviewedSceneQueue(submission, {
         binding: { scopeId: grant.scopeId, planId: grant.planId, planHash: grant.planHash,
             grantHash: `sha256:${hashCanonicalValue(grant)}` },
         approvedAt: grant.consentedAt, actor: { kind: grant.actorKind, id: `client:${grant.clientId}` },
@@ -286,10 +291,9 @@ export async function enqueueAgentSceneGenerationPlan(plan: GenerationPlan, gran
         reserve: async runId => (await import('./production-request-state')).reserveRuntimeProductionChild(
             production.productionId, production.index, plan.planId, runId,
         ),
-    })
-    if (production) await (await import('./production-request-state')).acknowledgeRuntimeProductionChild(
-        production.productionId, production.index, queued.batch.id,
-    )
+    }))
+    if (production) await measureSpan('agent-enqueue:production-acknowledge', async () => (await import('./production-request-state'))
+        .acknowledgeRuntimeProductionChild(production.productionId, production.index, queued.batch.id))
     return { status: 'ready', batchId: queued.batch.id, runId: queued.batch.id,
         jobIds: [...queued.jobs].sort((left, right) => left.ordinal - right.ordinal).map(job => job.id) }
 }

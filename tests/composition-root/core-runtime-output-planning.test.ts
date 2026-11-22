@@ -55,6 +55,7 @@ import { planOutputCommitSetBatch } from '@/composition-root/core-runtime'
 import { createGenerationOutputCommitSet } from '@/services/output/generation-output-commit-set'
 import { directoryIdentityForResolvedOutputDirectory } from '@/services/output/platform-adapter'
 import { createOutputCollisionKey } from '@/domain/output-commit-set'
+import { markSpans, spansSince } from '@/lib/user-timing'
 
 const folderBinding = {
     resourceType: 'generation-folder-document' as const,
@@ -163,11 +164,15 @@ describe('runtime output batch planning', () => {
         }))
 
         const measure = vi.spyOn(performance, 'measure')
+        const mark = markSpans()
         const result = await planOutputCommitSetBatch(requests)
 
-        expect(measure).toHaveBeenCalledExactlyOnceWith('agent-plan:output-planning', expect.any(String))
+        // The batch span is recorded once; its child spans (reads, hashing, allocation) are separate names.
+        expect(measure.mock.calls.filter(([name]) => name === 'agent-plan:output-planning')).toHaveLength(1)
         const readEntries = (await Promise.all(runtime.readDirectoryEntries.mock.results.map(item => item.value)))
             .reduce((sum: number, names: readonly string[]) => sum + names.length, 0)
+        expect(spansSince(mark).find(span => span.name === 'agent-plan:output-planning')?.detail)
+            .toMatchObject({ items: 3, directoriesRead: 1, entriesHashed: readEntries, pendingFinals: 1 })
         expect(vi.mocked(createOutputCollisionKey)).toHaveBeenCalledTimes(readEntries + runtime.pending.length)
         expect(readEntries).toBe(entries.length)
         // portrait-4 is taken by its sidecar, so the allocator skips it exactly as before.

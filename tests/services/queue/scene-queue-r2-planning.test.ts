@@ -75,6 +75,7 @@ import { IndexedDbAgentExecutionRepository } from '@/adapters/agent/indexeddb-ag
 import { createAgentSceneGenerationPlanHandler } from '@/composition-root/agent-scene-generation-plan'
 import type { JsonObject } from '@/domain/composition/types'
 import { resetIndexedDBConnectionForRetry } from '@/lib/indexed-db'
+import { markSpans, spansSince } from '@/lib/user-timing'
 import { IndexedDbProductionRequestRepository } from '@/adapters/generation/indexeddb-production-request-repository'
 import { createRuntimeProductionRequest, prepareRuntimeProductionChild, enqueueRuntimeProductionChild,
     getRuntimeProductionStatus, createProductionRequestHandlers } from '@/composition-root/production-requests'
@@ -364,8 +365,14 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
 
     it('marks Scene preparation and its compatibility scan for DevTools, and plans unchanged without User Timing', async () => {
         const measure = vi.spyOn(performance, 'measure')
+        const mark = markSpans()
         const { plan } = await agentFixture()
-        expect(measure.mock.calls.map(([name]) => name)).toEqual(['agent-plan:compatibility-scan', 'agent-plan:scene-preparation'])
+        const names = measure.mock.calls.map(([name]) => name)
+        expect(names).toEqual(expect.arrayContaining(['scene-review:build-params', 'scene-review:scene-reread',
+            'agent-plan:scene-review', 'agent-plan:compatibility-scan', 'agent-plan:plan-generation', 'agent-plan:scene-preparation']))
+        // The whole preparation span closes after every step it contains.
+        expect(names.indexOf('agent-plan:compatibility-scan')).toBeLessThan(names.indexOf('agent-plan:scene-preparation'))
+        expect(spansSince(mark).find(span => span.name === 'agent-plan:compatibility-scan')?.detail).toMatchObject({ requests: plan.jobs.length })
         measure.mockRestore()
         vi.stubGlobal('performance', undefined)
         try {

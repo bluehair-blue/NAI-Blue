@@ -6,6 +6,22 @@ import { agentResultDigest, type AgentCommandReceipt, type CommandReceiptReposit
 import { AGENT_COMMAND_EFFECTS, describeAgentCommandCapabilities, type AgentCommandHandler, type AgentCommandRuntimeState } from './runtime-capability-registry'
 import type { AgentRuntimeIdentity } from './runtime-capability-registry'
 
+/** Counts and sizes only; span names are fixed strings. */
+export type AgentSpanDetail = Record<string, number>
+export interface AgentSpanRecorder {
+    span<T>(name: string, work: (detail: AgentSpanDetail) => Promise<T>): Promise<T>
+    spanSync<T>(name: string, work: (detail: AgentSpanDetail) => T): T
+}
+const unrecorded: AgentSpanRecorder = { span: (_name, work) => work({}), spanSync: (_name, work) => work({}) }
+let recorder = unrecorded
+/** Application code cannot import '@/lib', and the coordinator is wired outside this runtime, so the composition root installs one recorder. */
+export function configureAgentSpans(next: AgentSpanRecorder | null): void { recorder = next ?? unrecorded }
+/** Stable delegate, so modules can hold it while the composition root swaps the recorder. */
+export const agentSpans: AgentSpanRecorder = {
+    span: (name, work) => recorder.span(name, work),
+    spanSync: (name, work) => recorder.spanSync(name, work),
+}
+
 export interface AgentCommandDispatcherOptions {
     readonly workspaceId: string
     readonly authentication: AgentCommandAuthenticator
@@ -39,13 +55,18 @@ export class AgentCommandDispatcher {
         return describeAgentCommandCapabilities(this.handlers, this.options.runtime())
     }
 
-    async dispatch(value: unknown): Promise<AgentCommandReceipt> {
+    dispatch(value: unknown): Promise<AgentCommandReceipt> {
+        return agentSpans.span('agent-dispatch:total', () => this.dispatchOnce(value))
+    }
+
+    private async dispatchOnce(value: unknown): Promise<AgentCommandReceipt> {
         if (!this.options.runtime().ready) throw new AgentCommandError('APP_UNAVAILABLE')
         const envelope = parseAgentCommandEnvelope(value)
         if (envelope.context.workspaceId !== this.options.workspaceId) throw new AgentCommandError('WORKSPACE_MISMATCH')
         const now = this.options.now ?? (() => new Date().toISOString())
         const observedAt = now()
-        const identity = await this.options.authentication.authenticate(envelope, observedAt, { allowExpiredReplay: true })
+        const identity = await agentSpans.span('agent-dispatch:authenticate',
+            () => this.options.authentication.authenticate(envelope, observedAt, { allowExpiredReplay: true }))
         // Even injected adapters cannot substitute a caller or claim human authority.
         if (identity.clientId !== envelope.context.clientId || identity.actor.kind !== envelope.context.actor.kind
             || identity.actor.id !== `client:${identity.clientId}`) throw new AgentCommandError('AUTHENTICATION_FAILED')
@@ -53,7 +74,7 @@ export class AgentCommandDispatcher {
 
         // Expiry controls new work. A still-authorized client can retrieve its
         // exact saved result after expiry or after an application's validator update.
-        const existing = await this.options.receipts.get(envelope.requestId)
+        const existing = await agentSpans.span('agent-dispatch:receipt-get', () => this.options.receipts.get(envelope.requestId))
         if (existing !== null) {
             if (existing.requestHash !== envelope.requestHash || existing.authenticatedClientId !== identity.clientId
                 || existing.command !== envelope.command.name) throw new AgentCommandError('IDEMPOTENCY_CONFLICT')
@@ -72,26 +93,29 @@ export class AgentCommandDispatcher {
 
         const handler = this.handlers.find(candidate => candidate.command === envelope.command.name)
         let input: JsonObject | undefined
-        if (handler !== undefined) {
-            input = handler.validate(structuredClone(envelope.command.input))
-            assertAgentPublicValue(input)
-            if (canonicalSerialize(input) !== canonicalSerialize(envelope.command.input)) {
+        if (handler !== undefined) input = agentSpans.spanSync('agent-dispatch:validate-input', () => {
+            const validated = handler.validate(structuredClone(envelope.command.input))
+            assertAgentPublicValue(validated)
+            if (canonicalSerialize(validated) !== canonicalSerialize(envelope.command.input)) {
                 throw new AgentCommandError('COMMAND_INPUT_CHANGED')
             }
-        }
-        const claim = await this.options.receipts.claim({
+            return validated
+        })
+        const claim = await agentSpans.span('agent-dispatch:receipt-claim', () => this.options.receipts.claim({
             schemaVersion: 1, requestId: envelope.requestId, requestHash: envelope.requestHash,
             authenticatedClientId: identity.clientId, command: envelope.command.name,
             state: 'accepted', observedAt, resultSchemaVersion: 1, result: null, resultDigest: null,
-        })
+        }))
         if (claim.status === 'conflict') throw new AgentCommandError('IDEMPOTENCY_CONFLICT')
         // An accepted receipt after a crash is unresolved, never permission to retry.
         if (claim.status === 'existing') return claim.receipt
 
         const finish = async (state: Exclude<AgentCommandReceipt['state'], 'accepted'>, result: JsonObject) => {
-            const digest = agentResultDigest(result)
-            return this.options.receipts.finish(claim.receipt, {
-                ...claim.receipt, state, result: structuredClone(result), resultDigest: digest,
+            return agentSpans.span('agent-dispatch:receipt-finish', () => {
+                const digest = agentResultDigest(result)
+                return this.options.receipts.finish(claim.receipt, {
+                    ...claim.receipt, state, result: structuredClone(result), resultDigest: digest,
+                })
             })
         }
         // A queued transaction can cross expiry. Keep the claim as evidence but
@@ -108,7 +132,8 @@ export class AgentCommandDispatcher {
         }
         let result: JsonObject
         try {
-            result = await handler.execute(input, { envelope: structuredClone(envelope), identity: structuredClone(identity) })
+            result = await agentSpans.span('agent-dispatch:handler',
+                () => handler.execute(input!, { envelope: structuredClone(envelope), identity: structuredClone(identity) }))
         } catch {
             // No exception text or guessed failure is exported after entering a handler.
             return finish('needs-input', { code: 'COMMAND_OUTCOME_UNKNOWN' })

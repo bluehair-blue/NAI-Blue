@@ -1,6 +1,9 @@
+import { BaseDirectory, mkdir, readDir, remove, stat, writeTextFile } from '@tauri-apps/plugin-fs'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import type { AgentRuntimeIdentity } from '@/application/agent/runtime-capability-registry'
-import { AgentCommandDispatcher } from '@/application/agent/agent-command-dispatcher'
+import { AgentCommandDispatcher, configureAgentSpans } from '@/application/agent/agent-command-dispatcher'
+import { assertAgentRequestId } from '@/application/agent/agent-command-contract'
+import { markSpans, measureSpan, measureSpanSync, spansSince } from '@/lib/user-timing'
 import type { CommandReceiptRepository } from '@/application/agent/command-receipt-repository'
 import { describeAgentCommandCapabilities, type AgentCommandHandler, type RuntimeCapabilityDescriptor } from '@/application/agent/runtime-capability-registry'
 import { processAgentInboxFile } from '@/adapters/agent/inbox/process-agent-inbox-file'
@@ -28,6 +31,39 @@ export interface ForegroundAgentSnapshot {
     readonly recent: readonly { requestId: string; state: string; batchId?: string; cancelRequested?: boolean; storageRegistered?: boolean }[]
 }
 
+/** Per-request span files under the app data directory, so a release build without DevTools still shows where time went. */
+export interface AgentCommandTimingStore {
+    write(requestId: string, content: string): Promise<void>
+    /** Keeps only the newest files; called rarely and never awaited by request processing. */
+    prune(): Promise<void>
+}
+
+const TIMINGS_DIRECTORY = 'agent-commands/timings'
+const KEEP_TIMING_FILES = 500
+const PRUNE_EVERY_WRITES = 100
+const round = (value: number) => Math.round(value * 10) / 10
+
+function createTauriTimingStore(): AgentCommandTimingStore {
+    const baseDir = BaseDirectory.AppData
+    let directory: Promise<void> | null = null
+    return {
+        async write(requestId, content) {
+            directory ??= mkdir(TIMINGS_DIRECTORY, { baseDir, recursive: true }).catch(error => { directory = null; throw error })
+            await directory
+            await writeTextFile(`${TIMINGS_DIRECTORY}/${requestId}.json`, content, { baseDir })
+        },
+        async prune() {
+            const files = (await readDir(TIMINGS_DIRECTORY, { baseDir })).filter(entry => entry.isFile && entry.name.endsWith('.json'))
+            if (files.length <= KEEP_TIMING_FILES) return
+            // File names are request IDs, not times; only the modification time orders them.
+            const dated = await Promise.all(files.map(async entry => ({ name: entry.name,
+                time: (await stat(`${TIMINGS_DIRECTORY}/${entry.name}`, { baseDir }).catch(() => null))?.mtime?.getTime() ?? 0 })))
+            dated.sort((left, right) => right.time - left.time)
+            for (const { name } of dated.slice(KEEP_TIMING_FILES)) await remove(`${TIMINGS_DIRECTORY}/${name}`, { baseDir }).catch(() => undefined)
+        },
+    }
+}
+
 /** One foreground owner uses the same dispatcher for processing and UI capability snapshots. */
 export class ForegroundAgentCommandRuntime {
     private snapshot: ForegroundAgentSnapshot = { status: 'unsupported', workspaceId: null, clients: [],
@@ -49,6 +85,8 @@ export class ForegroundAgentCommandRuntime {
     private execution: AgentExecutionCoordinator | null = null
     private humanWork: Promise<void> | null = null
     private unsubscribePolicy: (() => void) | null = null
+    private readonly timings: AgentCommandTimingStore | null
+    private timingWrites = 0
 
     constructor(private readonly dependencies: {
         readonly native: NativeAgentCommands
@@ -69,7 +107,13 @@ export class ForegroundAgentCommandRuntime {
             get(): AgentGenerationConsent
             set(expectedRevision: number, workspaceId: string, clientId: string, enabled: boolean): Promise<AgentGenerationConsent>
         }
-    }) {}
+        /** Defaults to the app data directory; null records nothing. */
+        readonly timings?: AgentCommandTimingStore | null
+    }) {
+        this.timings = dependencies.timings === undefined ? createTauriTimingStore() : dependencies.timings
+        // The coordinator and authoring service are built by another composition module; they share this one recorder.
+        configureAgentSpans({ span: measureSpan, spanSync: measureSpanSync })
+    }
 
     getSnapshot = (): ForegroundAgentSnapshot => this.snapshot
     subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -236,16 +280,47 @@ export class ForegroundAgentCommandRuntime {
         this.polling = (async () => {
             for (const file of await native.list(token)) {
                 if (!this.runtimeState().ready) break
-                const outcome = await processAgentInboxFile(file, {
-                    readReady: (id, max) => native.read(token, id, max),
-                    publishResult: async (id, receipt) => { await native.publish(token, id, canonicalSerialize(receipt)); this.recordActivity(id, receipt.state, receipt) },
-                    publishRejection: async (id, rejection) => { await native.reject(token, id, canonicalSerialize(rejection)); this.recordActivity(id, 'rejected') },
-                }, dispatcher)
-                if (outcome !== 'ignored') await native.retire(token, file.slice(0, -'.ready.json'.length))
+                const startedAt = markSpans()
+                let command: string | undefined
+                let outcome: 'ignored' | 'projected' | 'rejected' | 'failed' = 'failed'
+                try {
+                    outcome = await processAgentInboxFile(file, {
+                        readReady: (id, max) => measureSpan('agent-inbox:read', () => native.read(token, id, max)),
+                        publishResult: (id, receipt) => measureSpan('agent-inbox:publish-result', async () => {
+                            command = receipt.command
+                            await native.publish(token, id, canonicalSerialize(receipt)); this.recordActivity(id, receipt.state, receipt)
+                        }),
+                        publishRejection: (id, rejection) => measureSpan('agent-inbox:publish-rejection', async () => {
+                            await native.reject(token, id, canonicalSerialize(rejection)); this.recordActivity(id, 'rejected')
+                        }),
+                    }, dispatcher)
+                    if (outcome !== 'ignored') await measureSpan('agent-inbox:retire', () => native.retire(token, file.slice(0, -'.ready.json'.length)))
+                } finally {
+                    if (outcome !== 'ignored') this.recordTimings(file.slice(0, -'.ready.json'.length), startedAt, command, outcome)
+                }
             }
             await this.refreshApprovals()
         })().finally(() => { this.polling = null })
         return this.polling
+    }
+
+    /** Writes after the result is published and never waits on the write: a slow or failing disk cannot hold the inbox. */
+    private recordTimings(requestId: string, startedAt: number, command: string | undefined, outcome: string): void {
+        const store = this.timings
+        if (store === null) return
+        try {
+            assertAgentRequestId(requestId)
+            const totalMs = markSpans() - startedAt
+            const spans = spansSince(startedAt).sort((left, right) => left.startMs - right.startMs).map(span => ({
+                name: span.name, offsetMs: round(span.startMs - startedAt), ms: round(span.ms),
+                ...(span.detail === undefined ? {} : { detail: Object.fromEntries(Object.entries(span.detail).map(([key, value]) => [key, round(value)])) }),
+            }))
+            const content = JSON.stringify({ schemaVersion: 1, requestId,
+                ...(command !== undefined && /^[a-z_]+\.[a-z_]+$/.test(command) ? { command } : {}),
+                outcome, totalMs: round(totalMs), spans })
+            const prune = this.timingWrites++ % PRUNE_EVERY_WRITES === 0
+            void store.write(requestId, content).then(() => prune ? store.prune() : undefined).catch(() => undefined)
+        } catch { /* diagnostics only */ }
     }
 
     private async releaseOwner(): Promise<void> {

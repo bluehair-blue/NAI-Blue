@@ -35,7 +35,7 @@ import type {
 } from '@/services/queue/main-queue-runtime-dependencies'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import { normalizeOutputDirectoryPath } from '@/domain/output-commit-set'
-import { measureSpan } from '@/lib/user-timing'
+import { measureSpan, measureSpanSync, type SpanDetail } from '@/lib/user-timing'
 import {
     discardGeneratedProviderOriginal,
     releaseGeneratedOutputToR2,
@@ -87,26 +87,32 @@ export function planOutputCommitSetBatch(
     requests: readonly OutputCommitSetPlanningRequest[],
 ): Promise<readonly PlannedOutputCommitSet[]> {
     if (requests.length === 0) return Promise.resolve([])
-    return measureSpan('agent-plan:output-planning', () => planNonEmptyOutputCommitSetBatch(requests))
+    return measureSpan('agent-plan:output-planning', detail => planNonEmptyOutputCommitSetBatch(requests, detail))
 }
 
 async function planNonEmptyOutputCommitSetBatch(
     requests: readonly OutputCommitSetPlanningRequest[],
+    detail: SpanDetail,
 ): Promise<readonly PlannedOutputCommitSet[]> {
     const repository = getRuntimeQueueRepository()
     const platform = createRuntimeOutputPlatformAdapter()
+    detail.items = requests.length
+    detail.directoriesRead = 0
+    detail.entriesHashed = 0
     const [reservationSnapshot, pendingFinals] = await Promise.all([
-        repository.getOutputReservationPlanningSnapshot(requests.map(
+        measureSpan('output-plan:reservation-snapshot', () => repository.getOutputReservationPlanningSnapshot(requests.map(
             request => request.reservationIdentity.reservationId,
-        )),
-        getRuntimeOutputWriter().listPendingFinalOutputRefs(),
+        ))),
+        measureSpan('output-plan:pending-finals', () => getRuntimeOutputWriter().listPendingFinalOutputRefs()),
     ])
-    const resolved = await Promise.all(requests.map(async request => {
+    detail.activeCollisionKeys = reservationSnapshot.activeCollisionKeys.length
+    detail.pendingFinals = pendingFinals.length
+    const resolved = await measureSpan('output-plan:resolve-directories', () => Promise.all(requests.map(async request => {
         const directory = await platform.resolveDirectory(request.destination)
         const semantics = outputFilesystemSemantics()
         const directoryIdentity = directoryIdentityForResolvedOutputDirectory(directory, semantics)
         return { request, directory, directoryIdentity, semantics }
-    }))
+    })))
     const parentReads = new Map<string, Promise<readonly string[]>>()
     // Keys depend only on authority, directory identity, semantics and path, so every
     // image of a batch that targets the same directory shares one hashing pass.
@@ -137,11 +143,16 @@ async function planNonEmptyOutputCommitSetBatch(
             if (keys === undefined) {
                 let entries = parentReads.get(key)
                 if (entries === undefined) {
-                    entries = platform.readDirectoryEntries(parent.directory)
+                    entries = measureSpan('output-plan:directory-read', () => platform.readDirectoryEntries(parent.directory))
                     parentReads.set(key, entries)
+                    detail.directoriesRead += 1
                 }
-                keys = (await entries).map(name => collisionKey(
-                    parent.relativeParent === '' ? name : `${parent.relativeParent}/${name}`))
+                const names = await entries
+                keys = measureSpanSync('output-plan:collision-keys', hashing => {
+                    hashing.entries = names.length
+                    return names.map(name => collisionKey(parent.relativeParent === '' ? name : `${parent.relativeParent}/${name}`))
+                })
+                detail.entriesHashed += names.length
                 occupiedByDirectory.set(cacheKey, keys)
             }
             keys.forEach(value => occupied.add(value))
@@ -151,10 +162,10 @@ async function planNonEmptyOutputCommitSetBatch(
             planningPathSegments(item.directory.path, item.semantics).join('/')}`
         let pendingKeys = occupiedByDirectory.get(pendingKey)
         if (pendingKeys === undefined) {
-            pendingKeys = pendingFinals.flatMap(final => {
+            pendingKeys = measureSpanSync('output-plan:pending-keys', () => pendingFinals.flatMap(final => {
                 const relativePath = relativeOutputPath(item.directory, final, item.semantics)
                 return relativePath === null ? [] : [collisionKey(relativePath)]
-            })
+            }))
             occupiedByDirectory.set(pendingKey, pendingKeys)
         }
         pendingKeys.forEach(value => occupied.add(value))
@@ -210,7 +221,8 @@ async function planNonEmptyOutputCommitSetBatch(
             commitSetHash: existing.commitSetHash,
         })
     }
-    const freshAllocations = allocateExactOutputCommitSets({
+    detail.occupiedKeys = occupied.size
+    const freshAllocations = measureSpanSync('output-plan:allocate', () => allocateExactOutputCommitSets({
         requests: freshIndexes.map(index => {
             const item = resolved[index]
             return {
@@ -222,7 +234,7 @@ async function planNonEmptyOutputCommitSetBatch(
             }
         }),
         occupiedCollisionKeys: occupied,
-    })
+    }))
     const freshByIndex = new Map(freshIndexes.map((index, ordinal) => [index, freshAllocations[ordinal]]))
     return resolved.map((item, index) => {
         const replay = replayAllocations.get(index)
