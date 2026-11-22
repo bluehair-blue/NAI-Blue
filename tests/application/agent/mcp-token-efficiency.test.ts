@@ -134,6 +134,21 @@ describe('MCP adapter default view for agents', () => {
         expect((await none.call('workspace.get_snapshot', {})).body.result.totals).not.toHaveProperty('archived')
     })
 
+    it('reports another page only while a requested list has rows left', async () => {
+        const f = await fixture({ 'workspace.get_snapshot': (command, id) => observed(id, command.name, {
+            totalPresets: 328, totalScenes: 3262, totalFolders: 3, totalDrafts: 4, totalArchivedPresets: 1,
+            offset: Number(command.input.offset ?? 0), nextOffset: Number(command.input.offset ?? 0) + 20, truncated: true,
+            scenePresets: [], scenes: [], folders: [], workflowDrafts: [],
+            archivedPresets: [{ presetId: 'draft-1', name: 'nhr-draft', revision: 2, sceneCount: 3, archivedAt: '2026-11-22T00:00:00.000Z' }] }) })
+        const archived = (await f.call('workspace.get_snapshot', { include: ['archived'] })).body.result
+        expect(archived).toMatchObject({ offset: 0, truncated: false })
+        expect(archived).not.toHaveProperty('nextOffset')
+        expect((await f.call('workspace.get_snapshot', { include: ['archived', 'presets'] })).body.result).toMatchObject({ nextOffset: 20, truncated: true })
+        const lastPresets = (await f.call('workspace.get_snapshot', { input: { offset: 320 }, include: ['presets'] })).body.result
+        expect(lastPresets).toMatchObject({ offset: 320, truncated: false })
+        expect(lastPresets).not.toHaveProperty('nextOffset')
+    })
+
     it('forwards presetArchived only when the caller uses it and explains a refusal from an older build', async () => {
         const committed = (command: AgentCommand, id: string) => observed(id, command.name, { status: 'authoring-committed',
             command: 'scene.patch_many', resourceId: 'preset-1', revision: 4, targetHash: planHash })

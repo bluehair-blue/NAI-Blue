@@ -22,6 +22,17 @@ export function plannedJobs(plan: JsonObject): Map<string, PlannedJob> {
         { ...pick(job, ['sceneId', 'seed']), ...pick(row(job.destination) ?? {}, ['fileName']) }]))
 }
 
+const SNAPSHOT_TOTALS = { presets: 'totalPresets', scenes: 'totalScenes', folders: 'totalFolders', drafts: 'totalDrafts', archived: 'totalArchivedPresets' } as const satisfies Record<keyof typeof SNAPSHOT_LISTS, string>
+
+// The app pages every list with one offset and reports another page while its longest list has rows left.
+// A caller that asked for a short list (one archived preset beside 3,000 Scenes) must not be told to keep paging.
+function snapshotPaging(result: Row, include: readonly string[]): Row {
+    if (include.length === 0) return {}
+    const longest = Math.max(...include.map(name => Number(result[SNAPSHOT_TOTALS[name as keyof typeof SNAPSHOT_TOTALS]] ?? Infinity)))
+    const more = typeof result.nextOffset === 'number' && result.nextOffset < longest
+    return { ...pick(result, ['offset']), ...(more ? { nextOffset: result.nextOffset } : {}), truncated: more }
+}
+
 function summarizeSnapshot(result: Row, include: readonly string[]): Row {
     const lists = Object.fromEntries(include.map(name => [name, name === 'drafts'
         ? rows(result.workflowDrafts).map(draft => pick(draft, ['draftId', 'kind', 'status', 'ready', 'issueCodes', 'imageCount', 'model', 'revision', 'nextAction']))
@@ -30,7 +41,7 @@ function summarizeSnapshot(result: Row, include: readonly string[]): Row {
         totals: { presets: result.totalPresets, scenes: result.totalScenes, folders: result.totalFolders, drafts: result.totalDrafts,
             // Only a count: it tells an agent something can be restored without listing what was archived.
             ...(Number(result.totalArchivedPresets) > 0 ? { archived: result.totalArchivedPresets } : {}) },
-        ...lists, ...(include.length > 0 ? pick(result, ['offset', 'nextOffset', 'truncated']) : {}) }
+        ...lists, ...snapshotPaging(result, include) }
 }
 
 function summarizeScenes(result: Row): Row {
