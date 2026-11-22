@@ -208,6 +208,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         if (runtime && runtime.status !== 'ready') {
             return { status: 'adapter-error', code: String(runtime.code), requiresAppProcess: true, accepted: false, submissionAttempted: false }
         }
+        if (state.signal.aborted) throw new AgentCommandError('REQUEST_CANCELLED')
         // Only failures before entering the inbox prove that nothing was submitted.
         state.attempted = true
         state.lastRequestId = requestId
@@ -223,13 +224,19 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     /** Polls with fresh request IDs because a reused ID replays the earlier observation. */
     async function observeRun(state: CallState, input: JsonObject, firstRequestId: string, waitSeconds: number): Promise<JsonObject> {
         // The budget covers the whole tool call, so earlier stages of generation.run shorten the wait.
-        const deadline = state.startedAt + waitSeconds * 1000 - pollReserveMs
+        // Only the upper limit gives way to the reserve; a short requested wait is honoured in full.
+        const deadline = state.startedAt + Math.min(waitSeconds * 1000, MAX_WAIT_SECONDS * 1000 - pollReserveMs)
+        let progress: JsonObject | undefined
         for (let attempt = 0; ; attempt += 1) {
             const observed = await submit(state, 'generation.get_run', input, attempt === 0 ? firstRequestId : `mcp-poll-${crypto.randomUUID()}`)
             const monitor = completedResult(observed)?.monitor as JsonObject | undefined
-            const delay = Math.min(2000 + attempt * 1000, 5000)
-            if (monitor?.nextAction !== 'wait' || Date.now() + delay > deadline || state.signal.aborted) return observed
-            await pause(delay, state.signal)
+            // A later poll the application has not answered yet says less than the progress already seen.
+            if (monitor?.nextAction !== 'wait') return completedResult(observed) || !progress ? observed : progress
+            progress = observed
+            const remaining = deadline - Date.now()
+            if (remaining <= 0 || state.signal.aborted) return observed
+            await pause(Math.min(2000 + attempt * 1000, 5000, remaining), state.signal)
+            if (state.signal.aborted) return observed
         }
     }
 
@@ -254,12 +261,12 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const stages: Record<string, JsonObject> = {}
         const finish = (stage: string, summary: Record<string, unknown>, isError: boolean) =>
             respond('generation.run', args.full ? { stage, ...stages } : { stage, ...summary }, isError)
-        const failed = (stage: string, facts: Record<string, unknown>) => {
+        const failed = (stage: string, facts: Record<string, unknown>, hint?: string) => {
             const error = { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED' }
             const requestId = typeof facts.requestId === 'string' ? facts.requestId : undefined
-            const hint = facts.runId ? runExistsHint : agentHint(error, requestId)
-            if (args.full) stages[stage] = { ...error, requiresAppProcess: true }
-            return finish(stage, { ...error, ...facts, hint }, true)
+            const body = { ...error, ...facts, hint: hint ?? (facts.runId ? runExistsHint : agentHint(error, requestId)) }
+            if (args.full) stages[stage] = { ...body, requiresAppProcess: true } as JsonObject
+            return finish(stage, body, true)
         }
         const planObserved = stages.plan = await submit(state, 'generation.plan', args.input, `${args.requestId}-plan`)
         const plan = completedResult(planObserved)
@@ -271,7 +278,13 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const enqueueRequestId = `${args.requestId}-enq`
         let enqueueObserved: JsonObject
         try { enqueueObserved = stages.enqueue = await submit(state, 'generation.enqueue', { planId: plan.planId, planHash: plan.planHash }, enqueueRequestId) }
-        catch { return failed('enqueue', { requestId: enqueueRequestId, ...planFacts }) }
+        catch {
+            // Whether the enqueue reached the inbox decides if its request can be inspected or simply was never made.
+            return state.lastRequestId === enqueueRequestId
+                ? failed('enqueue', { requestId: enqueueRequestId, ...planFacts })
+                : failed('enqueue', { code: 'ENQUEUE_NOT_SUBMITTED', ...planFacts, planHash: plan.planHash },
+                    'The plan is ready but its enqueue was not submitted. Submit this planId and planHash with generation.enqueue.')
+        }
         const runId = completedResult(enqueueObserved)?.runId
         if (typeof runId !== 'string') {
             return finish('enqueue', { ...compactObservation(enqueueObserved), ...planFacts, planHash: plan.planHash }, isRejected(enqueueObserved))
@@ -280,10 +293,14 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         try { runObserved = stages.run = await observeRun(state, { runId }, `mcp-poll-${crypto.randomUUID()}`, args.waitSeconds ?? defaultRunWaitSeconds) }
         catch { return failed('run', { runId, ...planFacts }) }
         const run = completedResult(runObserved)
-        // The work is enqueued even though this read of it did not complete, so the hint must point at the run.
-        if (!run) return finish('run', { ...compactObservation(runObserved), runId, ...planFacts, hint: runExistsHint }, isRejected(runObserved))
+        // The work is enqueued even though this read of it did not complete: say so, and leave out the read's own
+        // accepted/submissionAttempted facts, which describe that read and would look like an unsubmitted generation.
+        if (!run) {
+            const { accepted: _accepted, submissionAttempted: _submissionAttempted, requestId: _requestId, ...read } = compactObservation(runObserved)
+            return finish('run', { ...read, runId, ...planFacts, hint: runExistsHint }, isRejected(runObserved))
+        }
         const summary = summarizeRun(run, plannedJobs(plan))
-        return finish('run', { ...summary, ...planFacts,
+        return finish('run', { runId, ...summary, ...planFacts,
             ...(summary.complete === false && summary.nextAction === 'wait'
                 ? { hint: 'Still generating. Call generation.get_run with this runId and waitSeconds; do not run again.' } : {}) }, false)
     }
@@ -306,7 +323,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
                 images.push({ artifactId, contentChecksum: result.contentChecksum, width: resource?.width, height: resource?.height })
                 attachments.push(...await previewAttachments(state, requestId))
             } else images.push({ artifactId, ...compactObservation(observed, result) })
-            if (observed.status === 'adapter-error') break
+            if (observed.status === 'adapter-error' || observed.status === 'observation-cancelled' || state.signal.aborted) break
         }
         // Preview images follow in the order of the rows that carry a contentChecksum.
         return respond('artifact.get_images', args.full ? { observations } : { images }, observations.some(isRejected), attachments)
@@ -314,7 +331,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
 
     function parseArguments(state: CallState, tool: string, value: unknown): CallArguments {
         const args = (value ?? {}) as Record<string, unknown>
-        const input = args.input ?? {}
+        const input = args.input === undefined ? {} : args.input
         if (typeof args !== 'object' || Array.isArray(args) || Object.keys(args).some(key => !argumentKeys.has(key))
             || input === null || typeof input !== 'object' || Array.isArray(input)
             || ![undefined, 'summary', 'full'].includes(args.detail as string | undefined)
@@ -323,9 +340,9 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const waits = tool === 'generation.run' || tool === 'generation.get_run'
         if (args.waitSeconds !== undefined && (!waits || !Number.isSafeInteger(args.waitSeconds)
             || Number(args.waitSeconds) < 0 || Number(args.waitSeconds) > MAX_WAIT_SECONDS)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
-        const include = args.include ?? []
-        if (!Array.isArray(include) || (include.length > 0 && tool !== 'workspace.get_snapshot')
-            || include.some(name => !Object.prototype.hasOwnProperty.call(SNAPSHOT_LISTS, String(name)))) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        const include = args.include === undefined ? [] : args.include
+        if (!Array.isArray(include) || (args.include !== undefined && tool !== 'workspace.get_snapshot')
+            || include.some(name => typeof name !== 'string' || !Object.prototype.hasOwnProperty.call(SNAPSHOT_LISTS, name))) throw new AgentCommandError('INVALID_COMMAND_INPUT')
         if (args.requestId !== undefined) {
             assertAgentRequestId(args.requestId)
             assertAgentPublicValue({ requestId: args.requestId })
@@ -354,18 +371,19 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
                 return await callCommand(state, tool, args.command as AgentCommandName, args)
             }
             // Every contract-backed command stays callable by its own name, including those no longer advertised.
+            if (!AGENT_COMMAND_NAMES.includes(tool as AgentCommandName)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
             return await callCommand(state, tool, tool as AgentCommandName, args)
         } catch (error) {
+            // A failure after submission names the request so the agent can inspect it instead of resubmitting.
             const result: JsonObject = state.attempted
-                ? { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true }
+                ? { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true,
+                    ...(state.lastRequestId ? { requestId: state.lastRequestId } : {}) }
                 : { status: 'adapter-error', requiresAppProcess: true, accepted: false, submissionAttempted: false,
                     code: error instanceof AgentCommandError && ['UNSAFE_PAYLOAD', 'REQUEST_CANCELLED'].includes(error.code)
                         ? error.code : 'INVALID_COMMAND_INPUT' }
             if (full) return respond(tool, result, true)
             const { requiresAppProcess: _requiresAppProcess, ...compact } = result
-            // A failure after submission names the request so the agent can inspect it instead of resubmitting.
-            const requestId = state.attempted ? state.lastRequestId : undefined
-            return respond(tool, { ...compact, ...(requestId ? { requestId } : {}), hint: state.hint ?? agentHint(result, requestId) }, true)
+            return respond(tool, { ...compact, hint: state.hint ?? agentHint(result, state.attempted ? state.lastRequestId : undefined) }, true)
         }
     })
 

@@ -74,7 +74,7 @@ export function listAgentMcpTools() {
         tool('generation.get_run', contractInput('generation.get_run'), ['waitSeconds']),
         tool('generation.cancel', contractInput('generation.cancel')),
         tool('generation.retry_storage', contractInput('generation.retry_storage')),
-        tool('artifact.get_images', fields({ artifactIds: { type: 'array', items: text } })),
+        tool('artifact.get_images', fields({ artifactIds: { type: 'array', items: text, maxItems: MAX_IMAGES_PER_CALL } })),
         tool('r2.get_readiness', contractInput('r2.get_readiness')),
         tool('advanced.call', { type: 'object' }, [], { command: { enum: [...ADVANCED_COMMANDS] } }),
     ]

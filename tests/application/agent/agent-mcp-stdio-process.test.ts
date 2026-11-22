@@ -126,11 +126,18 @@ async function connect(root: string, waitMs = 700, clientId?: string) {
     clients.push(client)
     await client.connect(transport, { timeout: 10_000 })
     // These cases pin receipt-level facts, which a call returns only with detail:"full".
+    // Calls enter the sidecar one at a time, as they always did here: the fixture's file publication is not
+    // built for overlapping requests under a loaded test run.
     const call = client.callTool.bind(client)
-    vi.spyOn(client, 'callTool').mockImplementation(async (params, ...rest) => {
-        const result = await call({ ...params, arguments: { detail: 'full', ...params.arguments } }, ...rest)
-        const first = (result.content as { type: string; text?: string }[])[0]
-        return { ...result, structuredContent: JSON.parse(String(first.text)) }
+    let admission = Promise.resolve()
+    vi.spyOn(client, 'callTool').mockImplementation((params, ...rest) => {
+        let pending!: ReturnType<typeof call>
+        const start = admission.then(() => { pending = call({ ...params, arguments: { detail: 'full', ...params.arguments } }, ...rest) })
+        admission = start.then(() => pending).then(() => {}, () => {})
+        return start.then(() => pending).then(result => {
+            const first = (result.content as { type: string; text?: string }[])[0]
+            return { ...result, structuredContent: JSON.parse(String(first.text)) }
+        })
     })
     expect(client.getServerVersion()).toMatchObject({ name: 'nai-blue-agent-spike' })
     expect(client.getNegotiatedProtocolVersion()).toBeDefined()

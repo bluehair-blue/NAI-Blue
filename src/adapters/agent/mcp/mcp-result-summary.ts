@@ -35,7 +35,7 @@ function summarizeScenes(result: Row): Row {
     return { results: rows(result.results).map(scene => ({
         ...pick(scene, ['presetId', 'sceneId', 'found', 'name', 'revision', 'promptTextMode', 'width', 'height',
             'productionCount', 'filenameTemplate', 'generationFolderId', 'imageSource', 'totalArtifactCount']),
-        ...pick(row(scene.generation) ?? {}, ['model']), ...filled('artifactIds', scene.artifactIds),
+        ...pick(row(scene.generation) ?? {}, ['model', 'ucPreset', 'qualityToggle']), ...filled('artifactIds', scene.artifactIds),
     })), ...pick(result, ['nextIndex']), ...(result.truncated === true ? { truncated: true } : {}) }
 }
 
@@ -70,7 +70,8 @@ export function summarizeResult(command: AgentCommandName, result: JsonObject, i
         case 'generation.get_run': return summarizeRun(result)
         case 'generation.enqueue': return typeof result.runId === 'string' && Array.isArray(result.jobIds)
             ? { ...pick(result, ['status', 'runId']), jobCount: result.jobIds.length } : result
-        case 'scene.patch_many': return typeof result.status === 'string' ? pick(result, ['status', 'resourceId', 'revision']) : result
+        // Any other status may carry diagnostics, which a summary must not drop.
+        case 'scene.patch_many': return result.status === 'authoring-committed' ? pick(result, ['status', 'resourceId', 'revision']) : result
         default: return result
     }
 }

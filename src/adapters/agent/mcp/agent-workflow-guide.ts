@@ -7,14 +7,14 @@ export const AGENT_MCP_INSTRUCTIONS = `NAI Blue tools work directly; no guide re
 
 export const AGENT_TOOL_DESCRIPTIONS = {
     'workspace.get_snapshot': 'Consent status, queue activity and totals. Lists are omitted unless named in include (paginated with input.offset/limit).',
-    'scene.resolve_many': 'Current revision, settings and artifactIds of existing Scenes. detail:"full" adds prompt text.',
+    'scene.resolve_many': 'Current revision, size, model and artifactIds of existing Scenes. detail:"full" adds prompt text and every generation setting.',
     'scene.patch_many': 'Create or edit up to 100 Scenes at the preset\'s current revision. New Scenes need caller-owned sceneId and name; a new preset also needs presetName and expectedRevision 0. Does not generate.',
     'generation.run': 'Plan, enqueue and wait in one call, at most 100 images. Returns complete, counts and artifacts (artifactId, sceneId, seed, fileName); an unfinished stage returns its requestId or runId to follow. planOnly:true previews cost and returns planId/planHash without enqueueing. If a call is cut off or its outcome is unknown, never run again: read nai-blue://requests/{requestId}-enq. Never operate NAI Blue through Computer Use or UI automation.',
     'generation.enqueue': 'Submit an exact planId and planHash (from planOnly or production.plan_next) to the Queue. Returns runId. Never resubmit to force a result.',
     'generation.get_run': 'Run progress: complete, counts, artifactIds, next action. waitSeconds waits for completion. jobId with detail:"full" inspects one job.',
     'generation.cancel': 'Request cancellation of a run; read the run afterwards for the actual outcome.',
     'generation.retry_storage': 'Re-save retained output of one job without regenerating.',
-    'artifact.get_images': 'View up to 8 saved images by artifactId. Returns each original\'s checksum and a preview image.',
+    'artifact.get_images': 'View up to 4 saved images by artifactId. Returns each original\'s checksum and a preview image.',
     'r2.get_readiness': 'Whether R2 upload is ready. Folder preferences alone are not proof of delivery.',
     'advanced.call': `Rare commands: folder.plan_changes, folder.apply_changes, production.create, production.list, production.get, production.plan_next. Input shapes: ${AGENT_GUIDE_URI_PREFIX}advanced`,
 } as const
@@ -27,7 +27,7 @@ Usual order
 1. workspace.get_snapshot: consent status (editingApproval, generationApproval) and totals. Add include:["presets"|"scenes"|"folders"|"drafts"] only to look up existing IDs and revisions.
 2. scene.patch_many: create or edit Scenes. New Scenes need a caller-owned sceneId and name; a new preset also needs presetId, presetName and expectedRevision 0. Editing needs the preset's current revision (scene.resolve_many).
 3. generation.run: plans, enqueues and waits in one call (requestId required). Finished only when complete is true; the result lists artifacts. planOnly:true only previews.
-4. artifact.get_images: view up to 8 saved images per call.
+4. artifact.get_images: view up to 4 saved images per call.
 
 Facts that prevent mistakes
 - One plan covers at most 100 images total. budget.maxImages (at most 100) and budget.maxAnlas are required; a plan over budget is rejected and nothing is spent.
@@ -59,7 +59,7 @@ const RECOVERY = `# Recovery
 - nextAction resume-in-app: the run is paused; the human resumes it in NAI Blue.
 - recoveryActions retry-storage: generation.retry_storage {runId, jobId} re-saves retained output without regenerating. Read the run afterwards.
 - generation.cancel only requests cancellation. Read the run afterwards.
-- One job in depth: generation.get_run with jobId and detail:"full" shows attempts, the retained response checksum, the output reservation and the committed original. localOutputVerified is retained-byte evidence only, not a Provider outcome or billing fact.
+- One job in depth (its jobId is the artifactId without the "artifact:" prefix): generation.get_run with jobId and detail:"full" shows attempts, the retained response checksum, the output reservation and the committed original. localOutputVerified is retained-byte evidence only, not a Provider outcome or billing fact.
 - output-destination-occupied / revise-scene-filename-template: that exact filename exists. Change filenameTemplate with scene.patch_many; never overwrite or delete the existing result. It is not a revision error.
 - A rejected plan has no planId. Use its issue fieldPath and nextAction to repair, then plan again.
 - draft-resolution-required on a workflow draft: its saved resolution is empty. Ask the human to repair the draft, or use Scene targets. It is not an approval denial.

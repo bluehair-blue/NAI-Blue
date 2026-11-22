@@ -241,6 +241,42 @@ describe('MCP adapter default view for agents', () => {
         expect(closed.invokes).toEqual([])
     })
 
+    it('never reports an enqueued run as unsubmitted and tells an unsubmitted enqueue apart from a failed one', async () => {
+        let checks = 0
+        const closedAfterEnqueue = await fixture({}, { runtimeStatus: async () => ++checks <= 2 ? { status: 'ready' } : { status: 'unavailable', code: 'APP_NOT_RUNNING' } })
+        const run = await closedAfterEnqueue.call('generation.run', { requestId: 'closed-after', input: planInput })
+        expect(closedAfterEnqueue.names()).toEqual(['generation.plan', 'generation.enqueue'])
+        expect(run.body).toMatchObject({ stage: 'run', runId, status: 'adapter-error', code: 'APP_NOT_RUNNING', hint: expect.stringContaining('do not run again') })
+        expect(run.body).not.toHaveProperty('submissionAttempted')
+        expect(run.body).not.toHaveProperty('accepted')
+
+        checks = 0
+        const blockedBeforeEnqueue = await fixture({}, { runtimeStatus: async () => { if (++checks > 1) throw new Error('locator failed'); return { status: 'ready' } } })
+        const enqueue = await blockedBeforeEnqueue.call('generation.run', { requestId: 'not-enqueued', input: planInput })
+        expect(blockedBeforeEnqueue.names()).toEqual(['generation.plan'])
+        expect(enqueue).toMatchObject({ isError: true, body: { stage: 'enqueue', code: 'ENQUEUE_NOT_SUBMITTED', planId, planHash,
+            hint: expect.stringContaining('generation.enqueue') } })
+        expect(enqueue.body).not.toHaveProperty('requestId')
+
+        let polls = 0
+        const unanswered = await fixture({ 'generation.get_run': (command, id) => ++polls === 1 ? observed(id, command.name, runResult(false))
+            : { status: 'submitted-to-inbox', requestId: id, requiresAppProcess: true, accepted: false } })
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        const pending = unanswered.call('generation.get_run', { input: { runId }, waitSeconds: 20 })
+        await vi.advanceTimersByTimeAsync(2000)
+        expect((await pending).body).toMatchObject({ state: 'completed', result: { complete: false, nextAction: 'wait' } })
+    })
+
+    it('rejects malformed adapter options before anything is submitted', async () => {
+        const f = await fixture()
+        for (const [name, args] of [['workspace.get_snapshot', { input: null }], ['workspace.get_snapshot', { include: null }],
+            ['workspace.get_snapshot', { include: [['drafts']] }], ['scene.resolve_many', { include: [] }],
+            ['generation.get_run', { input: { runId }, planOnly: true }], ['toString', {}], ['generation.plan', { input: planInput, detail: 'verbose' }]] as const) {
+            expect((await f.call(name, args as unknown as JsonObject)).body, name).toMatchObject({ status: 'adapter-error', code: 'INVALID_COMMAND_INPUT', submissionAttempted: false })
+        }
+        expect(f.invokes).toEqual([])
+    })
+
     it('keeps the fixed per-session cost small and reports sizes for measurement without content', async () => {
         const f = await fixture()
         const listed = await f.client.listTools()

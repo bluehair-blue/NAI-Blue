@@ -396,7 +396,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         const result = await f.client.callTool({ name: 'generation.get_run',
             arguments: { requestId: 'request-1', input: { runId: 'run-1' } } })
         expect(f.invokes).toHaveLength(1)
-        expect(result.structuredContent).toEqual({ status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true })
+        expect(result.structuredContent).toEqual({ status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true, requestId: 'request-1' })
     })
 
     it('passes gesture prose unchanged through pre-inbox safety validation', async () => {
@@ -538,7 +538,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
             Object.assign(bad.receipt as JsonObject, { result: unsafe, resultDigest: `sha256:${hashCanonicalValue(unsafe)}` })
             const f = await fixture({ invoke: async () => bad, inspect: async () => bad })
             expect((await f.client.callTool({ name: 'generation.get_run', arguments: { requestId: 'request-1', input: { runId: 'run-1' } } })).structuredContent)
-                .toEqual({ status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true })
+                .toEqual({ status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true, requestId: 'request-1' })
             await expect(f.client.readResource({ uri: 'nai-blue://requests/request-1' })).rejects.toThrow('Agent resource is unavailable.')
         }
         for (const bad of [observed('other-request', 'generation.get_run'), observed('request-1', 'generation.cancel'),

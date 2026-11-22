@@ -69,6 +69,11 @@
 - 반영: 끊긴 `generation.run`의 복구 경로(필수 `requestId`), 단계별 실패 보고, 호출 전체 시간 상한, 행동 규칙을 설명과 `hint`에도 두기, 작은 범위 제약 유지, 이미지 묶음 축소와 순차 읽기, `generation.plan`을 `planOnly`로 합치기, 사용 기록 끄는 인수
 - 반영하지 않음: 경고가 있는 계획에서 자동 등록을 멈추기(항상 승인이 켜져 있으면 확인을 더하지 않는다는 기존 결정과 어긋난다. 예산 상한이 비용을 막는다), 가이드 주제 수 줄이기(주제는 읽을 때만 비용이 든다), `scene.retry_link`와 `output.abandon_reservation`의 누락(입력 계약이 없어 예전에도 목록에 없었다)
 
+구현을 마친 뒤 diff를 한 번 더 보였다.
+
+- 반영: 등록된 뒤의 조회 실패를 미제출처럼 보이게 하던 필드 제거, 등록이 inbox에 들어가기 전에 실패한 경우의 구분(`ENQUEUE_NOT_SUBMITTED`), 대기 중 취소와 응답 없는 조회에서 앞선 진행 상태 유지, 짧은 `waitSeconds`가 대기 없이 끝나던 계산, `input: null`·잘못된 `include`의 제출 전 거절, 제출 뒤 오류에 `requestId` 싣기, 이미지 장수 문구(8 → 4)와 `maxItems`, `scene.patch_many`의 성공 아닌 상태를 줄이지 않기
+- 반영하지 않음: `generation.get_run` 요약의 다음 쪽 커서(앱이 `truncated`만 준다), 틀린 입력의 필드 위치(계약 검증기가 주지 않는다)
+
 ## 바꾸지 않은 것
 
 - 요청 서명, inbox 파일 흐름, 영수증 저장과 재생, 실행 중인 앱의 해시 확인, 읽기 명령이 닫힌 앱을 켜지 않는 규칙
@@ -77,7 +82,8 @@
 
 ## 검증
 
-- 에이전트 테스트 191개, 런타임 가드 테스트 7개, 타입 검사, 린트, 구조 검사 통과. 새 기본 동작은 `tests/application/agent/mcp-token-efficiency.test.ts`가, 영수증 수준의 계약은 `detail: "full"`로 기존 두 테스트가 지킨다
+- 전체 테스트 2,864개, 런타임 가드 테스트 7개, 타입 검사, 린트, 구조 검사 통과. 새 기본 동작은 `tests/application/agent/mcp-token-efficiency.test.ts`가, 영수증 수준의 계약은 `detail: "full"`로 기존 테스트가 지킨다
+- 전체를 한꺼번에 돌리면 `agent-mcp-stdio-process.test.ts`의 프로세스 종료 시험이 가끔 3초 대기를 넘겨 실패한다(세 번 중 한 번). 단독으로는 매번 통과한다. 이번 변경 전에도 그랬는지는 확인하지 못했다
 - 설치본 1.3.6(실행 중)에 등록된 연결로 읽기 호출을 확인했다. `workspace.get_snapshot` 414자(예전 중앙값 11,251자), 완료된 실행의 `generation.get_run` 974자, `scene.resolve_many` 561자, `artifact.get_images`로 이미지 2장을 한 호출에 받았다
 - 하지 않은 것: `generation.run`의 실제 생성, 호스트별(Pi, Codex, Claude Code) 동작, `scripts/qa-phase10c-mcp-native.mjs`의 실행(고치기만 했다)
 
