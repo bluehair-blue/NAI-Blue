@@ -44,7 +44,7 @@ ADR-016 5절의 "`waitSeconds`는 완료 대기 시간"이 "호출 전체의 예
 
 ### 5. 실행 이력 정리
 
-종결 레코드는 최근 200건만 온전히 두고, 그보다 오래된 것은 `{ requestId, clientId, idempotencyKey }`만 `compacted` 목록(최근 5,000건)으로 옮긴다. 옮기는 조건은 넷이다.
+종결 레코드는 최근 200건만 온전히 두고, 그보다 오래된 것은 `{ requestId, clientId, idempotencyKey }`만 `compacted` 목록(최근 5,000건)으로 옮긴다(보관 건수는 [ADR-018](ADR-018-agent-timings-previews-import-location.md) 6절에서 50건으로 줄였다). 옮기는 조건은 넷이다.
 
 - 상태가 `completed`나 `rejected`다
 - `expiresAt`이 지났다. 방금 종결된 요청의 결과 파일이 쓰이기 전에 옮겨지는 일을 막는다
