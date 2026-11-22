@@ -201,6 +201,7 @@ function projectAuthoringScene(
     scene: SceneCard,
     authority: SceneAuthoringRecord | undefined,
     managedArtifactIds: Set<string> | undefined,
+    onManagedGrowth: (() => void) | undefined,
 ): SceneAuthoringRecord {
     const imagesById = new Map(scene.images.map(image => [image.id, image]))
     const artifactRefs = authority === undefined
@@ -208,7 +209,10 @@ function projectAuthoringScene(
         : authority.artifactRefs.flatMap(reference => {
             const image = imagesById.get(reference.artifactId)
             if (image !== undefined) {
-                managedArtifactIds?.add(reference.artifactId)
+                if (managedArtifactIds !== undefined && !managedArtifactIds.has(reference.artifactId)) {
+                    managedArtifactIds.add(reference.artifactId)
+                    onManagedGrowth?.()
+                }
                 return [{ ...reference, favorite: image.isFavorite }]
             }
             if (!managedArtifactIds?.has(reference.artifactId)) return [{ ...reference }]
@@ -243,13 +247,27 @@ function projectPreset(
     preset: ScenePreset,
     authority: SceneDocument | undefined,
     managedArtifactIds: ReadonlyMap<string, Set<string>> | undefined,
+    onManagedGrowth?: () => void,
 ): readonly SceneAuthoringRecord[] {
     const authorityById = new Map(authority?.scenes.map(scene => [scene.id, scene]) ?? [])
     return preset.scenes.map(scene => projectAuthoringScene(
         scene,
         authorityById.get(scene.id),
         managedArtifactIds?.get(scene.id),
+        onManagedGrowth,
     ))
+}
+
+/**
+ * What one projection of a preset read. projectPreset is a pure function of the Scene array (immutable in the store),
+ * the authority document (replaced, never mutated) and the managed-ID sets, which only grow and count each growth.
+ * The same three inputs therefore give the same hash, and an explicit flush can reuse it instead of re-projecting.
+ */
+interface ScannedPreset {
+    readonly presetId: string
+    readonly authority: SceneDocument | undefined
+    readonly managedGrowth: number
+    readonly hash: string
 }
 
 function authoringHash(scenes: readonly SceneAuthoringRecord[]): string {
@@ -377,6 +395,15 @@ export async function activateSceneAuthorityRuntime(
     const latest = new Map<string, readonly SceneAuthoringRecord[]>()
     const inFlightHashes = new Map<string, string>()
     const running = new Map<string, Promise<void>>()
+    // Keyed by the immutable Scene array: an unchanged preset (archived or not) costs a lookup, not a projection.
+    const scanned = new WeakMap<readonly SceneCard[], ScannedPreset>()
+    const managedGrowth = new Map<string, number>()
+    const projectLive = (preset: ScenePreset, document: SceneDocument | undefined) => projectPreset(
+        preset,
+        document,
+        artifactPresentation?.managedIds.get(preset.id),
+        () => managedGrowth.set(preset.id, (managedGrowth.get(preset.id) ?? 0) + 1),
+    )
     let applying = true
     let stopped = false
     let failure: unknown = null
@@ -441,11 +468,7 @@ export async function activateSceneAuthorityRuntime(
                             .find(preset => preset.id === presetId)
                         const liveHash = livePreset === undefined
                             ? null
-                            : authoringHash(projectPreset(
-                                livePreset,
-                                current,
-                                artifactPresentation?.managedIds.get(presetId),
-                            ))
+                            : authoringHash(projectLive(livePreset, current))
                         if (liveHash === authoringHash(scenes)) {
                             apply(result.document)
                         } else {
@@ -485,16 +508,25 @@ export async function activateSceneAuthorityRuntime(
         const previousScenes = new Map(previous?.presets.map(preset => [preset.id, preset.scenes]))
         for (const preset of state.presets) {
             if (previousScenes.get(preset.id) === preset.scenes) continue
-            const scenes = projectPreset(
-                preset,
-                authority.get(preset.id),
-                artifactPresentation?.managedIds.get(preset.id),
-            )
-            const hash = authoringHash(scenes)
-            if (detail) { detail.presetsProjected += 1; detail.scenesProjected += scenes.length }
+            const document = authority.get(preset.id)
+            const growth = managedGrowth.get(preset.id) ?? 0
+            const cached = scanned.get(preset.scenes)
+            let scenes: readonly SceneAuthoringRecord[] | undefined
+            let hash: string
+            if (cached?.presetId === preset.id && cached.authority === document && cached.managedGrowth === growth) {
+                hash = cached.hash
+                if (detail) detail.presetsReused += 1
+            } else {
+                scenes = projectLive(preset, document)
+                hash = authoringHash(scenes)
+                scanned.set(preset.scenes, { presetId: preset.id, authority: document,
+                    managedGrowth: managedGrowth.get(preset.id) ?? 0, hash })
+                if (detail) { detail.presetsProjected += 1; detail.scenesProjected += scenes.length }
+            }
+            // The hash is compared with the current revision state every time; only the projection is reused.
             if (hashes.get(preset.id) === hash || inFlightHashes.get(preset.id) === hash) continue
             if (detail) detail.presetsChanged += 1
-            latest.set(preset.id, scenes)
+            latest.set(preset.id, scenes ?? projectLive(preset, document))
             run(preset.id)
         }
     }
@@ -546,9 +578,9 @@ export async function activateSceneAuthorityRuntime(
             applying = false
         },
         flush: () => measureSpan('scene-authority:flush', async () => {
-            // An explicit flush projects and hashes every preset, unlike the store subscription.
+            // An explicit flush checks every preset, unlike the store subscription, but re-projects only changed inputs.
             measureSpanSync('scene-authority:scan', detail => {
-                Object.assign(detail, { presetsProjected: 0, scenesProjected: 0, presetsChanged: 0 })
+                Object.assign(detail, { presetsProjected: 0, scenesProjected: 0, presetsReused: 0, presetsChanged: 0 })
                 scan(undefined, undefined, detail)
             })
             if (running.size > 0 || latest.size > 0) await measureSpan('scene-authority:drain', async detail => {

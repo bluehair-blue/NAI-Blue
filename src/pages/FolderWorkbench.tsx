@@ -25,7 +25,7 @@ import { collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, f
 import { useFolderQueueActivity } from '@/presentation/folders/folder-queue-activity'
 import { emptyFolderView, loadFolderWorkbenchView, saveFolderWorkbenchView, type FolderView } from '@/presentation/folders/folder-workbench-draft'
 import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type PreparedSceneQueueReview, type SceneQueueSubmission, type SceneQueueTarget } from '@/services/queue/scene-queue-adapter'
-import { resolveScenePrompts, type SceneFolderTemplate, useSceneStore } from '@/stores/scene-store'
+import { resolveScenePrompts, type SceneFolderTemplate, useSceneStore, visibleScenePresets } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useQueueStore } from '@/stores/queue-store'
 import { runtimeCapabilities } from '@/platform/capabilities'
@@ -44,7 +44,8 @@ export default function FolderWorkbench() {
     const setActiveFolder = useSettingsStore(state => state.setActiveGenerationFolder)
     const savePath = useSettingsStore(state => state.savePath)
     const useAbsolutePath = useSettingsStore(state => state.useAbsolutePath)
-    const presets = useSceneStore(state => state.presets)
+    // Archived presets are out of the working set: their Scenes are neither listed, counted nor runnable here.
+    const presets = useSceneStore(state => visibleScenePresets(state.presets))
     const sceneAuthorityReady = useSceneStore(state => state.sceneAuthorityInitialized)
     const setSceneProductionCounts = useSceneStore(state => state.setSceneProductionCounts)
     const selectBatch = useQueueStore(state => state.setSelectedBatchId)

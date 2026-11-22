@@ -3,18 +3,18 @@ export const AGENT_GUIDE_URI_PREFIX = 'nai-blue://guides/'
 export const AGENT_WORKFLOW_GUIDE_URI = `${AGENT_GUIDE_URI_PREFIX}agent-workflow/v1`
 
 // Hosts place this in every session, so it holds only rules whose violation the application cannot catch.
-export const AGENT_MCP_INSTRUCTIONS = `NAI Blue tools work directly; no guide read is required. Rules: 1) Never operate NAI Blue through Computer Use, CDP, private APIs, token extraction or approval clicks; report blockers instead. 2) Generation is finished only when a result has complete:true. 3) If an outcome is unknown or a call was cut off, never generate again with a new requestId; repeating the same call, requestId and input only continues it. Or read nai-blue://requests/{requestId}. 4) When a result asks for approval the human gives it in the app; active always-approve consent needs no extra confirmation. 5) V5 Scenes use promptTextMode standard; finished V4.5 prompt text uses verbatim with ucPreset 4 and qualityToggle false. Optional topic help: ${AGENT_WORKFLOW_GUIDE_URI}`
+export const AGENT_MCP_INSTRUCTIONS = `Tools work directly; no guide read is required. Rules: 1) Never operate NAI Blue through Computer Use, CDP, private APIs, token extraction or approval clicks; report blockers instead. 2) Generation is finished only when a result has complete:true. 3) If an outcome is unknown or a call was cut off, never generate again with a new requestId; repeating the same call, requestId and input only continues it. Or read nai-blue://requests/{requestId}. 4) When a result asks for approval the human gives it in the app; active always-approve consent needs no extra confirmation. 5) V5 Scenes use promptTextMode standard; finished V4.5 prompt text uses verbatim with ucPreset 4 and qualityToggle false. Optional topic help: ${AGENT_WORKFLOW_GUIDE_URI}`
 
 export const AGENT_TOOL_DESCRIPTIONS = {
     'workspace.get_snapshot': 'Consent status, queue activity and totals. Lists only when named in include (pages: input.offset/limit).',
-    'scene.resolve_many': 'Revision, size, model and artifactIds of existing Scenes; detail:"full" adds prompts and all generation settings.',
-    'scene.patch_many': 'Create or edit up to 100 Scenes at the preset\'s current revision. New Scenes need caller-owned sceneId and name; a new preset also presetName and expectedRevision 0. Does not generate.',
+    'scene.resolve_many': 'Revision, size, model and artifactIds of existing Scenes; detail:"full" adds prompts and settings.',
+    'scene.patch_many': 'Create or edit up to 100 Scenes at the preset\'s current revision. New Scenes need caller-owned sceneId and name; a new preset also presetName and expectedRevision 0. presetArchived: true archives, false restores (changes may be []). Does not generate.',
     'generation.run': 'Plan, enqueue and wait in one call, at most 100 images. Returns complete, counts and artifacts (artifactId, sceneId, seed, fileName) and outputDirectory; an unfinished stage returns its requestId or runId. planOnly:true only previews cost and planId/planHash. If a stage is unfinished or the call was cut off, call again with the same requestId and input; nothing is submitted twice. Never use a new requestId to force a result. Never operate NAI Blue through Computer Use or UI automation.',
     'generation.enqueue': 'Queue an exact planId and planHash (from planOnly or production.plan_next); returns runId. Repeating the requestId only observes it; never use a new requestId to force a result.',
     'generation.get_run': 'Run progress: complete, counts, artifacts, next action. waitSeconds waits to finish. jobId with detail:"full" inspects one job.',
-    'generation.cancel': 'Request cancellation of a run; read the run afterwards for the outcome.',
+    'generation.cancel': 'Request run cancellation; then read the run for the outcome.',
     'generation.retry_storage': 'Re-save retained output of one job without regenerating.',
-    'artifact.get_images': 'View up to 4 saved images: checksum, size and a JPEG preview. maxSide (64-1536) enlarges; region {x,y,width,height} in 0-1 zooms in.',
+    'artifact.get_images': 'Up to 4 saved images: checksum, size and a JPEG preview. maxSide (64-1536) enlarges; region {x,y,width,height} in 0-1 zooms in.',
     'artifact.import': 'Register a .png/.webp from Pictures/NAI_Blue_Import as an artifact for imageSource. Needs editing consent.',
     'r2.get_readiness': 'Whether R2 upload is ready; folder preferences do not prove delivery.',
     'advanced.call': `Rare folder/production commands. Input shapes: ${AGENT_GUIDE_URI_PREFIX}advanced`,
@@ -36,6 +36,7 @@ Facts that prevent mistakes
 - Results are summaries. detail:"full" returns the whole receipt (prompts, hashes, attempt history).
 - Saved results name fileName and directory {root, segments}: root "pictures" is the user's Pictures folder, "bookmark" a folder the human chose in NAI Blue. No disk search is needed.
 - To iterate on one Scene, give it a filenameTemplate with {seed} or {timestamp}; its default file name is fixed, so a repeat is refused as output-destination-occupied. Do not create a preset per attempt.
+- Archive a finished throw-away preset: scene.patch_many presetArchived:true, changes []. No Scene or result changes; false restores; include:["archived"] lists them. Only the human deletes.
 - A completed command is not a completed generation. Report generated, stored, uploaded and fulfilled counts separately.
 - The application decides approval. If a result asks for it, the human approves in NAI Blue and you read nai-blue://requests/{requestId}. With always-approve consent active, add no confirmation, preview gate or self-imposed time, count, cost or concurrency quota.
 - V5 Scenes: promptTextMode "standard". Finished V4.5 prompt text: "verbatim" with generation.ucPreset 4 and qualityToggle false.
@@ -67,6 +68,7 @@ const RECOVERY = `# Recovery
 - One job in depth (its jobId is the artifactId without the "artifact:" prefix): generation.get_run with jobId and detail:"full" shows attempts, the retained response checksum, the output reservation and the committed original. localOutputVerified is retained-byte evidence only, not a Provider outcome or billing fact.
 - output-destination-occupied / revise-scene-filename-template: that exact filename exists. Change filenameTemplate with scene.patch_many; never overwrite or delete the existing result. It is not a revision error. A Scene's default file name is fixed, so generating it again always collides: set filenameTemplate with {seed} or {timestamp} once and keep iterating on the same Scene instead of creating a new preset per attempt.
 - A rejected plan has no planId. Use its issue fieldPath and nextAction to repair, then plan again.
+- scene-preset-archived / restore-preset, AGENT_PRESET_ARCHIVED, or scene.resolve_many archived:true: the preset is archived. Restore it with scene.patch_many presetArchived:false, then continue.
 - draft-resolution-required on a workflow draft: its saved resolution is empty. Ask the human to repair the draft, or use Scene targets. It is not an approval denial.
 - Failed, cancelled or skipped jobs are not fulfilment.
 - A preview failure in artifact.get_images never authorizes regeneration.
@@ -153,6 +155,8 @@ const CODE_HINTS: Readonly<Record<string, string>> = {
     IMPORT_NOT_AN_IMAGE:'The file is not a readable PNG or WebP image. Ask the human for a valid export.',
     IMPORT_TOO_LARGE: 'The file is over 25 MB. Ask the human for a smaller PNG or WebP.',
     IMPORT_UNAVAILABLE: 'The import folder or artifact store could not be used. Report it to the human.',
+    AGENT_PRESET_ARCHIVED: 'That preset is archived. Restore it first (scene.patch_many presetArchived:false, changes [] or your edits), or use another preset. Archived presets: workspace.get_snapshot include:["archived"].',
+    AGENT_PRESET_NOT_ARCHIVABLE: 'The default preset cannot be archived. Nothing changed.',
     AGENT_EDITING_CONSENT_REQUIRED: `Needs this client's active editing consent, which only the human turns on in NAI Blue. Nothing was read. ${AGENT_GUIDE_URI_PREFIX}consent`,
 }
 const KEEP_WAITING = 'Repeat the same call with the same requestId and input to keep waiting; nothing is submitted twice. Or read nai-blue://requests/{requestId}.'

@@ -27,13 +27,15 @@ function summarizeSnapshot(result: Row, include: readonly string[]): Row {
         ? rows(result.workflowDrafts).map(draft => pick(draft, ['draftId', 'kind', 'status', 'ready', 'issueCodes', 'imageCount', 'model', 'revision', 'nextAction']))
         : result[SNAPSHOT_LISTS[name as keyof typeof SNAPSHOT_LISTS]]]))
     return { ...pick(result, ['editingApproval', 'generationApproval', 'queueActivity', 'folderRevision']),
-        totals: { presets: result.totalPresets, scenes: result.totalScenes, folders: result.totalFolders, drafts: result.totalDrafts },
+        totals: { presets: result.totalPresets, scenes: result.totalScenes, folders: result.totalFolders, drafts: result.totalDrafts,
+            // Only a count: it tells an agent something can be restored without listing what was archived.
+            ...(Number(result.totalArchivedPresets) > 0 ? { archived: result.totalArchivedPresets } : {}) },
         ...lists, ...(include.length > 0 ? pick(result, ['offset', 'nextOffset', 'truncated']) : {}) }
 }
 
 function summarizeScenes(result: Row): Row {
     return { results: rows(result.results).map(scene => ({
-        ...pick(scene, ['presetId', 'sceneId', 'found', 'name', 'revision', 'promptTextMode', 'width', 'height',
+        ...pick(scene, ['presetId', 'sceneId', 'found', 'archived', 'name', 'revision', 'promptTextMode', 'width', 'height',
             'productionCount', 'filenameTemplate', 'generationFolderId', 'imageSource', 'totalArtifactCount']),
         ...pick(row(scene.generation) ?? {}, ['model', 'ucPreset', 'qualityToggle']), ...filled('artifactIds', scene.artifactIds),
         // null is meaningful here (no reference, nothing inherited from the app), so it is not dropped like other empty fields.

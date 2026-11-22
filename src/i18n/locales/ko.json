@@ -1590,7 +1590,17 @@
             "templateFolderCount": "선택한 폴더 중 {{count}}개에 기본값이 있습니다.",
             "nextStepTitle": "다음 할 일",
             "nextStepDescription": "완료를 누른 뒤 씬 화면에서 이 폴더를 선택하고 [+ 씬 추가]를 누르세요. 지정한 기본값이 채워진 편집 화면이 열립니다.",
-            "done": "완료하고 씬 화면으로"
+            "done": "완료하고 씬 화면으로",
+            "archiveSelected": "선택 폴더 보관",
+            "archivedCount": "{{count}}개 폴더를 보관함으로 옮겼습니다",
+            "archivedDescription": "씬과 결과 이미지는 그대로입니다. 아래 보관함에서 복원하거나 삭제할 수 있습니다.",
+            "archiveTitle": "보관함 ({{count}})",
+            "archivedRowSummary": "폴더 {{folders}}개 · 씬 {{scenes}}개",
+            "restore": "복원",
+            "delete": "삭제",
+            "restoreNamed": "{{name}} 복원",
+            "deleteNamed": "{{name}} 삭제",
+            "restoredNamed": "{{name}} 폴더를 복원했습니다"
         },
         "metadataPolicy": {
             "title": "이미지 메타데이터",
@@ -3841,6 +3851,10 @@
         }
     },
     "agentInbox": {
+        "presetArchive": "이 프리셋을 보관함으로 옮깁니다. 씬과 결과 이미지는 그대로입니다.",
+        "presetRestore": "이 프리셋을 보관함에서 복원합니다.",
+        "presetArchiveBranch": "하위 폴더 {{count}}개도 함께 보관함으로 옮깁니다.",
+        "presetRestoreBranch": "함께 보관한 하위 폴더와 보관된 상위 폴더 {{count}}개도 복원합니다.",
         "clientChanged": "접속 권한을 갱신했습니다.",
         "changeFailed": "접속 권한을 갱신하지 못했습니다. 앱의 복구 상태를 확인해 주세요.",
         "toggleFailed": "수신 상태를 변경하지 못했습니다. 앱을 다시 시작해 주세요.",

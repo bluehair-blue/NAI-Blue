@@ -1581,7 +1581,17 @@
             "templateFolderCount": "選択したうち{{count}}フォルダーに既定値があります。",
             "nextStepTitle": "次にすること",
             "nextStepDescription": "完了を押し、シーン画面でこのフォルダーを選び、[＋シーン追加]を押してください。既定値が入力された編集画面が開きます。",
-            "done": "完了してシーン画面へ"
+            "done": "完了してシーン画面へ",
+            "archiveSelected": "選択フォルダをアーカイブ",
+            "archivedCount": "{{count}}個のフォルダをアーカイブに移動しました",
+            "archivedDescription": "シーンと生成画像はそのままです。下のアーカイブから復元または削除できます。",
+            "archiveTitle": "アーカイブ ({{count}})",
+            "archivedRowSummary": "フォルダ {{folders}}個 · シーン {{scenes}}個",
+            "restore": "復元",
+            "delete": "削除",
+            "restoreNamed": "{{name}}を復元",
+            "deleteNamed": "{{name}}を削除",
+            "restoredNamed": "{{name}}フォルダを復元しました"
         },
         "metadataPolicy": {
             "title": "画像メタデータ",
@@ -3736,6 +3746,10 @@
         }
     },
     "agentInbox": {
+        "presetArchive": "このプリセットをアーカイブに移動します。シーンと生成画像はそのままです。",
+        "presetRestore": "このプリセットをアーカイブから復元します。",
+        "presetArchiveBranch": "サブフォルダー{{count}}個も一緒にアーカイブへ移動します。",
+        "presetRestoreBranch": "一緒にアーカイブしたサブフォルダーとアーカイブ済みの親フォルダー{{count}}個も復元します。",
         "clientChanged": "接続権限を更新しました。",
         "changeFailed": "接続権限を更新できませんでした。アプリの復旧状況を確認してください。",
         "toggleFailed": "リクエストの受信状態を変更できませんでした。アプリを再起動してください。",

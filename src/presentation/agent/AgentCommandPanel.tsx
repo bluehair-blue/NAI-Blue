@@ -9,6 +9,7 @@ import { runtimeAgentCommands } from '@/composition-root/runtime-agent-commands'
 import type { ForegroundAgentCommandRuntime } from '@/composition-root/foreground-agent-command-runtime'
 import type { AgentExecutionReview, AgentGenerationExecutionReview } from '@/application/agent/agent-execution-coordinator'
 import { useQueueStore } from '@/stores/queue-store'
+import { scenePresetsToArchive, scenePresetsToRestore, useSceneStore } from '@/stores/scene-store'
 import type { JsonObject, JsonValue } from '@/domain/composition/types'
 import { AgentPolicyForm } from './AgentPolicyForm'
 import { hasAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
@@ -16,7 +17,7 @@ import { hasAgentGenerationConsent } from '@/application/agent/agent-generation-
 
 /** Show every signed input field for review; display labels never alter the consent binding. */
 function authoringRows(value: JsonValue, prefix = ''): { label: string; value: string }[] {
-    const labels: Record<string, string> = { presetId: '프리셋 ID', presetName: '프리셋 이름', expectedRevision: '기준 버전',
+    const labels: Record<string, string> = { presetId: '프리셋 ID', presetName: '프리셋 이름', presetArchived: '프리셋 보관', expectedRevision: '기준 버전',
         expectedPlanHash: '검토 계획 확인값', changes: '변경 항목', sceneId: '에셋 ID', name: '에셋 이름', prompts: '프롬프트',
         base: '기본', additional: '추가', character: '캐릭터', negative: '제외', characterNegative: '캐릭터 제외', promptTextMode: '프롬프트 처리 방식',
         generation: '생성 설정', model: '모델', steps: '단계', cfgScale: '프롬프트 강도', cfgRescale: '강도 보정', sampler: '샘플러',
@@ -91,6 +92,10 @@ function renderGenerationPreview(item: AgentGenerationExecutionReview) {
 export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?: ForegroundAgentCommandRuntime }) {
     const { t } = useTranslation()
     const state = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot, runtime.getSnapshot)
+    const scenePresets = useSceneStore(store => store.presets)
+    // Archiving hides the preset's sub-folders and restoring brings back archived parents; the approval names how many.
+    const alsoChangedPresets = (presetId: string, archived: boolean) => [...(archived ? scenePresetsToArchive : scenePresetsToRestore)(
+        scenePresets, [presetId])].filter(id => id !== presetId).length
     const [label, setLabel] = useState('')
     const [message, setMessage] = useState<string | null>(null)
     const ready = state.status === 'ready' && !state.changingClient && !state.changingExecution
@@ -229,6 +234,12 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                     </> : 'input' in item ? <>
                         <p className="font-medium">{item.command === 'scene.patch_many' ? t('agentInbox.sceneAuthoringAction', '에셋 설정 편집') : t('agentInbox.folderAuthoringAction', '생성 폴더 설정 편집')}</p>
                         <p className="break-all">{item.resourceId} · {t('agentInbox.authoringChangeCount', '{{count}}개 항목', { count: item.changeCount })}</p>
+                        {typeof item.input.presetArchived === 'boolean' && <p className="font-medium">{item.input.presetArchived
+                            ? t('agentInbox.presetArchive', '이 프리셋을 보관함으로 옮깁니다. 씬과 결과 이미지는 그대로입니다.')
+                            : t('agentInbox.presetRestore', '이 프리셋을 보관함에서 복원합니다.')}</p>}
+                        {typeof item.input.presetArchived === 'boolean' && alsoChangedPresets(item.resourceId, item.input.presetArchived) > 0 && <p>{item.input.presetArchived
+                            ? t('agentInbox.presetArchiveBranch', '하위 폴더 {{count}}개도 함께 보관함으로 옮깁니다.', { count: alsoChangedPresets(item.resourceId, true) })
+                            : t('agentInbox.presetRestoreBranch', '함께 보관한 하위 폴더와 보관된 상위 폴더 {{count}}개도 복원합니다.', { count: alsoChangedPresets(item.resourceId, false) })}</p>}
                         <details><summary className="cursor-pointer font-medium">{t('agentInbox.authoringChanges', '바뀌는 내용')}</summary>
                             <div className="mt-2 max-h-96 space-y-2 overflow-y-auto">{authoringRows(item.input).map((row, index) => <label key={index} className="block space-y-1">
                                 <span>{row.label}</span><textarea readOnly className="w-full resize-y rounded border bg-background p-2" value={row.value} rows={Math.min(6, Math.max(1, row.value.split('\n').length))} />

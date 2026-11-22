@@ -85,6 +85,7 @@ import {
     resolveSceneGeneration,
     useSceneStore,
     getScenePresetPathSegments,
+    visibleScenePresets,
 } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useGenerationStore } from '@/stores/generation-store'
@@ -255,6 +256,8 @@ export default function SceneMode() {
 
     // Granular selectors to prevent re-renders on unrelated store changes (like streaming progress)
     const presets = useSceneStore(s => s.presets)
+    // Archived presets stay in the store (trash snapshots need whole branches) but leave every list a human works from.
+    const workingPresets = visibleScenePresets(presets)
     const activePresetId = useSceneStore(s => s.activePresetId)
     const setActivePreset = useSceneStore(s => s.setActivePreset)
     const addPreset = useSceneStore(s => s.addPreset)
@@ -1074,13 +1077,13 @@ export default function SceneMode() {
                                     size="icon"
                                     className="h-11 w-full min-w-0 lg:w-11"
                                     aria-label={t('scene.moveToPreset', '프리셋으로 이동')}
-                                    disabled={selectedSceneIds.length === 0 || presets.length < 2}
+                                    disabled={selectedSceneIds.length === 0 || workingPresets.length < 2}
                                 >
                                     <FolderInput className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="max-h-[60vh] overflow-y-auto">
-                                {presets.filter(p => p.id !== activePresetId).map(p => (
+                                {workingPresets.filter(p => p.id !== activePresetId).map(p => (
                                     <DropdownMenuItem key={p.id} className="min-h-11" onClick={() => moveSelectedScenesToPreset(p.id)}>
                                         <ArrowRight className="mr-2 h-4 w-4" />
                                         {p.name}
@@ -1282,7 +1285,7 @@ export default function SceneMode() {
                                     <SelectValue placeholder={t('scene.preset')} />
                                 </SelectTrigger>
                                 <SelectContent className="max-h-[60vh]">
-                                    {presets.map((preset) => (
+                                    {workingPresets.map((preset) => (
                                         <SelectItem key={preset.id} value={preset.id}>
                                             {getScenePresetPathSegments(presets, preset.id).join(' / ')} ({preset.scenes.length})
                                         </SelectItem>
@@ -1350,11 +1353,12 @@ export default function SceneMode() {
                             </Tip>
                             </>
                         )}
-                        {presets.length > 1 && (
+                        {workingPresets.length > 1 && (
                             <ScenePresetReorderDialog
-                                presets={presets}
+                                presets={[...workingPresets]}
                                 activePresetId={activePresetId}
-                                onReorder={reorderPresets}
+                                // The dialog orders the visible list; hidden archived presets keep their place in the stored order.
+                                onReorder={(from, to) => reorderPresets(presets.indexOf(workingPresets[from]), presets.indexOf(workingPresets[to]))}
                                 t={t}
                             />
                         )}

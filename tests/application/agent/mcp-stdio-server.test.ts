@@ -312,19 +312,33 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         expect((await read()).schemaMismatches).toEqual(['artifact.get_image'])
     })
 
-    it('accepts an installed build whose scene.patch_many predates Scene Precise References', async () => {
-        // The previous contract is today's minus the one new optional field, so its hash is derived rather than copied.
-        const schema = structuredClone(getAgentCommandInputContract('scene.patch_many')!.schema) as Record<string, any>
-        delete schema.properties.changes.items.properties.preciseReferences
-        const previousPatchHash = `sha256:${hashCanonicalValue(schema)}`
-        let current: unknown[] = descriptors().map(item => item.command === 'scene.patch_many' ? { ...item, inputSchemaHash: previousPatchHash } : item)
+    it('accepts an installed build that predates Scene Precise References and preset archiving', async () => {
+        // The installed build's contracts are today's minus the new optional fields (and changes needed at least one item),
+        // so the hashes are derived rather than copied.
+        const patch = structuredClone(getAgentCommandInputContract('scene.patch_many')!.schema) as Record<string, any>
+        delete patch.properties.changes.items.properties.preciseReferences
+        delete patch.properties.presetArchived
+        patch.properties.changes = { type: 'array', minItems: 1, maxItems: 100, items: patch.properties.changes.items }
+        const previousPatchHash = `sha256:${hashCanonicalValue(patch)}`
+        const snapshot = structuredClone(getAgentCommandInputContract('workspace.get_snapshot')!.schema) as Record<string, any>
+        delete snapshot.properties.includeArchived
+        const previousSnapshotHash = `sha256:${hashCanonicalValue(snapshot)}`
+        // The previous Precise References change in this unreleased build already pinned the installed scene.patch_many hash.
+        expect(previousPatchHash).toBe('sha256:38cdfbd697bf4aa12d5acb255258897323253e767a31a170ceeb68a5322bdb1d')
+        const previous: Partial<Record<string, string>> = { 'scene.patch_many': previousPatchHash, 'workspace.get_snapshot': previousSnapshotHash }
+        let current: unknown[] = descriptors().map(item => previous[item.command] ? { ...item, inputSchemaHash: previous[item.command] } : item)
         const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities: current } as unknown as JsonObject) })
         const read = async () => JSON.parse(String((await f.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
         const older = await read()
         expect(older.schemaMismatches).toEqual([])
-        expect(older.capabilities.find((item: { command: string }) => item.command === 'scene.patch_many')).toMatchObject({ available: true })
+        for (const command of ['scene.patch_many', 'workspace.get_snapshot']) {
+            expect(older.capabilities.find((item: { command: string }) => item.command === command)).toMatchObject({ available: true })
+        }
         current = descriptors().map(item => item.command === 'scene.resolve_many' ? { ...item, inputSchemaHash: previousPatchHash } : item)
         expect((await read()).schemaMismatches).toEqual(['scene.resolve_many'])
+        // Each previous hash is accepted only for its own command.
+        current = descriptors().map(item => item.command === 'scene.patch_many' ? { ...item, inputSchemaHash: previousSnapshotHash } : item)
+        expect((await read()).schemaMismatches).toEqual(['scene.patch_many'])
     })
 
     it('reports an unconfirmed app state when a fresh probe has no application receipt', async () => {

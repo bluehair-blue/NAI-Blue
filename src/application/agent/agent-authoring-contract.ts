@@ -27,9 +27,13 @@ export interface AgentAuthoringGrant {
     readonly consentRevision?: number
     readonly target: AgentAuthoringTarget
 }
+/** A request the authority refuses for a reason the agent can act on, rather than an unavailable target. */
+export interface AgentAuthoringRefusal { readonly refused: string }
+export const isAgentAuthoringRefusal = (value: AgentAuthoringTarget | AgentAuthoringRefusal | null): value is AgentAuthoringRefusal =>
+    value !== null && 'refused' in value
 /** Existing Scene/Folder authorities own commit and exact grant evidence; recovery is read-only. */
 export interface AgentAuthoringPort {
-    inspect(command: AgentAuthoringCommand, input: JsonObject): Promise<AgentAuthoringTarget | null>
+    inspect(command: AgentAuthoringCommand, input: JsonObject): Promise<AgentAuthoringTarget | AgentAuthoringRefusal | null>
     apply(command: AgentAuthoringCommand, input: JsonObject, target: AgentAuthoringTarget, grant: AgentAuthoringGrant): Promise<JsonObject>
     reconcile(grant: AgentAuthoringGrant, input: JsonObject): Promise<JsonObject | null>
 }
@@ -40,7 +44,8 @@ export function assertAgentAuthoringTarget(value: unknown): asserts value is Age
         || typeof target.resourceId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(target.resourceId)
         || !Number.isSafeInteger(target.expectedRevision) || target.expectedRevision < 0 || target.expectedRevision >= Number.MAX_SAFE_INTEGER
         || !/^sha256:[a-f0-9]{64}$/.test(target.targetHash)
-        || !Number.isSafeInteger(target.changeCount) || target.changeCount < 1 || target.changeCount > 100
+        // Zero Scene changes is a preset-only archive or restore, which only scene.patch_many can express.
+        || !Number.isSafeInteger(target.changeCount) || target.changeCount < (target.command === 'scene.patch_many' ? 0 : 1) || target.changeCount > 100
         || typeof target.createsFolders !== 'boolean' || typeof target.renamesPathSegments !== 'boolean'
         || (target.command === 'scene.patch_many' && (target.createsFolders || target.renamesPathSegments))) {
         throw new AgentCommandError('INVALID_AUTHORING_TARGET')
@@ -51,6 +56,8 @@ export function isAgentAuthoringResult(value: unknown, grant: AgentAuthoringGran
     const result = value as JsonObject
     return !!result && Object.keys(result).sort().join() === 'command,resourceId,revision,status,targetHash'
         && result.status === 'authoring-committed' && result.command === grant.target.command
-        && result.resourceId === grant.target.resourceId && result.revision === grant.target.expectedRevision + 1
+        // An archive or restore without Scene changes commits no Scene document, so its revision stays.
+        && result.resourceId === grant.target.resourceId
+        && result.revision === grant.target.expectedRevision + (grant.target.changeCount === 0 ? 0 : 1)
         && result.targetHash === grant.target.targetHash
 }

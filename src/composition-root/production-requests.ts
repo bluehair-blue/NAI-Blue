@@ -13,6 +13,7 @@ import { hashGenerationSemanticIntent } from '@/application/generation/plan-gene
 import type { GenerationJob } from '@/domain/queue/types'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { flushSceneAuthorityRuntime } from '@/lib/scene-authority-runtime'
+import { useSceneStore } from '@/stores/scene-store'
 import { getRuntimeQueueRepository } from '@/services/queue/indexeddb-queue-repository'
 import { enqueueReviewedSceneQueue, getSceneQueuePlanningFacts,
     type SceneQueueTarget, type SceneQueueSubmission, type PreparedSceneQueueReview } from '@/services/queue/scene-queue-adapter'
@@ -200,6 +201,9 @@ export function createProductionRequestHandlers(): AgentCommandHandler[] {
                 targets = document.scenes.map(scene => ({ presetId: document.presetId, sceneId: scene.id,
                     expectedRevision: document.revision, count: scene.productionCount ?? 1 }))
             } else targets = source.targets as unknown as SceneQueueTarget[]
+            // An archived preset is hidden from agents; its Scenes join a production only after it is restored.
+            const archived = new Set(useSceneStore.getState().presets.flatMap(preset => preset.archivedAt === undefined ? [] : [preset.id]))
+            if (targets.some(target => archived.has(target.presetId))) return { code: 'AGENT_PRESET_ARCHIVED' }
             const request = await createRuntimeProductionRequest({ title: String(input.title), targets,
                 budget: input.budget as unknown as { maxImages: number; maxAnlas: number }, seedPolicy: input.seedPolicy as unknown as SeedPolicy },
             `production-${hashCanonicalValue({ client: envelope.context.clientId, request: envelope.requestHash })}`)

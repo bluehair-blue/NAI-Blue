@@ -1582,7 +1582,17 @@
             "templateFolderCount": "{{count}} selected folders have defaults.",
             "nextStepTitle": "Next step",
             "nextStepDescription": "Select Done, choose this folder on the Scene screen, and select [+ Add Scene]. The editor opens with these defaults filled in.",
-            "done": "Done — return to Scenes"
+            "done": "Done — return to Scenes",
+            "archiveSelected": "Archive selected",
+            "archivedCount": "Moved {{count}} folders to the archive",
+            "archivedDescription": "Scenes and result images are unchanged. Restore or delete them from the archive below.",
+            "archiveTitle": "Archive ({{count}})",
+            "archivedRowSummary": "{{folders}} folders · {{scenes}} scenes",
+            "restore": "Restore",
+            "delete": "Delete",
+            "restoreNamed": "Restore {{name}}",
+            "deleteNamed": "Delete {{name}}",
+            "restoredNamed": "Restored {{name}}"
         },
         "metadataPolicy": {
             "title": "Image metadata",
@@ -3832,6 +3842,10 @@
         }
     },
     "agentInbox": {
+        "presetArchive": "Moves this preset to the archive. Scenes and result images are unchanged.",
+        "presetRestore": "Restores this preset from the archive.",
+        "presetArchiveBranch": "Its {{count}} sub-folder(s) move to the archive with it.",
+        "presetRestoreBranch": "Also restores {{count}} folder(s): sub-folders archived with it and archived parents.",
         "clientChanged": "Client access updated.",
         "changeFailed": "Could not update client access. Check the app recovery status.",
         "toggleFailed": "Could not change the inbox status. Restart the app.",

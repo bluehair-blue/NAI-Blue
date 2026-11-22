@@ -58,13 +58,15 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
             const offset = Number(input.offset ?? 0)
             const limit = Math.min(Number(input.limit ?? 20), 50)
             const all = [...await drafts.list()].sort((a, b) => a.id.localeCompare(b.id))
-            const authoring = await getAgentAuthoringSnapshot(offset, limit)
+            const includeArchived = input.includeArchived === true
+            const authoring = await getAgentAuthoringSnapshot(offset, limit, includeArchived)
             const settings = useSettingsStore.getState()
             const alwaysApproved = hasAgentAuthoringConsent(settings.agentAuthoringConsent, workspaceId, envelope.context.clientId)
             const generationApproved = hasAgentGenerationConsent(settings.agentGenerationConsent, workspaceId, envelope.context.clientId)
             // Read-only counts support safe app maintenance; consent is projected only for the authenticated caller.
             const queueActivity = await getRuntimeQueueRepository().getActivitySummary()
-            const hasMore = offset + limit < Math.max(all.length, Number(authoring.totalScenes), Number(authoring.totalPresets), Number(authoring.totalFolders))
+            const hasMore = offset + limit < Math.max(all.length, Number(authoring.totalScenes), Number(authoring.totalPresets), Number(authoring.totalFolders),
+                includeArchived ? Number(authoring.totalArchivedPresets) : 0)
             return { workspaceId, ...authoring, queueActivity: { ...queueActivity },
                 editingApproval: { alwaysApproved, active: alwaysApproved && settings.agentExecutionPolicy.mode !== 'observe'
                     && !settings.agentExecutionPolicy.globalPause, consentRevision: settings.agentAuthoringConsent.revision },

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { IndexedDbSceneRepository } from '@/adapters/scene/indexeddb-scene-repository'
-import { createAgentAuthoringService } from '@/application/agent/agent-authoring-service'
+import { createAgentAuthoringService, type AgentAuthoringDependencies } from '@/application/agent/agent-authoring-service'
 import type { AgentAuthoringGrant, AgentAuthoringTarget } from '@/application/agent/agent-authoring-contract'
 import type { SceneDocument } from '@/application/scene/scene-repository'
 import type { GenerationFolderDocument } from '@/domain/generation-folders'
@@ -21,7 +21,7 @@ function grant(target: AgentAuthoringTarget): AgentAuthoringGrant {
     return { requestId: 'edit-1', requestHash: digest, workspaceId: 'native-workspace', clientId: 'codex', actorKind: 'agent',
         policyRevision: 1, expiresAt: '2026-09-08T01:00:00.000Z', consentedAt: time, authorization: 'human', target }
 }
-function fixture() {
+function fixture(extra: Partial<AgentAuthoringDependencies> = {}) {
     const values = new Map<string, string>()
     const scenes = new IndexedDbSceneRepository({ getItem: async key => values.get(key) ?? null,
         compareAndSet: async (key, previous, next) => {
@@ -45,6 +45,7 @@ function fixture() {
                 } }, occupancyGuard: async () => ({ status: 'empty' as const }),
             mutationGate: { runExclusive: async (_key, work) => work() }, authorizeDirectories: authorize,
         }),
+        ...extra,
     }
     return { service: createAgentAuthoringService(dependencies), reopen: () => createAgentAuthoringService(dependencies), scenes,
         folders: () => folders, projectScene, authorize, applyFolders, shells }
@@ -142,5 +143,90 @@ describe('agent authoring through existing Scene and Folder authorities', () => 
         expect(await f.service.inspect('folder.apply_changes', { expectedRevision: 1, expectedPlanHash: digest,
             changes: [{ op: 'patch', folderId: 'root', commonPrompt: 'soft coloring' }] })).toBeNull()
         expect(f.authorize).not.toHaveBeenCalled()
+    })
+})
+
+describe('agent preset archive through scene.patch_many', () => {
+    function archiveFixture() {
+        const archived = new Set<string>()
+        const set = vi.fn(async (presetId: string, value: boolean) => { if (value) archived.add(presetId); else archived.delete(presetId) })
+        const f = fixture({ presetArchive: { isArchived: id => archived.has(id), canArchive: id => id !== 'scene-default', set } })
+        return { ...f, archived, set }
+    }
+    async function created() {
+        const f = archiveFixture()
+        const target = (await f.service.inspect('scene.patch_many', createInput)) as AgentAuthoringTarget
+        await f.service.apply('scene.patch_many', createInput, target, grant(target))
+        f.projectScene.mockClear()
+        return f
+    }
+    const archive = (presetArchived: boolean, changes: JsonObject[] = []): JsonObject => ({ presetId: 'codex-assets', expectedRevision: 1, changes, presetArchived })
+
+    it('archives and restores without committing a Scene document, so content and revision stay as they were', async () => {
+        const f = await created()
+        const before = JSON.stringify(await f.scenes.getDocument('codex-assets'))
+        const commit = vi.spyOn(f.scenes, 'commit')
+        const target = (await f.service.inspect('scene.patch_many', archive(true))) as AgentAuthoringTarget
+        expect(target).toMatchObject({ changeCount: 0, expectedRevision: 1, resourceId: 'codex-assets' })
+        const result = await f.service.apply('scene.patch_many', archive(true), target, grant(target))
+        expect(result).toEqual({ status: 'authoring-committed', command: 'scene.patch_many', resourceId: 'codex-assets', revision: 1, targetHash: target.targetHash })
+        expect(f.archived.has('codex-assets')).toBe(true)
+        expect(commit).not.toHaveBeenCalled()
+        expect(f.projectScene).not.toHaveBeenCalled()
+        expect(JSON.stringify(await f.scenes.getDocument('codex-assets'))).toBe(before)
+        const restore = (await f.service.inspect('scene.patch_many', archive(false))) as AgentAuthoringTarget
+        expect(await f.service.apply('scene.patch_many', archive(false), restore, grant(restore))).toMatchObject({ revision: 1 })
+        expect(f.archived.has('codex-assets')).toBe(false)
+        expect(JSON.stringify(await f.scenes.getDocument('codex-assets'))).toBe(before)
+    })
+
+    it('refuses Scene edits of an archived preset unless the same request restores it', async () => {
+        const f = await created()
+        f.archived.add('codex-assets')
+        const edit = { presetId: 'codex-assets', expectedRevision: 1, changes: [{ sceneId: 'happy', name: 'Edited' }] }
+        expect(await f.service.inspect('scene.patch_many', edit)).toEqual({ refused: 'AGENT_PRESET_ARCHIVED' })
+        expect(await f.service.inspect('scene.patch_many', { ...edit, presetArchived: true })).toEqual({ refused: 'AGENT_PRESET_ARCHIVED' })
+        const restoreAndEdit = { ...edit, presetArchived: false }
+        const target = (await f.service.inspect('scene.patch_many', restoreAndEdit)) as AgentAuthoringTarget
+        expect(target.changeCount).toBe(1)
+        expect(await f.service.apply('scene.patch_many', restoreAndEdit, target, grant(target))).toMatchObject({ status: 'authoring-committed', revision: 2 })
+        expect(f.archived.has('codex-assets')).toBe(false)
+        expect((await f.scenes.getDocument('codex-assets'))!.scenes[0].name).toBe('Edited')
+        // The Scene commit lands before the flag, so a crash between them is finished from the committed document.
+        expect(f.projectScene.mock.invocationCallOrder[0]).toBeLessThan(f.set.mock.invocationCallOrder[0])
+    })
+
+    it('refuses the default preset, unknown presets and builds without the archive port', async () => {
+        const f = await created()
+        f.shells.add('scene-default')
+        expect(await f.service.inspect('scene.patch_many', { presetId: 'scene-default', expectedRevision: 0, changes: [], presetArchived: true }))
+            .toEqual({ refused: 'AGENT_PRESET_NOT_ARCHIVABLE' })
+        expect(await f.service.inspect('scene.patch_many', { presetId: 'missing', expectedRevision: 0, changes: [], presetArchived: true })).toBeNull()
+        expect(await f.service.inspect('scene.patch_many', { ...archive(true), expectedRevision: 0 })).toBeNull()
+        const plain = fixture()
+        const target = (await plain.service.inspect('scene.patch_many', createInput)) as AgentAuthoringTarget
+        await plain.service.apply('scene.patch_many', createInput, target, grant(target))
+        expect(await plain.service.inspect('scene.patch_many', archive(true))).toBeNull()
+    })
+
+    it('reconciles a preset-only request only when the flag already shows its outcome', async () => {
+        const f = await created()
+        const target = (await f.service.inspect('scene.patch_many', archive(true))) as AgentAuthoringTarget
+        const authority = grant(target)
+        expect(await f.reopen().reconcile(authority, archive(true))).toBeNull()
+        expect(f.set).not.toHaveBeenCalled()
+        f.archived.add('codex-assets')
+        expect(await f.reopen().reconcile(authority, archive(true))).toMatchObject({ status: 'authoring-committed', revision: 1 })
+        // A preset deleted after the crash reads as "not archived"; that is not a completed restore.
+        const restore = (await f.service.inspect('scene.patch_many', archive(false))) as AgentAuthoringTarget
+        f.archived.delete('codex-assets')
+        expect(await f.reopen().reconcile(grant(restore), archive(false))).toMatchObject({ status: 'authoring-committed' })
+        f.shells.delete('codex-assets')
+        expect(await f.reopen().reconcile(grant(restore), archive(false))).toBeNull()
+        f.shells.add('codex-assets')
+        f.archived.add('codex-assets')
+        const current = (await f.scenes.getDocument('codex-assets'))!
+        await f.scenes.commit({ ...current, revision: 2 }, 1)
+        expect(await f.reopen().reconcile(authority, archive(true))).toBeNull()
     })
 })

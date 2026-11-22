@@ -6,7 +6,8 @@ import { AGENT_TOOL_DESCRIPTIONS } from './agent-workflow-guide'
 
 /** The advertised tool list is static text: availability is reported by call results and nai-blue://capabilities. */
 export type AgentMcpToolName = keyof typeof AGENT_TOOL_DESCRIPTIONS
-export const SNAPSHOT_LISTS = { presets: 'scenePresets', scenes: 'scenes', folders: 'folders', drafts: 'workflowDrafts' } as const
+// archived is the one list the app sends only on request (input.includeArchived), so a default snapshot never carries it.
+export const SNAPSHOT_LISTS = { presets: 'scenePresets', scenes: 'scenes', folders: 'folders', drafts: 'workflowDrafts', archived: 'archivedPresets' } as const
 export const MAX_WAIT_SECONDS = 50
 // Each preview is at most 1 MiB (JPEG; a 480px one is far smaller); four keep one response bounded.
 export const MAX_IMAGES_PER_CALL = 4
@@ -22,9 +23,10 @@ export function compactSchema(value: JsonValue, namesAreProperties = false): Jso
     if (Array.isArray(value)) return value.map(item => compactSchema(item))
     if (value === null || typeof value !== 'object') return value
     return Object.fromEntries(Object.entries(value)
-        // An empty required list is the JSON Schema default and says nothing.
+        // An empty required list or properties object is the JSON Schema default and says nothing.
         .filter(([key, child]) => namesAreProperties || (!FORMAT_KEYS.has(key) && informativeBound(key, child)
-            && !(key === 'required' && Array.isArray(child) && child.length === 0)))
+            && !(key === 'required' && Array.isArray(child) && child.length === 0)
+            && !(key === 'properties' && child !== null && typeof child === 'object' && Object.keys(child).length === 0)))
         .map(([key, child]) => [key, compactSchema(child, !namesAreProperties && key === 'properties')]))
 }
 
@@ -57,10 +59,20 @@ function contractInput(command: AgentCommandName): JsonObject {
     return compactSchema(getAgentCommandInputContract(command)!.schema) as JsonObject
 }
 // The reference item shape lives in guides/image-source; spelling it out here would overflow the fixed tool-list budget.
+// smea and smeaDyn accept only false, so listing them tells the model nothing; the contract still accepts them.
 function scenePatchInput(): JsonObject {
     const input = contractInput('scene.patch_many')
-    const change = ((input.properties as JsonObject).changes as JsonObject).items as JsonObject
-    ;(change.properties as JsonObject).preciseReferences = { oneOf: [{ type: 'null' }, { type: 'array', maxItems: MAX_SCENE_PRECISE_REFERENCES }] }
+    const change = (((input.properties as JsonObject).changes as JsonObject).items as JsonObject).properties as JsonObject
+    change.preciseReferences = { oneOf: [{ type: 'null' }, { type: 'array', maxItems: MAX_SCENE_PRECISE_REFERENCES }] }
+    const generation = (change.generation as JsonObject).properties as JsonObject
+    delete generation.smea
+    delete generation.smeaDyn
+    return input
+}
+// include:["archived"] is the advertised spelling; the adapter turns it into includeArchived, so the field is not listed twice.
+function snapshotInput(): JsonObject {
+    const input = contractInput('workspace.get_snapshot')
+    delete (input.properties as JsonObject).includeArchived
     return input
 }
 // A lost response leaves the caller nothing to inspect unless it chose the ID of a generation request itself.
@@ -76,7 +88,7 @@ function tool(name: AgentMcpToolName, input: JsonObject, options: Option[] = [],
 
 export function listAgentMcpTools() {
     return [
-        tool('workspace.get_snapshot', contractInput('workspace.get_snapshot'), ['include']),
+        tool('workspace.get_snapshot', snapshotInput(), ['include']),
         tool('scene.resolve_many', contractInput('scene.resolve_many')),
         tool('scene.patch_many', scenePatchInput()),
         tool('generation.run', PLAN_INPUT, ['waitSeconds', 'planOnly']),

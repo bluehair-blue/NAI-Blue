@@ -230,6 +230,66 @@ export interface ScenePreset {
     parentId?: string | null
     defaultTemplate?: SceneFolderTemplate
     createdAt: number
+    /** Set while the preset sits in the archive (hidden from working lists and agents); absent means active. */
+    archivedAt?: number
+}
+
+const visiblePresetCache = new WeakMap<readonly ScenePreset[], readonly ScenePreset[]>()
+/** The presets a human works from. Cached per array so it is safe inside store selectors and memo dependencies. */
+export function visibleScenePresets(presets: readonly ScenePreset[]): readonly ScenePreset[] {
+    let visible = visiblePresetCache.get(presets)
+    if (visible === undefined) {
+        visible = presets.some(preset => preset.archivedAt !== undefined) ? presets.filter(preset => preset.archivedAt === undefined) : presets
+        visiblePresetCache.set(presets, visible)
+    }
+    return visible
+}
+
+/** The given presets plus every descendant; parentId cycles from old data stop at visited nodes. */
+export function scenePresetBranchIds(presets: readonly ScenePreset[], ids: Iterable<string>): Set<string> {
+    const branch = new Set(ids)
+    let changed = true
+    while (changed) {
+        changed = false
+        presets.forEach(preset => {
+            if (preset.parentId && branch.has(preset.parentId) && !branch.has(preset.id)) {
+                branch.add(preset.id)
+                changed = true
+            }
+        })
+    }
+    return branch
+}
+
+/** The presets one archive of ids hides: their branches without the default preset and without what is already archived. */
+export function scenePresetsToArchive(presets: readonly ScenePreset[], ids: readonly string[]): Set<string> {
+    const branch = scenePresetBranchIds(presets, ids.filter(id => id !== DEFAULT_PRESET_ID))
+    // The default preset stays usable even when old data placed it under an archived folder.
+    branch.delete(DEFAULT_PRESET_ID)
+    // A descendant archived earlier keeps its own time, so restoring this branch leaves it archived.
+    return new Set(presets.flatMap(preset => branch.has(preset.id) && preset.archivedAt === undefined ? [preset.id] : []))
+}
+
+/** The presets one restore of ids brings back: what was archived together with each, and its archived ancestors. */
+export function scenePresetsToRestore(presets: readonly ScenePreset[], ids: readonly string[]): Set<string> {
+    const byId = new Map(presets.map(preset => [preset.id, preset]))
+    const restored = new Set<string>()
+    for (const id of ids) {
+        const target = byId.get(id)
+        if (target?.archivedAt === undefined) continue
+        // The branch that one archive action hid shares its time; older archives inside it stay.
+        scenePresetBranchIds(presets, [id]).forEach(candidate => {
+            if (byId.get(candidate)?.archivedAt === target.archivedAt) restored.add(candidate)
+        })
+        const visited = new Set([id])
+        let parent = target.parentId ? byId.get(target.parentId) : undefined
+        while (parent && !visited.has(parent.id)) {
+            visited.add(parent.id)
+            if (parent.archivedAt !== undefined) restored.add(parent.id)
+            parent = parent.parentId ? byId.get(parent.parentId) : undefined
+        }
+    }
+    return restored
 }
 
 /** Resolves the logical folder tree into the same path segments used by Scene output persistence. */
@@ -257,6 +317,10 @@ interface SceneState {
     // Actions - Presets
     addPreset: (name: string, parentId?: string | null) => string
     deletePreset: (id: string) => void
+    /** Hides presets and their descendants; never removes a preset, Scene document, result link or file. */
+    archivePresets: (ids: readonly string[]) => void
+    /** Brings back what each preset's archive action hid, plus any archived ancestors so it is reachable again. */
+    restoreArchivedPresets: (ids: readonly string[]) => void
     renamePreset: (id: string, name: string) => void
     movePresets: (ids: string[], parentId: string | null) => void
     duplicatePresets: (ids: string[]) => void
@@ -389,6 +453,8 @@ interface SceneState {
 }
 
 const DEFAULT_PRESET_ID = 'scene-default'
+/** The preset that always exists: it cannot be deleted or archived and takes over when the active preset goes away. */
+export const DEFAULT_SCENE_PRESET_ID = DEFAULT_PRESET_ID
 
 const createDefaultPreset = (): ScenePreset => ({
     id: DEFAULT_PRESET_ID,
@@ -507,6 +573,8 @@ export function projectScenePresentationState(state: SceneState) {
                 ? cloneSceneFolderTemplate(preset.defaultTemplate)
                 : undefined,
             createdAt: preset.createdAt,
+            // Only an archived preset gains the key, so active shells persist exactly as before.
+            ...(preset.archivedAt === undefined ? {} : { archivedAt: preset.archivedAt }),
         })),
         activePresetId: state.activePresetId,
         sceneAuthorityInitialized: state.sceneAuthorityInitialized,
@@ -577,17 +645,7 @@ export const useSceneStore = create<SceneState>()(
                 if (id === DEFAULT_PRESET_ID) return
                 set(state => {
                     // Removing a folder owns its descendants so the persisted tree can never retain orphans.
-                    const deleted = new Set([id])
-                    let changed = true
-                    while (changed) {
-                        changed = false
-                        state.presets.forEach(preset => {
-                            if (preset.parentId && deleted.has(preset.parentId) && !deleted.has(preset.id)) {
-                                deleted.add(preset.id)
-                                changed = true
-                            }
-                        })
-                    }
+                    const deleted = scenePresetBranchIds(state.presets, [id])
                     const deletedSceneIds = state.presets
                         .filter(preset => deleted.has(preset.id))
                         .flatMap(preset => preset.scenes.map(scene => scene.id))
@@ -603,6 +661,31 @@ export const useSceneStore = create<SceneState>()(
                     }
                 })
             },
+
+            // Only the shell changes: each Scene array keeps its reference, so the Scene authority sees no edit.
+            archivePresets: (ids) => set(state => {
+                const archived = scenePresetsToArchive(state.presets, ids)
+                if (archived.size === 0) return state
+                const archivedAt = Date.now()
+                return {
+                    presets: state.presets.map(preset => archived.has(preset.id) ? { ...preset, archivedAt } : preset),
+                    activePresetId: state.activePresetId !== null && archived.has(state.activePresetId)
+                        ? DEFAULT_PRESET_ID
+                        : state.activePresetId,
+                }
+            }),
+
+            restoreArchivedPresets: (ids) => set(state => {
+                const restored = scenePresetsToRestore(state.presets, ids)
+                if (restored.size === 0) return state
+                return {
+                    presets: state.presets.map(preset => {
+                        if (!restored.has(preset.id)) return preset
+                        const { archivedAt: _archivedAt, ...active } = preset
+                        return active
+                    }),
+                }
+            }),
 
             renamePreset: (id, name) => {
                 set(state => ({
@@ -670,8 +753,9 @@ export const useSceneStore = create<SceneState>()(
                             : undefined,
                         createdAt: Date.now(),
                     })
+                    // A copy is a working copy: folders archived inside the source are not copied into the archive.
                     state.presets
-                        .filter(candidate => candidate.parentId === source.id)
+                        .filter(candidate => candidate.parentId === source.id && candidate.archivedAt === undefined)
                         .forEach(child => cloneBranch(child, cloneId, false))
                 }
                 roots.forEach(root => cloneBranch(root, root.parentId ?? null, true))

@@ -54,9 +54,12 @@ const PREVIOUS_SCHEMA_HASHES: Partial<Record<AgentCommandName, string>> = {
     'artifact.get_image': `sha256:${hashCanonicalValue({
         $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', required: ['artifactId'], additionalProperties: false,
         properties: { artifactId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$' } } })}`,
-    // Builds before Scene Precise References took scene.patch_many without preciseReferences; every other change still works.
+    // The installed build predates Scene Precise References and preset archiving: scene.patch_many without preciseReferences
+    // and presetArchived (changes non-empty), workspace.get_snapshot without includeArchived. Calls not using them still work.
     'scene.patch_many': 'sha256:38cdfbd697bf4aa12d5acb255258897323253e767a31a170ceeb68a5322bdb1d',
+    'workspace.get_snapshot': 'sha256:906479c48f84a68c225cbb0cb17c789c19fb3022c0a4894573e59b6801c94a5b',
 }
+const olderBuildArchiveHint = 'The installed NAI Blue build refused preset archiving or preciseReferences and may predate them. Ask the human to update NAI Blue; other calls still work.'
 
 function validatedObservation(value: JsonObject, requestId: string, command?: AgentCommandName): JsonObject {
     if (value.requestId !== requestId || value.requiresAppProcess !== true) throw new AgentCommandError('INBOX_RESULT_MISMATCH')
@@ -275,15 +278,22 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
 
     async function callCommand(state: CallState, tool: string, command: AgentCommandName, args: CallArguments): Promise<CallToolResult> {
         // A summary without lists needs only the page header, so the application is asked for the smallest page.
+        // The archived list is asked for only when named; the field is never sent otherwise, so older builds keep working.
+        const archivedRequested = command === 'workspace.get_snapshot' && args.include.includes('archived')
         const input = command === 'workspace.get_snapshot' && !args.full && args.include.length === 0 && args.input.limit === undefined
-            ? { ...args.input, limit: 1 } : args.input
+            ? { ...args.input, limit: 1 } : archivedRequested ? { ...args.input, includeArchived: true } : args.input
         const observed = command === 'generation.get_run' && args.waitSeconds
             ? await observeRun(state, input, args.requestId)
             : await submit(state, command, input, args.requestId)
         const result = completedResult(observed)
         const attachments = command === 'artifact.get_image' && result?.found === true ? await previewAttachments(state, args.requestId) : []
         if (args.full) return respond(tool, observed, isRejected(observed), attachments)
-        return respond(tool, compactObservation(observed, result && summarizeResult(command, result, args.include)), isRejected(observed), attachments)
+        const compact = compactObservation(observed, result && summarizeResult(command, result, args.include))
+        // The input already passed this checkout's contract, so the application refusing it means its contract is older.
+        const newerField = archivedRequested || (command === 'scene.patch_many' && (input.presetArchived !== undefined
+            || (input.changes as JsonObject[]).some(change => change.preciseReferences !== undefined)))
+        const olderBuild = newerField && observed.status === 'inbox-rejection' && observed.code === 'INVALID_COMMAND_INPUT'
+        return respond(tool, olderBuild ? { ...compact, hint: olderBuildArchiveHint } : compact, isRejected(observed), attachments)
     }
 
     /**

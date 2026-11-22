@@ -60,7 +60,7 @@ import {
 } from '@/services/queue/scene-queue-adapter'
 import { useDiagnosticsStore } from '@/stores/diagnostics-store'
 import { useQueueStore } from '@/stores/queue-store'
-import { useSceneStore } from '@/stores/scene-store'
+import { useSceneStore, visibleScenePresets } from '@/stores/scene-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
 
@@ -115,7 +115,8 @@ export default function QueueCenter() {
     const selectedBatchId = useQueueStore(state => state.selectedBatchId)
     const setExecutionAuthority = useQueueStore(state => state.setExecutionAuthority)
     const setSelectedBatchId = useQueueStore(state => state.setSelectedBatchId)
-    const scenePresets = useSceneStore(state => state.presets)
+    // The Scene picker offers only presets a human works from; archived ones are restored in the preset manager first.
+    const scenePresets = useSceneStore(state => visibleScenePresets(state.presets))
     const activeTokenCount = useAuthStore(state => state.getActiveTokens().length)
     const requestTokenEntry = useAuthStore(state => state.requestTokenEntry)
     const legacyQueueCount = useSceneStore(state => {

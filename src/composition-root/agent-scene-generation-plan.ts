@@ -18,6 +18,7 @@ import { SceneQueueReviewConflict } from '@/services/queue/scene-queue-adapter'
 import { queryVerifiedNaiGenerationCompatibilityBatch } from '@/services/nai/verified-compatibility'
 import { NovelAiModelCapabilityError } from '@/services/nai/adapter'
 import { measureSpan, measureSpanSync } from '@/lib/user-timing'
+import { useSceneStore } from '@/stores/scene-store'
 
 export interface AgentSceneGenerationInput {
     readonly source: { readonly kind: 'scene'; readonly targets: readonly {
@@ -47,6 +48,11 @@ interface AgentScenePreparedJob {
     readonly ordinal: number
     readonly executionDigest: Sha256Digest
     readonly replay?: SceneReplay
+}
+
+/** An archived preset is hidden from agents, so planning it is refused with the step that brings it back. */
+class ScenePresetArchivedError extends Error {
+    constructor(readonly targetIndex: number) { super('Scene preset is archived') }
 }
 
 function digest(value: unknown): Sha256Digest {
@@ -121,6 +127,9 @@ async function prepareAgentScenePlan(
     production?: ProductionSceneReplay,
 ): Promise<{ result: PlanGenerationResult<AgentScenePreparedJob>; submission: SceneQueueSubmission }> {
     const input = validatedInput(inputValue)
+    const presets = useSceneStore.getState().presets
+    const archivedIndex = input.source.targets.findIndex(target => presets.some(preset => preset.id === target.presetId && preset.archivedAt !== undefined))
+    if (archivedIndex !== -1) throw new ScenePresetArchivedError(archivedIndex)
     const count = input.source.targets.reduce((sum, target) => sum + target.count, 0)
     const policy = input.seedPolicy
     const materializedSeeds = identity?.materializedSeeds ?? (policy.kind === 'random'
@@ -244,6 +253,10 @@ export function createAgentSceneGenerationPlanHandler(plans: GenerationPlanRepos
                 if (error instanceof OutputDestinationOccupiedError) return { status: 'conflict',
                     issueCodes: ['output-destination-occupied'],
                     nextAction: 'revise-scene-filename-template' }
+                if (error instanceof ScenePresetArchivedError) return { status: 'invalid',
+                    issueCodes: ['scene-preset-archived'],
+                    issues: [{ code: 'scene-preset-archived', fieldPath: `source.targets[${error.targetIndex}].presetId` }],
+                    nextAction: 'restore-preset' }
                 if (error instanceof SceneQueueReviewConflict) return { status: 'conflict',
                     issueCodes: [error.issue.reason],
                     nextAction: 'refresh-scene-snapshot' }

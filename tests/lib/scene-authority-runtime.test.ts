@@ -21,7 +21,8 @@ import {
     flushSceneAuthorityRuntime,
     stopSceneAuthorityRuntimeForTests,
 } from '@/lib/scene-authority-runtime'
-import { projectScenePresentationState, sceneImagePresentationKey, useSceneStore } from '@/stores/scene-store'
+import { projectScenePresentationState, sceneImagePresentationKey, useSceneStore, type ScenePreset } from '@/stores/scene-store'
+import { markSpans, spansSince } from '@/lib/user-timing'
 import { useSettingsStore } from '@/stores/settings-store'
 
 const LEGACY: SceneV1CompatibilityProjection = {
@@ -477,3 +478,88 @@ describe('Scene Zustand authority runtime', () => {
         expect(useSceneStore.getState().presets[0].scenes[0]).toMatchObject({ productionCount: 20, queueCount: 0 })
     })
 })
+
+describe('explicit flush reuses the projection of unchanged presets', () => {
+    beforeEach(resetStore)
+    afterEach(stopSceneAuthorityRuntimeForTests)
+
+    const scanDetail = async (runtime: { flush(): Promise<void> }) => {
+        const mark = markSpans()
+        await runtime.flush()
+        return spansSince(mark).find(span => span.name === 'scene-authority:scan')!.detail
+    }
+    const presetDocument = (presetId: string, prompt = `${presetId} prompt`): SceneDocument => ({ schemaVersion: 1, presetId, revision: 1,
+        updatedAt: '2026-11-22T00:00:00.000Z', scenes: [{ id: `${presetId}-scene`, name: 'Scene', scenePrompt: prompt, artifactRefs: [], createdAt: 1 }] })
+    const shells = (ids: string[]): ScenePreset[] => ids.map(id => ({ id, name: id, scenes: [], parentId: null, createdAt: 1 }))
+
+    it('projects nothing for unchanged or archived presets and exactly the edited one after a store edit', async () => {
+        const ids = Array.from({ length: 12 }, (_, index) => `preset-${index}`)
+        useSceneStore.setState({ presets: [...useSceneStore.getState().presets, ...shells(ids)], sceneAuthorityInitialized: true })
+        const repository = new MemoryRepository(null, null)
+        const runtime = await activateSceneAuthorityRuntime(repository, { documents: ids.map(id => presetDocument(id)), legacyProjection: null })
+        // The default preset has no document yet; its first commit replaces its Scene array, projected once by the next flush.
+        await runtime.flush()
+        await runtime.flush()
+        expect(await scanDetail(runtime)).toMatchObject({ presetsProjected: 0, presetsReused: 13, presetsChanged: 0 })
+        useSceneStore.getState().archivePresets(ids.slice(0, 6))
+        expect(await scanDetail(runtime)).toMatchObject({ presetsProjected: 0, presetsReused: 13, presetsChanged: 0 })
+        useSceneStore.getState().updateScenePrompt('preset-8', 'preset-8-scene', 'edited by a human')
+        await runtime.flush()
+        const commits = repository.commits.filter(commit => commit.next.presetId !== 'scene-default')
+        expect(commits).toHaveLength(1)
+        expect(commits[0]).toMatchObject({ expected: 1, next: { presetId: 'preset-8', revision: 2,
+            scenes: [{ scenePrompt: 'edited by a human' }] } })
+        // The commit republished preset-8 with a new Scene array: projected once, found unchanged, then reused.
+        expect(await scanDetail(runtime)).toMatchObject({ presetsProjected: 1, presetsReused: 12, presetsChanged: 0 })
+        expect(await scanDetail(runtime)).toMatchObject({ presetsProjected: 0, presetsReused: 13, presetsChanged: 0 })
+    })
+
+    it('still commits a human edit the store subscription missed while a document was being applied', async () => {
+        const repository = new MemoryRepository(document())
+        const runtime = await activateSceneAuthorityRuntime(repository, { documents: [document()], legacyProjection: LEGACY })
+        await runtime.flush()
+        // A store listener that edits synchronously during apply runs while the runtime ignores its own projection.
+        let edited = false
+        const unsubscribe = useSceneStore.subscribe(state => {
+            if (edited || state.presets[0]?.scenes[0]?.scenePrompt !== 'agent result') return
+            edited = true
+            state.updateScenePrompt('preset-a', 'scene-a', 'human edit during apply')
+        })
+        try { expect(applySceneDocumentProjection(document(2, 'agent result'))).toBe(true) } finally { unsubscribe() }
+        expect(repository.commits).toHaveLength(0)
+        await runtime.flush()
+        expect(repository.commits.at(-1)).toMatchObject({ expected: 2, next: { revision: 3, scenes: [{ scenePrompt: 'human edit during apply' }] } })
+    })
+
+    it('keeps a newly linked result when a later edit commits, and commits an edit made while a commit was in flight', async () => {
+        // The UI edit lands while the first CAS is awaiting, so the runtime records the newer authority without a store change.
+        let editDuringCommit = false
+        class SlowRepository extends MemoryRepository {
+            async commit(next: SceneDocument, expected: number): Promise<CommitResult> {
+                await Promise.resolve()
+                if (editDuringCommit) {
+                    editDuringCommit = false
+                    useSceneStore.getState().updateScenePrompt('preset-a', 'scene-a', 'second edit')
+                }
+                return super.commit(next, expected)
+            }
+        }
+        const repository = new SlowRepository(document())
+        const runtime = await activateSceneAuthorityRuntime(repository, { documents: [document()], legacyProjection: LEGACY })
+        await runtime.flush()
+        const linked: SceneDocument = { ...document(2), scenes: [{ ...document(2).scenes[0], artifactRefs: [...document(2).scenes[0].artifactRefs,
+            { artifactId: 'artifact-new', createdAt: '2026-11-22T00:00:00.000Z', favorite: false }] }] }
+        // A finished job's result writer commits the link first, then publishes it through the runtime.
+        expect(await repository.commit(linked, 1)).toMatchObject({ status: 'COMMITTED' })
+        expect(applySceneDocumentProjection(linked)).toBe(true)
+        expect(await scanDetail(runtime)).toMatchObject({ presetsChanged: 0 })
+        editDuringCommit = true
+        useSceneStore.getState().updateScenePrompt('preset-a', 'scene-a', 'first edit')
+        await runtime.flush()
+        expect(repository.commits.slice(1).map(commit => [commit.expected, commit.next.scenes[0].scenePrompt]))
+            .toEqual([[2, 'first edit'], [3, 'second edit']])
+        expect(repository.commits.at(-1)!.next.scenes[0].artifactRefs.map(reference => reference.artifactId)).toEqual(['artifact-a', 'artifact-new'])
+        expect(await scanDetail(runtime)).toMatchObject({ presetsChanged: 0 })
+    })
+})
+

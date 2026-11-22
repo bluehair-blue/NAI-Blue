@@ -114,6 +114,62 @@ describe('MCP adapter default view for agents', () => {
         expect(f.invokes[2].command.input).toEqual({})
     })
 
+    it('counts archived presets by default and lists them only when include names archived', async () => {
+        const archived = [{ presetId: 'draft-1', name: 'nhr-draft', revision: 2, sceneCount: 3, archivedAt: '2026-11-22T00:00:00.000Z' }]
+        const f = await fixture({ 'workspace.get_snapshot': (command, id) => observed(id, command.name, {
+            totalPresets: 2, totalScenes: 5, totalFolders: 0, totalDrafts: 0, totalArchivedPresets: 1, offset: 0, nextOffset: null, truncated: false,
+            scenePresets: [], ...(command.input.includeArchived === true ? { archivedPresets: archived } : {}) }) })
+        const plain = await f.call('workspace.get_snapshot', {})
+        expect(plain.body.result.totals).toEqual({ presets: 2, scenes: 5, folders: 0, drafts: 0, archived: 1 })
+        expect(plain.text).not.toContain('nhr-draft')
+        expect(f.invokes[0].command.input).toEqual({ limit: 1 })
+        const presets = await f.call('workspace.get_snapshot', { include: ['presets'] })
+        expect(f.invokes[1].command.input).toEqual({})
+        expect(presets.text).not.toContain('nhr-draft')
+        const listed = await f.call('workspace.get_snapshot', { include: ['archived'] })
+        expect(f.invokes[2].command.input).toEqual({ includeArchived: true })
+        expect(listed.body.result.archived).toEqual(archived)
+        const none = await fixture({ 'workspace.get_snapshot': (command, id) => observed(id, command.name, {
+            totalPresets: 1, totalScenes: 0, totalFolders: 0, totalDrafts: 0, totalArchivedPresets: 0 }) })
+        expect((await none.call('workspace.get_snapshot', {})).body.result.totals).not.toHaveProperty('archived')
+    })
+
+    it('forwards presetArchived only when the caller uses it and explains a refusal from an older build', async () => {
+        const committed = (command: AgentCommand, id: string) => observed(id, command.name, { status: 'authoring-committed',
+            command: 'scene.patch_many', resourceId: 'preset-1', revision: 4, targetHash: planHash })
+        const f = await fixture({ 'scene.patch_many': committed })
+        const edit = { presetId: 'preset-1', expectedRevision: 4, changes: [{ sceneId: 'scene-a', name: 'A' }] }
+        await f.call('scene.patch_many', { input: edit })
+        expect(f.invokes[0].command.input).toEqual(edit)
+        expect(f.invokes[0].command.input).not.toHaveProperty('presetArchived')
+        const archive = await f.call('scene.patch_many', { input: { presetId: 'preset-1', expectedRevision: 4, changes: [], presetArchived: true } })
+        expect(f.invokes[1].command.input).toEqual({ presetId: 'preset-1', expectedRevision: 4, changes: [], presetArchived: true })
+        expect(archive.body.result).toEqual({ status: 'authoring-committed', resourceId: 'preset-1', revision: 4 })
+        // Empty changes alone say nothing to do and never reach the app.
+        expect((await f.call('scene.patch_many', { input: { presetId: 'preset-1', expectedRevision: 4, changes: [] } })).body)
+            .toMatchObject({ code: 'INVALID_COMMAND_INPUT', submissionAttempted: false })
+        expect(f.invokes).toHaveLength(2)
+        const refusing = (_command: AgentCommand, id: string) => ({ status: 'inbox-rejection', code: 'INVALID_COMMAND_INPUT', requestId: id, requiresAppProcess: true, accepted: false })
+        const older = await fixture({ 'scene.patch_many': refusing, 'workspace.get_snapshot': refusing })
+        const refused = await older.call('scene.patch_many', { input: { presetId: 'preset-1', expectedRevision: 4, changes: [], presetArchived: false } })
+        expect(refused.body.hint).toContain('may predate them')
+        expect((await older.call('workspace.get_snapshot', { include: ['archived'] })).body.hint).toContain('may predate them')
+        const referenced = { ...edit, changes: [{ sceneId: 'scene-a', preciseReferences: null }] }
+        expect((await older.call('scene.patch_many', { input: referenced })).body.hint).toContain('may predate them')
+        expect((await older.call('scene.patch_many', { input: edit })).body.hint).not.toContain('may predate them')
+    })
+
+    it('marks a Scene of an archived preset and attaches the restore hint to archive refusals', async () => {
+        const f = await fixture({ 'scene.resolve_many': (command, id) => observed(id, command.name, { results: [
+            { found: false, presetId: 'draft-1', sceneId: 'scene-a', archived: true }], truncated: false, nextIndex: null }),
+        'scene.patch_many': (command, id) => observed(id, command.name, { code: 'AGENT_PRESET_ARCHIVED' }, 'rejected') })
+        const resolved = await f.call('scene.resolve_many', { input: { targets: [{ presetId: 'draft-1', sceneId: 'scene-a' }] } })
+        expect(resolved.body.result.results).toEqual([{ presetId: 'draft-1', sceneId: 'scene-a', found: false, archived: true }])
+        const refused = await f.call('scene.patch_many', { input: { presetId: 'draft-1', expectedRevision: 2, changes: [{ sceneId: 'scene-a', name: 'A' }] } })
+        expect(refused.body).toMatchObject({ state: 'rejected', result: { code: 'AGENT_PRESET_ARCHIVED' } })
+        expect(refused.body.hint).toContain('presetArchived:false')
+    })
+
     it('plans, enqueues and waits in one generation.run call and returns artifacts without prompt text', async () => {
         const f = await fixture()
         const result = await f.call('generation.run', { requestId: 'nhr-cut1', input: planInput })

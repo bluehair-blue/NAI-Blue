@@ -1,4 +1,4 @@
-import { assertAgentAuthoringTarget, isAgentAuthoringResult, type AgentAuthoringCommand, type AgentAuthoringPort } from './agent-authoring-contract'
+import { assertAgentAuthoringTarget, isAgentAuthoringRefusal, isAgentAuthoringResult, type AgentAuthoringCommand, type AgentAuthoringPort } from './agent-authoring-contract'
 import { isAgentAuthoringRecord, type AgentAuthoringRecord } from './agent-execution-repository'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import type { JsonObject, JsonValue } from '@/domain/composition/types'
@@ -560,6 +560,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         if (!await authorized(record.envelope)) return settle(record, failure('AUTHENTICATION_FAILED'), 'rejected')
         const target = await agentSpans.span('agent-exec:authoring-inspect',
             () => options.authoring!.inspect(record.command, structuredClone(record.envelope.command.input)))
+        if (isAgentAuthoringRefusal(target)) return settle(record, failure(target.refused), 'rejected')
         if (target) assertAgentAuthoringTarget(target)
         if (!target || canonicalSerialize(target) !== canonicalSerialize(record.target)) return settle(record, failure('AGENT_AUTHORING_TARGET_CHANGED'), 'rejected')
         const grant = { requestId: record.envelope.requestId, requestHash: record.envelope.requestHash,
@@ -600,6 +601,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             const target = await agentSpans.span('agent-exec:authoring-inspect',
                 () => options.authoring!.inspect(command, structuredClone(envelope.command.input)))
             if (!target) return failure('AGENT_AUTHORING_TARGET_UNAVAILABLE')
+            if (isAgentAuthoringRefusal(target)) return failure(target.refused)
             assertAgentAuthoringTarget(target)
             if (target.command !== command || target.expectedRevision !== envelope.command.input.expectedRevision
                 || target.changeCount !== (envelope.command.input.changes as unknown[]).length

@@ -127,4 +127,23 @@ describe('human execution controls in the existing inbox panel', () => {
         expect(review).not.toContain('agentInbox.cancelAction')
         expect(review.match(/<button[^>]*>agentInbox.approveOnce<\/button>/)?.[0]).not.toContain(' disabled=""')
     })
+
+    it('says in the approval card that a preset-only request archives or restores and changes no Scene', () => {
+        const review = (presetArchived: boolean) => ({ command: 'scene.patch_many' as const, requestId: `archive-${presetArchived}`,
+            requestHash: `sha256:${'a'.repeat(64)}`, clientId: 'client-active', policyRevision: 1, expiresAt: '2026-11-22T01:00:00.000Z',
+            resourceId: 'draft-preset', targetHash: `sha256:${'b'.repeat(64)}`, changeCount: 0, createsFolders: false, renamesPathSegments: false,
+            reasons: ['AGENT_APPROVAL_REQUIRED'], input: { presetId: 'draft-preset', expectedRevision: 3, changes: [], presetArchived } })
+        const snapshot = { status: 'ready', workspaceId: 'workspace', clients: [], capabilities: [], changingClient: false, changingExecution: false,
+            policy: DEFAULT_AGENT_EXECUTION_POLICY, authoringConsent: DEFAULT_AGENT_AUTHORING_CONSENT, generationConsent: DEFAULT_AGENT_AUTHORING_CONSENT,
+            recent: [], pendingApprovals: [review(true), review(false)] } as unknown as ForegroundAgentSnapshot
+        const runtime = { subscribe: () => () => undefined, getSnapshot: () => snapshot } as unknown as ForegroundAgentCommandRuntime
+        const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(AgentCommandPanel, { runtime })))
+        expect(html).toContain('agentInbox.presetArchive')
+        expect(html).toContain('agentInbox.presetRestore')
+        for (const locale of [en, ko, ja] as Record<string, any>[]) {
+            expect(locale.agentInbox.presetArchive).toEqual(expect.any(String))
+            expect(locale.agentInbox.presetRestore).toEqual(expect.any(String))
+            expect(locale.scene.folderManager.archiveTitle).toContain('{{count}}')
+        }
+    })
 })

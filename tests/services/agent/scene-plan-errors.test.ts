@@ -9,9 +9,31 @@ vi.mock('@/services/queue/scene-queue-adapter', async () => ({
     prepareSceneQueueReview: prepare, getSceneQueuePlanningFacts: vi.fn(), enqueueReviewedSceneQueue: vi.fn(),
 }))
 vi.mock('@/services/diagnostics/error-registry', () => ({ reportDiagnostic: () => ({ eventId: 'e15729b5-ce3e-4462-801c-125d6d1b6c18' }) }))
+// The Scene store is read for archive state only; its persistence stays in memory here.
+vi.mock('@/lib/indexed-db', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/indexed-db')>(),
+    indexedDBStorage: { getItem: async () => null, setItem: async () => undefined, removeItem: async () => undefined } }))
 import { createAgentSceneGenerationPlanHandler } from '@/composition-root/agent-scene-generation-plan'
+import { useSceneStore } from '@/stores/scene-store'
 
 describe('public Scene planning failures', () => {
+    it('rejects a target in an archived preset with an issue that names the restore step, before any Scene preparation', async () => {
+        const previous = useSceneStore.getState().presets
+        useSceneStore.setState({ presets: [{ id: 'kept', name: 'Kept', scenes: [], createdAt: 1 },
+            { id: 'draft', name: 'Draft', scenes: [], createdAt: 2, archivedAt: 3 }] })
+        try {
+            const save = vi.fn(), handler = createAgentSceneGenerationPlanHandler({ save, get: vi.fn() } as never)
+            const result = await handler.execute({ source: { kind: 'scene', targets: [
+                { presetId: 'kept', sceneId: 'scene', expectedRevision: 1, count: 1 },
+                { presetId: 'draft', sceneId: 'scene', expectedRevision: 1, count: 1 },
+            ] }, seedPolicy: { kind: 'random' }, budget: { maxImages: 2, maxAnlas: 30 } }, {} as never)
+            expect(result).toEqual({ status: 'invalid', issueCodes: ['scene-preset-archived'],
+                issues: [{ code: 'scene-preset-archived', fieldPath: 'source.targets[1].presetId' }], nextAction: 'restore-preset' })
+            expect(handler.receiptState?.(result)).toBe('rejected')
+            expect(() => assertAgentPublicValue(result)).not.toThrow()
+            expect(prepare).not.toHaveBeenCalled()
+            expect(save).not.toHaveBeenCalled()
+        } finally { useSceneStore.setState({ presets: previous }) }
+    })
     it('uses the executor settings guard and rejects invalid mode before saving a ready plan', async () => {
         let failure: NovelAiModelCapabilityError | undefined
         try { validateNovelAiGenerationParams({ model: 'nai-diffusion-5-full', promptTextMode: 'verbatim',

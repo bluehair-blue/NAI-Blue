@@ -1,7 +1,12 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import {
+    Archive,
+    ArchiveRestore,
     CheckCircle2,
+    ChevronDown,
+    ChevronRight,
     Copy,
     FilePlus2,
     Folder,
@@ -29,7 +34,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import { getScenePresetPathSegments, useSceneStore, type ScenePreset } from '@/stores/scene-store'
+import { DEFAULT_SCENE_PRESET_ID, getScenePresetPathSegments, scenePresetBranchIds, useSceneStore, visibleScenePresets, type ScenePreset } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useTrashStore } from '@/stores/trash-store'
 import { archiveSceneFolder } from '@/services/trash/asset-trash-service'
@@ -93,7 +98,7 @@ function buildFolderRows(presets: readonly ScenePreset[]): FolderRow[] {
  * explicit, preventing an innocent parent-folder click from silently removing a branch.
  */
 function getDeletionImpact(presets: readonly ScenePreset[], selectedIds: readonly string[]) {
-    const deleted = new Set(selectedIds.filter(id => id !== 'scene-default'))
+    const deleted = new Set(selectedIds.filter(id => id !== DEFAULT_SCENE_PRESET_ID))
     let changed = true
     while (changed) {
         changed = false
@@ -110,6 +115,125 @@ function getDeletionImpact(presets: readonly ScenePreset[], selectedIds: readonl
             .filter(preset => deleted.has(preset.id))
             .reduce((sum, preset) => sum + preset.scenes.length, 0),
     }
+}
+
+export interface ArchivedPresetRow {
+    preset: ScenePreset
+    path: string
+    folders: number
+    scenes: number
+}
+
+/**
+ * One row per archived branch: an archived preset whose parent is still active. The counts are the whole branch, which
+ * is what delete moves to the trash; restore brings back the part archived together and leaves a folder archived
+ * earlier inside it as its own row. Newest archive first.
+ */
+export function archivedPresetRows(presets: readonly ScenePreset[]): ArchivedPresetRow[] {
+    const archivedPresets = presets.filter(preset => preset.archivedAt !== undefined)
+    const archived = new Set(archivedPresets.map(preset => preset.id))
+    const roots = archivedPresets.filter(preset => !(preset.parentId && archived.has(preset.parentId)))
+    // Old data can hold a parentId cycle: none of its members has an active parent, so the first one stands for it.
+    const covered = scenePresetBranchIds(presets, roots.map(preset => preset.id))
+    for (const preset of archivedPresets) {
+        if (covered.has(preset.id)) continue
+        roots.push(preset)
+        scenePresetBranchIds(presets, [preset.id]).forEach(id => covered.add(id))
+    }
+    return roots
+        .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
+        .map(preset => ({ preset, path: getScenePresetPathSegments(presets, preset.id).join(' / '), ...getDeletionImpact(presets, [preset.id]) }))
+}
+
+/**
+ * In a short window the opened rows and the delete confirmation land below the visible part of the folder column.
+ * A module-level ref callback runs once when the element appears, so it never pulls the view back while the user scrolls.
+ */
+const revealOnMount = (node: HTMLElement | null) => node?.scrollIntoView({ block: 'nearest' })
+
+/**
+ * The archive at the bottom of the preset manager: collapsed by default and absent when empty. Controlled by the dialog
+ * so restore and delete stay on the store's own actions; delete asks for the same confirmation as the folder delete.
+ */
+export function ArchivedPresetsSection({ rows, expanded, onToggle, confirmDeleteId, onRestore, onRequestDelete, onCancelDelete, onConfirmDelete, t }: {
+    rows: readonly ArchivedPresetRow[]
+    expanded: boolean
+    onToggle: () => void
+    confirmDeleteId: string | null
+    onRestore: (presetId: string) => void
+    onRequestDelete: (presetId: string) => void
+    onCancelDelete: () => void
+    onConfirmDelete: (presetId: string) => void
+    t: TFunction
+}) {
+    if (rows.length === 0) return null
+    const title = t('scene.folderManager.archiveTitle', '보관함 ({{count}})', { count: rows.length })
+    return (
+        <section className="shrink-0 border-t border-border" aria-label={title}>
+            <button
+                type="button"
+                className="flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left text-sm font-semibold hover:bg-accent"
+                aria-expanded={expanded}
+                onClick={onToggle}
+            >
+                {expanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                <Archive className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {title}
+            </button>
+            {expanded && (
+                <div ref={revealOnMount} className="custom-scrollbar max-h-72 space-y-1 overflow-y-auto px-2 pb-2">
+                    {rows.map(({ preset, path, folders, scenes }) => (
+                        <div key={preset.id} className="rounded-control border border-border px-3 py-2">
+                            <div className="flex min-h-11 items-center gap-2">
+                                <span className="min-w-0 flex-1" title={path}>
+                                    <span className="block truncate text-sm font-medium">{preset.name}</span>
+                                    <span className="block truncate text-xs text-muted-foreground">
+                                        {t('scene.folderManager.archivedRowSummary', '폴더 {{folders}}개 · 씬 {{scenes}}개', { folders, scenes })}
+                                    </span>
+                                </span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-11 shrink-0"
+                                    aria-label={t('scene.folderManager.restoreNamed', '{{name}} 복원', { name: preset.name })}
+                                    onClick={() => onRestore(preset.id)}
+                                >
+                                    <ArchiveRestore className="mr-1 h-4 w-4" />
+                                    {t('scene.folderManager.restore', '복원')}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-11 shrink-0 text-destructive hover:text-destructive"
+                                    aria-label={t('scene.folderManager.deleteNamed', '{{name}} 삭제', { name: preset.name })}
+                                    onClick={() => onRequestDelete(preset.id)}
+                                >
+                                    <Trash2 className="mr-1 h-4 w-4" />
+                                    {t('scene.folderManager.delete', '삭제')}
+                                </Button>
+                            </div>
+                            {confirmDeleteId === preset.id && (
+                                <div ref={revealOnMount} className="mt-2 rounded-panel border border-destructive/50 bg-destructive/10 p-3" role="alert">
+                                    <p className="text-sm font-semibold text-destructive">
+                                        {t('scene.folderManager.deleteImpactTitle', '폴더 {{folders}}개와 씬 {{scenes}}개를 삭제할까요?', { folders, scenes })}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                        {t('trash.folderMoveDescription', '하위 폴더와 씬을 포함해 휴지통으로 이동하며, 최대 30일 보관됩니다.')}
+                                    </p>
+                                    <div className="mt-2 flex justify-end gap-2">
+                                        <Button type="button" variant="ghost" onClick={onCancelDelete}>{t('common.cancel', '취소')}</Button>
+                                        <Button type="button" variant="destructive" onClick={() => onConfirmDelete(preset.id)}>{t('trash.move', '휴지통으로 이동')}</Button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </section>
+    )
 }
 
 function WorkflowStep({
@@ -158,6 +282,8 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
     const presets = useSceneStore(state => state.presets)
     const addPreset = useSceneStore(state => state.addPreset)
     const deletePreset = useSceneStore(state => state.deletePreset)
+    const archivePresets = useSceneStore(state => state.archivePresets)
+    const restoreArchivedPresets = useSceneStore(state => state.restoreArchivedPresets)
     const renamePreset = useSceneStore(state => state.renamePreset)
     const movePresets = useSceneStore(state => state.movePresets)
     const duplicatePresets = useSceneStore(state => state.duplicatePresets)
@@ -166,7 +292,14 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
     const addToTrash = useTrashStore(state => state.add)
     const sceneSavePath = useSettingsStore(state => state.sceneSavePath)
     const useAbsoluteScenePath = useSettingsStore(state => state.useAbsoluteScenePath)
-    const rows = useMemo(() => buildFolderRows(presets), [presets])
+    // The working tree leaves archived presets out; deletion impact and trash snapshots still read every preset.
+    const workingPresets = visibleScenePresets(presets)
+    const rows = useMemo(() => buildFolderRows(workingPresets), [workingPresets])
+    const archivedRows = useMemo(() => archivedPresetRows(presets), [presets])
+    const [archiveExpanded, setArchiveExpanded] = useState(false)
+    const [confirmArchivedDelete, setConfirmArchivedDelete] = useState<string | null>(null)
+    // Snapshotting a branch into the trash is asynchronous; a second click must not snapshot it again.
+    const trashMoveRunning = useRef(false)
     const [selected, setSelected] = useState<Set<string>>(new Set())
     const [newFolderName, setNewFolderName] = useState('')
     const [renameValue, setRenameValue] = useState('')
@@ -192,20 +325,24 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
         setFolderFilter('all')
         setFolderSort('tree')
         setConfirmDelete(false)
+        setArchiveExpanded(false)
+        setConfirmArchivedDelete(null)
     }, [open])
 
-    const selectedIds = [...selected]
-    const selectedKey = [...selected].sort().join('\u001f')
+    // A folder archived or removed while this dialog is open (an agent can do that) leaves the tree, so it leaves the selection too.
+    const workingIds = useMemo(() => new Set(workingPresets.map(preset => preset.id)), [workingPresets])
+    const selectedIds = [...selected].filter(id => workingIds.has(id))
+    const selectedKey = [...selectedIds].sort().join('\u001f')
     const selectedPreset = selectedIds.length === 1
         ? presets.find(preset => preset.id === selectedIds[0])
         : undefined
     const selectedTemplateCount = selectedIds.filter(id => presets.find(preset => preset.id === id)?.defaultTemplate).length
-    const deletableSelectedIds = selectedIds.filter(id => id !== 'scene-default')
+    const deletableSelectedIds = selectedIds.filter(id => id !== DEFAULT_SCENE_PRESET_ID)
     const deletionImpact = useMemo(
         () => getDeletionImpact(presets, deletableSelectedIds),
         [deletableSelectedIds, presets],
     )
-    const sourceScenes = useMemo<SourceSceneRow[]>(() => presets.flatMap(preset => {
+    const sourceScenes = useMemo<SourceSceneRow[]>(() => workingPresets.flatMap(preset => {
         const folderPath = getScenePresetPathSegments(presets, preset.id).join(' / ')
         return preset.scenes.map(scene => ({
             key: `${preset.id}\u001f${scene.id}`,
@@ -213,7 +350,7 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
             scene,
             path: `${folderPath} / ${scene.name}`,
         }))
-    }), [presets])
+    }), [presets, workingPresets])
 
     useEffect(() => {
         setRenameValue(selectedPreset?.name ?? '')
@@ -304,29 +441,36 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
     }
 
     /**
-     * Depends on SceneStore's existing descendant cascade and archives the
-     * exact same branch first. This preserves hierarchy and image previews in
+     * Depends on SceneStore's existing descendant cascade and snapshots the
+     * exact same branch into the trash first. This preserves hierarchy and image previews in
      * the shared trash instead of leaving the folder manager as a bypass path.
      */
-    const handleDelete = async () => {
-        if (deletableSelectedIds.length === 0) return
-        try {
-            // Selected descendants are already included when their parent is
-            // processed, so only archive roots to prevent duplicate snapshots.
-            const selectedSet = new Set(deletableSelectedIds)
-            const roots = deletableSelectedIds.filter(id => {
-                let current = presets.find(preset => preset.id === id)
-                while (current?.parentId) {
-                    if (selectedSet.has(current.parentId)) return false
-                    current = presets.find(preset => preset.id === current?.parentId)
-                }
-                return true
-            })
-            for (const rootId of roots) {
-                const trashItem = await archiveSceneFolder(rootId, presets)
-                if (trashItem) addToTrash(trashItem)
+    const moveBranchesToTrash = async (ids: readonly string[]) => {
+        // Selected descendants are already included when their parent is
+        // processed, so only snapshot roots to prevent duplicates.
+        const selectedSet = new Set(ids)
+        const roots = ids.filter(id => {
+            const visited = new Set([id])
+            let current = presets.find(preset => preset.id === id)
+            while (current?.parentId && !visited.has(current.parentId)) {
+                if (selectedSet.has(current.parentId)) return false
+                visited.add(current.parentId)
+                current = presets.find(preset => preset.id === current?.parentId)
             }
-            roots.forEach(deletePreset)
+            return true
+        })
+        for (const rootId of roots) {
+            const trashItem = await archiveSceneFolder(rootId, presets)
+            if (trashItem) addToTrash(trashItem)
+        }
+        roots.forEach(deletePreset)
+    }
+
+    const handleDelete = async () => {
+        if (deletableSelectedIds.length === 0 || trashMoveRunning.current) return
+        trashMoveRunning.current = true
+        try {
+            await moveBranchesToTrash(deletableSelectedIds)
             setSelected(new Set())
             setConfirmDelete(false)
             toast({
@@ -337,6 +481,46 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
         } catch (error) {
             console.error('Failed to move folder selection to trash:', error)
             toast({ title: t('common.error', '오류'), variant: 'destructive' })
+        } finally {
+            trashMoveRunning.current = false
+        }
+    }
+
+    const handleArchive = () => {
+        if (deletableSelectedIds.length === 0) return
+        archivePresets(deletableSelectedIds)
+        setSelected(new Set())
+        toast({
+            title: t('scene.folderManager.archivedCount', '{{count}}개 폴더를 보관함으로 옮겼습니다', { count: deletableSelectedIds.length }),
+            description: t('scene.folderManager.archivedDescription', '씬과 결과 이미지는 그대로입니다. 아래 보관함에서 복원하거나 삭제할 수 있습니다.'),
+            variant: 'success',
+        })
+    }
+
+    const handleRestoreArchived = (presetId: string) => {
+        const name = presets.find(preset => preset.id === presetId)?.name ?? ''
+        restoreArchivedPresets([presetId])
+        if (confirmArchivedDelete === presetId) setConfirmArchivedDelete(null)
+        toast({ title: t('scene.folderManager.restoredNamed', '{{name}} 폴더를 복원했습니다', { name }), variant: 'success' })
+    }
+
+    const handleDeleteArchived = async (presetId: string) => {
+        if (trashMoveRunning.current) return
+        trashMoveRunning.current = true
+        const impact = getDeletionImpact(presets, [presetId])
+        try {
+            await moveBranchesToTrash([presetId])
+            setConfirmArchivedDelete(null)
+            toast({
+                title: t('trash.moved', '휴지통으로 이동했습니다.'),
+                description: t('scene.folderManager.deletedSceneCount', '포함된 씬 {{count}}개도 함께 이동했습니다.', { count: impact.scenes }),
+                variant: 'success',
+            })
+        } catch (error) {
+            console.error('Failed to move archived folder to trash:', error)
+            toast({ title: t('common.error', '오류'), variant: 'destructive' })
+        } finally {
+            trashMoveRunning.current = false
         }
     }
 
@@ -419,7 +603,8 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
                 </section>
 
                 <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[minmax(22rem,0.9fr)_minmax(28rem,1.1fr)] md:overflow-hidden">
-                    <div className="flex min-h-[28rem] flex-col border-b border-border md:min-h-0 md:border-b-0 md:border-r">
+                    {/* The column scrolls as a whole when the window is too short for the list and the opened archive together. */}
+                    <div className="custom-scrollbar flex min-h-[28rem] flex-col border-b border-border md:min-h-0 md:overflow-y-auto md:border-b-0 md:border-r">
                         <div className="space-y-3 border-b border-border p-4">
                             <div className="relative">
                                 <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
@@ -506,7 +691,7 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
                             </div>
                         </div>
 
-                        <ScrollArea className="min-h-64 flex-1 p-2">
+                        <ScrollArea className="min-h-40 flex-1 p-2">
                             <div className="space-y-1" role="listbox" aria-multiselectable="true" aria-label={t('scene.folderManager.folderList', '검색 가능한 씬 폴더 목록')}>
                                 {visibleRows.map(({ preset, path }) => {
                                     const checked = selected.has(preset.id)
@@ -568,6 +753,17 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
                                 </div>
                             )}
                         </ScrollArea>
+                        <ArchivedPresetsSection
+                            rows={archivedRows}
+                            expanded={archiveExpanded}
+                            onToggle={() => setArchiveExpanded(current => !current)}
+                            confirmDeleteId={confirmArchivedDelete}
+                            onRestore={handleRestoreArchived}
+                            onRequestDelete={setConfirmArchivedDelete}
+                            onCancelDelete={() => setConfirmArchivedDelete(null)}
+                            onConfirmDelete={presetId => void handleDeleteArchived(presetId)}
+                            t={t}
+                        />
                     </div>
 
                     <div className="custom-scrollbar min-h-0 overflow-y-auto p-4">
@@ -646,10 +842,19 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
                                             {t('scene.folderManager.moveSelected', '선택 폴더 이동')}
                                         </Button>
                                     </div>
-                                    <div className="grid gap-2 sm:grid-cols-2">
+                                    <div className="grid gap-2 sm:grid-cols-3">
                                         <Button variant="outline" className="h-11" onClick={handleDuplicate}>
                                             <Copy className="mr-2 h-4 w-4" />
                                             {t('scene.folderManager.duplicateSelected', '선택 폴더 복제')}
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            className="h-11"
+                                            onClick={handleArchive}
+                                            disabled={deletableSelectedIds.length === 0}
+                                        >
+                                            <Archive className="mr-2 h-4 w-4" />
+                                            {t('scene.folderManager.archiveSelected', '선택 폴더 보관')}
                                         </Button>
                                         <Button
                                             variant="outline"

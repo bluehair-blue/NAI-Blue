@@ -117,7 +117,10 @@ async function snapshotSource(): Promise<
                     if (document !== null) documents.push(document)
                 }
             }
-            return documents.sort((left, right) => left.presetId.localeCompare(right.presetId))
+            // Archived presets are hidden from agents here as in workspace.get_snapshot.
+            const archived = new Set(useSceneStore.getState().presets.flatMap(shell => shell.archivedAt === undefined ? [] : [shell.id]))
+            return documents.filter(document => !archived.has(document.presetId))
+                .sort((left, right) => left.presetId.localeCompare(right.presetId))
         })()
         : []
     return {
@@ -258,6 +261,9 @@ async function applyRequest(request: AgentEditRequest): Promise<void> {
             const action = request.action
             if (!useSceneStore.getState().sceneAuthorityInitialized) {
                 throw new Error('Scene authority V2 is not active; the preserved V1 projection is read-only.')
+            }
+            if (useSceneStore.getState().presets.some(shell => shell.id === action.presetId && shell.archivedAt !== undefined)) {
+                throw new Error(`Scene preset ${action.presetId} is archived; restore it before editing.`)
             }
             const result = await patchScenes({
                 repository: getRuntimeSceneRepository(),
