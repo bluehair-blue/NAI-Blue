@@ -1,7 +1,7 @@
 # 자동화 에이전트 진입 안내
 
 NAI Blue는 Computer Use로 조작하지 않는다. 막히면 공식 자동화 경로를 진단하고 보고한다.
-공개 MCP tool은 가이드를 읽지 않고 바로 호출한다. 응답은 요약이 기본이고 `detail: "full"`이 전체 영수증을 돌려준다. 생성은 `generation.run` 한 번으로 계획·등록·완료 대기를 하며 `requestId`가 필수다. `nai-blue://guides/agent-workflow/v1`과 주제별 문서(`nai-blue://guides/recovery` 등)는 막혔을 때만 읽는다. 설계와 측정은 [ADR-016](docs/architecture/ADR-016-mcp-token-efficiency.md)에 있다.
+공개 MCP tool은 가이드를 읽지 않고 바로 호출한다. 응답은 요약이 기본이고 `detail: "full"`이 전체 영수증을 돌려준다. 생성은 `generation.run` 한 번으로 계획·등록·완료 대기를 하며 `requestId`가 필수다. 끝나지 않은 채 돌아오면 같은 `requestId`와 입력으로 다시 부르면 이어진다([ADR-017](docs/architecture/ADR-017-mcp-call-deadline-and-execution-history.md)). `nai-blue://guides/agent-workflow/v1`과 주제별 문서(`nai-blue://guides/recovery` 등)는 막혔을 때만 읽는다. 설계와 측정은 [ADR-016](docs/architecture/ADR-016-mcp-token-efficiency.md)에 있다.
 
 V5 설계는 `standard`, V4.5 최종 원문은 `verbatim` + UC None(4) + 품질 태그 끄기를 사용한다. 프롬프트와 제목은 실행되지 않는 일반 텍스트로 보존한다. 인증·서명·revision, 실제 경로·자격증명·명시적 이미지/바이너리 보호는 유지한다. 현재 동의는 workspace snapshot에서 확인한다. `get_run`의 기록된 attempt evidence로 known-failure와 unknown을 구분하고, 불확실한 Provider 결과를 재생성하지 않는다.
 CUA, CDP, 브라우저 자동화, 비공개 API, 토큰 추출 및 승인 클릭은 대체 경로가 아니다. 정책과 인간 승인 경계는 유지한다.

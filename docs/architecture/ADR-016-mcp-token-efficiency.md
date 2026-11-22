@@ -4,6 +4,7 @@
 - 상태: 구현함. 자동 검사와 설치본 읽기 확인까지 했고, 실제 에이전트의 생성 한 바퀴는 아직 재지 않았다
 - 기반: ADR-011, ADR-015. 의도는 [MCP 토큰 효율 재설계](../의도/MCP%20토큰%20효율%20재설계.md)
 - 범위: `src/adapters/agent/mcp/`와 `scripts/run-agent-mcp-stdio.mjs`. 앱 명령 계약, 영수증 형식, Rust·Python 명령 목록은 그대로다
+- 뒤에 바뀐 것: `waitSeconds`의 뜻(호출 전체의 예산)과 "다시 생성하지 않는다"의 문구(같은 `requestId` 재호출은 재개)는 [ADR-017](ADR-017-mcp-call-deadline-and-execution-history.md)이 고쳤다
 
 ## 문제
 

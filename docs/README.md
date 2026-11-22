@@ -4,6 +4,7 @@
 
 - 정식 소스: `E:/AI_Project_Library/projects/nais/NAI-Blue`.
 - MCP 토큰 효율 재설계 (2026-11-22): [ADR-016](./architecture/ADR-016-mcp-token-efficiency.md). 가이드 잠금을 없애고 도구 목록·응답을 줄이고 생성 왕복을 묶었다. 상태: 검증중(자동 검사와 설치본 읽기 확인 완료, 실제 에이전트의 생성 한 바퀴는 미측정). 유입은 [측정 스크립트](../scripts/measure-agent-mcp-inflow.mjs)로 잰다. 기존 MCP 연결은 재연결해야 적용된다. 의도는 [의도 인덱스](./의도/INDEX.md).
+- MCP 호출 마감·재개·실행 이력 정비 (2026-11-22): [ADR-017](./architecture/ADR-017-mcp-call-deadline-and-execution-history.md). 상태: 검증중(자동 검사 완료). 어댑터 쪽은 MCP 재연결로 적용되고, 앱 쪽(실행 이력 정리, 계획 준비, 파일명)은 설치본에 아직 올리지 않았다. 원인과 남은 단계는 [원인과 구현 계획](./의도/MCP%20실전%20제약%20원인과%20구현%20계획.md).
 - 실제 실행 경로: `E:/AI_Project_Library/projects/nais/NAI Blue/NAI-Blue.exe`. 등록된 Windows 설치 하나만 사용한다.
 - MCP 자동 실행 수정 (2026-11-06 12:41 KST): [정식 연결 프로그램](../scripts/run-agent-mcp-stdio.mjs)과 [명령 분류](../src/adapters/agent/mcp/mcp-stdio-server.ts)를 새 연결에서 검증했다. 목록·상태·읽기는 닫힌 앱을 그대로 두고, 계획·변경 요청만 앱을 시작한다. 기존 연결은 재연결 시 적용된다.
 - [실제 설치본 검증](../scripts/verify-agent-mcp-runtime.mjs): 앱을 닫고 등록된 연결 인수에 `--verify-launch`를 추가해 재현한다. 목록·기능·상태 조회 후에도 프로세스가 없었고, 폴더 변경 미리보기 요청에서만 시작해 완료 응답을 받았다. 실행 전후 설치본 SHA-256과 워크스페이스 응답 다이제스트가 일치했다. 회귀 테스트 38개 통과. 변경 커밋은 `git log -- scripts/agent-runtime-guard.mjs`에서 확인한다.

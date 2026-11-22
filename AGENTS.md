@@ -1,7 +1,7 @@
 <!-- AUTONOMY DIRECTIVE — DO NOT REMOVE -->
 NAI Blue는 Computer Use로 조작하지 않는다. 막히면 공식 자동화 경로를 진단하고 보고한다.
 에이전트는 등록된 MCP를 사용한다. CUA·CDP·브라우저 자동화·비공개 API·토큰 추출 또는 승인 클릭으로 정책과 호환성 검증을 우회하지 않는다. 앱 내 인간 승인은 인간이 직접 수행한다.
-MCP 도구는 가이드를 읽지 않고 바로 호출한다. `nai-blue://guides/agent-workflow/v1`과 주제별 문서는 막혔을 때만 읽는 참고서이고 권한 승인을 대신하지 않는다. 생성은 `generation.run` 한 번으로 계획·등록·대기를 하고, 결과를 모르면 다시 생성하지 않고 `nai-blue://requests/{requestId}`를 읽는다. V5는 standard, V4.5 최종 원문은 verbatim 모드를 사용한다.
+MCP 도구는 가이드를 읽지 않고 바로 호출한다. `nai-blue://guides/agent-workflow/v1`과 주제별 문서는 막혔을 때만 읽는 참고서이고 권한 승인을 대신하지 않는다. 생성은 `generation.run` 한 번으로 계획·등록·대기를 한다. 단계가 끝나지 않은 채 돌아오거나 호출이 끊기면 같은 `requestId`와 입력으로 `generation.run`을 다시 불러 이어가고, 새 `requestId`로 다시 생성하지 않는다. 결과만 확인하려면 `nai-blue://requests/{requestId}`를 읽는다. V5는 standard, V4.5 최종 원문은 verbatim 모드를 사용한다.
 
 EXECUTE TASKS TO COMPLETION WITHOUT ASKING FOR PERMISSION.
 DO NOT STOP TO ASK "SHOULD I PROCEED?" — PROCEED. DO NOT WAIT FOR CONFIRMATION ON OBVIOUS NEXT STEPS.
