@@ -168,11 +168,14 @@ describe('durable agent execution authority', () => {
         if (timing === 'before') f.validate.mockImplementationOnce(async () => { f.generationApproval(false); return true })
         else {
             let checks = 0
-            Object.assign(f.opts, { isClientAuthorized: async () => { if (++checks === 3) f.generationApproval(false); return true } })
+            // Admission authorizes once (its check is reused by execute); the second call follows the durable reservation.
+            Object.assign(f.opts, { isClientAuthorized: async () => { if (++checks === 2) f.generationApproval(false); return true } })
         }
         const result = await f.reopen().dispatcher.dispatch(f.request(`generation-revoke-${timing}`))
         expect(result.state).not.toBe('completed')
         expect(f.enqueue).not.toHaveBeenCalled()
+        if (timing === 'after') expect((await f.opts.repository.get('workspace-1'))!.records[0])
+            .toMatchObject({ state: 'rejected', grant: { authorization: 'client-always-generate' }, result: { code: 'AGENT_AUTHORITY_CHANGED' } })
     })
     it.each(['observe', 'pause', 'known-divergence', 'unsupported', 'credential', 'budget', 'output', 'r2', 'revoked', 'expired'] as const)(
         'retains %s validation under saved generation consent', async fault => {
@@ -488,6 +491,38 @@ describe('durable agent execution authority', () => {
         await f.reopen().coordinator.recover()
         expect((await f.opts.repository.get('workspace-1'))!.records[0].exposureSettledAt).toBe(settledAt)
         expect(f.enqueue).toHaveBeenCalledTimes(1)
+    })
+    it('settles several Queue exposures in one ledger write', async () => {
+        const f = fixture('bounded-auto')
+        f.isOutstanding.mockResolvedValue(true)
+        for (const id of ['exposure-a', 'exposure-b', 'exposure-c']) expect((await f.dispatcher.dispatch(f.request(id))).state).toBe('completed')
+        f.isOutstanding.mockResolvedValue(false)
+        const repository = new IndexedDbAgentExecutionRepository()
+        const compareAndSet = vi.spyOn(repository, 'compareAndSet')
+        await createAgentExecutionCoordinator({ ...f.opts, repository }).recover()
+        expect(compareAndSet).toHaveBeenCalledTimes(1)
+        expect((await repository.get('workspace-1'))!.records.map(record => 'exposureSettledAt' in record && record.exposureSettledAt))
+            .toEqual([initialTime, initialTime, initialTime])
+        expect(f.enqueue).toHaveBeenCalledTimes(3)
+    })
+    it('prepares an automatic enqueue once before the Queue commit while human approval keeps its own check', async () => {
+        const f = fixture('bounded-auto')
+        expect((await f.dispatcher.dispatch(f.request('auto-prepared-once'))).state).toBe('completed')
+        // ports.enqueue rebuilds once more before its Queue commit: two preparations in total.
+        expect(f.validate).toHaveBeenCalledTimes(1)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        // A policy change during admission invalidates the reused check.
+        f.validate.mockImplementationOnce(async () => { f.setTime('2026-09-05T01:00:01.000Z'); return true })
+        expect((await f.dispatcher.dispatch(f.request('auto-policy-moved'))).state).toBe('needs-input')
+        expect(f.validate).toHaveBeenCalledTimes(3)
+        expect(f.enqueue).toHaveBeenCalledTimes(1)
+        f.setPolicy({ ...f.getPolicy(), mode: 'suggest' })
+        expect((await f.dispatcher.dispatch(f.request('human-prepared'))).state).toBe('needs-input')
+        expect(f.validate).toHaveBeenCalledTimes(4)
+        const review = (await f.coordinator.pending()).find(item => item.requestId === 'human-prepared')!
+        expect((await f.coordinator.approve(review.requestId, review)).status).toBe('ready')
+        expect(f.validate).toHaveBeenCalledTimes(5)
+        expect(f.enqueue).toHaveBeenCalledTimes(2)
     })
     it('keeps independent pending approvals and rejects only the selected request without Queue work', async () => {
         const f = fixture()

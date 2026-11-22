@@ -3,7 +3,7 @@ import { getAgentCommandInputContract } from './agent-command-input'
 import { canonicalSerialize, hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import type { Sha256Digest } from '@/application/generation/generation-plan-contract'
-import { AgentCommandError, agentRequestHash, assertAgentPublicValue, parseAgentCommandEnvelope, type AgentCommandEnvelope } from './agent-command-contract'
+import { AgentCommandError, agentRequestHash, assertAgentPublicValue, assertAgentRequestId, parseAgentCommandEnvelope, type AgentCommandEnvelope } from './agent-command-contract'
 import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationGrant, type AgentCancellationTarget } from './agent-cancellation-contract'
 import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, type AgentStorageRetryGrant, type AgentStorageRetryTarget } from './agent-storage-retry-contract'
 
@@ -77,11 +77,20 @@ export function isAgentGenerationRecord(record: AgentExecutionRecord): record is
 export function isAgentStorageRetryRecord(record: AgentExecutionRecord): record is AgentStorageRetryRecord {
     return 'command' in record && record.command === 'generation.retry_storage'
 }
+/** Operation identity of a terminal record whose full body left the ledger after its final receipt was saved. */
+export interface AgentCompactedRequest {
+    readonly requestId: string
+    readonly clientId: string
+    readonly idempotencyKey: string
+}
+export const MAX_AGENT_COMPACTED_REQUESTS = 5_000
+/** Version 1 is the pre-compaction shape; version 2 adds a non-empty `compacted` identity list (oldest first). */
 export interface AgentExecutionLedger {
-    readonly schemaVersion: 1
+    readonly schemaVersion: 1 | 2
     readonly workspaceId: string
     readonly revision: number
     readonly records: readonly AgentExecutionRecord[]
+    readonly compacted?: readonly AgentCompactedRequest[]
 }
 export interface AgentExecutionRepository {
     get(workspaceId: string): Promise<AgentExecutionLedger | null>
@@ -106,10 +115,23 @@ export function isAgentExecutionCommitResult(result: JsonObject, grant: AgentExe
 export function parseAgentExecutionLedger(value: unknown, workspaceId: string): AgentExecutionLedger {
     try {
         const ledger = value as AgentExecutionLedger
-        if (!ledger || ledger.schemaVersion !== 1 || ledger.workspaceId !== workspaceId
+        if (!ledger || (ledger.schemaVersion !== 1 && ledger.schemaVersion !== 2) || ledger.workspaceId !== workspaceId
             || !Number.isSafeInteger(ledger.revision) || ledger.revision < 0 || !Array.isArray(ledger.records)
-            || Object.keys(ledger).sort().join() !== 'records,revision,schemaVersion,workspaceId') throw new Error()
+            || Object.keys(ledger).sort().join() !== (ledger.schemaVersion === 2
+                ? 'compacted,records,revision,schemaVersion,workspaceId' : 'records,revision,schemaVersion,workspaceId')) throw new Error()
         const ids = new Set<string>()
+        if (ledger.schemaVersion === 2) {
+            const compacted = ledger.compacted
+            if (!Array.isArray(compacted) || compacted.length < 1 || compacted.length > MAX_AGENT_COMPACTED_REQUESTS) throw new Error()
+            // A compacted ID still owns its requestId; no full record may reuse it.
+            for (const entry of compacted) {
+                if (!entry || typeof entry !== 'object' || Object.keys(entry).sort().join() !== 'clientId,idempotencyKey,requestId'
+                    || ![entry.clientId, entry.idempotencyKey].every(id => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(id))
+                    || ids.has(entry.requestId)) throw new Error()
+                assertAgentRequestId(entry.requestId)
+                ids.add(entry.requestId)
+            }
+        }
         for (const record of ledger.records) {
             const envelope = parseAgentCommandEnvelope(record.envelope)
             if (isAgentAuthoringRecord(record)) {

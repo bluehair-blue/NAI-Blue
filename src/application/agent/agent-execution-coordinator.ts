@@ -9,7 +9,7 @@ import { agentResultDigest, type AgentCommandReceipt, type CommandReceiptReposit
 import { effectiveAgentExecutionPolicy, normalizeAgentExecutionPolicy, type AgentExecutionPolicy } from './agent-execution-policy'
 import { hasAgentAuthoringConsent, normalizeAgentAuthoringConsent, type AgentAuthoringConsent } from './agent-authoring-consent'
 import { hasAgentGenerationConsent, normalizeAgentGenerationConsent, type AgentGenerationConsent } from './agent-generation-consent'
-import { MAX_AGENT_CANARY_ANLAS, agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentStorageRetryRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentQueueRepairRecord, type AgentExecutionRepository } from './agent-execution-repository'
+import { MAX_AGENT_CANARY_ANLAS, MAX_AGENT_COMPACTED_REQUESTS, type AgentCompactedRequest, agentExecutionScope, isAgentExecutionCommitResult, isAgentCancellationRecord, isAgentStorageRetryRecord, isAgentGenerationRecord, type AgentExecutionGrant, type AgentExecutionLedger, type AgentExecutionRecord, type AgentGenerationExecutionRecord, type AgentQueueRepairRecord, type AgentExecutionRepository } from './agent-execution-repository'
 import { assertAgentCancellationTarget, isAgentCancellationResult, sameAgentCancellationTarget, type AgentCancellationPorts } from './agent-cancellation-contract'
 import { assertAgentStorageRetryTarget, isAgentStorageRetryResult, sameAgentStorageRetryTarget, type AgentStorageRetryPorts } from './agent-storage-retry-contract'
 import type { AgentCommandHandler } from './runtime-capability-registry'
@@ -117,8 +117,15 @@ export interface AgentExecutionCoordinatorOptions {
 const approval = (reason?: string, canaryEligible = false): JsonObject => ({ code: 'AGENT_APPROVAL_REQUIRED',
     ...(reason ? { issueCodes: [reason] } : {}),
     ...(reason === 'AGENT_COMPATIBILITY_DENIED' && canaryEligible ? { nextAction: 'review-one-image-canary-in-app' } : {}) })
+// Terminal history kept whole for audit; older eligible records keep only their identity.
+const KEEP_TERMINAL_RECORDS = 200
+const COMPACTION_MARGIN = 100
+const MAX_FULL_RECORDS = 1_000
 const unknown = (): JsonObject => ({ code: 'AGENT_EXECUTION_UNKNOWN' })
 const failure = (code: string): JsonObject => ({ code })
+/** The immediate automatic enqueue path hands its admission check to execute() so the plan is not prepared again. */
+type AutomaticAdmission = { readonly policy: AgentExecutionPolicy; readonly persistentConsent: boolean
+    readonly eligible: { readonly plan: GenerationPlan | null; readonly code: string | null } }
 const adjustablePolicyIssue = (code: string | null): boolean => code !== null
     && ['AGENT_COMPATIBILITY_DENIED', 'AGENT_R2_DENIED'].includes(code)
 
@@ -135,16 +142,29 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
     const canAlwaysGenerate = (record: AgentGenerationExecutionRecord, consent = generationConsent()) =>
         record.consentRevision === consent.revision
         && hasAgentGenerationConsent(consent, options.workspaceId, record.envelope.context.clientId)
-    const ledger = () => options.repository.get(options.workspaceId)
+    // Last observed history size lets admission decide on compaction without another durable read.
+    let knownRecords = 0
+    let nextCompactionAt = KEEP_TERMINAL_RECORDS + COMPACTION_MARGIN
+    const ledger = async () => {
+        const value = await options.repository.get(options.workspaceId)
+        knownRecords = value?.records.length ?? 0
+        return value
+    }
     // ponytail: a workspace CAS ledger favors auditability; partition only if measured contention requires it.
-    async function change(transform: (records: readonly AgentExecutionRecord[]) => readonly AgentExecutionRecord[] | null): Promise<boolean> {
-        for (let attempt = 0; attempt < 3; attempt++) {
+    async function change(transform: (records: readonly AgentExecutionRecord[], compacted: readonly AgentCompactedRequest[]) =>
+        readonly AgentExecutionRecord[] | { readonly records: readonly AgentExecutionRecord[]; readonly compacted: readonly AgentCompactedRequest[] } | null): Promise<boolean> {
+        // Cached reads let a concurrent operation commit store/reserve/settle back to back; each lost CAS means it progressed.
+        for (let attempt = 0; attempt < 5; attempt++) {
             const current = await ledger()
-            const records = transform(current?.records ?? [])
-            if (records === null) return false
-            const next: AgentExecutionLedger = { schemaVersion: 1, workspaceId: options.workspaceId,
-                revision: (current?.revision ?? -1) + 1, records }
-            if (await options.repository.compareAndSet(current, next)) return true
+            const changed = transform(current?.records ?? [], current?.compacted ?? [])
+            if (changed === null) return false
+            const { records, compacted } = 'records' in changed ? changed : { records: changed, compacted: current?.compacted ?? [] }
+            const revision = (current?.revision ?? -1) + 1
+            // Version 1 bytes stay unchanged until a compaction first needs the identity list.
+            const next: AgentExecutionLedger = compacted.length
+                ? { schemaVersion: 2, workspaceId: options.workspaceId, revision, records, compacted }
+                : { schemaVersion: 1, workspaceId: options.workspaceId, revision, records }
+            if (await options.repository.compareAndSet(current, next)) { knownRecords = records.length; return true }
         }
         throw new AgentCommandError('EXECUTION_STORAGE_CONFLICT')
     }
@@ -155,15 +175,21 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 ? records.map(record => record === existing ? next : record) : null
         })
     }
-    async function refreshExposure(): Promise<AgentExecutionLedger | null> {
+    const unsettledExposure = (record: AgentExecutionRecord): record is AgentGenerationExecutionRecord =>
+        isAgentGenerationRecord(record) && record.state === 'completed' && record.grant !== null && record.exposureSettledAt === null
+    async function refreshExposure(): Promise<void> {
+        const isOutstanding = options.ports.isOutstanding
+        if (!isOutstanding) return
+        const settled = new Set<string>()
         for (const record of (await ledger())?.records ?? []) {
-            if (isAgentGenerationRecord(record) && record.state === 'completed' && record.grant && record.exposureSettledAt === null
-                && options.ports.isOutstanding && !await options.ports.isOutstanding(record.grant)) {
-                // A delayed Queue cannot age a reservation away before it ever dispatches.
-                await replace(record, { ...record, exposureSettledAt: now() })
-            }
+            // A delayed Queue cannot age a reservation away before it ever dispatches.
+            if (unsettledExposure(record) && !await isOutstanding(record.grant!)) settled.add(record.envelope.requestId)
         }
-        return ledger()
+        if (!settled.size) return
+        const settledAt = now()
+        const due = (record: AgentExecutionRecord) => unsettledExposure(record) && settled.has(record.envelope.requestId)
+        await change(records => records.some(due)
+            ? records.map(record => due(record) ? { ...record, exposureSettledAt: settledAt } : record) : null)
     }
     async function publish(record: AgentExecutionRecord): Promise<void> {
         const saved = await options.receipts.get(record.envelope.requestId)
@@ -227,20 +253,69 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         if (await replace(record, next)) await publish(next)
         return result
     }
+    /** A full body may leave only when nothing can read it again: terminal, expired, exposure settled and receipt final. */
+    async function compactable(record: AgentExecutionRecord): Promise<boolean> {
+        if ((record.state !== 'completed' && record.state !== 'rejected') || Date.parse(record.expiresAt) > Date.parse(now())
+            || (isAgentGenerationRecord(record) && record.state === 'completed' && record.grant && record.exposureSettledAt === null)) return false
+        try {
+            // settle() writes the ledger before the receipt; this is publish()'s nothing-left-to-write condition.
+            const saved = await options.receipts.get(record.envelope.requestId)
+            return saved !== null && saved.requestHash === record.envelope.requestHash
+                && saved.authenticatedClientId === record.envelope.context.clientId
+                && saved.state === receiptState(record.result) && canonicalSerialize(saved.result) === canonicalSerialize(record.result)
+        } catch { return false }
+    }
+    /** Keeps the newest terminal records whole and older eligible ones as identities only, in one CAS. */
+    async function compactIfDue(force = false): Promise<void> {
+        if (!force && knownRecords < nextCompactionAt) return
+        const records = (await ledger())?.records ?? []
+        const terminal = records.filter(record => record.state === 'completed' || record.state === 'rejected')
+        const candidates = terminal.slice(0, Math.max(0, terminal.length - KEEP_TERMINAL_RECORDS))
+        const eligible = await Promise.all(candidates.map(compactable))
+        const removable = new Map(candidates.filter((_, index) => eligible[index]).map(record => [record.envelope.requestId, record]))
+        let remaining = records.length
+        if (removable.size) await change((latest, compacted) => {
+            const unchanged = (record: AgentExecutionRecord) => {
+                const checked = removable.get(record.envelope.requestId)
+                return checked !== undefined && (checked === record || canonicalSerialize(checked) === canonicalSerialize(record))
+            }
+            const removed = latest.filter(unchanged)
+            if (!removed.length) return null
+            remaining = latest.length - removed.length
+            return { records: latest.filter(record => !unchanged(record)),
+                compacted: [...compacted, ...removed.map(record => ({ requestId: record.envelope.requestId,
+                    clientId: record.envelope.context.clientId, idempotencyKey: record.envelope.context.idempotencyKey }))]
+                    .slice(-MAX_AGENT_COMPACTED_REQUESTS) }
+        })
+        // Records that stay ineligible are not rescanned on every admission. The trigger stays reachable below capacity.
+        nextCompactionAt = Math.min(MAX_FULL_RECORDS, Math.max(KEEP_TERMINAL_RECORDS, remaining) + COMPACTION_MARGIN)
+    }
     /** Every supported mutation shares operation identity and durable history capacity. */
     async function storePending(record: AgentExecutionRecord): Promise<string | null> {
+        // Maintenance never decides this request's outcome; a failed pass is retried by a later admission.
+        await compactIfDue().catch(() => undefined)
         const envelope = record.envelope
         let code = 'AGENT_EXECUTION_EXISTS'
-        const created = await change(records => {
-            if (records.some(item => item.envelope.requestId === envelope.requestId)) return null
+        const admit = () => change((records, compacted) => {
+            // Compacted identities keep both replay identity and the client operation key; this is the only key check.
+            if (records.some(item => item.envelope.requestId === envelope.requestId)
+                || compacted.some(item => item.requestId === envelope.requestId)) return null
             if (records.some(item => item.envelope.context.clientId === envelope.context.clientId
-                && item.envelope.context.idempotencyKey === envelope.context.idempotencyKey)) {
+                && item.envelope.context.idempotencyKey === envelope.context.idempotencyKey)
+                || compacted.some(item => item.clientId === envelope.context.clientId && item.idempotencyKey === envelope.context.idempotencyKey)) {
                 code = 'AGENT_IDEMPOTENCY_CONFLICT'; return null
             }
-            // Keep replay history; full local history requires explicit maintenance.
-            if (records.length >= 1_000) { code = 'AGENT_EXECUTION_CAPACITY'; return null }
+            // Backstop for history that cannot be compacted (non-terminal, unexpired or without a final receipt).
+            if (records.length >= MAX_FULL_RECORDS) { code = 'AGENT_EXECUTION_CAPACITY'; return null }
             return [...records, record]
         })
+        let created = await admit()
+        // Records that were ineligible at the last pass may have expired or settled since; try once before refusing.
+        if (!created && code === 'AGENT_EXECUTION_CAPACITY') {
+            await compactIfDue(true).catch(() => undefined)
+            code = 'AGENT_EXECUTION_EXISTS'
+            created = await admit()
+        }
         return created ? null : code
     }
 
@@ -301,7 +376,7 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
         const completed = queueRepairResult(reserved, result)
         return completed ? settle(reserved, completed, 'completed') : settle(reserved, unknown(), 'unknown')
     }
-    async function execute(record: AgentGenerationExecutionRecord, human: boolean, canary = false): Promise<JsonObject> {
+    async function execute(record: AgentGenerationExecutionRecord, human: boolean, canary = false, admitted?: AutomaticAdmission): Promise<JsonObject> {
         const current = policy()
         const consent = generationConsent()
         const alwaysGenerate = !human && canAlwaysGenerate(record, consent)
@@ -312,7 +387,11 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
             return result
         }
         // Only this automatic grant path borrows persistent authority and performs its matching reservation checks.
-        const eligible = await eligibility(record, current, human && canary, alwaysGenerate)
+        // The handler's admission check is reused only for identical policy and consent inputs; ports.enqueue still
+        // rebuilds and compares the plan before the Queue commit.
+        const eligible = admitted && !human && admitted.persistentConsent === alwaysGenerate
+            && canonicalSerialize(admitted.policy) === canonicalSerialize(current)
+            ? admitted.eligible : await eligibility(record, current, human && canary, alwaysGenerate)
         if (adjustablePolicyIssue(eligible.code)) return settle(record,
             approval(eligible.code!, eligible.plan !== null && canaryEligible(eligible.plan, current)), 'pending')
         if (eligible.code || !eligible.plan) return settle(record, failure(eligible.code ?? 'AGENT_PLAN_CHANGED'), 'rejected')
@@ -327,7 +406,8 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 : alwaysGenerate ? 'client-always-generate' : 'bounded-auto',
             ...(alwaysGenerate ? { consentRevision: consent.revision } : {}),
             estimatedAnlas: record.estimatedAnlas, imageCount: record.imageCount })
-        await refreshExposure()
+        // The handler settled exposure just before admitting this record.
+        if (!admitted) await refreshExposure()
         let authorityCode: string | null = null
         const reserved: AgentGenerationExecutionRecord = { ...record, state: 'reserved', grant, result: unknown() }
         const didReserve = await change(records => {
@@ -372,13 +452,15 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 ...(hasAgentGenerationConsent(consent, options.workspaceId, envelope.context.clientId) ? { consentRevision: consent.revision } : {}),
                 expiresAt: envelope.expiresAt, estimatedAnlas: plan.estimatedAnlas, imageCount: plan.jobs.length,
                 exposureSettledAt: null, state: 'pending', grant: null, result: approval() }
-            const checked = await eligibility(record, current, false, canAlwaysGenerate(record))
+            const persistentConsent = canAlwaysGenerate(record)
+            const checked = await eligibility(record, current, false, persistentConsent)
             if (checked.code && !adjustablePolicyIssue(checked.code)) return failure(checked.code)
             if (checked.code) record = { ...record, result: approval(checked.code, canaryEligible(plan, current)) }
             await refreshExposure()
             const createIssue = await storePending(record)
             if (createIssue) return failure(createIssue)
-            return (canAlwaysGenerate(record) || current.mode === 'bounded-auto') && !checked.code ? execute(record, false) : record.result
+            return (canAlwaysGenerate(record) || current.mode === 'bounded-auto') && !checked.code
+                ? execute(record, false, false, { policy: current, persistentConsent, eligible: checked }) : record.result
         },
     }
     /** Only these two concrete Queue actions share admission; future commands remain unregistered. */
@@ -635,7 +717,8 @@ export function createAgentExecutionCoordinator(options: AgentExecutionCoordinat
                 } else await publish(record)
             }
             const receipts: AgentCommandReceipt[] = []
-            for (const record of (await refreshExposure())?.records ?? []) {
+            await refreshExposure()
+            for (const record of (await ledger())?.records ?? []) {
                 const receipt = await options.receipts.get(record.envelope.requestId)
                 if (receipt) receipts.push(receipt)
             }
