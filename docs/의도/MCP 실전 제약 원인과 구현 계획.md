@@ -172,6 +172,8 @@
 
 범위와 완료 기준(2026-11-22 사용자 확정). 빌드 C의 속도 수정과 한 빌드로 묶는다.
 
+진행(2026-11-22): 구현했고 자동 검사와 개발 서버 화면 확인까지 했다. 설치본에는 아직 없다. 결정과 검토 처리, 한계는 [ADR-019](../architecture/ADR-019-scene-precise-references-and-preset-archive.md)에 있다. 설치 뒤에 처리 시간을 다시 재고, 레퍼런스 계획과 보관을 공개 MCP로 확인한다.
+
 - 레퍼런스: Precise Reference(Character Reference)만 한다. Vibe Transfer는 하지 않는다
   - `scene.patch_many`로 V4.5 Scene에 레퍼런스(아티팩트 ID, 체크섬, 종류, 강도, 충실도)를 묶고 `scene.resolve_many`가 그것을 보여 준다
   - 그 Scene의 계획에 `precise-reference`가 잡히고 예상 Anlas는 기존 계산을 따른다. V5 Scene에 묶으면 계획이 사유와 함께 거절된다
