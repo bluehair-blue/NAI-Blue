@@ -72,6 +72,8 @@ docs/*
 !docs/research/**
 !docs/releases/
 !docs/releases/**
+!docs/의도/
+!docs/의도/**
 
 # Claude Code
 .claude/
