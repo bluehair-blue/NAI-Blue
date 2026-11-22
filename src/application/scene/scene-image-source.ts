@@ -6,6 +6,16 @@ export interface SceneImageSource {
     readonly noise: number
 }
 
+/** The opaque identity of a committed saved original; every Scene image binding is made of these two facts. */
+export type SavedArtifactBinding = Pick<SceneImageSource, 'artifactId' | 'contentChecksum'>
+
+export const isSavedArtifactId = (value: unknown): value is string =>
+    typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(value)
+export const isContentChecksum = (value: unknown): value is `sha256:${string}` =>
+    typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value)
+export const isUnitInterval = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+
 /** Public bindings contain only a committed opaque Artifact ID and immutable content facts. */
 export function isSceneImageSource(value: unknown): value is SceneImageSource | null {
     if (value === null) return true
@@ -13,7 +23,7 @@ export function isSceneImageSource(value: unknown): value is SceneImageSource | 
     const source = value as Record<string, unknown>
     return Object.keys(source).length === 5
         && source.mode === 'img2img'
-        && typeof source.artifactId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(source.artifactId)
-        && typeof source.contentChecksum === 'string' && /^sha256:[a-f0-9]{64}$/.test(source.contentChecksum)
-        && [source.strength, source.noise].every(number => typeof number === 'number' && Number.isFinite(number) && number >= 0 && number <= 1)
+        && isSavedArtifactId(source.artifactId)
+        && isContentChecksum(source.contentChecksum)
+        && [source.strength, source.noise].every(isUnitInterval)
 }

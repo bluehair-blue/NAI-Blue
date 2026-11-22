@@ -1,4 +1,5 @@
 import type { SceneImageSource } from './scene-image-source'
+import type { ScenePreciseReference } from './scene-precise-references'
 import type {
     CharacterSlotPatch,
     Extensions,
@@ -79,6 +80,7 @@ export interface SceneV1AuthoringRecord {
     readonly metadataMode?: 'embedded' | 'sidecar-only' | 'strip-and-sidecar' | 'strip-only'
     readonly generationFolderId?: string
     readonly imageSource?: SceneImageSource | null
+    readonly preciseReferences?: readonly ScenePreciseReference[] | null
     readonly promptTextMode?: 'standard' | 'verbatim'
     readonly productionCount?: number
     readonly filenameTemplate?: string
@@ -137,6 +139,7 @@ export interface SceneAuthoringRecord {
     readonly metadataMode?: 'embedded' | 'sidecar-only' | 'strip-and-sidecar' | 'strip-only'
     readonly generationFolderId?: string
     readonly imageSource?: SceneImageSource | null
+    readonly preciseReferences?: readonly ScenePreciseReference[] | null
     readonly promptTextMode?: 'standard' | 'verbatim'
     /** Optional saved quantity; old documents remain valid and transient queue counts stay excluded. */
     readonly productionCount?: number

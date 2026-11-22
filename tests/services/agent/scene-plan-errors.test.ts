@@ -30,6 +30,23 @@ describe('public Scene planning failures', () => {
         expect(() => assertAgentPublicValue(result)).not.toThrow()
         expect(save).not.toHaveBeenCalled()
     })
+    it('rejects a V5 Scene with Precise References through the same model capability issue', async () => {
+        let failure: NovelAiModelCapabilityError | undefined
+        try { validateNovelAiGenerationParams({ model: 'nai-diffusion-5-full', steps: 28, sampler: 'k_euler_ancestral', cfg_rescale: 0,
+            ucPreset: 0, negative_prompt: '', charImages: ['data:image/webp;base64,AA=='] } as never) } catch (error) {
+            const issue = error as NovelAiModelCapabilityError
+            failure = new NovelAiModelCapabilityError(issue.message, `source.targets[0].${issue.fieldPath}`, issue.nextAction)
+        }
+        expect(failure?.message).toContain('Precise Reference')
+        prepare.mockRejectedValueOnce(failure)
+        const save = vi.fn(), handler = createAgentSceneGenerationPlanHandler({ save, get: vi.fn() } as never)
+        const result = await handler.execute({ source: { kind: 'scene', targets: [
+            { presetId: 'preset', sceneId: 'scene', expectedRevision: 1, count: 1 },
+        ] }, seedPolicy: { kind: 'random' }, budget: { maxImages: 1, maxAnlas: 30 } }, {} as never)
+        expect(result).toMatchObject({ status: 'invalid', issueCodes: ['invalid-model-settings'],
+            issues: [{ code: 'invalid-model-settings', fieldPath: 'source.targets[0].model' }] })
+        expect(save).not.toHaveBeenCalled()
+    })
     it('reports an occupied exact output as a filename conflict without misreporting source revision or private paths', async () => {
         prepare.mockRejectedValueOnce(new OutputDestinationOccupiedError('private-output.png'))
         const save = vi.fn()

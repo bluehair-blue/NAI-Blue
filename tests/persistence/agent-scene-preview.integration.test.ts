@@ -107,14 +107,24 @@ it('restores an agent-created preset and its real linked previews, preserving hi
     expect(await authoring.apply('scene.patch_many', patch, staleTarget, grant(staleTarget)))
         .toEqual({ status: 'rejected', code: 'AGENT_AUTHORING_TARGET_CHANGED' })
     const imageSource = { mode: 'img2img' as const, artifactId: 'agent-artifact-2', contentChecksum: `sha256:${'2'.repeat(64)}` as const, strength: 0.45, noise: 0 }
+    const preciseReferences = [{ artifactId: 'agent-artifact-2', contentChecksum: `sha256:${'2'.repeat(64)}`, referenceType: 'character', strength: 0.7, fidelity: 0.9 }]
+    // A binding that names an unknown Artifact or the wrong checksum is refused before any commit.
+    for (const refused of [[{ ...preciseReferences[0], artifactId: 'agent-artifact-missing' }],
+        [{ ...preciseReferences[0], contentChecksum: `sha256:${'3'.repeat(64)}` }]]) {
+        expect(await authoring.inspect('scene.patch_many', { ...patch, expectedRevision: 4,
+            changes: [{ sceneId, preciseReferences: refused }] })).toBeNull()
+    }
+    expect((await scenes.getDocument(presetId))?.revision).toBe(4)
     const rawNegative = 'nsfw, lowres, nsfw,  lowres,\n'
-    const currentPatch = { ...patch, expectedRevision: 4, changes: [{ sceneId, productionCount: 4, imageSource,
+    const currentPatch = { ...patch, expectedRevision: 4, changes: [{ sceneId, productionCount: 4, imageSource, preciseReferences,
         promptTextMode: 'verbatim', prompts: { negative: rawNegative }, generation: { ucPreset: 4, qualityToggle: false } }] }
     const freshTarget = (await authoring.inspect('scene.patch_many', currentPatch))!
     expect(await authoring.apply('scene.patch_many', currentPatch, freshTarget, grant(freshTarget)))
         .toMatchObject({ status: 'authoring-committed', revision: 5 })
     const saved = (await scenes.getDocument(presetId))!
     expect(saved.scenes[0].imageSource).toEqual(imageSource)
+    expect(saved.scenes[0].preciseReferences).toEqual(preciseReferences)
+    expect(rows()[0].scene.preciseReferences).toEqual(preciseReferences)
     expect(saved.scenes[0]).toMatchObject({ promptTextMode: 'verbatim', prompts: { negative: rawNegative }, generation: { ucPreset: 4 } })
     expect(rows()[0].scene.promptTextMode).toBe('verbatim')
     expect(saved.scenes[0]).toMatchObject({ scenePrompt: 'User revised the scene', productionCount: 4 })
@@ -146,4 +156,16 @@ it('restores an agent-created preset and its real linked previews, preserving hi
     expect((await reopened.getDocument(presetId))?.revision).toBe(5)
     expect((await reopened.getDocument(presetId))?.scenes[0].imageSource).toEqual(imageSource)
     expect((await reopened.getDocument(presetId))?.scenes[0]).toMatchObject({ promptTextMode: 'verbatim', prompts: { negative: rawNegative } })
+    expect((await reopened.getDocument(presetId))?.scenes[0].preciseReferences).toEqual(preciseReferences)
+    expect(rows()[0].scene.preciseReferences).toEqual(preciseReferences)
+
+    // null says "no Precise Reference" and must survive the UI projection of a later human edit.
+    const clear = { presetId, expectedRevision: 5, changes: [{ sceneId, preciseReferences: null }] }
+    const clearTarget = (await authoring.inspect('scene.patch_many', clear))!
+    expect(await authoring.apply('scene.patch_many', clear, clearTarget, grant(clearTarget)))
+        .toMatchObject({ status: 'authoring-committed', revision: 6 })
+    useSceneStore.getState().updateScenePrompt(presetId, sceneId, 'Human edit after clearing')
+    await flushSceneAuthorityRuntime()
+    expect(await reopened.getDocument(presetId)).toMatchObject({ revision: 7,
+        scenes: [{ scenePrompt: 'Human edit after clearing', preciseReferences: null, imageSource }] })
 })

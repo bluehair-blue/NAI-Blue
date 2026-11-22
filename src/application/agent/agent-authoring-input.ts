@@ -1,5 +1,6 @@
 import type { JsonObject } from '@/domain/composition/types'
 import { isGenerationFolderPathSegment } from '@/domain/generation-folders'
+import { MAX_SCENE_PRECISE_REFERENCES, PRECISE_REFERENCE_TYPES } from '@/application/scene/scene-precise-references'
 import { AgentCommandError } from './agent-command-contract'
 
 export interface AgentCommandInputContract {
@@ -41,13 +42,21 @@ const prompts = object({}, Object.fromEntries(['base', 'additional', 'character'
 const generation = object({}, { model: text(100, 1), sampler: text(100, 1), scheduler: text(100, 1), steps: number(1, 50),
     cfgScale: number(0, 100, false), cfgRescale: number(0, 1, false), smea: literal(false), smeaDyn: literal(false),
     variety: boolean, qualityToggle: boolean, ucPreset: number(0, 4), seed: number(0, 0xffff_ffff), seedLocked: boolean })
+const preciseReference = object({ artifactId: id, contentChecksum: hash,
+    referenceType: { schema: { enum: [...PRECISE_REFERENCE_TYPES] }, valid: value => PRECISE_REFERENCE_TYPES.some(type => type === value) },
+    strength: number(0, 1, false), fidelity: number(0, 1, false) })
+// null is the one spelling of "no Precise Reference"; JSON Schema cannot say the Artifacts are distinct, the validator does.
+const preciseReferences: Field = { schema: { oneOf: [{ type: 'null' }, { type: 'array', minItems: 1,
+    maxItems: MAX_SCENE_PRECISE_REFERENCES, items: preciseReference.schema }] },
+    valid: value => value === null || (Array.isArray(value) && value.length >= 1 && value.length <= MAX_SCENE_PRECISE_REFERENCES
+        && value.every(preciseReference.valid) && new Set(value.map(item => (item as { artifactId: string }).artifactId)).size === value.length) }
 const sceneChange = object({ sceneId: id }, { name: text(200, 1), prompts, generation, width: number(64, 4096), height: number(64, 4096),
     promptTextMode: { schema: { enum: ['standard', 'verbatim'] }, valid: value => value === 'standard' || value === 'verbatim' },
     generationFolderId: id, productionCount: number(1, 100), filenameTemplate: text(200),
     imageSource: { schema: { oneOf: [{ type: 'null' }, object({ mode: literal('img2img'), artifactId: id,
         contentChecksum: hash, strength: number(0, 1, false), noise: number(0, 1, false) }).schema] },
     valid: value => value === null || object({ mode: literal('img2img'), artifactId: id,
-        contentChecksum: hash, strength: number(0, 1, false), noise: number(0, 1, false) }).valid(value) } })
+        contentChecksum: hash, strength: number(0, 1, false), noise: number(0, 1, false) }).valid(value) }, preciseReferences })
 const inheritedOptions = [object({ mode: literal('inherit') }), object({ mode: literal('clear') }), object({ mode: literal('set'), value: text(200, 1) })]
 const inherited: Field = { schema: { oneOf: inheritedOptions.map(option => option.schema) }, valid: value => inheritedOptions.some(option => option.valid(value)) }
 const folderPreferences = { commonPrompt: text(16_384), autoUpload: boolean,

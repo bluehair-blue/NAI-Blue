@@ -36,6 +36,8 @@ function summarizeScenes(result: Row): Row {
         ...pick(scene, ['presetId', 'sceneId', 'found', 'name', 'revision', 'promptTextMode', 'width', 'height',
             'productionCount', 'filenameTemplate', 'generationFolderId', 'imageSource', 'totalArtifactCount']),
         ...pick(row(scene.generation) ?? {}, ['model', 'ucPreset', 'qualityToggle']), ...filled('artifactIds', scene.artifactIds),
+        // null is meaningful here (no reference, nothing inherited from the app), so it is not dropped like other empty fields.
+        ...(scene.preciseReferences === undefined ? {} : { preciseReferences: scene.preciseReferences }),
     })), ...pick(result, ['nextIndex']), ...(result.truncated === true ? { truncated: true } : {}) }
 }
 

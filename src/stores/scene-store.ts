@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { SceneImageSource } from '@/application/scene/scene-image-source'
+import type { ScenePreciseReference } from '@/application/scene/scene-precise-references'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import {
@@ -115,6 +116,8 @@ export interface SceneCard {
     filenameTemplate?: string
     /** Explicit Artifact-backed Image2Image input; null clears inherited source images. */
     imageSource?: SceneImageSource | null
+    /** Artifact-backed Precise References; undefined inherits the global character references, null or [] uses none. */
+    preciseReferences?: readonly ScenePreciseReference[] | null
     /** Explicit final text: retain spacing/order/repetitions through planning and transport. */
     promptTextMode?: 'standard' | 'verbatim'
     /** FIFO overrides aligned with pending queue entries; blanks inherit filenameTemplate. */

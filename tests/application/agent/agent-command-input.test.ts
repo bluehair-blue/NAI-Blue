@@ -137,6 +137,27 @@ describe('shared application command input contracts', () => {
             expect(() => contract.validate(patch(invalid))).toThrow()
         }
     })
+    it('accepts Scene Precise References as 1-10 distinct opaque bindings or null, rejecting everything else', () => {
+        const contract = getAgentCommandInputContract('scene.patch_many')!
+        const reference = (index: number, overrides: Record<string, unknown> = {}) => ({ artifactId: `artifact:import-${index}`,
+            contentChecksum: `sha256:${String(index % 10).repeat(64)}`, referenceType: 'character', strength: 0.6, fidelity: 1, ...overrides })
+        const patch = (preciseReferences: unknown) => ({ presetId: 'preset', expectedRevision: 1,
+            changes: [{ sceneId: 'scene', preciseReferences }] }) as JsonObject
+        const ajv = new AjvJsonSchemaValidator().getValidator(contract.schema)
+        for (const valid of [null, [reference(1)], [reference(1, { referenceType: 'style', strength: 0, fidelity: 0 }),
+            reference(2, { referenceType: 'character&style' })], Array.from({ length: 10 }, (_, index) => reference(index))]) {
+            expect(contract.validate(patch(valid))).toEqual(patch(valid))
+            expect(ajv(patch(valid)).valid).toBe(true)
+            expect(() => assertAgentPublicValue(patch(valid))).not.toThrow()
+        }
+        for (const invalid of [[], Array.from({ length: 11 }, (_, index) => reference(index)), [reference(1), reference(1, { strength: 0.2 })],
+            [reference(1, { referenceType: 'vibe' })], [reference(1, { strength: 1.01 })], [reference(1, { fidelity: -0.1 })],
+            [reference(1, { artifactId: '../private.png' })], [reference(1, { contentChecksum: 'sha256:short' })],
+            [reference(1, { path: 'C:/private.png' })], [{ artifactId: 'artifact:import-1', contentChecksum: digest, referenceType: 'character', strength: 0.6 }],
+            reference(1), 'none']) {
+            expect(() => contract.validate(patch(invalid)), JSON.stringify(invalid)).toThrow()
+        }
+    })
 })
 
 

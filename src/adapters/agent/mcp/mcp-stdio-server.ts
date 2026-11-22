@@ -49,10 +49,14 @@ const maxRootRequestIdLength = 90
 const maxPreviewBytesPerCall = 2_500_000
 // Newest command; an installed build one release older reports every command but this one.
 const LATEST_COMMAND: AgentCommandName = 'artifact.import'
-// That older build's artifact.get_image took { artifactId } only, which still serves calls without maxSide and region.
-const PREVIOUS_SCHEMA_HASHES: Partial<Record<AgentCommandName, string>> = { 'artifact.get_image': `sha256:${hashCanonicalValue({
-    $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', required: ['artifactId'], additionalProperties: false,
-    properties: { artifactId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$' } } })}` }
+const PREVIOUS_SCHEMA_HASHES: Partial<Record<AgentCommandName, string>> = {
+    // That older build's artifact.get_image took { artifactId } only, which still serves calls without maxSide and region.
+    'artifact.get_image': `sha256:${hashCanonicalValue({
+        $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', required: ['artifactId'], additionalProperties: false,
+        properties: { artifactId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$' } } })}`,
+    // Builds before Scene Precise References took scene.patch_many without preciseReferences; every other change still works.
+    'scene.patch_many': 'sha256:38cdfbd697bf4aa12d5acb255258897323253e767a31a170ceeb68a5322bdb1d',
+}
 
 function validatedObservation(value: JsonObject, requestId: string, command?: AgentCommandName): JsonObject {
     if (value.requestId !== requestId || value.requiresAppProcess !== true) throw new AgentCommandError('INBOX_RESULT_MISMATCH')

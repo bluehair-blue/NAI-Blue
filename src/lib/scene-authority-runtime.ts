@@ -227,6 +227,7 @@ function projectAuthoringScene(
         ...optional(scene, 'metadataMode'),
         ...optional(scene, 'generationFolderId'),
         ...optional(scene, 'imageSource'),
+        ...optional(scene, 'preciseReferences'),
         ...optional(scene, 'promptTextMode'),
         ...optional(scene, 'productionCount'),
         ...optional(scene, 'filenameTemplate'),

@@ -211,6 +211,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         expect(await topic('recovery')).toContain('COMMAND_OUTCOME_UNKNOWN')
         expect(await topic('production')).toContain('production.plan_next')
         expect(await topic('image-source')).toContain('img2img')
+        expect(await topic('image-source')).toMatch(/preciseReferences \(Precise Reference, V4\.5 only[\s\S]*null for none, it uses exactly that and inherits nothing/)
         expect(await topic('consent')).toContain('allowsSyntheticOnly')
         expect(await topic('runtime')).toContain('APP_RUNTIME_RESTART_REQUIRED')
         const advanced = await topic('advanced')
@@ -309,6 +310,21 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         current = descriptors().map(item => item.command === 'artifact.get_image' ? { command: item.command, available: true,
             requiresAppProcess: true, canExecuteWhileAppClosed: false, requiresHumanApproval: false } : item)
         expect((await read()).schemaMismatches).toEqual(['artifact.get_image'])
+    })
+
+    it('accepts an installed build whose scene.patch_many predates Scene Precise References', async () => {
+        // The previous contract is today's minus the one new optional field, so its hash is derived rather than copied.
+        const schema = structuredClone(getAgentCommandInputContract('scene.patch_many')!.schema) as Record<string, any>
+        delete schema.properties.changes.items.properties.preciseReferences
+        const previousPatchHash = `sha256:${hashCanonicalValue(schema)}`
+        let current: unknown[] = descriptors().map(item => item.command === 'scene.patch_many' ? { ...item, inputSchemaHash: previousPatchHash } : item)
+        const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities: current } as unknown as JsonObject) })
+        const read = async () => JSON.parse(String((await f.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
+        const older = await read()
+        expect(older.schemaMismatches).toEqual([])
+        expect(older.capabilities.find((item: { command: string }) => item.command === 'scene.patch_many')).toMatchObject({ available: true })
+        current = descriptors().map(item => item.command === 'scene.resolve_many' ? { ...item, inputSchemaHash: previousPatchHash } : item)
+        expect((await read()).schemaMismatches).toEqual(['scene.resolve_many'])
     })
 
     it('reports an unconfirmed app state when a fresh probe has no application receipt', async () => {

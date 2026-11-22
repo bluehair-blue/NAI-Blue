@@ -45,7 +45,7 @@ Facts that prevent mistakes
 Topics
 - ${AGENT_GUIDE_URI_PREFIX}recovery: incomplete runs, unconfirmed submissions, unknown outcomes, storage retry, cancel
 - ${AGENT_GUIDE_URI_PREFIX}production: saved production requests above 100 images
-- ${AGENT_GUIDE_URI_PREFIX}image-source: Image2Image, local image import, previews, verbatim prompts, workflow drafts, R2
+- ${AGENT_GUIDE_URI_PREFIX}image-source: Image2Image, Precise Reference, local image import, previews, verbatim prompts, workflow drafts, R2
 - ${AGENT_GUIDE_URI_PREFIX}consent: always-approve settings and the one-image validation
 - ${AGENT_GUIDE_URI_PREFIX}runtime: installation, restart and reconnect codes
 - ${AGENT_GUIDE_URI_PREFIX}advanced: input shapes for advanced.call
@@ -84,12 +84,14 @@ For work above 100 images, through advanced.call. Input shapes: ${AGENT_GUIDE_UR
 - The total production budget and per-child approval stay enforced. There are no per-run, hourly, daily or concurrency quotas; the Queue owns scheduling and the delay between generations.
 `
 
-const IMAGE_SOURCE = `# Image2Image, local images, previews, verbatim prompts, workflow drafts, R2
+const IMAGE_SOURCE = `# Image2Image, Precise Reference, local images, previews, verbatim prompts, workflow drafts, R2
 
 - artifactId comes from generation.run, generation.get_run or scene.resolve_many once storage succeeded. artifact.get_images returns contentChecksum, the checksum of the original, and sourceWidth/sourceHeight.
 - Previews are JPEG, 480 px on the long side by default. maxSide (64-1536) enlarges one; region {x, y, width, height} (0-1 fractions of the original) zooms into eyes, hands or small props. Previews are never upscaled.
-- A local image (for example one the human edited outside NAI Blue): you or the human put the .png or .webp in Pictures/NAI_Blue_Import. Call artifact.import {fileName} with the bare file name, then use the returned artifactId and contentChecksum in imageSource. Keep the file there while Scenes use it. It needs active editing consent; importing the same bytes again returns the same artifact.
-- scene.patch_many imageSource: {mode:"img2img", artifactId, contentChecksum, strength, noise}, with strength and noise in [0,1]. null clears it. It binds the original bytes, not the preview. This is Image2Image; Precise Reference and Vibe Transfer are not available here.
+- A local image (for example one the human edited outside NAI Blue): you or the human put the .png or .webp in Pictures/NAI_Blue_Import. Call artifact.import {fileName} with the bare file name, then use the returned artifactId and contentChecksum in imageSource or preciseReferences. Keep the file there while Scenes use it. It needs active editing consent; importing the same bytes again returns the same artifact.
+- scene.patch_many imageSource: {mode:"img2img", artifactId, contentChecksum, strength, noise}, with strength and noise in [0,1]. null clears it. It binds the original bytes, not the preview. This is Image2Image.
+- scene.patch_many preciseReferences (Precise Reference, V4.5 only; a V5 Scene with references is rejected at plan time): 1-10 distinct {artifactId, contentChecksum, referenceType "character"|"style"|"character&style", strength, fidelity}, strength and fidelity in [0,1]. Any generated artifact or one registered with artifact.import works.
+- Without preciseReferences a Scene uses the character references the human enabled in NAI Blue. With a list, or null for none, it uses exactly that and inherits nothing. Vibe Transfer cannot be set here; the app's enabled vibes still apply.
 - promptTextMode "verbatim" (V4.5, with generation.ucPreset 4 and qualityToggle false) sends each positive, negative and character segment exactly as written: spacing, order, repeats, comments and literal wildcard text, with no fragment expansion. Folder common prompts and connected contributions still combine in the normal order, so keep additional and common text empty when the caption must equal one supplied string. "standard" restores default processing. The mode is bound into plan hashes; nothing changes it automatically.
 - Workflow-draft source: count must equal the draft's imageCount from the snapshot. Draft overwrite, R2 delivery and pinned credentials are not supported through this adapter; use an auto credential and fail-only local destination, or Scene targets.
 - R2: check r2.get_readiness when upload is requested. Folder R2 preferences and autoUpload express intent only.

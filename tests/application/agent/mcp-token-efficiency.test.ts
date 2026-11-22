@@ -3,7 +3,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { createAgentMcpServer, type McpAgentInbox, type McpUsageEntry } from '@/adapters/agent/mcp/mcp-stdio-server'
 import { AGENT_MCP_INSTRUCTIONS } from '@/adapters/agent/mcp/agent-workflow-guide'
 import { summarizeRun } from '@/adapters/agent/mcp/mcp-result-summary'
-import { type AgentCommand, type AgentCommandName } from '@/application/agent/agent-command-contract'
+import { assertAgentPublicValue, type AgentCommand, type AgentCommandName } from '@/application/agent/agent-command-contract'
 import { agentResultDigest, type AgentCommandReceipt } from '@/application/agent/command-receipt-repository'
 import type { JsonObject } from '@/domain/composition/types'
 
@@ -315,6 +315,23 @@ describe('MCP adapter default view for agents', () => {
         }
         expect((await f.call('workspace.get_snapshot', { command: 'production.list' })).body.code).toBe('INVALID_COMMAND_INPUT')
         expect(f.invokes).toHaveLength(1)
+    })
+
+    it('shows a Scene Precise Reference binding, including an explicit null, in the resolve summary and full receipt', async () => {
+        const references = [{ artifactId: 'artifact:import-0f3a', contentChecksum: `sha256:${'e'.repeat(64)}`, referenceType: 'character', strength: 0.6, fidelity: 1 }]
+        const scene = (sceneId: string, extra: JsonObject = {}) => ({ found: true, presetId: 'preset-1', sceneId, revision: 3, name: sceneId,
+            prompts: { base: longPrompt }, generation: { model: 'nai-diffusion-4-5-full' }, productionCount: 1, artifactIds: [], totalArtifactCount: 0, ...extra })
+        const result = { results: [scene('bound', { preciseReferences: references }), scene('none', { preciseReferences: null }), scene('inherits')],
+            truncated: false, nextIndex: null }
+        expect(() => assertAgentPublicValue(result)).not.toThrow()
+        const f = await fixture({ 'scene.resolve_many': (command, id) => observed(id, command.name, result) })
+        const targets = ['bound', 'none', 'inherits'].map(sceneId => ({ presetId: 'preset-1', sceneId }))
+        const summary = await f.call('scene.resolve_many', { input: { targets } })
+        expect(summary.body.result.results.map((row: JsonObject) => row.preciseReferences)).toEqual([references, null, undefined])
+        expect(summary.body.result.results[2]).not.toHaveProperty('preciseReferences')
+        expect(summary.text).not.toMatch(/data:|base64|[A-Za-z]:[\\/]/)
+        const full = await f.call('scene.resolve_many', { input: { targets }, detail: 'full' })
+        expect(full.body.receipt.result.results[0].preciseReferences).toEqual(references)
     })
 
     it('attaches a corrective hint to failures instead of requiring a guide', async () => {

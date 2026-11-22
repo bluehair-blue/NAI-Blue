@@ -21,7 +21,7 @@ vi.mock('@/lib/indexed-db', () => ({
     setIndexedDBItemStrict: async () => undefined,
 }))
 
-import { IndexedDbSceneRepository } from '@/adapters/scene/indexeddb-scene-repository'
+import { IndexedDbSceneRepository, projectSceneV1Compatibility } from '@/adapters/scene/indexeddb-scene-repository'
 import type {
     SceneAuthoringRecord,
     SceneDocument,
@@ -330,6 +330,42 @@ describe('IndexedDbSceneRepository', () => {
 
         await expect(repository.commit(next, 1)).resolves.toEqual({ status: 'COMMITTED', document: next })
         await expect(repository.getDocument('preset:atomic')).resolves.toEqual(next)
+    })
+
+    it('keeps Scenes without Precise References byte-identical and round-trips a strict Scene-owned list or null', async () => {
+        const existing = document('preset:references', 1, [authoringScene('scene:plain')])
+        const memory = memoryPersistence({ [V2_KEY]: collection(existing) })
+        const repository = new IndexedDbSceneRepository(memory.port)
+        const plainNext = document('preset:references', 2, [{ ...authoringScene('scene:plain'), name: 'Renamed' }])
+        await expect(repository.commit(plainNext, 1)).resolves.toMatchObject({ status: 'COMMITTED' })
+        expect(memory.values.get(V2_KEY)).toBe(collection(plainNext))
+        expect(memory.values.get(V2_KEY)).not.toContain('preciseReferences')
+
+        const references = [
+            { artifactId: 'artifact:import-a', contentChecksum: `sha256:${'a'.repeat(64)}` as const, referenceType: 'character' as const, strength: 0.6, fidelity: 1 },
+            { artifactId: 'artifact:job-b', contentChecksum: `sha256:${'b'.repeat(64)}` as const, referenceType: 'style' as const, strength: 0, fidelity: 0.25 },
+        ]
+        const bound = document('preset:references', 3, [
+            { ...authoringScene('scene:plain'), name: 'Renamed', preciseReferences: references },
+            { ...authoringScene('scene:none'), preciseReferences: null },
+            { ...authoringScene('scene:empty'), preciseReferences: [] },
+        ])
+        await expect(repository.commit(bound, 2)).resolves.toMatchObject({ status: 'COMMITTED' })
+        const reread = await new IndexedDbSceneRepository(memory.port).getDocument('preset:references')
+        expect(reread?.scenes.map(scene => scene.preciseReferences)).toEqual([references, null, []])
+
+        const stored = memory.values.get(V2_KEY)
+        for (const invalid of [[references[0], { ...references[0], strength: 0.1 }], Array.from({ length: 11 }, (_, index) => ({ ...references[0], artifactId: `artifact:${index}` })),
+            [{ ...references[0], referenceType: 'vibe' }], [{ ...references[0], fidelity: 2 }], [{ ...references[0], base64: 'AA==' }],
+            [{ ...references[0], artifactId: 'C:/private.png' }], references[0]]) {
+            const candidate = document('preset:references', 4, [{ ...authoringScene('scene:plain'), preciseReferences: invalid }] as unknown as SceneAuthoringRecord[])
+            await expect(repository.commit(candidate, 3), JSON.stringify(invalid)).rejects.toBeInstanceOf(TypeError)
+        }
+        expect(memory.values.get(V2_KEY)).toBe(stored)
+        const legacy = projectSceneV1Compatibility({ presets: [{ id: 'preset:v1', name: 'V1', createdAt: 1,
+            scenes: [{ ...legacyScene, preciseReferences: references }, legacyScene] }] })
+        expect(legacy.presets[0].scenes.map(scene => scene.preciseReferences)).toEqual([references, undefined])
+        expect(legacy.presets[0].scenes[1]).not.toHaveProperty('preciseReferences')
     })
 
     it('rejects stale and jumping revisions without changing storage', async () => {

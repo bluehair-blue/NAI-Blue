@@ -1,4 +1,4 @@
-import type { SceneImageSource } from '@/application/scene/scene-image-source'
+import type { SavedArtifactBinding } from '@/application/scene/scene-image-source'
 import type { ArtifactRecord } from '@/domain/organizer/types'
 import { sha256Bytes } from '@/lib/binary-digest'
 import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
@@ -49,7 +49,8 @@ export function imageDataUrl(bytes: Uint8Array, mimeType: string): string {
     return `data:${mimeType};base64,${btoa(binary)}`
 }
 
-export async function materializeSceneImageSource(source: SceneImageSource): Promise<string> {
+/** Data URL of a Scene's bound saved original, for an Image2Image source and a Precise Reference alike. */
+export async function materializeSceneImageSource(source: SavedArtifactBinding): Promise<string> {
     const image = await readSavedArtifactImage(source.artifactId, source.contentChecksum)
     return imageDataUrl(image.bytes, image.mimeType)
 }

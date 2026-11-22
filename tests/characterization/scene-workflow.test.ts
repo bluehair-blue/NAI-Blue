@@ -324,6 +324,7 @@ function scene(id: string, queueCount: number, overrides: Record<string, unknown
         ...(overrides.compositionRef === undefined ? {} : { compositionRef: overrides.compositionRef }),
         ...(overrides.filenameTemplate === undefined ? {} : { filenameTemplate: overrides.filenameTemplate }),
         ...(overrides.imageSource === undefined ? {} : { imageSource: overrides.imageSource }),
+        ...(overrides.preciseReferences === undefined ? {} : { preciseReferences: overrides.preciseReferences }),
         ...(overrides.promptTextMode === undefined ? {} : { promptTextMode: overrides.promptTextMode }),
         ...(overrides.queuedFileNames === undefined ? {} : { queuedFileNames: overrides.queuedFileNames }),
         createdAt: FIXED_TIME,
@@ -1345,6 +1346,110 @@ describe('Scene Composition v2 caller contract', () => {
         expect(result.params.mask).toBeUndefined()
         const { queryNaiGenerationCompatibility } = await import('@/services/nai/compatibility')
         expect(queryNaiGenerationCompatibility(result.params, 'nai-blue-payload-v1', false).action).toBe('img2img')
+    })
+
+    it('uses a Scene-owned Precise Reference list instead of the global character references, keeping global vibes', async () => {
+        const refA = { artifactId: 'artifact:import-a', contentChecksum: `sha256:${'a'.repeat(64)}`, referenceType: 'character', strength: 0.7, fidelity: 0.9 }
+        const refB = { artifactId: 'artifact:job-b', contentChecksum: `sha256:${'b'.repeat(64)}`, referenceType: 'character&style', strength: 0.35, fidelity: 0.2 }
+        const v45 = { model: 'nai-diffusion-4-5-full' }
+        resetRuntime(212, [scene('inherit', 1, { generation: v45 }), scene('none', 1, { generation: v45, preciseReferences: null }),
+            scene('empty', 1, { generation: v45, preciseReferences: [] }), scene('own', 1, { generation: v45, preciseReferences: [refA, refB] }),
+            scene('own-stronger', 1, { generation: v45, preciseReferences: [{ ...refA, strength: 0.8 }, refB] }),
+            scene('own-other', 1, { generation: v45, preciseReferences: [{ ...refA, artifactId: 'artifact:import-c', contentChecksum: `sha256:${'c'.repeat(64)}` }, refB] }),
+            scene('v5-own', 1, { generation: { model: 'nai-diffusion-5-full' }, preciseReferences: [refA] }),
+            scene('v5-none', 1, { generation: { model: 'nai-diffusion-5-full' }, preciseReferences: null })])
+        runtime.useCharacterStore.setState({
+            characterImages: [{ id: 'global-character', base64: 'data:image/png;base64,R0xPQkFM', thumbnail: 'data:image/jpeg;base64,VEhVTUI=',
+                enabled: true, informationExtracted: 1, strength: 0.5, fidelity: 0.4, referenceType: 'style' }],
+            vibeImages: [{ id: 'global-vibe', base64: 'data:image/png;base64,VklCRQ==', encodedVibe: 'RU5DT0RFRA==', enabled: true,
+                informationExtracted: 0.8, strength: 0.3, fidelity: 0.6, referenceType: 'character&style' }],
+        })
+        savedImageSource.mockClear()
+        savedImageSource.mockImplementation(async (source?: { artifactId: string }) => `data:image/webp;base64,${btoa(source!.artifactId)}`)
+        try {
+            const { buildSceneGenerationParams } = await import('@/lib/scene-generation/build-scene-params')
+            const { projectMainGenerationSemantic } = await import('@/services/generation/main-generation-semantic')
+            const { validateNovelAiGenerationParams, NovelAiModelCapabilityError } = await import('@/services/nai/adapter')
+            const { queryNaiGenerationCompatibility } = await import('@/services/nai/compatibility')
+            const built = new Map<string, GenerationParams>()
+            for (const target of runtime.useSceneStore.getState().presets[0]!.scenes) {
+                const result = await buildSceneGenerationParams(target, { seed: 7, now: new Date(FIXED_TIME) })
+                if (!result.success) throw new Error(`Expected a Scene plan for ${target.id}`)
+                built.set(target.id, result.params)
+            }
+            const vibes = { vibeImages: ['data:image/png;base64,VklCRQ=='], preEncodedVibes: ['RU5DT0RFRA=='], vibeStrength: [0.3], vibeInfo: [0.8] }
+            expect(built.get('inherit')).toMatchObject({ charImages: ['data:image/png;base64,R0xPQkFM'], charStrength: [0.5],
+                charFidelity: [0.4], charReferenceType: ['style'], ...vibes })
+            for (const id of ['none', 'empty']) {
+                expect(built.get(id), id).toMatchObject({ charImages: [], charStrength: [], charFidelity: [], charReferenceType: [], ...vibes })
+                expect(queryNaiGenerationCompatibility(built.get(id)!, 'nai-blue-payload-v1', false).features).not.toContain('precise-reference')
+            }
+            expect(built.get('own')).toMatchObject({
+                charImages: [`data:image/webp;base64,${btoa(refA.artifactId)}`, `data:image/webp;base64,${btoa(refB.artifactId)}`],
+                charStrength: [0.7, 0.35], charFidelity: [0.9, 0.2], charReferenceType: ['character', 'character&style'],
+                charCacheKeys: [null, null], charInfo: [1, 1], ...vibes })
+            expect(queryNaiGenerationCompatibility(built.get('own')!, 'nai-blue-payload-v1', false).features).toContain('precise-reference')
+            const readBindings = savedImageSource.mock.calls.map(call => (call as unknown[])[0])
+            expect(readBindings).toEqual(expect.arrayContaining([refA, refB]))
+            expect(readBindings).toHaveLength(7)
+
+            // Both the Composition plan and the reviewed Provider semantic bind each reference's content and parameters.
+            const semantic = (id: string) => projectMainGenerationSemantic(built.get(id)!, 'png')
+            for (const changed of ['own-stronger', 'own-other']) {
+                expect(built.get(changed)!.compositionPlanHash!.digest, changed).not.toBe(built.get('own')!.compositionPlanHash!.digest)
+                expect(semantic(changed), changed).not.toEqual(semantic('own'))
+            }
+            expect(built.get('none')!.compositionPlanHash!.digest).not.toBe(built.get('inherit')!.compositionPlanHash!.digest)
+
+            // V5 has no Precise Reference: a bound list is refused, while null lets a V5 Scene opt out of the app's enabled references.
+            expect(() => validateNovelAiGenerationParams(built.get('v5-own')!)).toThrow(NovelAiModelCapabilityError)
+            expect(() => validateNovelAiGenerationParams({ ...built.get('v5-none')!, vibeImages: [], preEncodedVibes: [] })).not.toThrow()
+        } finally {
+            savedImageSource.mockImplementation(async () => 'data:image/png;base64,SAVED_ARTIFACT_ORIGINAL')
+        }
+    })
+
+    it('sends a Scene-bound Precise Reference to NovelAI as an uncached director reference', async () => {
+        const reference = { artifactId: 'artifact:import-a', contentChecksum: `sha256:${'a'.repeat(64)}`, referenceType: 'style', strength: 0.65, fidelity: 0.75 }
+        resetRuntime(213, [scene('wire', 1, { generation: { model: 'nai-diffusion-4-5-full' }, preciseReferences: [reference] })])
+        const loaded: string[] = []
+        class SyntheticImage {
+            width = 832
+            height = 1216
+            onload: (() => void) | null = null
+            set src(value: string) {
+                if (!value) return
+                loaded.push(value)
+                queueMicrotask(() => this.onload?.())
+            }
+        }
+        const canvas = { width: 0, height: 0, getContext: () => ({ fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }),
+            toDataURL: () => 'data:image/png;base64,Tk9STUFMSVpFRA==' }
+        vi.stubGlobal('Image', SyntheticImage)
+        vi.stubGlobal('document', { createElement: () => canvas })
+        try {
+            const target = runtime.useSceneStore.getState().presets[0]!.scenes[0]!
+            const { buildSceneGenerationParams } = await import('@/lib/scene-generation/build-scene-params')
+            const result = await buildSceneGenerationParams(target, { seed: 1 })
+            if (!result.success) throw new Error('Expected a Scene plan with a bound reference')
+            const { adaptGenerationParams } = await import('@/services/nai/adapter')
+            const { buildGenerateImagePayload } = await import('@/services/nai/payload')
+            const adapted = await adaptGenerationParams('synthetic-no-provider', result.params)
+            const parameters = buildGenerateImagePayload(adapted.request, adapted.buildOptions).parameters as unknown as Record<string, unknown>
+            // The verified saved original is what gets normalized; NovelAI receives the normalized bytes inline.
+            expect(loaded).toEqual(['data:image/png;base64,SAVED_ARTIFACT_ORIGINAL'])
+            expect(parameters).toMatchObject({
+                director_reference_descriptions: [{ caption: { base_caption: 'style', char_captions: [] }, legacy_uc: false }],
+                director_reference_information_extracted: [1],
+                director_reference_strength_values: [0.65],
+                director_reference_images: ['Tk9STUFMSVpFRA=='],
+            })
+            expect((parameters.director_reference_secondary_strength_values as number[])[0]).toBeCloseTo(0.25)
+            expect(parameters).not.toHaveProperty('director_reference_images_cached')
+            expect(parameters).not.toHaveProperty('reference_image_multiple')
+        } finally {
+            vi.unstubAllGlobals()
+        }
     })
 
     it('materializes the source snapshot that produced the plan even if live state changes during hydration', async () => {

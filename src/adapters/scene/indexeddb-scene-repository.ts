@@ -13,6 +13,7 @@ import type {
 } from '@/application/scene/scene-repository'
 import { isSceneCompositionRef } from '@/application/scene/patch-scenes'
 import { isSceneImageSource } from '@/application/scene/scene-image-source'
+import { isScenePreciseReferences } from '@/application/scene/scene-precise-references'
 import { generationFolderDocumentMutationKey } from '@/application/workspace/workspace-mutation-gate'
 import { runtimeWorkspaceMutationGate } from '@/lib/workspace-mutation-gate'
 import {
@@ -118,7 +119,7 @@ function isSceneAuthoringRecord(value: unknown): value is SceneAuthoringRecord {
     if (!isRecord(value) || !isJsonValue(value) || !hasOnlyKeys(value, [
         'id', 'name', 'scenePrompt', 'prompts', 'characterCaptions', 'characterPositionEnabled',
         'generation', 'width', 'height', 'metadataMode', 'generationFolderId', 'filenameTemplate', 'productionCount',
-        'excludePinned', 'compositionRef', 'artifactRefs', 'createdAt', 'imageSource', 'promptTextMode',
+        'excludePinned', 'compositionRef', 'artifactRefs', 'createdAt', 'imageSource', 'preciseReferences', 'promptTextMode',
     ])) return false
     const dimensions = [value.width, value.height]
     const metadataModes = ['embedded', 'sidecar-only', 'strip-and-sidecar', 'strip-only']
@@ -135,6 +136,7 @@ function isSceneAuthoringRecord(value: unknown): value is SceneAuthoringRecord {
         && (value.metadataMode === undefined || metadataModes.includes(value.metadataMode as string))
         && (value.generationFolderId === undefined || isNonEmptyString(value.generationFolderId))
         && (value.imageSource === undefined || isSceneImageSource(value.imageSource))
+        && (value.preciseReferences === undefined || isScenePreciseReferences(value.preciseReferences))
         && (value.promptTextMode === undefined || value.promptTextMode === 'standard' || value.promptTextMode === 'verbatim')
         && (value.productionCount === undefined || (Number.isInteger(value.productionCount) && Number(value.productionCount) >= 1 && Number(value.productionCount) <= 999))
         && (value.filenameTemplate === undefined || typeof value.filenameTemplate === 'string')
@@ -241,6 +243,7 @@ function projectScene(value: unknown): SceneV1AuthoringRecord {
         ...defined(value, 'metadataMode'),
         ...defined(value, 'generationFolderId'),
         ...defined(value, 'imageSource'),
+        ...defined(value, 'preciseReferences'),
         ...defined(value, 'promptTextMode'),
         ...defined(value, 'productionCount'),
         ...defined(value, 'filenameTemplate'),

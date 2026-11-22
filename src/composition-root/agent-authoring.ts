@@ -36,7 +36,7 @@ function publicScene(scene: SceneAuthoringRecord): JsonObject {
     return JSON.parse(JSON.stringify({ sceneId: scene.id, name: scene.name, prompts: scene.prompts ?? { additional: scene.scenePrompt },
         generation: scene.generation ?? {}, width: scene.width, height: scene.height, generationFolderId: scene.generationFolderId,
         productionCount: scene.productionCount ?? 1, filenameTemplate: scene.filenameTemplate,
-        imageSource: scene.imageSource,
+        imageSource: scene.imageSource, preciseReferences: scene.preciseReferences,
         promptTextMode: scene.promptTextMode,
         artifactIds: [...scene.artifactRefs].reverse().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
             .slice(0, 100).map(ref => ref.artifactId), totalArtifactCount: scene.artifactRefs.length })) as JsonObject

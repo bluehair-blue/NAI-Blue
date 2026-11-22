@@ -1,5 +1,6 @@
 import type { AgentCommandName } from '@/application/agent/agent-command-contract'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
+import { MAX_SCENE_PRECISE_REFERENCES } from '@/application/scene/scene-precise-references'
 import type { JsonObject, JsonValue } from '@/domain/composition/types'
 import { AGENT_TOOL_DESCRIPTIONS } from './agent-workflow-guide'
 
@@ -21,7 +22,9 @@ export function compactSchema(value: JsonValue, namesAreProperties = false): Jso
     if (Array.isArray(value)) return value.map(item => compactSchema(item))
     if (value === null || typeof value !== 'object') return value
     return Object.fromEntries(Object.entries(value)
-        .filter(([key, child]) => namesAreProperties || (!FORMAT_KEYS.has(key) && informativeBound(key, child)))
+        // An empty required list is the JSON Schema default and says nothing.
+        .filter(([key, child]) => namesAreProperties || (!FORMAT_KEYS.has(key) && informativeBound(key, child)
+            && !(key === 'required' && Array.isArray(child) && child.length === 0)))
         .map(([key, child]) => [key, compactSchema(child, !namesAreProperties && key === 'properties')]))
 }
 
@@ -53,22 +56,29 @@ type Option = keyof typeof OPTIONS
 function contractInput(command: AgentCommandName): JsonObject {
     return compactSchema(getAgentCommandInputContract(command)!.schema) as JsonObject
 }
+// The reference item shape lives in guides/image-source; spelling it out here would overflow the fixed tool-list budget.
+function scenePatchInput(): JsonObject {
+    const input = contractInput('scene.patch_many')
+    const change = ((input.properties as JsonObject).changes as JsonObject).items as JsonObject
+    ;(change.properties as JsonObject).preciseReferences = { oneOf: [{ type: 'null' }, { type: 'array', maxItems: MAX_SCENE_PRECISE_REFERENCES }] }
+    return input
+}
 // A lost response leaves the caller nothing to inspect unless it chose the ID of a generation request itself.
 export const REQUEST_ID_REQUIRED: readonly string[] = ['generation.run', 'generation.enqueue']
 
 function tool(name: AgentMcpToolName, input: JsonObject, options: Option[] = [], extra: JsonObject = {}) {
     const hasRequired = Array.isArray(input.required) && input.required.length > 0
     const properties: JsonObject = { ...extra, input, ...Object.fromEntries(['requestId', 'detail', ...options].map(key => [key, OPTIONS[key as Option]])) }
+    const required = [...Object.keys(extra), ...(hasRequired ? ['input'] : []), ...(REQUEST_ID_REQUIRED.includes(name) ? ['requestId'] : [])]
     return { name, description: AGENT_TOOL_DESCRIPTIONS[name],
-        inputSchema: { type: 'object' as const, properties, required: [...Object.keys(extra), ...(hasRequired ? ['input'] : []),
-            ...(REQUEST_ID_REQUIRED.includes(name) ? ['requestId'] : [])] } }
+        inputSchema: { type: 'object' as const, properties, ...(required.length > 0 ? { required } : {}) } }
 }
 
 export function listAgentMcpTools() {
     return [
         tool('workspace.get_snapshot', contractInput('workspace.get_snapshot'), ['include']),
         tool('scene.resolve_many', contractInput('scene.resolve_many')),
-        tool('scene.patch_many', contractInput('scene.patch_many')),
+        tool('scene.patch_many', scenePatchInput()),
         tool('generation.run', PLAN_INPUT, ['waitSeconds', 'planOnly']),
         tool('generation.enqueue', contractInput('generation.enqueue')),
         tool('generation.get_run', contractInput('generation.get_run'), ['waitSeconds']),

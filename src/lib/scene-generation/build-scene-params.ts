@@ -43,6 +43,12 @@ import {
     type MainReferenceSnapshot,
 } from '@/lib/composition/main-adapter'
 import { materializeCharacterResourcesForNai } from '@/lib/composition/character-resource-adapter'
+import {
+    characterStoreResourceId,
+    type CharacterResourceContent,
+    type CharacterResourceRepository,
+} from '@/lib/composition/character-resource-repository'
+import type { ScenePreciseReference } from '@/application/scene/scene-precise-references'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { assessPortableCompositionPlan } from '@/platform/portable-resources'
 import {
@@ -144,6 +150,52 @@ function referenceSnapshots(
             digest: runtimeDigest(image.thumbnail),
         })),
     ]
+}
+
+function scenePreciseReferenceId(reference: ScenePreciseReference): string {
+    return `scene-artifact:${reference.artifactId}`
+}
+
+/** The content checksum stands in for the thumbnail digest, so the plan hash binds the exact saved original. */
+function scenePreciseReferenceSnapshot(reference: ScenePreciseReference): MainReferenceSnapshot {
+    return {
+        id: scenePreciseReferenceId(reference),
+        enabled: true,
+        kind: 'character',
+        referenceType: reference.referenceType,
+        strength: reference.strength,
+        fidelity: reference.fidelity,
+        informationExtracted: 1,
+        digest: reference.contentChecksum,
+    }
+}
+
+/** Serves a Scene's own references beside the global store; their originals are read and verified only when materializing. */
+function withScenePreciseReferences(
+    base: CharacterResourceRepository,
+    references: readonly ScenePreciseReference[],
+): CharacterResourceRepository {
+    const contents = new Map<string, CharacterResourceContent>()
+    return {
+        ensureAvailable: async () => {
+            await base.ensureAvailable()
+            if (references.length === 0) return
+            const { materializeSceneImageSource } = await import('@/services/agent/saved-artifact-image')
+            for (const reference of references) {
+                // An uncached data URL: NovelAI then receives the normalized image in director_reference_images.
+                contents.set(characterStoreResourceId('character', scenePreciseReferenceId(reference)), {
+                    id: scenePreciseReferenceId(reference),
+                    base64: await materializeSceneImageSource(reference),
+                    enabled: true,
+                    informationExtracted: 1,
+                    strength: reference.strength,
+                    fidelity: reference.fidelity,
+                    referenceType: reference.referenceType,
+                })
+            }
+        },
+        getByResourceId: resourceId => contents.get(resourceId) ?? base.getByResourceId(resourceId),
+    }
 }
 
 async function resolveSourceDimensions(
@@ -282,7 +334,14 @@ async function createSceneCompositionSnapshot(
         },
         characters,
         positionEnabled: characterPositionEnabled,
-        references: referenceSnapshots(referenceState.characterImages, referenceState.vibeImages),
+        // A Scene that names its Precise References (a list, null or []) stops inheriting the human's enabled character
+        // references. Vibe Transfer keeps inheriting the global store in every state.
+        references: scene.preciseReferences === undefined
+            ? referenceSnapshots(referenceState.characterImages, referenceState.vibeImages)
+            : [
+                ...(scene.preciseReferences ?? []).map(scenePreciseReferenceSnapshot),
+                ...referenceSnapshots([], referenceState.vibeImages),
+            ],
         params: {
             model: sceneGeneration.model,
             width: fallbackDimensions.width,
@@ -457,7 +516,7 @@ async function materializeV2GenerationParams(
     const materialized = await materializeCharacterResourcesForNai({
         resources: plan.resources,
         bindings: enabledBindings,
-        repository: createCharacterStoreResourceRepository(),
+        repository: withScenePreciseReferences(createCharacterStoreResourceRepository(), scene.preciseReferences ?? []),
     })
     if (!materialized.success) {
         throw new Error(materialized.errors.map(error => `${error.code}:${error.resourceId}`).join(', '))

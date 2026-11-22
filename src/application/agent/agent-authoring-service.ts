@@ -6,7 +6,7 @@ import { planGenerationFolderChanges, type GenerationFolderChange } from '@/appl
 import type { ApplyGenerationFolderChangesInput, ApplyGenerationFolderChangesResult } from '@/application/folder/apply-folder-changes'
 import { AgentCommandError } from './agent-command-contract'
 import type { AgentAuthoringPort, AgentAuthoringTarget } from './agent-authoring-contract'
-import type { SceneImageSource } from '@/application/scene/scene-image-source'
+import type { SavedArtifactBinding } from '@/application/scene/scene-image-source'
 import { agentSpans } from './agent-command-dispatcher'
 
 type SceneChange = Partial<Omit<SceneAuthoringRecord, 'id' | 'artifactRefs' | 'createdAt' | 'compositionRef' | 'scenePrompt'>> & { sceneId: string }
@@ -17,7 +17,8 @@ type FolderChange = Partial<Pick<GenerationFolderV2, 'displayName' | 'pathSegmen
 interface FolderInput { expectedRevision: number; expectedPlanHash?: `sha256:${string}`; changes: FolderChange[] }
 
 export interface AgentAuthoringDependencies {
-    readonly validateImageSource?: (source: SceneImageSource) => Promise<boolean>
+    /** Checks any saved-original binding (Image2Image source or Precise Reference) before commit, not at generation. */
+    readonly validateImageSource?: (source: SavedArtifactBinding) => Promise<boolean>
     readonly scenes: SceneRepositoryPort
     readonly folderWorkspaceId: string
     readonly readFolders: () => Promise<GenerationFolderDocument | null>
@@ -109,9 +110,9 @@ export function createAgentAuthoringService(deps: AgentAuthoringDependencies): A
         const folders = await agentSpans.span('agent-authoring:folders-read', () => deps.readFolders())
         if (!folders || input.changes.some(change => change.generationFolderId !== undefined
             && !folders.folders.some(folder => folder.id === change.generationFolderId))) return null
-        for (const change of input.changes) {
-            if (change.imageSource && (!deps.validateImageSource || !await agentSpans.span('agent-authoring:image-source',
-                () => deps.validateImageSource!(change.imageSource!)))) return null
+        for (const binding of input.changes.flatMap(change => [...(change.imageSource ? [change.imageSource] : []), ...change.preciseReferences ?? []])) {
+            if (!deps.validateImageSource || !await agentSpans.span('agent-authoring:image-source',
+                () => deps.validateImageSource!(binding))) return null
         }
         const document = nextScenes(current, input, '1970-01-01T00:00:00.000Z')
         if (!document) return null
