@@ -125,15 +125,12 @@ async function connect(root: string, waitMs = 700, clientId?: string) {
     client.onerror = error => { errors.push(error) }
     clients.push(client)
     await client.connect(transport, { timeout: 10_000 })
+    // These cases pin receipt-level facts, which a call returns only with detail:"full".
     const call = client.callTool.bind(client)
-    let admission = Promise.resolve()
-    vi.spyOn(client, 'callTool').mockImplementation((...args) => {
-        const result = admission.then(async () => {
-            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
-            return call(...args)
-        })
-        admission = result.then(() => {}, () => {})
-        return result
+    vi.spyOn(client, 'callTool').mockImplementation(async (params, ...rest) => {
+        const result = await call({ ...params, arguments: { detail: 'full', ...params.arguments } }, ...rest)
+        const first = (result.content as { type: string; text?: string }[])[0]
+        return { ...result, structuredContent: JSON.parse(String(first.text)) }
     })
     expect(client.getServerVersion()).toMatchObject({ name: 'nai-blue-agent-spike' })
     expect(client.getNegotiatedProtocolVersion()).toBeDefined()
@@ -152,19 +149,16 @@ async function assertWire(root: string) {
 }
 
 describe('real SDK stdio child + authenticated application/inbox integration', () => {
-    it('negotiates, advertises exact registry schemas and correlates guide-ordered reads and decimal plan handles', async () => {
+    it('negotiates, lists tools without touching the inbox, reports registry schema hashes and correlates concurrent reads and decimal plan handles', async () => {
         const app = await appFixture(), sidecar = await connect(app.root)
         const listed = await sidecar.client.listTools({}, { cache: 'refresh' })
-        const bound = app.dispatcher.capabilities().filter(item => getAgentCommandInputContract(item.command) !== undefined)
-        expect(listed.tools.map(tool => tool.name).sort()).toEqual(bound.map(item => item.command).sort())
-        for (const tool of listed.tools) {
-            const descriptor = bound.find(item => item.command === tool.name)!
-            const schema = (tool.inputSchema.properties as Record<string, JsonObject>).input
-            expect(`sha256:${hashCanonicalValue(schema)}`, tool.name)
-                .toBe(`sha256:${hashCanonicalValue(getAgentCommandInputContract(tool.name as AgentCommandName)!.schema)}`)
-            if (descriptor.inputSchemaHash !== undefined) {
-                expect(`sha256:${hashCanonicalValue(schema)}`, tool.name).toBe(descriptor.inputSchemaHash)
-            }
+        expect(listed.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['workspace.get_snapshot', 'generation.run', 'generation.get_run']))
+        expect(app.executions).toEqual([])
+        const capabilities = JSON.parse(String((await sidecar.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
+        expect(capabilities).toMatchObject({ status: 'fresh-application-capabilities', schemaMismatches: [] })
+        for (const descriptor of app.dispatcher.capabilities().filter(item => item.inputSchemaHash !== undefined)) {
+            expect(descriptor.inputSchemaHash, descriptor.command)
+                .toBe(`sha256:${hashCanonicalValue(getAgentCommandInputContract(descriptor.command)!.schema)}`)
         }
         const requests = [
             { name: 'workspace.get_snapshot', arguments: { requestId: 'wire-snapshot', input: {} } },
@@ -249,12 +243,9 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
 
     it('keeps bindings during app-off submission and cancels only observation while preserving the submitted command', async () => {
         const app = await appFixture(), sidecar = await connect(app.root, 1000)
-        await sidecar.client.listTools({}, { cache: 'refresh' })
+        const online = await sidecar.client.listTools({}, { cache: 'refresh' })
         app.setOnline(false)
-        expect((await sidecar.client.listTools({}, { cache: 'refresh' })).tools.map(tool => tool.name).sort())
-            .toEqual(app.dispatcher.capabilities()
-                .filter(item => getAgentCommandInputContract(item.command) !== undefined)
-                .map(item => item.command).sort())
+        expect(await sidecar.client.listTools({}, { cache: 'refresh' })).toEqual(online)
         const off = await sidecar.client.callTool({ name: 'workspace.get_snapshot', arguments: { requestId: 'app-off-submit', input: {} } })
         expect(off.structuredContent).toEqual({ status: 'submitted-to-inbox', accepted: false, requestId: 'app-off-submit', requiresAppProcess: true })
         expect(await app.receipts.get('app-off-submit')).toBeNull()
@@ -275,7 +266,7 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         await assertWire(app.root)
     }, 25_000)
 
-    it.skipIf(process.platform !== 'win32')('boots the exact production stdio CLI with an unregistered key, no tools or submission files, and clean close', async () => {
+    it.skipIf(process.platform !== 'win32')('boots the exact production stdio CLI with an unregistered key, static tools, no submission files, and clean close', async () => {
         const app = await appFixture()
         app.setOnline(false)
         const id = `missing-${crypto.randomUUID()}`
@@ -287,7 +278,7 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         // including TS loading, Python subprocess, SDK stdio setup and shutdown.
         const transport = new StdioClientTransport({ command: node, args: [path.resolve('scripts/run-agent-mcp-stdio.mjs'),
             '--connection', connectionPath, '--inbox-dir', path.join(app.root, 'inbox'),
-            '--python', existsSync(bundledPython) ? bundledPython : 'python', '--wait-ms', '0'],
+            '--python', existsSync(bundledPython) ? bundledPython : 'python', '--wait-ms', '0', '--no-usage-log'],
             cwd: path.resolve('.'), stderr: 'pipe', maxBufferSize: 262_144 })
         let stderr = ''
         transport.stderr?.on('data', chunk => { stderr += chunk })
@@ -299,10 +290,7 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         await client.connect(transport, { timeout: 10_000 })
         expect(client.getServerVersion()).toMatchObject({ name: 'nai-blue-agent-spike' })
         expect(client.getNegotiatedProtocolVersion()).toBeDefined()
-        expect((await client.listTools({}, { cache: 'refresh' })).tools.map(tool => tool.name).sort())
-            .toEqual(app.dispatcher.capabilities()
-                .filter(item => getAgentCommandInputContract(item.command) !== undefined)
-                .map(item => item.command).sort())
+        expect((await client.listTools({}, { cache: 'refresh' })).tools.map(tool => tool.name)).toContain('generation.run')
         for (const directory of ['inbox', 'results', 'rejections']) expect(await readdir(path.join(app.root, directory))).toEqual([])
         expect(stderr).toBe('')
         expect(errors).toEqual([])

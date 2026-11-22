@@ -32,7 +32,7 @@ function observed(requestId: string, command: AgentCommandName, result: JsonObje
     } }
 }
 
-async function fixture(overrides: Partial<McpAgentInbox> = {}, autoReadGuide = true) {
+async function fixture(overrides: Partial<McpAgentInbox> = {}, fullReceipts = true) {
     const invokes: { command: AgentCommand; requestId: string }[] = []
     const inspections: string[] = []
     const inbox: McpAgentInbox = {
@@ -56,17 +56,14 @@ async function fixture(overrides: Partial<McpAgentInbox> = {}, autoReadGuide = t
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    if (autoReadGuide) {
+    if (fullReceipts) {
+        // This suite pins the receipt-level contract, which a call now returns only with detail:"full".
+        // The compact default has its own suite (mcp-token-efficiency.test.ts).
         const call = client.callTool.bind(client)
-        let admission = Promise.resolve()
-        vi.spyOn(client, 'callTool').mockImplementation((...args) => {
-            let pending!: ReturnType<typeof call>
-            const start = admission.then(async () => {
-                await client.readResource({ uri: AGENT_WORKFLOW_GUIDE_URI })
-                pending = call(...args)
-            })
-            admission = start.catch(() => {})
-            return start.then(() => pending)
+        vi.spyOn(client, 'callTool').mockImplementation(async (params, ...rest) => {
+            const result = await call({ ...params, arguments: { detail: 'full', ...params.arguments } }, ...rest)
+            const first = (result.content as { type: string; text?: string }[])[0]
+            return { ...result, structuredContent: JSON.parse(String(first.text)) }
         })
     }
     cleanups.push(async () => { await client.close(); await server.close() })
@@ -91,7 +88,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
             expect((await call(name, input)).structuredContent).toMatchObject({ code: 'APP_NOT_RUNNING', submissionAttempted: false })
         }
         expect((await call('generation.cancel', {})).isError).toBe(true)
-        expect(modes).toEqual([false, false, false, false, false])
+        expect(modes).toEqual([false, false, false, false])
         expect(f.invokes).toHaveLength(0)
         expect((await call('generation.cancel', { runId: 'run-1' })).isError).toBe(false)
         expect(modes.at(-1)).toBe(true)
@@ -193,29 +190,37 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         expect(f.invokes).toEqual([])
     })
 
-    it('delivers bounded handshake guidance and reads the versioned manual only on demand, even with the app off', async () => {
+    it('delivers bounded handshake guidance and serves optional topic guides without touching the app', async () => {
         const f = await fixture({ invoke: async () => { throw new Error('app off') },
             inspect: async () => { throw new Error('no saved receipt') } })
         expect(f.client.getInstructions()).toBe(AGENT_MCP_INSTRUCTIONS)
-        expect(f.client.getInstructions()!.length).toBeLessThan(700)
-        expect(f.client.getInstructions()).toContain(AGENT_WORKFLOW_GUIDE_URI)
-        expect(f.client.getInstructions()).not.toContain(AGENT_WORKFLOW_GUIDE)
+        expect(AGENT_MCP_INSTRUCTIONS.length).toBeLessThan(800)
+        expect(AGENT_MCP_INSTRUCTIONS).toContain('no guide read is required')
+        expect(AGENT_MCP_INSTRUCTIONS).toContain('never generate again')
+        expect(AGENT_MCP_INSTRUCTIONS).toContain('Computer Use')
         const listed = await f.client.listResources()
         expect(listed.resources).toContainEqual(expect.objectContaining({ uri: AGENT_WORKFLOW_GUIDE_URI, mimeType: 'text/markdown' }))
-        expect(JSON.stringify(listed)).not.toContain(AGENT_WORKFLOW_GUIDE)
+        expect(JSON.stringify(listed).length).toBeLessThan(1200)
         const guide = await f.client.readResource({ uri: AGENT_WORKFLOW_GUIDE_URI })
         expect(guide.contents).toEqual([{ uri: AGENT_WORKFLOW_GUIDE_URI, mimeType: 'text/markdown', text: AGENT_WORKFLOW_GUIDE }])
+        expect(AGENT_WORKFLOW_GUIDE.length).toBeLessThan(3500)
         expect(AGENT_WORKFLOW_GUIDE).toContain('100 images total')
-        expect(AGENT_WORKFLOW_GUIDE).toContain('monitor.complete')
-        expect(AGENT_WORKFLOW_GUIDE).toContain('COMMAND_OUTCOME_UNKNOWN')
-        expect(AGENT_MCP_INSTRUCTIONS).toContain('no window focus, visibility or topmost requirement')
-        expect(AGENT_WORKFLOW_GUIDE).toContain('active saved consent needs no repeated approval')
-        expect(AGENT_WORKFLOW_GUIDE).toContain('Do not add agent-imposed time, count, cost or concurrency quotas')
-        expect(AGENT_WORKFLOW_GUIDE).not.toContain('Keep NAI Blue running in the foreground')
+        expect(AGENT_WORKFLOW_GUIDE).toContain('window focus, visibility and topmost position do not matter')
+        expect(AGENT_WORKFLOW_GUIDE).toContain('self-imposed time, count, cost or concurrency quota')
+        const topic = async (name: string) => String((await f.client.readResource({ uri: `nai-blue://guides/${name}` })).contents[0].text)
+        expect(await topic('recovery')).toContain('COMMAND_OUTCOME_UNKNOWN')
+        expect(await topic('production')).toContain('production.plan_next')
+        expect(await topic('image-source')).toContain('img2img')
+        expect(await topic('consent')).toContain('allowsSyntheticOnly')
+        expect(await topic('runtime')).toContain('APP_RUNTIME_RESTART_REQUIRED')
+        const advanced = await topic('advanced')
+        for (const command of ['folder.plan_changes', 'folder.apply_changes', 'production.create', 'production.get']) expect(advanced).toContain(`## ${command}`)
         expect(listed.resources.find(resource => resource.uri === 'nai-blue://capabilities')?.name).toBe('Current application capabilities')
         expect(f.invokes).toEqual([])
         expect(f.inspections).toEqual([])
-        await expect(f.client.readResource({ uri: 'nai-blue://guides/agent-workflow/v999' })).rejects.toThrow('Agent resource is unavailable.')
+        for (const missing of ['agent-workflow/v999', 'toString', '../runtime']) {
+            await expect(f.client.readResource({ uri: `nai-blue://guides/${missing}` })).rejects.toThrow('Agent resource is unavailable.')
+        }
     })
 
     it('returns shared production counts and storage-only recovery through generation.get_run', async () => {
@@ -236,62 +241,51 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
             monitor: { complete: false, nextAction: 'review-recovery', counts: { generated: 1, stored: 0 },
                 recoveryActions: [{ kind: 'retry-storage', requiresHuman: false, jobCount: 1 }] },
         } } })
-        expect(f.invokes.map(item => item.command.name)).toEqual(['system.describe_capabilities', 'generation.get_run'])
+        expect(f.invokes.map(item => item.command.name)).toEqual(['generation.get_run'])
     })
 
-    it('handshakes and advertises stable schema-bound tools with fresh availability metadata', async () => {
+    it('advertises a static tool list without probing the app and reports live availability through the capability resource', async () => {
         const f = await fixture()
         const listed = await f.client.listTools()
-        const expected = descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined)
-        expect(listed.tools.map(item => item.name)).toEqual(expected.map(item => item.command))
+        expect(listed.tools.map(item => item.name)).toEqual(['workspace.get_snapshot', 'scene.resolve_many', 'scene.patch_many',
+            'generation.run', 'generation.enqueue', 'generation.get_run', 'generation.cancel', 'generation.retry_storage',
+            'artifact.get_images', 'r2.get_readiness', 'advanced.call'])
+        expect(f.invokes).toEqual([])
+        expect(JSON.stringify(await f.client.listTools())).toBe(JSON.stringify(listed))
         for (const tool of listed.tools) {
-            expect(tool.inputSchema.properties?.input).toEqual(getAgentCommandInputContract(tool.name as AgentCommandName)!.schema)
-            expect(tool.description).toContain('window focus, visibility and topmost position are not required')
-            expect(tool.description).not.toContain('Foreground app required')
-        }
-        for (const name of ['scene.patch_many', 'folder.apply_changes', 'generation.enqueue']) {
-            expect(listed.tools.find(tool => tool.name === name)?.description).toContain('honors active per-client always-approve consent')
-            expect(listed.tools.find(tool => tool.name === name)?.description).not.toContain('Human approval required in NAI Blue')
+            expect(tool.outputSchema).toBeUndefined()
+            expect(JSON.stringify(tool.inputSchema)).not.toMatch(/"pattern"|"\$schema"|additionalProperties/)
         }
         expect(listed.tools.find(tool => tool.name === 'scene.patch_many')?.inputSchema).toMatchObject({
-            properties: { input: { properties: { changes: { items: { properties: {
+            properties: { input: { properties: { changes: { maxItems: 100, items: { properties: {
                 promptTextMode: { enum: ['standard', 'verbatim'] }, generation: { properties: { ucPreset: { maximum: 4 } } },
             } } } } } },
         })
-        expect(listed.tools.map(item => item.name)).not.toContain('scene.retry_link')
-        expect(f.invokes).toHaveLength(1)
-        expect(f.invokes[0].command).toEqual({ name: 'system.describe_capabilities', input: {} })
+        expect(listed.tools.find(tool => tool.name === 'generation.run')?.inputSchema.required).toEqual(['input', 'requestId'])
         const resource = await f.client.readResource({ uri: 'nai-blue://capabilities' })
         const snapshot = JSON.parse(String(resource.contents[0].text))
         expect(snapshot.status).toBe('fresh-application-capabilities')
         expect(snapshot.capabilities).toEqual(descriptors())
+        expect(snapshot).not.toHaveProperty('guideReadRequired')
+        expect(f.invokes).toHaveLength(1)
+        expect(f.invokes[0].command).toEqual({ name: 'system.describe_capabilities', input: {} })
+    })
+
+    it('probes afresh on each capability read and marks schema drift unavailable', async () => {
+        let current = descriptors()
+        const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities: current } as unknown as JsonObject) })
+        const read = async () => JSON.parse(String((await f.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
+        expect((await read()).schemaMismatches).toEqual([])
+        current = current.map(item => item.command === 'generation.plan' ? { ...item, inputSchemaHash: `sha256:${'b'.repeat(64)}` } : item)
+        const drifted = await read()
+        expect(drifted.schemaMismatches).toEqual(['generation.plan'])
+        expect(drifted.capabilities.find((item: { command: string }) => item.command === 'generation.plan')).toMatchObject({ available: false, reason: 'schema-version-mismatch' })
         expect(f.invokes).toHaveLength(2)
         expect(f.invokes[1].requestId).not.toBe(f.invokes[0].requestId)
     })
 
-    it('uses fresh results on each list and marks schema drift unavailable in the capability resource', async () => {
-        let current = descriptors()
-        const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities: current } as unknown as JsonObject) })
-        expect((await f.client.listTools()).tools.length).toBeGreaterThan(0)
-        current = current.map(item => item.command === 'generation.plan' ? { ...item, inputSchemaHash: `sha256:${'b'.repeat(64)}` } : item)
-        expect((await f.client.listTools()).tools.map(item => item.name)).toContain('generation.plan')
-        expect((await f.client.listTools()).tools.find(item => item.name === 'generation.plan')?.description)
-            .toContain('schema-version-mismatch')
-        const resource = await f.client.readResource({ uri: 'nai-blue://capabilities' })
-        const snapshot = JSON.parse(String(resource.contents[0].text))
-        expect(snapshot.capabilities.find((item: { command: string }) => item.command === 'generation.plan')).toMatchObject({ available: false, reason: 'schema-version-mismatch' })
-        current = descriptors(false)
-        expect((await f.client.listTools()).tools.map(item => item.name))
-            .toEqual(descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined).map(item => item.command))
-    })
-
-    it('keeps stable bindings and reports an unconfirmed app state when a fresh probe has no application receipt', async () => {
+    it('reports an unconfirmed app state when a fresh probe has no application receipt', async () => {
         const f = await fixture({ invoke: async (_command, requestId) => ({ status: 'submitted-to-inbox', requestId, requiresAppProcess: true, accepted: false }) })
-        const listed = await f.client.listTools()
-        expect(listed.tools.map(item => item.name))
-            .toEqual(descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined).map(item => item.command))
-        expect(listed.tools[0]?.description).toContain('Availability unconfirmed (capability-probe-unconfirmed)')
-        expect(listed.tools[0]?.description).not.toContain('app-unavailable')
         const resource = await f.client.readResource({ uri: 'nai-blue://capabilities' })
         const snapshot = JSON.parse(String(resource.contents[0].text))
         expect(snapshot.status).toBe('app-state-unconfirmed')
@@ -344,17 +338,17 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         const snapshot = JSON.parse(String((await unavailable.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
         expect(snapshot.status).toBe('fresh-application-capabilities')
         expect(snapshot.capabilities.every((item: { available: boolean; reason: string }) => !item.available && item.reason === 'app-unavailable')).toBe(true)
-        expect((await unavailable.client.listTools()).tools[0]?.description).toContain('Currently unavailable (app-unavailable)')
     })
 
-    it('refuses malformed or duplicated registry facts without advertising partial availability', async () => {
+    it('refuses malformed or duplicated registry facts without reporting partial availability', async () => {
         const values = [descriptors().slice(1), [...descriptors().slice(0, -1), descriptors()[0]],
             descriptors().map(item => item.command === 'generation.plan' ? { ...item, requiresHumanApproval: 'no' } : item),
             descriptors().map(item => item.command === 'generation.plan' ? { ...item, canExecuteWhileAppClosed: true } : item)]
         for (const capabilities of values) {
             const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities } as unknown as JsonObject) })
-            expect((await f.client.listTools()).tools.map(item => item.name))
-                .toEqual(descriptors().filter(item => getAgentCommandInputContract(item.command) !== undefined).map(item => item.command))
+            const snapshot = JSON.parse(String((await f.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
+            expect(snapshot.status).toBe('app-state-unconfirmed')
+            expect(snapshot.capabilities.every((item: { available: boolean }) => !item.available)).toBe(true)
         }
     })
 

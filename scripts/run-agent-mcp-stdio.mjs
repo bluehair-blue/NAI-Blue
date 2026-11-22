@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { appendFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -140,16 +141,29 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
     }
 }
 
+/** Sizes of what each response put into the host's context, one JSON line per response and never any content. */
+export function createUsageLog(directory) {
+    let ready
+    return entry => {
+        const now = new Date().toISOString()
+        ready ??= mkdir(directory, { recursive: true })
+        // Measurement is best effort; a full disk or read-only checkout must not fail a tool call.
+        void ready.then(() => appendFile(path.join(directory, `${now.slice(0, 10)}.jsonl`),
+            `${JSON.stringify({ at: now, pid: process.pid, ...entry })}\n`)).catch(() => {})
+    }
+}
+
 async function main() {
     let loader, handle
     try {
         const { values } = parseArgs({ options: {
             connection: { type: 'string' }, 'inbox-dir': { type: 'string' }, python: { type: 'string' },
-            'wait-ms': { type: 'string', default: '3000' }, help: { type: 'boolean' },
+            'wait-ms': { type: 'string', default: '3000' }, 'no-usage-log': { type: 'boolean' }, help: { type: 'boolean' },
         } })
         if (values.help) {
             console.log('NAI Blue development MCP stdio spike.\n'
-                + 'node scripts/run-agent-mcp-stdio.mjs --connection <public connection JSON> --inbox-dir <existing inbox> --python <Python executable> [--wait-ms 0..30000]\n'
+                + 'node scripts/run-agent-mcp-stdio.mjs --connection <public connection JSON> --inbox-dir <existing inbox> --python <Python executable> [--wait-ms 0..30000] [--no-usage-log]\n'
+                + 'Response sizes are appended to output/mcp-usage/<date>.jsonl for scripts/measure-agent-mcp-inflow.mjs.\n'
                 + 'Requires an existing registered client. Only plan and mutation requests can launch the registered Windows app. Read nai-blue://runtime for passive status.')
             return
         }
@@ -174,6 +188,7 @@ async function main() {
             fingerprint: () => adapterFingerprint(repo), resolve: allowLaunch => resolveInstalledRuntime(repo, allowLaunch),
             onTarget: value => { targetRuntimeHash = value } })
         inbox.runtimeStatus = allowLaunch => guard.status(allowLaunch)
+        if (!values['no-usage-log']) inbox.recordUsage = createUsageLog(path.join(repo, 'output', 'mcp-usage'))
         const { serveStdio, StdioServerTransport } = await import('@modelcontextprotocol/server/stdio')
         const transport = new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: 262_144 })
         handle = serveStdio(() => adapter.createAgentMcpServer(inbox), { transport,

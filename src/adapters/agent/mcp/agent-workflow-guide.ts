@@ -1,89 +1,154 @@
-import type { AgentCommandName } from '@/application/agent/agent-command-contract'
+/** Agent-facing text. Nothing here is required reading: tools run without it and the application stays the authority. */
+export const AGENT_GUIDE_URI_PREFIX = 'nai-blue://guides/'
+export const AGENT_WORKFLOW_GUIDE_URI = `${AGENT_GUIDE_URI_PREFIX}agent-workflow/v1`
 
-/** Static adapter guidance is fetched on demand; the live registry remains execution authority. */
-export const AGENT_WORKFLOW_GUIDE_URI = 'nai-blue://guides/agent-workflow/v1'
-export const AGENT_MCP_INSTRUCTIONS = `Read ${AGENT_WORKFLOW_GUIDE_URI} immediately before EACH public tool call; one same-connection read permits one call. GUIDE_READ_REQUIRED submits nothing. Guide/capability discovery is exempt. Honor active always-approve consent. App process required; no window focus, visibility or topmost requirement. Unconfirmed probes do not prove app closure; inspect their request resource. No Computer Use, CDP, private APIs, token extraction or approval clicks. Reuse requestId only for identical retries; fresh polls need new IDs. Receipts do not prove generation/storage. Never retry unknown Provider outcomes. Cancellation only stops waiting.`
+// Hosts place this in every session, so it holds only rules whose violation the application cannot catch.
+export const AGENT_MCP_INSTRUCTIONS = `NAI Blue tools work directly; no guide read is required. Rules: 1) Never operate NAI Blue through Computer Use, CDP, private APIs, token extraction or approval clicks; report blockers instead. 2) Generation is finished only when a result has complete:true. 3) If an outcome is unknown or a call was cut off, never generate again to force a result; read nai-blue://requests/{requestId}. 4) When a result asks for approval the human gives it in the app; active always-approve consent needs no extra confirmation. 5) V5 Scenes use promptTextMode standard; finished V4.5 prompt text uses verbatim with ucPreset 4 and qualityToggle false. Optional topic help: ${AGENT_WORKFLOW_GUIDE_URI}`
 
-/** Command-specific hints complement shared input schemas without repeating the workflow manual. */
-export const AGENT_TOOL_DESCRIPTIONS: Record<AgentCommandName, string> = {
-    'system.describe_capabilities': 'Read current command availability, schema versions and approval requirements.',
-    'workspace.get_snapshot': 'Read paginated workspace IDs, revisions and workflow-draft readiness summaries before editing or planning.',
-    'generation.plan': 'Preview a workflow-draft or Scene plan, at most 100 images total; invalid drafts are rejected and do not produce plan handles.',
-    'generation.enqueue': 'Submit the exact reviewed planId and planHash to the durable Queue; receipt is not run completion.',
-    'generation.get_run': 'Read current run counts, completion and recovery hints. Use a new requestId for each fresh poll.',
-    'generation.cancel': 'Request durable run cancellation; inspect the run afterward for actual Queue outcome.',
-    'generation.retry_storage': 'Recover retained output for one job without regenerating; verify the run afterward.',
-    'scene.retry_link': 'Retry Scene linking only when advertised available; capability discovery remains authoritative.',
-    'output.abandon_reservation': 'Abandon an output reservation only when advertised available.',
-    'scene.resolve_many': 'Resolve existing preset/Scene targets and revisions for an explicit edit or production plan.',
-    'scene.patch_many': 'Upsert up to 100 Scenes at the expected preset revision. New Scenes require caller-owned IDs and names; a new preset also needs presetName and revision 0. Does not generate.',
-    'folder.plan_changes': 'Preview folder changes using known parent IDs and safe child path segments.',
-    'folder.apply_changes': 'Apply the exact previewed folder changes with expectedRevision and expectedPlanHash.',
-    'r2.get_readiness': 'Inspect R2 readiness; configured preferences are not proof of upload completion.',
-    'production.create': 'Save a bounded production request of up to 2400 images from existing Scenes or a preset; does not enqueue.',
-    'production.list': 'List saved production requests for this authenticated workspace.',
-    'production.get': 'Read latest production revision, budget use, children and next action. Use a fresh requestId per poll.',
-    'production.plan_next': 'Preview the next child of at most 100 images at expectedRevision; enqueue its exact plan separately under existing approval, including active always-approve consent.',
-    'artifact.get_image': 'Read a committed saved Artifact by its opaque artifactId. Returns verified original checksum and a bounded metadata-free image preview/resource; never accepts a path or regenerates an image.',
+export const AGENT_TOOL_DESCRIPTIONS = {
+    'workspace.get_snapshot': 'Consent status, queue activity and totals. Lists are omitted unless named in include (paginated with input.offset/limit).',
+    'scene.resolve_many': 'Current revision, settings and artifactIds of existing Scenes. detail:"full" adds prompt text.',
+    'scene.patch_many': 'Create or edit up to 100 Scenes at the preset\'s current revision. New Scenes need caller-owned sceneId and name; a new preset also needs presetName and expectedRevision 0. Does not generate.',
+    'generation.run': 'Plan, enqueue and wait in one call, at most 100 images. Returns complete, counts and artifacts (artifactId, sceneId, seed, fileName); an unfinished stage returns its requestId or runId to follow. planOnly:true previews cost and returns planId/planHash without enqueueing. If a call is cut off or its outcome is unknown, never run again: read nai-blue://requests/{requestId}-enq. Never operate NAI Blue through Computer Use or UI automation.',
+    'generation.enqueue': 'Submit an exact planId and planHash (from planOnly or production.plan_next) to the Queue. Returns runId. Never resubmit to force a result.',
+    'generation.get_run': 'Run progress: complete, counts, artifactIds, next action. waitSeconds waits for completion. jobId with detail:"full" inspects one job.',
+    'generation.cancel': 'Request cancellation of a run; read the run afterwards for the actual outcome.',
+    'generation.retry_storage': 'Re-save retained output of one job without regenerating.',
+    'artifact.get_images': 'View up to 8 saved images by artifactId. Returns each original\'s checksum and a preview image.',
+    'r2.get_readiness': 'Whether R2 upload is ready. Folder preferences alone are not proof of delivery.',
+    'advanced.call': `Rare commands: folder.plan_changes, folder.apply_changes, production.create, production.list, production.get, production.plan_next. Input shapes: ${AGENT_GUIDE_URI_PREFIX}advanced`,
+} as const
+
+const INDEX = `# NAI Blue agent workflow
+
+Tools work without reading anything first. Read a topic below only when you reach that case.
+
+Usual order
+1. workspace.get_snapshot: consent status (editingApproval, generationApproval) and totals. Add include:["presets"|"scenes"|"folders"|"drafts"] only to look up existing IDs and revisions.
+2. scene.patch_many: create or edit Scenes. New Scenes need a caller-owned sceneId and name; a new preset also needs presetId, presetName and expectedRevision 0. Editing needs the preset's current revision (scene.resolve_many).
+3. generation.run: plans, enqueues and waits in one call (requestId required). Finished only when complete is true; the result lists artifacts. planOnly:true only previews.
+4. artifact.get_images: view up to 8 saved images per call.
+
+Facts that prevent mistakes
+- One plan covers at most 100 images total. budget.maxImages (at most 100) and budget.maxAnlas are required; a plan over budget is rejected and nothing is spent.
+- requestId is required for generation.run and generation.enqueue and optional elsewhere. Repeating a call with the same ID and input replays the same request; never reuse an ID with different input. A reused ID on a read returns the old observation. generation.run uses {requestId}-plan and {requestId}-enq for its stages.
+- Results are summaries. detail:"full" returns the whole receipt (prompts, hashes, attempt history).
+- A completed command is not a completed generation. Report generated, stored, uploaded and fulfilled counts separately.
+- The application decides approval. If a result asks for it, the human approves in NAI Blue and you read nai-blue://requests/{requestId}. With always-approve consent active, add no confirmation, preview gate or self-imposed time, count, cost or concurrency quota.
+- V5 Scenes: promptTextMode "standard". Finished V4.5 prompt text: "verbatim" with generation.ucPreset 4 and qualityToggle false.
+- The NAI Blue process must be running; window focus, visibility and topmost position do not matter. Reads never start a closed app; plan and edit calls do.
+- Never put credentials, binary image data or absolute private paths in tool input.
+
+Topics
+- ${AGENT_GUIDE_URI_PREFIX}recovery: incomplete runs, unconfirmed submissions, unknown outcomes, storage retry, cancel
+- ${AGENT_GUIDE_URI_PREFIX}production: saved production requests above 100 images
+- ${AGENT_GUIDE_URI_PREFIX}image-source: Image2Image, verbatim prompts, workflow drafts, R2
+- ${AGENT_GUIDE_URI_PREFIX}consent: always-approve settings and the one-image validation
+- ${AGENT_GUIDE_URI_PREFIX}runtime: installation, restart and reconnect codes
+- ${AGENT_GUIDE_URI_PREFIX}advanced: input shapes for advanced.call
+`
+
+const RECOVERY = `# Recovery
+
+- complete:false with nextAction "wait": call generation.get_run with waitSeconds. With detail:"full", compare monitor.stateHash to skip unchanged reports.
+- status submitted-to-inbox or submission-unconfirmed: the app has not answered yet. That does not prove the app is closed or that focus caused a delay. Read nai-blue://requests/{requestId} later; do not resubmit.
+- observation-cancelled: only the waiting stopped. Cancelling an MCP call never cancels Queue work.
+- adapter-error with submissionAttempted:false: nothing was submitted. INVALID_COMMAND_INPUT means the arguments; UNSAFE_PAYLOAD means a credential, absolute path or binary-looking text in the input. Rejected input is never echoed. Fix it and call again.
+- Any other adapter-error does not prove non-submission. Inspect the request resource before a new request.
+- Unknown Provider outcome (COMMAND_OUTCOME_UNKNOWN, AGENT_EXECUTION_UNKNOWN, nextAction review-uncertain-result): stop automatic action. Never create a new generation to force a retry. A missing retained result does not prove the Provider did not generate or charge. Report it to the human.
+- nextAction resume-in-app: the run is paused; the human resumes it in NAI Blue.
+- recoveryActions retry-storage: generation.retry_storage {runId, jobId} re-saves retained output without regenerating. Read the run afterwards.
+- generation.cancel only requests cancellation. Read the run afterwards.
+- One job in depth: generation.get_run with jobId and detail:"full" shows attempts, the retained response checksum, the output reservation and the committed original. localOutputVerified is retained-byte evidence only, not a Provider outcome or billing fact.
+- output-destination-occupied / revise-scene-filename-template: that exact filename exists. Change filenameTemplate with scene.patch_many; never overwrite or delete the existing result. It is not a revision error.
+- A rejected plan has no planId. Use its issue fieldPath and nextAction to repair, then plan again.
+- draft-resolution-required on a workflow draft: its saved resolution is empty. Ask the human to repair the draft, or use Scene targets. It is not an approval denial.
+- Failed, cancelled or skipped jobs are not fulfilment.
+- A preview failure in artifact.get_images never authorizes regeneration.
+`
+
+const PRODUCTION = `# Saved production requests
+
+For work above 100 images, through advanced.call. Input shapes: ${AGENT_GUIDE_URI_PREFIX}advanced.
+
+- production.create saves title, source, seedPolicy and a total budget of at most 2400 images. Scene source: up to 100 unique presetId/sceneId targets with expectedRevision and count. Preset source: presetId and expectedRevision, capturing every saved Scene and count. It captures exact targets, counts, seeds and source hashes. It does not enqueue or authorize the children.
+- production.list finds saved requests. production.get returns the latest revision, totalImages, childCount, admittedImages, estimatedAnlasReserved, maxAnlas, children and nextAction. Only "complete" means the production is fulfilled.
+- For nextAction review-next-batch: production.plan_next {productionId, expectedRevision} returns a child plan of at most 100 images. Submit its planId and planHash with generation.enqueue, then follow it with generation.get_run and read production.get again.
+- Plan the next child only after the previous child is fully fulfilled. Nothing dispatches the next child automatically.
+- Editing the source Scenes stops progression. A Scene revision that changed only because results were linked can be replanned while the captured source hash still matches.
+- The total production budget and per-child approval stay enforced. There are no per-run, hourly, daily or concurrency quotas; the Queue owns scheduling and the delay between generations.
+`
+
+const IMAGE_SOURCE = `# Image2Image, verbatim prompts, workflow drafts, R2
+
+- artifactId comes from generation.run, generation.get_run or scene.resolve_many once storage succeeded. artifact.get_images returns contentChecksum, the checksum of the original.
+- scene.patch_many imageSource: {mode:"img2img", artifactId, contentChecksum, strength, noise}, with strength and noise in [0,1]. null clears it. It binds the original bytes, not the preview. This is Image2Image; Precise Reference and Vibe Transfer are not available here.
+- promptTextMode "verbatim" (V4.5, with generation.ucPreset 4 and qualityToggle false) sends each positive, negative and character segment exactly as written: spacing, order, repeats, comments and literal wildcard text, with no fragment expansion. Folder common prompts and connected contributions still combine in the normal order, so keep additional and common text empty when the caption must equal one supplied string. "standard" restores default processing. The mode is bound into plan hashes; nothing changes it automatically.
+- Workflow-draft source: count must equal the draft's imageCount from the snapshot. Draft overwrite, R2 delivery and pinned credentials are not supported through this adapter; use an auto credential and fail-only local destination, or Scene targets.
+- R2: check r2.get_readiness when upload is requested. Folder R2 preferences and autoUpload express intent only.
+- Folder changes: folder.plan_changes then folder.apply_changes with the same changes, expectedRevision and expectedPlanHash. Use parent folder IDs and safe child path segments; absolute paths are not supported.
+- Existing live compatibility evidence applies only to its own route and parameters. Do not carry it over from a text generation to Image2Image or another model.
+`
+
+const CONSENT = `# Consent
+
+- workspace.get_snapshot reports editingApproval and generationApproval for this client. Both are human-only checkboxes in NAI Blue (Data Hub, AI editing), off by default and kept across restarts. Never enable them for the human.
+- Active editing consent covers future scene.patch_many and folder.apply_changes. Observe mode, global pause and folder permissions still apply.
+- Active generation consent covers generation.enqueue for the human's directed work. It adds no image, Anlas or cumulative quota. generationApproval.allowsSyntheticOnly also permits supported synthetic-only routes, including new prompts, poses and random seeds, without a fresh one-image canary.
+- With consent active, continue from a valid plan to enqueue without asking. The general requiresHumanApproval capability flag does not override this client's active consent.
+- Editing consent never implies generation consent. Uploads, overwrite, deletion and Queue recovery keep their own authority. Toggling consent never replays pending or unknown requests.
+- Compatibility status synthetic-only is a label to keep in reports, never live or captured evidence. Unsupported and known-divergence routes stay blocked.
+- Without generation consent, the human can approve a one-image validation in the NAI Blue inbox panel: exactly 1 image, budget.maxImages 1, budget.maxAnlas at most 17, fail-only local output, no R2. The grant binds that request and plan hash and is used once.
+- Exact plan budget, targets, revisions, authentication and credentials are checked by the application in every case.
+`
+
+const RUNTIME = `# Runtime
+
+- nai-blue://runtime reports the registered installation without starting it. nai-blue://capabilities probes the running application.
+- APP_NOT_RUNNING: the app is closed. Reads leave it closed; a validated plan or edit call starts the registered app.
+- APP_STARTING: wait and repeat the same call. It reports one existing probe; do not create repeated probes.
+- APP_RUNTIME_RESTART_REQUIRED: the human safely restarts the existing app. APP_RUNTIME_UPGRADE_REQUIRED: a compatible build must be deployed. MCP_ADAPTER_RECONNECT_REQUIRED: reconnect this MCP server because the adapter source changed.
+- APP_RUNTIME_CHANGED: the app changed before accepting the request; call again. Saved receipts stay readable across updates.
+- Never search for old executable copies, kill a process, install a download or create a backup. "Latest" means the deployed installation, not an internet release. Equal version numbers can have different hashes.
+- capability-probe-unconfirmed / app-state-unconfirmed: no completed probe receipt was observed. It does not prove the process stopped; inspect the probe's requestResource without resubmitting.
+- requiresAppProcess means the process must exist, not that its window is in front.
+`
+
+export const AGENT_GUIDE_TOPICS: Readonly<Record<string, string>> = {
+    'agent-workflow/v1': INDEX, recovery: RECOVERY, production: PRODUCTION,
+    'image-source': IMAGE_SOURCE, consent: CONSENT, runtime: RUNTIME,
+}
+export const AGENT_WORKFLOW_GUIDE = INDEX
+
+const RECOVERY_URI = `${AGENT_GUIDE_URI_PREFIX}recovery`
+const RUNTIME_URI = `${AGENT_GUIDE_URI_PREFIX}runtime`
+const UNKNOWN_OUTCOME = `Outcome unknown. Do not generate again; report to the human. ${RECOVERY_URI}`
+const CODE_HINTS: Readonly<Record<string, string>> = {
+    INVALID_COMMAND_INPUT: 'Arguments do not match this tool\'s input schema. Nothing was submitted.',
+    UNSAFE_PAYLOAD: 'Input contained a credential, absolute path or binary-looking text. Nothing was submitted.',
+    REQUEST_CANCELLED: 'Cancelled before submission. Nothing was submitted.',
+    AGENT_MCP_REQUEST_FAILED: `This does not prove non-submission. Read nai-blue://requests/{requestId} before any new request. ${RECOVERY_URI}`,
+    APP_NOT_RUNNING: 'NAI Blue is closed. Reads never start it; a plan or edit call does.',
+    APP_STARTING: 'NAI Blue is starting. Repeat the same call shortly.',
+    APP_RUNTIME_RESTART_REQUIRED: `The human restarts NAI Blue. ${RUNTIME_URI}`,
+    APP_RUNTIME_UPGRADE_REQUIRED: `A compatible build must be deployed. ${RUNTIME_URI}`,
+    MCP_ADAPTER_RECONNECT_REQUIRED: 'Adapter source changed. Reconnect this MCP server.',
+    AGENT_APPROVAL_REQUIRED: 'The human approves in NAI Blue. Then read nai-blue://requests/{requestId}; do not resubmit.',
+    AGENT_EXECUTION_UNKNOWN: UNKNOWN_OUTCOME,
+    COMMAND_OUTCOME_UNKNOWN: UNKNOWN_OUTCOME,
+}
+const STATUS_HINTS: Readonly<Record<string, string>> = {
+    'submitted-to-inbox': 'Not answered yet; this does not prove the app is closed. Read nai-blue://requests/{requestId} later; do not resubmit.',
+    'submission-unconfirmed': 'Submission unconfirmed. Read nai-blue://requests/{requestId}; do not resubmit.',
+    'observation-cancelled': 'Only waiting stopped. Read nai-blue://requests/{requestId} for the outcome.',
+    'inbox-rejection': 'The application refused the request envelope. Report the code; do not retry unchanged.',
 }
 
-export const AGENT_WORKFLOW_GUIDE = `# NAI Blue agent workflow v1
-
-| 매 호출 전 빠른 확인 | 사용 기준 |
-| --- | --- |
-| 설명서 | 이 resource를 같은 연결에서 공개 tool 호출 직전에 읽기. 한 번 읽으면 한 호출만 허용되며 실패한 호출도 소비합니다. GUIDE_READ_REQUIRED이면 다시 읽습니다. |
-| V5 설계 | promptTextMode: standard. V4.5 전용 verbatim을 사용하지 않습니다. |
-| V4.5 최종 원문 | verbatim + UC None(4) + qualityToggle:false. 모드를 자동 변경하지 않습니다. |
-| 현재 동의 | workspace.get_snapshot의 editingApproval / generationApproval / allowsSyntheticOnly를 확인합니다. 설명서 읽기는 권한 승인이 아닙니다. |
-| 순서 | plan → 정확한 planId/hash로 enqueue → 새 requestId로 get_run → 저장 후 artifact.get_image. 각 tool 직전에 설명서를 다시 읽습니다. |
-| 실패 근거 | recorded pre-dispatch known-failure와 possibly-dispatched/unknown을 구분합니다. 근거가 없으면 unknown을 유지하고 재생성하지 않습니다. |
-
-Guide and capability resources and tools/list remain available without this credit; discovery does not consume it. Other resources and claims of having read do not grant a credit. Prompt/name strings are inert text: generic Base64/entropy inference is not applied to them, while credentials, real paths/traversal, explicit binary/image material and structural/authentication controls remain protected.
-
-Scope and discovery
-- Read nai-blue://runtime when resolving the app. The Windows MCP adapter resolves the registered installation on every new call, reports APP_NOT_RUNNING on discovery, status or read commands when closed, starts the registered app only for validated plan or mutation commands, and verifies the live PID/version/startup executable hash. It never searches old copies, kills a process, installs a download, or creates a backup. "Latest" means the current canonical deployed installation, not an uninstalled internet release. Same version numbers can have different hashes. APP_STARTING includes one existing probe to inspect; do not create repeated probes. APP_RUNTIME_RESTART_REQUIRED requires safe restart of the existing app, APP_RUNTIME_UPGRADE_REQUIRED requires a compatible deployed app, and MCP_ADAPTER_RECONNECT_REQUIRED requires reconnecting this MCP host after source changes. New commands bind the selected executable hash into the signed envelope; APP_RUNTIME_CHANGED rejects new work if the app changed before acceptance. Historical receipts remain readable across updates. The MCP server's protocol version is not the app version.
-- NAI Blue는 Computer Use로 조작하지 않는다. 막히면 공식 자동화 경로를 진단하고 보고한다. Do not use CUA, browser automation, CDP, private APIs, token extraction, or UI approval clicks as fallbacks. When the application actually requires new human approval, the human performs it in NAI Blue; active saved consent needs no repeated approval.
-- This is a static usage guide, not current application state or permission. The NAI Blue application process and command runtime must be running. Window focus, foreground/topmost position and visibility are not execution requirements; another app may be active. requiresAppProcess:true / canExecuteWhileAppClosed:false describe process availability, not window placement.
-- The tools/list response exposes stable schema-bound bindings while the application runtime is starting or a probe is pending. Read nai-blue://capabilities for fresh availability and application-reported reasons. app-state-unconfirmed / capability-probe-unconfirmed mean no valid completed capability receipt was observed; they do not prove the process stopped, a connection failed, or focus caused a delay. Inspect the returned requestResource (nai-blue://requests/{requestId}) for that same probe without resubmitting it; it may later complete. observationStatus and receiptState describe the observation when present. Even app-unavailable in an application receipt describes runtime readiness, not necessarily process exit. Do not guess commands or replace a pending generation with a new request.
-- Continue the user's authorized task under current application settings, including active per-client always-approve consent. Do not add agent-imposed time, count, cost or concurrency quotas, repeated confirmations or preview approval gates. Numeric schema limits below describe implemented request shapes; split larger directed work through the supported production workflow rather than treating them as a task-wide quota. The application's authentication, exact input/plan/revision checks and data-integrity rules remain authoritative.
-- MCP hosts decide whether initialize instructions or resources reach a model. This resource is available through resources/list and resources/read; connection alone does not prove the agent has read it.
-
-Request identity and observation
-- Every tool takes { requestId, input }. Create a unique requestId for each distinct logical command. After timeout or restart, inspect nai-blue://requests/{requestId}; replay only the identical command and input under the same ID. Never reuse an ID with changed input.
-- Saved request resources are historical receipts for the configured client. Reusing a completed read request replays its old observation: each fresh generation.get_run or workspace read needs a new requestId.
-- submitted-to-inbox and submission-unconfirmed are not application acceptance. observation-cancelled only means waiting stopped. A completed command receipt proves command completion, not generation, storage, upload or workflow completion.
-- adapter-error with submissionAttempted=false and accepted=false is a pre-inbox rejection: UNSAFE_PAYLOAD identifies the public-input safety check; INVALID_COMMAND_INPUT identifies invalid arguments. Rejected input is never echoed. Other adapter errors do not prove non-submission; inspect existing evidence before any new request.
-- If acceptance or a Provider result is unknown (including COMMAND_OUTCOME_UNKNOWN), inspect/reconcile existing evidence. Do not create a new generation request to force a retry. Transport cancellation does not cancel Queue work.
-
-Discover, author, preview
-1. Read workspace.get_snapshot (offset/limit pagination) for existing IDs and revisions. Workflow-draft entries include ready, issueCodes, resolution, imageCount, model, settings, credential dispatch and destination summaries. A draft-resolution-required issue means the saved resolution is null; do not retry that revision or interpret it as approval denial. Ask the human to repair the draft, or author explicit Scene targets with scene.patch_many/scene.resolve_many under existing approval. Never invent IDs or expected revisions.
-2. Use scene.patch_many to edit or add Scenes at the current preset revision. New Scenes require unique caller-owned sceneIds and names. To create a new preset, also supply a new presetId, presetName and expectedRevision: 0. Existing IDs/revisions must come from the workspace. Folder changes use folder.plan_changes then folder.apply_changes with the exact previewed changes, expectedRevision and expectedPlanHash. Use parent folder IDs and safe child path segments; absolute storage paths are unsupported. Re-read after changes or revision conflicts.
-- A human can enable “Always approve editing” for one registered client in Data Hub → AI editing. It is OFF by default, persists across app restarts and applies only to future scene.patch_many/folder.apply_changes requests. workspace.get_snapshot.editingApproval reports this authenticated client's saved/active consent; observe mode, global pause and folder permissions still apply. Turning OFF requires approval again for subsequent edits unless separately authorized by the existing time-limited bounded-auto policy. Pending requests are not replayed by a toggle. Generation, uploads, overwrite/deletion and Queue recovery/cancellation keep their separate authority. Do not enable the toggle for the human or treat it as Provider approval. workspace.get_snapshot.queueActivity gives read-only processing/waiting/needsAttention counts for maintenance.
-- “Always approve generation” is a separate human-only checkbox for the registered client. It defaults OFF and never inherits editing consent. workspace.get_snapshot.generationApproval reports this authenticated client's saved/active consent. When active, new generation.enqueue requests for the human's explicitly directed work can proceed without another approval; no additional image, Anlas or cumulative quota is added. Continue planning, checking results and refining the directed task instead of treating one generated image as completion. The existing exact plan budget/count/targets, revisions, authentication, credentials, compatibility, observe/global pause and independent R2/destructive/recovery checks still apply. The general capabilities approval flag does not replace this caller-specific status. Toggling never replays pending or unknown requests, and OFF preserves separate one-time or valid bounded-auto authority. Never enable consent for the human or infer a live compatibility pass from it.
-- Active generation consent also authorizes supported synthetic-only routes for new requests, including new prompts/poses/random seeds; generationApproval.allowsSyntheticOnly exposes that current authority. The compatibility status remains synthetic-only and must never be reported as captured/live evidence. Unsupported and known-divergence routes remain blocked. Do not ask for a fresh one-image canary merely because a new seed lacks an exact-intent attestation when this human-owned consent is active.
-3. Check r2.get_readiness when upload is requested. Folder R2 preferences and autoUpload express intent only; they do not prove credentials, destination readiness or completed delivery.
-4. Use generation.plan with an existing workflow-draft and count, or Scene targets containing presetId, sceneId, expectedRevision and count. For a workflow-draft, count must equal the snapshot imageCount; it asserts the saved draft cardinality and does not override or repeat it. Workflow-draft overwrite/R2 delivery is not supported by this agent adapter, and pinned credential affinity cannot pass agent execution validation; use an auto credential and fail-only local destination, or use the Scene path after its readiness check. Supply seedPolicy and budget explicitly. The current generation plan limit is 100 images total across all targets; budget.maxImages is at most 100. For a larger saved Scene production request use the bounded workflow below.
-
-Saved production requests (only when advertised available)
-- production.create saves title, source, seedPolicy and total budget. Scene source uses up to 100 unique presetId/sceneId targets with expectedRevision and count; preset source uses presetId and expectedRevision and captures all saved Scenes and counts. The production total and budget.maxImages are at most 2400. This captures exact targets, counts, seeds and source hashes; it does not enqueue or authorize all children.
-- Use production.list to find saved requests, then production.get with a fresh requestId for the latest revision, totalImages, childCount, admittedImages, estimatedAnlasReserved, maxAnlas, children and nextAction. Observe wait/check-results; only complete means the production is fulfilled.
-- For review-next-batch, call production.plan_next with productionId and the latest expectedRevision. Review its child plan (at most 100 images) and submit the returned planId/planHash through generation.enqueue with existing approval. Read production.get again after planning/enqueue and use generation.get_run to inspect the child.
-- Plan the next child only after the previous child's full fulfillment. There is no automatic next-child dispatch. Source authoring changes stop progression; result-only Scene revisions can replan only when the captured semantic source hash still matches. Unknown Provider outcomes require reconciliation, never replacement generation. Total production budget and existing per-child approval remain enforced. There are no separate agent per-run, hourly, daily or concurrency quotas; the Queue owns token scheduling and the configured delay between generations.
-
-Approve, enqueue, observe
-5. Check the plan result, including review.compatibilityStatuses and review.warnings, and submit its exact planId and planHash with generation.enqueue when they are present and existing authority permits it. A rejected invalid/conflict/unsupported plan has no handles; use its issue fieldPath and nextAction to repair or refresh, then issue a new plan request. Preserve synthetic-only warnings as evidence labels; active generationApproval.allowsSyntheticOnly permits supported routes without another canary or approval. Use this client's editingApproval / generationApproval and the command receipt as the current approval facts; the general requiresHumanApproval flag does not override active saved consent. Ask for human input or approval only when the application result actually requires it. Do not add a confirmation between a valid plan and authorized enqueue.
-6. Read the resulting run with generation.get_run using a fresh requestId each time. Report monitor.counts.generated, stored, uploadRequested, uploaded and fulfilled separately. Claim run completion only when monitor.complete is true; neither receipt.state=completed nor Queue success alone suffices.
-- To inspect one exact job, supply optional jobId with runId. Counts still cover the full run; requestedJobFound and the selected job bypass the normal row truncation. recoveryInspection reads captured source identities, the latest attempt, retained response checksum, output reservation, journal and committed original without modifying them or calling Provider. localOutputVerified is retained-byte evidence only, not a Provider outcome, billing or recovery completion. If evidence changes during inspection, refresh with a new requestId. A missing retained result never proves that Provider did not generate or charge; never retry an unknown outcome.
-7. Follow monitor.nextAction, attention and recoveryActions. Poll with reasonable backoff while waiting; compare monitor.stateHash to avoid repeating unchanged reports. A paused run may require resume-in-app. Stop automatic action for review-uncertain-result or human recovery. Failed, cancelled or skipped work is not successful fulfillment.
-8. When available and appropriate, generation.retry_storage targets { runId, jobId } and only recovers retained output; it must not regenerate a Provider result. generation.cancel requests cancellation and still needs a subsequent run read. Other repairs are available only if tools/list advertises them; ask the human for unsupported actions.
-
-Saved images and Image2Image
-- Without active persistent generation consent, a first synthetic-only route can be tested by the human's separate one-image validation approval in the existing NAI Blue inbox panel. It requires exactly one image, budget.maxImages=1, budget.maxAnlas<=17, fail-only local output and no R2; all current authentication, expiry, source and policy checks still apply. Normal approve and bounded-auto do not grant this exception. The durable human-canary grant binds the existing request/plan hash and is consumed once. Do not click it for the human or change the global compatibility allowlist. Unsupported/known-divergence routes cannot use it. After completion, only actual attempt/spool/verified original evidence for that exact intent can attest live compatibility.
-- Obtain artifactId from scene.resolve_many or generation.get_run after storage succeeds. Call artifact.get_image with that exact ID; the completed receipt includes contentChecksum for the original and resource.requestId as its opaque preview handle. The tool can return MCP image content; the same configured client can read nai-blue://images/{requestId}. Receipt/history ownership, byte limits and SHA256 apply. A preview failure never authorizes regeneration.
-- Reuse existing images for inspection. scene.patch_many accepts imageSource: {mode:"img2img", artifactId, contentChecksum, strength, noise}; use the verified original checksum from artifact.get_image, and strengths/noise in [0,1]. null explicitly clears a source. This binds the original bytes, not the resized preview. It is Image2Image, not Precise Reference or Vibe Transfer; those reference modes are not exposed by this binding.
-- For already-complete V4.5 prompt text, scene.patch_many accepts promptTextMode:"verbatim" with generation.ucPreset:4 (None) and qualityToggle:false. It preserves each composed positive/negative/character text segment's exact spacing, order, repeats, comments and literal wildcard text; it does not expand fragments. Connected contributions and folder common prompts still combine in their normal order, so use empty additional/common text and the direct Scene recipe when the global caption must equal one supplied string. The saved mode is visible in scene.resolve_many and generation.plan and bound into plan/dispatch hashes. "standard" restores default processing. Existing input safety and app approval remain required; this does not make an unverified route executable.
-- Inspect fresh source/revision, plan and compatibility before enqueue. An occupied exact filename returns output-destination-occupied and revise-scene-filename-template; it is not a revision error. Revise the filename through approved authoring, never overwrite or delete the existing result. Generic planning failures carry a local diagnostic.resourceId; do not assume refresh fixes them.
-- Synthetic-only evidence requires separate execution authority: the human's persistent generation consent, explicit compatibility policy, or exact one-image canary approval. Unsupported/known-divergence remain blocked. Existing live evidence must match its actual route and parameters; do not promote unrelated models, Image2Image or references from a text generation pass. File-based agent-workspace edits provide no generation/approval authority.
-
-Keep credentials, binary image data and absolute private paths out of tool inputs. This guide describes existing application authority; it grants no installation, client registration or additional approval authority.
-`
+/** Corrective text travels with the failure so an agent reads a topic only after hitting that case. */
+export function agentHint(facts: { code?: unknown; status?: unknown; state?: unknown }, requestId?: string): string | undefined {
+    const text = (typeof facts.code === 'string' ? CODE_HINTS[facts.code] : undefined)
+        ?? (typeof facts.status === 'string' ? STATUS_HINTS[facts.status] : undefined)
+        ?? (facts.state === 'accepted' ? 'Accepted, not finished. Read nai-blue://requests/{requestId}; do not resubmit.'
+            : facts.state === 'needs-input' ? CODE_HINTS.AGENT_APPROVAL_REQUIRED : undefined)
+    return text?.replace('{requestId}', requestId ?? '{requestId}')
+}

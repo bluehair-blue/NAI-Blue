@@ -10,7 +10,12 @@ const args = process.argv.slice(2)
 const verifyLaunch = args.includes('--verify-launch')
 const client = new Client({ name: 'nai-blue-runtime-verification', version: '1.0.0' })
 const transport = new StdioClientTransport({ command: process.execPath,
-    args: [fileURLToPath(new URL('./run-agent-mcp-stdio.mjs', import.meta.url)), ...args.filter(arg => arg !== '--verify-launch')], stderr: 'pipe' })
+    args: [fileURLToPath(new URL('./run-agent-mcp-stdio.mjs', import.meta.url)), ...args.filter(arg => arg !== '--verify-launch'), '--no-usage-log'], stderr: 'pipe' })
+// detail:"full" returns the whole observation; the default view is the compact summary agents read.
+const call = async (name, argumentsValue) => {
+    const result = await client.callTool({ name, arguments: { detail: 'full', ...argumentsValue } })
+    return JSON.parse(result.content.find(item => item.type === 'text').text)
+}
 const pause = () => new Promise(resolve => setTimeout(resolve, 5000))
 const deadline = Date.now() + 300_000
 const resource = async uri => {
@@ -25,18 +30,15 @@ try {
         const listed = await client.listTools()
         const caps = await resource('nai-blue://capabilities')
         if (!listed.tools.length || caps.runtime?.code !== 'APP_NOT_RUNNING') throw new Error('Discovery started the app.')
-        await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
-        const read = await client.callTool({ name: 'system.describe_capabilities', arguments: { requestId: `read-${randomUUID()}`, input: {} } })
-        if (read.structuredContent?.code !== 'APP_NOT_RUNNING' || (await resource('nai-blue://runtime')).code !== 'APP_NOT_RUNNING') {
+        const read = await call('system.describe_capabilities', { requestId: `read-${randomUUID()}`, input: {} })
+        if (read.code !== 'APP_NOT_RUNNING' || (await resource('nai-blue://runtime')).code !== 'APP_NOT_RUNNING') {
             throw new Error('Status polling started the app.')
         }
         const requestId = `launch-preview-${randomUUID()}`
         const input = { expectedRevision: 0, changes: [{ op: 'patch', folderId: requestId, displayName: 'Preview' }] }
         let preview
         do {
-            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
-            const call = await client.callTool({ name: 'folder.plan_changes', arguments: { requestId, input } })
-            preview = call.structuredContent
+            preview = await call('folder.plan_changes', { requestId, input })
             if (!(preview?.code === 'APP_STARTING' && preview.submissionAttempted === false)) break
             if (Date.now() >= deadline) throw new Error('Timed out before preview submission.')
             await pause()
@@ -58,10 +60,8 @@ try {
         await pause()
     } while (true)
     await client.listTools()
-    await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
     const requestId = `runtime-verification-${randomUUID()}`
-    const call = await client.callTool({ name: 'workspace.get_snapshot', arguments: { requestId, input: { limit: 1 } } })
-    let result = call.structuredContent ?? JSON.parse(call.content.find(item => item.type === 'text').text)
+    let result = await call('workspace.get_snapshot', { requestId, input: { limit: 1 } })
     while (result.status === 'submitted-to-inbox' || result.status === 'submission-unconfirmed') {
         if (Date.now() >= deadline) throw new Error(`Read completion was not observed; inspect nai-blue://requests/${requestId}`)
         await pause()

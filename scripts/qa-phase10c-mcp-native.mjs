@@ -59,7 +59,7 @@ async function main() {
         report.requestIds = requests.map(request => request.arguments.requestId)
         transport = new StdioClientTransport({ command: process.execPath,
             args: [report.configuration.runner, '--connection', path.resolve(values.connection), '--inbox-dir', inboxDir,
-                '--python', values.python, '--wait-ms', '3000'], cwd: repo, stderr: 'pipe', maxBufferSize: 262_144 })
+                '--python', values.python, '--wait-ms', '3000', '--no-usage-log'], cwd: repo, stderr: 'pipe', maxBufferSize: 262_144 })
         // Never preserve stderr or protocol-error messages: they can contain paths or rejected payloads.
         transport.stderr?.on('data', chunk => { report.stderrBytes += Buffer.byteLength(chunk) })
         client = new Client({ name: 'nai-blue-phase10c-native-qa', version: '1.0.0' },
@@ -76,14 +76,14 @@ async function main() {
         // Read static guidance before discovery so this proof also works with the app off or a revoked client.
         const guideUri = 'nai-blue://guides/agent-workflow/v1'
         const instructions = client.getInstructions()
-        assert(typeof instructions === 'string' && instructions.length < 700 && instructions.includes(guideUri))
+        assert(typeof instructions === 'string' && instructions.length < 800 && instructions.includes(guideUri))
         const resources = await client.listResources({}, freshOptions)
         const guideMetadata = resources.resources.find(item => item.uri === guideUri)
         assert(guideMetadata && !('text' in guideMetadata) && !('contents' in guideMetadata))
         const guide = await client.readResource({ uri: guideUri }, freshOptions)
         assert.equal(guide.contents.length, 1)
         assert.equal(guide.contents[0].uri, guideUri)
-        assert(guide.contents[0].text.includes('production.plan_next'))
+        assert(guide.contents[0].text.includes('nai-blue://guides/production'))
         report.guidance = { uri: guideUri, instructionCharacters: instructions.length,
             guideSha256: sha256(guide.contents[0].text), hostModelReadVerified: false }
         report.checks.push('short-initialize-instructions', 'metadata-only-guide-discovery', 'explicit-workflow-guide-read')
@@ -95,9 +95,10 @@ async function main() {
             return JSON.parse(result.contents[0].text)
         }
         const call = async request => {
-            const result = await client.callTool(request, requestOptions)
-            assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent)
-            return result
+            // detail:"full" returns the whole observation that this receipt-level QA compares with native files.
+            const result = await client.callTool({ ...request, arguments: { detail: 'full', ...request.arguments } }, requestOptions)
+            assert.equal(result.structuredContent, undefined)
+            return { ...result, structuredContent: JSON.parse(result.content[0].text) }
         }
         report.phase = 'fresh-capabilities'
         const listed = await client.listTools({}, freshOptions)
@@ -105,8 +106,7 @@ async function main() {
         report.capabilities = capabilities
         report.toolNames = listed.tools.map(tool => tool.name).sort()
 
-        // MCP names and input schemas stay bound while the app is unavailable;
-        // only the fresh capability receipt controls whether a command can run.
+        // The tool list is static; only the fresh capability receipt reports whether a command can run.
         const { createServer } = await import('vite')
         loader = await createServer({ root: repo, configFile: false, logLevel: 'silent',
             resolve: { alias: { '@': path.join(repo, 'src') } },
@@ -116,31 +116,25 @@ async function main() {
             '/src/application/agent/agent-command-input.ts',
         ].map(file => loader.ssrLoadModule(file)))
         const { getAgentCommandInputContract } = inputs
+        assert(['workspace.get_snapshot', 'generation.run', 'generation.get_run', 'advanced.call'].every(name => report.toolNames.includes(name)))
         const bound = capabilities.capabilities.filter(item => getAgentCommandInputContract(item.command) !== undefined)
-        assert.deepEqual(report.toolNames, bound.map(item => item.command).sort())
-        report.schemaHashes = listed.tools.map(tool => {
-            const descriptor = capabilities.capabilities.find(item => item.command === tool.name)
-            const contract = getAgentCommandInputContract(tool.name)
-            assert(descriptor && contract)
-            const hash = `sha256:${canonical.hashCanonicalValue(tool.inputSchema.properties.input)}`
-            assert.equal(hash, `sha256:${canonical.hashCanonicalValue(contract.schema)}`)
+        report.schemaHashes = bound.map(descriptor => {
+            const hash = `sha256:${canonical.hashCanonicalValue(getAgentCommandInputContract(descriptor.command).schema)}`
             if (descriptor.available) assert.equal(hash, descriptor.inputSchemaHash)
-            else assert(tool.description.includes(`Currently unavailable (${descriptor.reason ?? 'app-unavailable'})`))
-            return { command: tool.name, inputSchemaHash: hash, available: descriptor.available,
+            return { command: descriptor.command, inputSchemaHash: hash, available: descriptor.available,
                 unavailableReason: descriptor.available ? null : descriptor.reason ?? 'app-unavailable' }
         })
-        report.checks.push('stable-schema-bound-tool-list', 'tool-schema-contract-equality')
+        report.checks.push('static-tool-list', 'capability-schema-contract-equality')
 
         if (values.mode === 'live') {
             assert.equal(capabilities.status, 'fresh-application-capabilities')
             assert.deepEqual(capabilities.schemaMismatches, [])
             const available = capabilities.capabilities.filter(item => item.available)
-            assert(requests.every(request => report.toolNames.includes(request.name)))
             const nativeCapabilities = await inspectAgentCommand({ inboxDir, requestId: capabilities.requestId },
                 projection.projectAgentInboxResult)
             assert.equal(nativeCapabilities.status, 'application-receipt')
             assert.deepEqual(capabilities.capabilities, nativeCapabilities.receipt.result.capabilities)
-            report.checks.push('fresh-native-capability-receipt', 'exact-tool-and-schema-hash-projection')
+            report.checks.push('fresh-native-capability-receipt', 'exact-capability-and-schema-hash-projection')
 
             report.phase = 'concurrent-read-correlation'
             const results = await Promise.all(requests.map(call))
@@ -182,7 +176,7 @@ async function main() {
         } else {
             assert.equal(capabilities.status, 'app-state-unconfirmed')
             assert(capabilities.capabilities.every(item => item.available === false))
-            report.checks.push('unconfirmed-app-keeps-stable-tool-bindings')
+            report.checks.push('unconfirmed-app-keeps-static-tool-list')
             const request = requests[0], requestId = request.arguments.requestId
             report.phase = values.mode === 'app-off' ? 'app-off-submission' : 'revoked-submission'
             const result = await call(request)

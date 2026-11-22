@@ -1,4 +1,4 @@
-import { Server, ProtocolError, INTERNAL_ERROR, type JsonSchemaType, type CallToolResult } from '@modelcontextprotocol/server'
+import { Server, ProtocolError, INTERNAL_ERROR, type CallToolResult } from '@modelcontextprotocol/server'
 import { AGENT_COMMAND_NAMES, AgentCommandError, assertAgentPublicValue, assertAgentRequestId, type AgentCommand, type AgentCommandName } from '@/application/agent/agent-command-contract'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import { AGENT_COMMAND_EFFECTS, describeAgentCommandCapabilities, type RuntimeCapabilityDescriptor } from '@/application/agent/runtime-capability-registry'
@@ -7,7 +7,11 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import { assertSyncPayloadSafe } from '@/domain/sync/payload-safety'
 import { isAgentInboxRejectionCode } from '@/adapters/agent/inbox/process-agent-inbox-file'
-import { AGENT_MCP_INSTRUCTIONS, AGENT_TOOL_DESCRIPTIONS, AGENT_WORKFLOW_GUIDE, AGENT_WORKFLOW_GUIDE_URI } from './agent-workflow-guide'
+import { AGENT_GUIDE_TOPICS, AGENT_GUIDE_URI_PREFIX, AGENT_MCP_INSTRUCTIONS, AGENT_WORKFLOW_GUIDE_URI, agentHint } from './agent-workflow-guide'
+import { ADVANCED_COMMANDS, MAX_IMAGES_PER_CALL, MAX_WAIT_SECONDS, REQUEST_ID_REQUIRED, SNAPSHOT_LISTS, advancedCommandGuide, listAgentMcpTools } from './mcp-tool-catalog'
+import { compactObservation, completedResult, plannedJobs, summarizePlan, summarizeResult, summarizeRun } from './mcp-result-summary'
+
+export interface McpUsageEntry { kind: 'instructions' | 'tools-list' | 'tool' | 'resource'; name: string; chars: number; images: number }
 
 /** The Node entry owns signing/file I/O; application commands still own all business decisions. */
 export interface McpAgentInbox {
@@ -15,6 +19,8 @@ export interface McpAgentInbox {
     readImage?(requestId: string, signal?: AbortSignal): Promise<{ data: string; mimeType: 'image/png' }>
     invoke(command: AgentCommand, requestId: string, signal?: AbortSignal): Promise<JsonObject>
     inspect(requestId: string, signal?: AbortSignal): Promise<JsonObject>
+    /** Sizes only, never content: lets a session's real MCP inflow be measured afterwards. */
+    recordUsage?(entry: McpUsageEntry): void
 }
 
 const capabilitiesUri = 'nai-blue://capabilities'
@@ -22,21 +28,14 @@ const runtimeUri = 'nai-blue://runtime'
 const runtimeCodes = new Set(['MCP_ADAPTER_RECONNECT_REQUIRED', 'APP_INSTALLATION_NOT_FOUND', 'APP_INSTALLATION_INVALID',
     'APP_INSTALLATION_AMBIGUOUS', 'APP_NOT_RUNNING', 'APP_STARTING', 'APP_RUNTIME_RESTART_REQUIRED', 'APP_RUNTIME_UPGRADE_REQUIRED', 'APP_RUNTIME_CHECK_FAILED'])
 const requestUriPrefix = 'nai-blue://requests/'
-const requestIdSchema = { type: 'string', minLength: 1, maxLength: 100,
-    pattern: '^[A-Za-z0-9_-]+$', not: { pattern: '^(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9]|[lL][pP][tT][0-9])$' } }
-
-// Result values originate in the shared receipt parser, while this transport wrapper
-// projects submission/observation states without inventing MCP task or approval state.
-export const MCP_AGENT_RESULT_SCHEMA: JsonSchemaType = {
-    type: 'object', required: ['status', 'requiresAppProcess'], additionalProperties: false,
-    properties: {
-        status: { enum: ['application-receipt', 'inbox-rejection', 'submitted-to-inbox', 'submission-unconfirmed', 'observation-cancelled', 'adapter-error'] },
-        requestId: requestIdSchema, requiresAppProcess: { const: true }, accepted: { const: false },
-        code: { type: 'string' }, receipt: { type: 'object' }, submissionAttempted: { const: false },
-        guideResource: { const: AGENT_WORKFLOW_GUIDE_URI },
-        nextAction: { const: 'read-guide-resource-and-retry' },
-    },
-}
+const imageUriPrefix = 'nai-blue://images/'
+const argumentKeys = new Set(['requestId', 'input', 'detail', 'waitSeconds', 'include', 'command', 'planOnly'])
+// Hosts commonly stop a tool call at 60 seconds; the last poll needs room to return before that.
+const pollReserveMs = 5000
+const defaultRunWaitSeconds = 40
+const runExistsHint = 'The run exists. Call generation.get_run with this runId; do not run again.'
+// Composite tools derive one request ID per stage, so the caller's root must leave room for the suffix.
+const maxRootRequestIdLength = 90
 
 function validatedObservation(value: JsonObject, requestId: string, command?: AgentCommandName): JsonObject {
     if (value.requestId !== requestId || value.requiresAppProcess !== true) throw new AgentCommandError('INBOX_RESULT_MISMATCH')
@@ -70,7 +69,7 @@ function validatedObservation(value: JsonObject, requestId: string, command?: Ag
     return structuredClone(value)
 }
 
-/** Validate current registry facts before advertising; local schema hashes are version checks, not policy. */
+/** Validate current registry facts before reporting them; local schema hashes are version checks, not policy. */
 function capabilityDescriptors(value: unknown): RuntimeCapabilityDescriptor[] {
     if (!Array.isArray(value) || value.length !== AGENT_COMMAND_NAMES.length) throw new AgentCommandError('INVALID_CAPABILITIES')
     const seen = new Set<string>()
@@ -88,15 +87,39 @@ function capabilityDescriptors(value: unknown): RuntimeCapabilityDescriptor[] {
     })
 }
 
-/** SDK framing stays outside application; tool names/schemas are stable bindings while availability is live. */
+const isRejected = (observed: JsonObject): boolean => observed.status === 'inbox-rejection' || observed.status === 'adapter-error'
+    || (observed.status === 'application-receipt' && (observed.receipt as JsonObject).state === 'rejected')
+
+function pause(milliseconds: number, signal: AbortSignal): Promise<void> {
+    return new Promise(resolve => {
+        const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve() }
+        const timer = setTimeout(done, milliseconds)
+        signal.addEventListener('abort', done, { once: true })
+    })
+}
+
+interface CallArguments {
+    readonly requestId: string
+    readonly input: JsonObject
+    readonly full: boolean
+    readonly waitSeconds?: number
+    readonly include: string[]
+    readonly command?: string
+    readonly planOnly: boolean
+}
+/** Tracks whether anything reached the inbox, because only earlier failures prove non-submission. */
+interface CallState { readonly signal: AbortSignal; readonly startedAt: number; attempted: boolean; lastRequestId?: string; hint?: string }
+
+/** SDK framing stays outside application; tool names/schemas are static bindings while availability is live. */
 export function createAgentMcpServer(inbox: McpAgentInbox): Server {
-    // A resource read grants one non-accumulating credit in this connection;
-    // discovery bypasses the gate and never consumes another command's credit.
-    let guideRead = false
     const server = new Server({ name: 'nai-blue-agent-spike', version: '0.1.0' }, {
         capabilities: { tools: {}, resources: {} },
         instructions: AGENT_MCP_INSTRUCTIONS,
     })
+    const usage = (kind: McpUsageEntry['kind'], name: string, chars: number, images = 0) => {
+        try { inbox.recordUsage?.({ kind, name, chars, images }) } catch { /* measurement must never fail a call */ }
+    }
+    usage('instructions', 'initialize', AGENT_MCP_INSTRUCTIONS.length)
 
     /** The local locator exports only bounded public identity, never executable paths. */
     async function runtimeStatus(allowLaunch = false): Promise<JsonObject | undefined> {
@@ -122,10 +145,10 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             const runtime = await runtimeStatus()
             if (runtime && runtime.status !== 'ready') {
                 return { status: 'runtime-unavailable', runtime: { status: runtime.status, code: runtime.code }, requestResource: runtimeUri,
-                    requiresAppProcess: true, guideReadRequired: true, guideDigest: `sha256:${hashCanonicalValue(AGENT_WORKFLOW_GUIDE)}`,
+                    requiresAppProcess: true,
                     capabilities: describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false })
                         .map(descriptor => ({ ...descriptor, reason: 'runtime-not-current' })),
-                    schemaMismatches: [], available: [] as RuntimeCapabilityDescriptor[] }
+                    schemaMismatches: [] }
             }
             const observed = validatedObservation(await inbox.invoke({ name: 'system.describe_capabilities', input: {} }, requestId, signal), requestId, 'system.describe_capabilities')
             observationStatus = String(observed.status)
@@ -144,161 +167,263 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
                 }
                 return descriptor
             })
-            const available = descriptors.filter(descriptor => descriptor.available)
             return { status: 'fresh-application-capabilities', requestId, requestResource, observedAt: receipt.observedAt,
-                ...(runtime ? { runtime } : {}),
-                guideReadRequired: true, guideDigest: `sha256:${hashCanonicalValue(AGENT_WORKFLOW_GUIDE)}`,
-                requiresAppProcess: true, capabilities: descriptors,
-                schemaMismatches,
-                available }
+                ...(runtime ? { runtime } : {}), requiresAppProcess: true, capabilities: descriptors, schemaMismatches }
         } catch {
             // A missing/unfinished receipt describes observation, not process death.
-            // Keep bindings conservative and expose the same probe for read-only follow-up.
+            // Keep availability conservative and expose the same probe for read-only follow-up.
             return { status: 'app-state-unconfirmed', requestId, requestResource, observationStatus,
                 ...(receiptState === undefined ? {} : { receiptState }), requiresAppProcess: true,
-                guideReadRequired: true, guideDigest: `sha256:${hashCanonicalValue(AGENT_WORKFLOW_GUIDE)}`,
                 capabilities: describeAgentCommandCapabilities([], { ready: false, mode: 'suggest', globalPause: false })
                     .map(descriptor => ({ ...descriptor, reason: 'capability-probe-unconfirmed' })),
-                schemaMismatches: [], available: [] as RuntimeCapabilityDescriptor[] }
+                schemaMismatches: [] }
         }
     }
 
-    server.setRequestHandler('tools/list', async (_request, context) => {
-        const snapshot = await freshCapabilities(context.mcpReq.signal)
-        // Keep the transport binding discoverable when the application runtime is
-        // still starting or temporarily unavailable. The capability resource and
-        // description remain the execution authority, so this does not turn an
-        // unavailable application command into an executable one.
-        return { tools: snapshot.capabilities.flatMap(descriptor => {
-            const contract = getAgentCommandInputContract(descriptor.command)
-            if (contract === undefined) return []
-            const availability = snapshot.status === 'app-state-unconfirmed'
-                ? `Availability unconfirmed (${descriptor.reason}); inspect ${snapshot.requestResource} for the existing probe.`
-                : snapshot.runtime?.code === 'APP_NOT_RUNNING'
-                ? (AGENT_COMMAND_EFFECTS[descriptor.command] === 'read'
-                    ? 'App closed. This read leaves it closed.'
-                    : 'App closed. A valid request for this work can start the registered app.')
-                : snapshot.status === 'runtime-unavailable'
-                ? `Runtime check required (${snapshot.runtime?.code ?? 'APP_RUNTIME_UNAVAILABLE'}); read nai-blue://runtime. Do not search old executable copies.`
-                : descriptor.available
-                ? 'Currently available.'
-                : `Currently unavailable (${descriptor.reason ?? 'app-unavailable'}); read nai-blue://capabilities before calling.`
-            const approval = ['scene.patch_many', 'folder.apply_changes', 'generation.enqueue'].includes(descriptor.command)
-                ? 'NAI Blue honors active per-client always-approve consent; request human approval only if the application result requires it.'
-                : descriptor.requiresHumanApproval ? 'NAI Blue checks command approval; request human action only if the application result requires it.'
-                    : 'NAI Blue validates input and current policy.'
-            return [{
-                name: descriptor.command,
-                description: `Do not use Computer Use, CDP, private APIs or extracted tokens for NAI Blue; diagnose the registered automation path if blocked. ${AGENT_TOOL_DESCRIPTIONS[descriptor.command]} ${availability} App process required; window focus, visibility and topmost position are not required. ${approval}`,
-                inputSchema: { type: 'object' as const, properties: { requestId: requestIdSchema,
-                    input: contract.schema },
-                    required: ['requestId', 'input'], additionalProperties: false },
-                outputSchema: MCP_AGENT_RESULT_SCHEMA as JsonSchemaType & { type: 'object' },
-            }]
-        }) }
+    // Static on purpose: probing the application here cost one inbox command per listing and made the
+    // advertised text change with application state, which invalidates a host's cached tool definitions.
+    server.setRequestHandler('tools/list', async () => {
+        const tools = listAgentMcpTools()
+        usage('tools-list', 'tools/list', JSON.stringify(tools).length)
+        return { tools }
     })
 
-    server.setRequestHandler('tools/call', async (request, context): Promise<CallToolResult> => {
-        if (!guideRead) {
-            const result = { status: 'adapter-error', requiresAppProcess: true, accepted: false,
-                submissionAttempted: false, code: 'GUIDE_READ_REQUIRED', guideResource: AGENT_WORKFLOW_GUIDE_URI,
-                nextAction: 'read-guide-resource-and-retry' }
-            return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: true }
+    function respond(name: string, payload: unknown, isError: boolean, attachments: CallToolResult['content'] = []): CallToolResult {
+        const text = JSON.stringify(payload)
+        usage('tool', name, text.length + attachments.reduce((sum, item) => sum + (item.type === 'text' ? item.text.length : 0), 0),
+            attachments.filter(item => item.type === 'image').length)
+        return { content: [{ type: 'text', text }, ...attachments], isError }
+    }
+
+    /** One application command through validation, runtime check and the inbox; returns its validated observation. */
+    async function submit(state: CallState, name: AgentCommandName, input: JsonObject, requestId: string): Promise<JsonObject> {
+        const contract = getAgentCommandInputContract(name)
+        if (!contract) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        assertAgentRequestId(requestId)
+        assertAgentPublicValue(input)
+        const validated = contract.validate(input)
+        if (state.signal.aborted) throw new AgentCommandError('REQUEST_CANCELLED')
+        const effect = AGENT_COMMAND_EFFECTS[name]
+        const runtime = await runtimeStatus(effect === 'plan' || effect === 'mutation')
+        if (runtime && runtime.status !== 'ready') {
+            return { status: 'adapter-error', code: String(runtime.code), requiresAppProcess: true, accepted: false, submissionAttempted: false }
         }
-        // Consume before validation or awaiting anything: concurrent calls cannot share a read.
-        guideRead = false
-        let submissionAttempted = false
-        try {
-            const name = request.params.name as AgentCommandName
-            const contract = getAgentCommandInputContract(name)
-            const args = request.params.arguments
-            if (!contract || !args || Object.keys(args).sort().join() !== 'input,requestId'
-                || args.input === null || typeof args.input !== 'object' || Array.isArray(args.input)) {
-                throw new AgentCommandError('INVALID_COMMAND_INPUT')
-            }
+        // Only failures before entering the inbox prove that nothing was submitted.
+        state.attempted = true
+        state.lastRequestId = requestId
+        return validatedObservation(await inbox.invoke({ name, input: validated }, requestId, state.signal), requestId, name)
+    }
+
+    async function previewAttachments(state: CallState, requestId: string): Promise<CallToolResult['content']> {
+        if (!inbox.readImage) return []
+        try { return [{ type: 'image', ...await inbox.readImage(requestId, state.signal) }] }
+        catch { return [{ type: 'text', text: `Preview unavailable for ${requestId}; inspect its saved receipt. No generation retry is authorized.` }] }
+    }
+
+    /** Polls with fresh request IDs because a reused ID replays the earlier observation. */
+    async function observeRun(state: CallState, input: JsonObject, firstRequestId: string, waitSeconds: number): Promise<JsonObject> {
+        // The budget covers the whole tool call, so earlier stages of generation.run shorten the wait.
+        const deadline = state.startedAt + waitSeconds * 1000 - pollReserveMs
+        for (let attempt = 0; ; attempt += 1) {
+            const observed = await submit(state, 'generation.get_run', input, attempt === 0 ? firstRequestId : `mcp-poll-${crypto.randomUUID()}`)
+            const monitor = completedResult(observed)?.monitor as JsonObject | undefined
+            const delay = Math.min(2000 + attempt * 1000, 5000)
+            if (monitor?.nextAction !== 'wait' || Date.now() + delay > deadline || state.signal.aborted) return observed
+            await pause(delay, state.signal)
+        }
+    }
+
+    async function callCommand(state: CallState, tool: string, command: AgentCommandName, args: CallArguments): Promise<CallToolResult> {
+        // A summary without lists needs only the page header, so the application is asked for the smallest page.
+        const input = command === 'workspace.get_snapshot' && !args.full && args.include.length === 0 && args.input.limit === undefined
+            ? { ...args.input, limit: 1 } : args.input
+        const observed = command === 'generation.get_run' && args.waitSeconds
+            ? await observeRun(state, input, args.requestId, args.waitSeconds)
+            : await submit(state, command, input, args.requestId)
+        const result = completedResult(observed)
+        const attachments = command === 'artifact.get_image' && result?.found === true ? await previewAttachments(state, args.requestId) : []
+        if (args.full) return respond(tool, observed, isRejected(observed), attachments)
+        return respond(tool, compactObservation(observed, result && summarizeResult(command, result, args.include)), isRejected(observed), attachments)
+    }
+
+    /**
+     * Plan, enqueue and wait. Each stage keeps its own application verdict and the first unfinished stage is
+     * returned as is. A failure after the plan names the stage's request or run, since the Queue may already hold work.
+     */
+    async function runGeneration(state: CallState, args: CallArguments): Promise<CallToolResult> {
+        const stages: Record<string, JsonObject> = {}
+        const finish = (stage: string, summary: Record<string, unknown>, isError: boolean) =>
+            respond('generation.run', args.full ? { stage, ...stages } : { stage, ...summary }, isError)
+        const failed = (stage: string, facts: Record<string, unknown>) => {
+            const error = { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED' }
+            const requestId = typeof facts.requestId === 'string' ? facts.requestId : undefined
+            const hint = facts.runId ? runExistsHint : agentHint(error, requestId)
+            if (args.full) stages[stage] = { ...error, requiresAppProcess: true }
+            return finish(stage, { ...error, ...facts, hint }, true)
+        }
+        const planObserved = stages.plan = await submit(state, 'generation.plan', args.input, `${args.requestId}-plan`)
+        const plan = completedResult(planObserved)
+        if (args.planOnly || !plan || plan.status !== 'ready' || typeof plan.planId !== 'string' || typeof plan.planHash !== 'string') {
+            return finish('plan', compactObservation(planObserved, plan && summarizePlan(plan)), isRejected(planObserved))
+        }
+        const planFacts = (({ planId, estimatedAnlas, compatibilityStatuses, warnings }) =>
+            ({ planId, estimatedAnlas, compatibilityStatuses, warnings }))(summarizePlan(plan))
+        const enqueueRequestId = `${args.requestId}-enq`
+        let enqueueObserved: JsonObject
+        try { enqueueObserved = stages.enqueue = await submit(state, 'generation.enqueue', { planId: plan.planId, planHash: plan.planHash }, enqueueRequestId) }
+        catch { return failed('enqueue', { requestId: enqueueRequestId, ...planFacts }) }
+        const runId = completedResult(enqueueObserved)?.runId
+        if (typeof runId !== 'string') {
+            return finish('enqueue', { ...compactObservation(enqueueObserved), ...planFacts, planHash: plan.planHash }, isRejected(enqueueObserved))
+        }
+        let runObserved: JsonObject
+        try { runObserved = stages.run = await observeRun(state, { runId }, `mcp-poll-${crypto.randomUUID()}`, args.waitSeconds ?? defaultRunWaitSeconds) }
+        catch { return failed('run', { runId, ...planFacts }) }
+        const run = completedResult(runObserved)
+        // The work is enqueued even though this read of it did not complete, so the hint must point at the run.
+        if (!run) return finish('run', { ...compactObservation(runObserved), runId, ...planFacts, hint: runExistsHint }, isRejected(runObserved))
+        const summary = summarizeRun(run, plannedJobs(plan))
+        return finish('run', { ...summary, ...planFacts,
+            ...(summary.complete === false && summary.nextAction === 'wait'
+                ? { hint: 'Still generating. Call generation.get_run with this runId and waitSeconds; do not run again.' } : {}) }, false)
+    }
+
+    async function readImages(state: CallState, args: CallArguments): Promise<CallToolResult> {
+        const artifactIds = args.input.artifactIds
+        if (Object.keys(args.input).join() !== 'artifactIds' || !Array.isArray(artifactIds)
+            || artifactIds.length < 1 || artifactIds.length > MAX_IMAGES_PER_CALL) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        const contract = getAgentCommandInputContract('artifact.get_image')!
+        // Check every ID first so an invalid later entry cannot leave earlier reads submitted.
+        for (const artifactId of artifactIds) { assertAgentPublicValue({ artifactId }); contract.validate({ artifactId }) }
+        const images: Record<string, unknown>[] = [], attachments: CallToolResult['content'] = [], observations: JsonObject[] = []
+        for (const [index, artifactId] of artifactIds.entries()) {
+            const requestId = artifactIds.length === 1 ? args.requestId : `${args.requestId}-${index}`
+            const observed = await submit(state, 'artifact.get_image', { artifactId }, requestId)
+            observations.push(observed)
+            const result = completedResult(observed)
+            if (result?.found === true) {
+                const resource = result.resource as JsonObject | undefined
+                images.push({ artifactId, contentChecksum: result.contentChecksum, width: resource?.width, height: resource?.height })
+                attachments.push(...await previewAttachments(state, requestId))
+            } else images.push({ artifactId, ...compactObservation(observed, result) })
+            if (observed.status === 'adapter-error') break
+        }
+        // Preview images follow in the order of the rows that carry a contentChecksum.
+        return respond('artifact.get_images', args.full ? { observations } : { images }, observations.some(isRejected), attachments)
+    }
+
+    function parseArguments(state: CallState, tool: string, value: unknown): CallArguments {
+        const args = (value ?? {}) as Record<string, unknown>
+        const input = args.input ?? {}
+        if (typeof args !== 'object' || Array.isArray(args) || Object.keys(args).some(key => !argumentKeys.has(key))
+            || input === null || typeof input !== 'object' || Array.isArray(input)
+            || ![undefined, 'summary', 'full'].includes(args.detail as string | undefined)
+            || (args.command !== undefined && tool !== 'advanced.call')) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        if (args.planOnly !== undefined && (tool !== 'generation.run' || typeof args.planOnly !== 'boolean')) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        const waits = tool === 'generation.run' || tool === 'generation.get_run'
+        if (args.waitSeconds !== undefined && (!waits || !Number.isSafeInteger(args.waitSeconds)
+            || Number(args.waitSeconds) < 0 || Number(args.waitSeconds) > MAX_WAIT_SECONDS)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        const include = args.include ?? []
+        if (!Array.isArray(include) || (include.length > 0 && tool !== 'workspace.get_snapshot')
+            || include.some(name => !Object.prototype.hasOwnProperty.call(SNAPSHOT_LISTS, String(name)))) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        if (args.requestId !== undefined) {
             assertAgentRequestId(args.requestId)
             assertAgentPublicValue({ requestId: args.requestId })
-            assertAgentPublicValue(args.input)
-            const input = contract.validate(args.input as JsonObject)
-            if (context.mcpReq.signal.aborted) throw new AgentCommandError('REQUEST_CANCELLED')
-            const effect = AGENT_COMMAND_EFFECTS[name]
-            const runtime = await runtimeStatus(effect === 'plan' || effect === 'mutation')
-            if (runtime && runtime.status !== 'ready') {
-                const result = { status: 'adapter-error', code: String(runtime.code), requiresAppProcess: true,
-                    accepted: false, submissionAttempted: false }
-                return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: true }
+        } else if (REQUEST_ID_REQUIRED.includes(tool) && args.planOnly !== true) {
+            state.hint = 'This tool needs a requestId you choose, so a cut-off call can be inspected instead of repeated. Nothing was submitted.'
+            throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        }
+        const requestId = (args.requestId as string | undefined) ?? `mcp-${crypto.randomUUID()}`
+        const composite = tool === 'generation.run' || tool === 'artifact.get_images'
+        if (composite && requestId.length > maxRootRequestIdLength) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        return { requestId, input: input as JsonObject, full: args.detail === 'full', include: include as string[], planOnly: args.planOnly === true,
+            ...(args.waitSeconds === undefined ? {} : { waitSeconds: Number(args.waitSeconds) }),
+            ...(typeof args.command === 'string' ? { command: args.command } : {}) }
+    }
+
+    server.setRequestHandler('tools/call', async (request, context): Promise<CallToolResult> => {
+        const tool = request.params.name
+        const full = (request.params.arguments as Record<string, unknown> | undefined)?.detail === 'full'
+        const state: CallState = { signal: context.mcpReq.signal, startedAt: Date.now(), attempted: false }
+        try {
+            const args = parseArguments(state, tool, request.params.arguments)
+            if (tool === 'generation.run') return await runGeneration(state, args)
+            if (tool === 'artifact.get_images') return await readImages(state, args)
+            if (tool === 'advanced.call') {
+                if (!ADVANCED_COMMANDS.includes(args.command as AgentCommandName)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+                return await callCommand(state, tool, args.command as AgentCommandName, args)
             }
-            // Only failures before entering the inbox prove that nothing was submitted.
-            submissionAttempted = true
-            const observed = validatedObservation(await inbox.invoke({ name, input }, args.requestId, context.mcpReq.signal), args.requestId, name)
-            const rejected = observed.status === 'inbox-rejection'
-                || (observed.status === 'application-receipt' && (observed.receipt as JsonObject).state === 'rejected')
-            const content: CallToolResult['content'] = [{ type: 'text', text: JSON.stringify(observed) }]
-            if (name === 'artifact.get_image' && observed.status === 'application-receipt'
-                && (observed.receipt as JsonObject).state === 'completed' && inbox.readImage) {
-                content.push({ type: 'resource_link', uri: `nai-blue://images/${args.requestId}`,
-                    name: 'Saved image preview', mimeType: 'image/png' })
-                try { content.push({ type: 'image', ...await inbox.readImage(args.requestId, context.mcpReq.signal) }) }
-                catch { content.push({ type: 'text', text: 'Image resource is unavailable; inspect its saved receipt. No generation retry is authorized.' }) }
-            }
-            return { content, structuredContent: observed, isError: rejected }
+            // Every contract-backed command stays callable by its own name, including those no longer advertised.
+            return await callCommand(state, tool, tool as AgentCommandName, args)
         } catch (error) {
-            const result = submissionAttempted
+            const result: JsonObject = state.attempted
                 ? { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true }
                 : { status: 'adapter-error', requiresAppProcess: true, accepted: false, submissionAttempted: false,
                     code: error instanceof AgentCommandError && ['UNSAFE_PAYLOAD', 'REQUEST_CANCELLED'].includes(error.code)
                         ? error.code : 'INVALID_COMMAND_INPUT' }
-            return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: true }
+            if (full) return respond(tool, result, true)
+            const { requiresAppProcess: _requiresAppProcess, ...compact } = result
+            // A failure after submission names the request so the agent can inspect it instead of resubmitting.
+            const requestId = state.attempted ? state.lastRequestId : undefined
+            return respond(tool, { ...compact, ...(requestId ? { requestId } : {}), hint: state.hint ?? agentHint(result, requestId) }, true)
         }
     })
 
     server.setRequestHandler('resources/list', async () => ({ resources: [{ uri: runtimeUri,
         name: 'Installed runtime freshness', mimeType: 'application/json',
-        description: 'Inspect the registered installation without launching it. If running, verify the live PID/version/executable hash. Reuse the pending probe resource.' }, { uri: capabilitiesUri,
+        description: 'Registered installation status without launching it.' }, { uri: capabilitiesUri,
         name: 'Current application capabilities', mimeType: 'application/json',
-        description: 'Fresh command-runtime probe. Unconfirmed means no valid completed receipt was observed; inspect its requestResource. Window focus is not required.' }, {
-        uri: AGENT_WORKFLOW_GUIDE_URI, name: 'Agent workflow guide v1', mimeType: 'text/markdown',
-        description: 'On-demand authoring, production, receipt replay, approval and recovery workflow. Static guidance, not live capability evidence.',
+        description: 'Fresh command availability probe. Unconfirmed means no completed receipt was observed.' }, {
+        uri: AGENT_WORKFLOW_GUIDE_URI, name: 'Agent workflow guide', mimeType: 'text/markdown',
+        description: 'Optional. Usual order plus links to topic help (recovery, production, image-source, consent, runtime, advanced).',
     }] }))
     server.setRequestHandler('resources/templates/list', async () => ({ resourceTemplates: [{
         uriTemplate: `${requestUriPrefix}{requestId}`, name: 'Saved command receipt', mimeType: 'application/json',
-        description: 'Historical receipt for this configured client. Reading does not replay a command or prove current app readiness.',
-    }, { uriTemplate: 'nai-blue://images/{requestId}', name: 'Authenticated saved image preview', mimeType: 'image/png',
-        description: 'Bounded metadata-free preview from a completed artifact.get_image receipt belonging to this configured client.' }] }))
+        description: 'Full historical receipt of one request. Reading does not replay the command.',
+    }, { uriTemplate: `${imageUriPrefix}{requestId}`, name: 'Authenticated saved image preview', mimeType: 'image/png',
+        description: 'Preview from a completed image read belonging to this client.' }] }))
     server.setRequestHandler('resources/read', async (request, context) => {
+        const uri = request.params.uri
+        const textResource = (name: string, mimeType: string, text: string) => {
+            usage('resource', name, text.length)
+            return { contents: [{ uri, mimeType, text }] }
+        }
         try {
-            if (request.params.uri === runtimeUri) {
-                return { contents: [{ uri: runtimeUri, mimeType: 'application/json',
-                    text: JSON.stringify(await runtimeStatus() ?? { status: 'unavailable', code: 'APP_RUNTIME_CHECK_FAILED' }) }] }
+            if (uri === runtimeUri) {
+                return textResource(uri, 'application/json', JSON.stringify(await runtimeStatus() ?? { status: 'unavailable', code: 'APP_RUNTIME_CHECK_FAILED' }))
             }
-            // Guide discovery/read must work without a native inbox or application probe.
-            if (request.params.uri === AGENT_WORKFLOW_GUIDE_URI) {
-                guideRead = true
-                return { contents: [{ uri: AGENT_WORKFLOW_GUIDE_URI, mimeType: 'text/markdown', text: AGENT_WORKFLOW_GUIDE }] }
+            // Guides must be readable without a native inbox or application probe.
+            if (uri.startsWith(AGENT_GUIDE_URI_PREFIX)) {
+                const topic = uri.slice(AGENT_GUIDE_URI_PREFIX.length)
+                const guide = topic === 'advanced' ? advancedCommandGuide()
+                    : Object.prototype.hasOwnProperty.call(AGENT_GUIDE_TOPICS, topic) ? AGENT_GUIDE_TOPICS[topic] : undefined
+                if (guide === undefined) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+                return textResource(uri, 'text/markdown', guide)
             }
-            if (request.params.uri.startsWith('nai-blue://images/')) {
-                const requestId = request.params.uri.slice('nai-blue://images/'.length)
+            if (uri.startsWith(imageUriPrefix)) {
+                const requestId = uri.slice(imageUriPrefix.length)
                 assertAgentRequestId(requestId)
                 if (!inbox.readImage) throw new AgentCommandError('IMAGE_RESOURCE_UNAVAILABLE')
                 const image = await inbox.readImage(requestId, context.mcpReq.signal)
-                return { contents: [{ uri: request.params.uri, mimeType: image.mimeType, blob: image.data }] }
+                usage('resource', imageUriPrefix, 0, 1)
+                return { contents: [{ uri, mimeType: image.mimeType, blob: image.data }] }
             }
             let result: JsonObject
-            if (request.params.uri === capabilitiesUri) {
-                const { available: _available, requestResource, ...snapshot } = await freshCapabilities(context.mcpReq.signal)
+            if (uri === capabilitiesUri) {
+                const { requestResource, ...snapshot } = await freshCapabilities(context.mcpReq.signal)
                 result = snapshot as unknown as JsonObject
                 assertAgentPublicValue(result)
                 // This URI is built here from a generated request ID, never inbox input.
                 // Add it after scanning so the fixed resource scheme is not mistaken for a path.
                 result = { ...result, requestResource }
             } else {
-                if (!request.params.uri.startsWith(requestUriPrefix)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
-                const requestId = request.params.uri.slice(requestUriPrefix.length)
+                if (!uri.startsWith(requestUriPrefix)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+                const requestId = uri.slice(requestUriPrefix.length)
                 assertAgentRequestId(requestId)
                 assertAgentPublicValue({ requestId })
                 result = validatedObservation(await inbox.inspect(requestId, context.mcpReq.signal), requestId)
             }
-            return { contents: [{ uri: request.params.uri, mimeType: 'application/json', text: JSON.stringify(result) }] }
+            return textResource(uri === capabilitiesUri ? uri : requestUriPrefix, 'application/json', JSON.stringify(result))
         } catch { throw new ProtocolError(INTERNAL_ERROR, 'Agent resource is unavailable.') }
     })
     return server

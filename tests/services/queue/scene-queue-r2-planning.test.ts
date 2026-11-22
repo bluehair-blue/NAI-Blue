@@ -253,15 +253,17 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
             await server.connect(serverTransport)
             await client.connect(clientTransport)
             const tools = await client.listTools()
-            expect(tools.tools.map(tool => tool.name)).toContain('generation.plan')
+            expect(tools.tools.map(tool => tool.name)).toContain('generation.run')
             expect(tools.tools.map(tool => tool.name)).toContain('generation.enqueue')
-            expect(JSON.stringify(tools.tools.find(tool => tool.name === 'generation.plan')!.inputSchema)).toContain('targets')
-            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
+            expect(JSON.stringify(tools.tools.find(tool => tool.name === 'generation.run')!.inputSchema)).toContain('targets')
+            // detail:"full" returns the whole receipt; the default view is the compact summary.
+            const observed = (result: Awaited<ReturnType<typeof client.callTool>>) =>
+                JSON.parse(String((result.content as { text?: string }[])[0].text)) as JsonObject
             const planned = await client.callTool({ name: 'generation.plan', arguments: {
-                requestId: 'scene-plan-request', input: agentInput as unknown as JsonObject,
+                requestId: 'scene-plan-request', input: agentInput as unknown as JsonObject, detail: 'full',
             } })
             expect(planned.isError).toBe(false)
-            const planReceipt = (planned.structuredContent as JsonObject).receipt as JsonObject
+            const planReceipt = observed(planned).receipt as JsonObject
             expect(planReceipt, JSON.stringify(planReceipt)).toMatchObject({ state: 'completed', result: { status: 'ready' } })
             const planResult = planReceipt.result as JsonObject
             expect(planResult.status).toBe('ready')
@@ -269,14 +271,12 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
                 jobs: [{ prompt: 'A room', model: params.model, seed: 7, destination: { generationFolderId: 'child' } }] })
             expect(JSON.stringify(planResult)).not.toContain('output/')
             const request = { name: 'generation.enqueue', arguments: { requestId: 'scene-enqueue-request',
-                input: { planId: planResult.planId, planHash: planResult.planHash } } }
-            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
+                input: { planId: planResult.planId, planHash: planResult.planHash }, detail: 'full' } }
             const first = await client.callTool(request)
             expect(first.isError).toBe(false)
-            expect(first.structuredContent).toMatchObject({ receipt: { state: 'completed', result: { status: 'ready' } } })
-            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
+            expect(observed(first)).toMatchObject({ receipt: { state: 'completed', result: { status: 'ready' } } })
             const repeated = await client.callTool(request)
-            expect(repeated.structuredContent).toEqual(first.structuredContent)
+            expect(observed(repeated)).toEqual(observed(first))
             const jobs = (await queue.listJobs()).items
             expect(jobs).toHaveLength(1)
             expect(jobs[0]).toMatchObject({ workflow: 'scene', sceneId: 'scene',
@@ -616,17 +616,16 @@ describe('saved production requests with actual IndexedDB Queue and plan reposit
         const client = new Client({ name: 'production-sdk-integration', version: '1.0.0' })
         const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
         async function call(name: AgentCommandName, requestId: string, input: JsonObject) {
-            await client.readResource({ uri: 'nai-blue://guides/agent-workflow/v1' })
-            const response = await client.callTool({ name, arguments: { requestId, input } })
+            // Rare commands stay callable by name; detail:"full" returns the whole receipt.
+            const response = await client.callTool({ name, arguments: { requestId, input, detail: 'full' } })
             expect(response.isError, JSON.stringify(response)).toBe(false)
-            return (response.structuredContent!.receipt as JsonObject).result as JsonObject
+            const observed = JSON.parse(String((response.content as { text?: string }[])[0].text)) as JsonObject
+            return (observed.receipt as JsonObject).result as JsonObject
         }
         try {
             await server.connect(serverTransport)
             await client.connect(clientTransport)
-            expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-                'production.create', 'production.list', 'production.get', 'production.plan_next', 'generation.enqueue',
-            ]))
+            expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['advanced.call', 'generation.enqueue']))
             const input = { title: 'SDK production', source: { kind: 'scene', targets: [{ presetId: 'preset', sceneId: 'scene', expectedRevision: 2, count: 1 }] },
                 seedPolicy: { kind: 'fixed', seed: 7 }, budget: { maxImages: 1, maxAnlas: 100.5 } }
             const created = await call('production.create', 'sdk-create', input)
