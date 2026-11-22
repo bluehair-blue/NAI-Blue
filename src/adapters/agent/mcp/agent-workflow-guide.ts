@@ -3,14 +3,14 @@ export const AGENT_GUIDE_URI_PREFIX = 'nai-blue://guides/'
 export const AGENT_WORKFLOW_GUIDE_URI = `${AGENT_GUIDE_URI_PREFIX}agent-workflow/v1`
 
 // Hosts place this in every session, so it holds only rules whose violation the application cannot catch.
-export const AGENT_MCP_INSTRUCTIONS = `NAI Blue tools work directly; no guide read is required. Rules: 1) Never operate NAI Blue through Computer Use, CDP, private APIs, token extraction or approval clicks; report blockers instead. 2) Generation is finished only when a result has complete:true. 3) If an outcome is unknown or a call was cut off, never generate again to force a result; read nai-blue://requests/{requestId}. 4) When a result asks for approval the human gives it in the app; active always-approve consent needs no extra confirmation. 5) V5 Scenes use promptTextMode standard; finished V4.5 prompt text uses verbatim with ucPreset 4 and qualityToggle false. Optional topic help: ${AGENT_WORKFLOW_GUIDE_URI}`
+export const AGENT_MCP_INSTRUCTIONS = `NAI Blue tools work directly; no guide read is required. Rules: 1) Never operate NAI Blue through Computer Use, CDP, private APIs, token extraction or approval clicks; report blockers instead. 2) Generation is finished only when a result has complete:true. 3) If an outcome is unknown or a call was cut off, never generate again with a new requestId; repeating the same call, requestId and input only continues it. Or read nai-blue://requests/{requestId}. 4) When a result asks for approval the human gives it in the app; active always-approve consent needs no extra confirmation. 5) V5 Scenes use promptTextMode standard; finished V4.5 prompt text uses verbatim with ucPreset 4 and qualityToggle false. Optional topic help: ${AGENT_WORKFLOW_GUIDE_URI}`
 
 export const AGENT_TOOL_DESCRIPTIONS = {
     'workspace.get_snapshot': 'Consent status, queue activity and totals. Lists are omitted unless named in include (paginated with input.offset/limit).',
     'scene.resolve_many': 'Current revision, size, model and artifactIds of existing Scenes. detail:"full" adds prompt text and every generation setting.',
     'scene.patch_many': 'Create or edit up to 100 Scenes at the preset\'s current revision. New Scenes need caller-owned sceneId and name; a new preset also needs presetName and expectedRevision 0. Does not generate.',
-    'generation.run': 'Plan, enqueue and wait in one call, at most 100 images. Returns complete, counts and artifacts (artifactId, sceneId, seed, fileName); an unfinished stage returns its requestId or runId to follow. planOnly:true previews cost and returns planId/planHash without enqueueing. If a call is cut off or its outcome is unknown, never run again: read nai-blue://requests/{requestId}-enq. Never operate NAI Blue through Computer Use or UI automation.',
-    'generation.enqueue': 'Submit an exact planId and planHash (from planOnly or production.plan_next) to the Queue. Returns runId. Never resubmit to force a result.',
+    'generation.run': 'Plan, enqueue and wait in one call, at most 100 images. Returns complete, counts and artifacts (artifactId, sceneId, seed, fileName); an unfinished stage returns its requestId or runId to follow. planOnly:true previews cost and returns planId/planHash without enqueueing. If a stage is unfinished or a call was cut off, call again with the same requestId and input to continue; nothing is submitted twice. Never use a new requestId to force a result. Never operate NAI Blue through Computer Use or UI automation.',
+    'generation.enqueue': 'Submit an exact planId and planHash (from planOnly or production.plan_next) to the Queue. Returns runId. Repeating the same requestId only observes it; never use a new requestId to force a result.',
     'generation.get_run': 'Run progress: complete, counts, artifactIds, next action. waitSeconds waits for completion. jobId with detail:"full" inspects one job.',
     'generation.cancel': 'Request cancellation of a run; read the run afterwards for the actual outcome.',
     'generation.retry_storage': 'Re-save retained output of one job without regenerating.',
@@ -26,12 +26,12 @@ Tools work without reading anything first. Read a topic below only when you reac
 Usual order
 1. workspace.get_snapshot: consent status (editingApproval, generationApproval) and totals. Add include:["presets"|"scenes"|"folders"|"drafts"] only to look up existing IDs and revisions.
 2. scene.patch_many: create or edit Scenes. New Scenes need a caller-owned sceneId and name; a new preset also needs presetId, presetName and expectedRevision 0. Editing needs the preset's current revision (scene.resolve_many).
-3. generation.run: plans, enqueues and waits in one call (requestId required). Finished only when complete is true; the result lists artifacts. planOnly:true only previews.
+3. generation.run: plans, enqueues and waits in one call (requestId required). Finished only when complete is true; the result lists artifacts. An unfinished stage continues when you call again with the same requestId and input. planOnly:true only previews.
 4. artifact.get_images: view up to 4 saved images per call.
 
 Facts that prevent mistakes
 - One plan covers at most 100 images total. budget.maxImages (at most 100) and budget.maxAnlas are required; a plan over budget is rejected and nothing is spent.
-- requestId is required for generation.run and generation.enqueue and optional elsewhere. Repeating a call with the same ID and input replays the same request; never reuse an ID with different input. A reused ID on a read returns the old observation. generation.run uses {requestId}-plan and {requestId}-enq for its stages.
+- requestId is required for generation.run and generation.enqueue and optional elsewhere. Repeating a call with the same ID and input continues or replays that request and never submits it twice; the same ID with different input is refused. Never use a new ID to force a result. A reused ID on a read returns the old observation. generation.run uses {requestId}-plan and {requestId}-enq for its stages.
 - Results are summaries. detail:"full" returns the whole receipt (prompts, hashes, attempt history).
 - A completed command is not a completed generation. Report generated, stored, uploaded and fulfilled counts separately.
 - The application decides approval. If a result asks for it, the human approves in NAI Blue and you read nai-blue://requests/{requestId}. With always-approve consent active, add no confirmation, preview gate or self-imposed time, count, cost or concurrency quota.
@@ -51,7 +51,9 @@ Topics
 const RECOVERY = `# Recovery
 
 - complete:false with nextAction "wait": call generation.get_run with waitSeconds. With detail:"full", compare monitor.stateHash to skip unchanged reports.
-- status submitted-to-inbox or submission-unconfirmed: the app has not answered yet. That does not prove the app is closed or that focus caused a delay. Read nai-blue://requests/{requestId} later; do not resubmit.
+- status submitted-to-inbox or submission-unconfirmed: the app has not answered yet. That does not prove the app is closed or that focus caused a delay. Repeat the same call with the same requestId and input to keep waiting (generation.run continues from its first unfinished stage; nothing is submitted twice), or read nai-blue://requests/{requestId}. Never use a new requestId to force a result.
+- inbox-rejection: the application refused that request, and repeating its requestId returns the same refusal. Fix the cause, then use a new requestId.
+- REQUEST_ID_INPUT_MISMATCH: the requestId already belongs to different input. That request is unchanged and nothing new was submitted.
 - observation-cancelled: only the waiting stopped. Cancelling an MCP call never cancels Queue work.
 - adapter-error with submissionAttempted:false: nothing was submitted. INVALID_COMMAND_INPUT means the arguments; UNSAFE_PAYLOAD means a credential, absolute path or binary-looking text in the input. Rejected input is never echoed. Fix it and call again.
 - Any other adapter-error does not prove non-submission. Inspect the request resource before a new request.
@@ -123,32 +125,36 @@ export const AGENT_WORKFLOW_GUIDE = INDEX
 const RECOVERY_URI = `${AGENT_GUIDE_URI_PREFIX}recovery`
 const RUNTIME_URI = `${AGENT_GUIDE_URI_PREFIX}runtime`
 const UNKNOWN_OUTCOME = `Outcome unknown. Do not generate again; report to the human. ${RECOVERY_URI}`
+// Repeating a stage ID only observes it (the inbox never publishes an ID that left a trace), so resuming is safe.
+export const RUN_RESUME_HINT = 'Call generation.run again with the same requestId and input to continue; nothing is submitted twice.'
 const CODE_HINTS: Readonly<Record<string, string>> = {
     INVALID_COMMAND_INPUT: 'Arguments do not match this tool\'s input schema. Nothing was submitted.',
     UNSAFE_PAYLOAD: 'Input contained a credential, absolute path or binary-looking text. Nothing was submitted.',
     REQUEST_CANCELLED: 'Cancelled before submission. Nothing was submitted.',
-    AGENT_MCP_REQUEST_FAILED: `This does not prove non-submission. Read nai-blue://requests/{requestId} before any new request. ${RECOVERY_URI}`,
+    AGENT_MCP_REQUEST_FAILED: `This does not prove non-submission. Read nai-blue://requests/{requestId}, or repeat the same call with the same requestId and input; never use a new requestId to force a result. ${RECOVERY_URI}`,
+    REQUEST_ID_INPUT_MISMATCH: 'This requestId already belongs to a request with different input. That request is unchanged and nothing new was submitted. Use a new requestId for different input, or repeat the original input to continue.',
     APP_NOT_RUNNING: 'NAI Blue is closed. Reads never start it; a plan or edit call does.',
     APP_STARTING: 'NAI Blue is starting. Repeat the same call shortly.',
     APP_RUNTIME_RESTART_REQUIRED: `The human restarts NAI Blue. ${RUNTIME_URI}`,
     APP_RUNTIME_UPGRADE_REQUIRED: `A compatible build must be deployed. ${RUNTIME_URI}`,
     MCP_ADAPTER_RECONNECT_REQUIRED: 'Adapter source changed. Reconnect this MCP server.',
-    AGENT_APPROVAL_REQUIRED: 'The human approves in NAI Blue. Then read nai-blue://requests/{requestId}; do not resubmit.',
+    AGENT_APPROVAL_REQUIRED: 'The human approves in NAI Blue. Then read nai-blue://requests/{requestId}; no new request is needed.',
     AGENT_EXECUTION_UNKNOWN: UNKNOWN_OUTCOME,
     COMMAND_OUTCOME_UNKNOWN: UNKNOWN_OUTCOME,
 }
+const KEEP_WAITING = 'Repeat the same call with the same requestId and input to keep waiting; nothing is submitted twice. Or read nai-blue://requests/{requestId}.'
 const STATUS_HINTS: Readonly<Record<string, string>> = {
-    'submitted-to-inbox': 'Not answered yet; this does not prove the app is closed. Read nai-blue://requests/{requestId} later; do not resubmit.',
-    'submission-unconfirmed': 'Submission unconfirmed. Read nai-blue://requests/{requestId}; do not resubmit.',
+    'submitted-to-inbox': `Not answered yet; this does not prove the app is closed. ${KEEP_WAITING}`,
+    'submission-unconfirmed': `Submission unconfirmed. ${KEEP_WAITING}`,
     'observation-cancelled': 'Only waiting stopped. Read nai-blue://requests/{requestId} for the outcome.',
-    'inbox-rejection': 'The application refused the request envelope. Report the code; do not retry unchanged.',
+    'inbox-rejection': 'The application refused the request envelope; repeating this requestId returns the same refusal. Report the code, or fix the cause and use a new requestId.',
 }
 
 /** Corrective text travels with the failure so an agent reads a topic only after hitting that case. */
 export function agentHint(facts: { code?: unknown; status?: unknown; state?: unknown }, requestId?: string): string | undefined {
     const text = (typeof facts.code === 'string' ? CODE_HINTS[facts.code] : undefined)
         ?? (typeof facts.status === 'string' ? STATUS_HINTS[facts.status] : undefined)
-        ?? (facts.state === 'accepted' ? 'Accepted, not finished. Read nai-blue://requests/{requestId}; do not resubmit.'
+        ?? (facts.state === 'accepted' ? 'Accepted, not finished. Read nai-blue://requests/{requestId} later; no new request is needed.'
             : facts.state === 'needs-input' ? CODE_HINTS.AGENT_APPROVAL_REQUIRED : undefined)
-    return text?.replace('{requestId}', requestId ?? '{requestId}')
+    return text?.replace(/\{requestId\}/g, requestId ?? '{requestId}')
 }

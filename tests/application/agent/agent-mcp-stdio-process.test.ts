@@ -213,12 +213,12 @@ describe('real SDK stdio child + authenticated application/inbox integration', (
         expect(await app.archive('crash-replay')).toBe(archived)
         expect(await app.receipts.get('crash-replay')).toEqual(receipt)
         expect(app.executions.filter(item => item.requestId === 'crash-replay')).toHaveLength(1)
-        await vi.waitFor(() => {
-            expect(app.identicalPublications).toContain('crash-replay')
-            expect(app.hasReady('crash-replay')).toBe(false)
-        }, { timeout: 3000, interval: 10 })
+        // A request that already left a trace is observed, never published to the app again.
+        await vi.waitFor(() => expect(app.hasReady('crash-replay')).toBe(false), { timeout: 3000, interval: 10 })
+        expect(app.identicalPublications).not.toContain('crash-replay')
         const changed = await restarted.client.callTool({ ...call, arguments: { ...call.arguments, input: { runId: 'different-run' } } })
-        expect(changed).toMatchObject({ isError: true, structuredContent: { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED' } })
+        expect(changed).toMatchObject({ isError: true, structuredContent: { status: 'adapter-error', code: 'REQUEST_ID_INPUT_MISMATCH', requestId: 'crash-replay' } })
+        expect(changed.structuredContent).not.toHaveProperty('submissionAttempted')
         expect(await app.archive('crash-replay')).toBe(archived)
         const resource = await restarted.client.readResource({ uri: 'nai-blue://requests/crash-replay' })
         expect(JSON.parse(String(resource.contents[0].text)).receipt).toEqual(receipt)

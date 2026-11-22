@@ -54,7 +54,8 @@ export function summarizeRun(result: Row, planned?: Map<string, PlannedJob>): Ro
     const artifacts: Row[] = [], unfinished: Row[] = []
     for (const job of rows(result.jobs)) {
         if (job.storageState === 'succeeded' && typeof job.artifactId === 'string') {
-            artifacts.push({ artifactId: job.artifactId, ...planned?.get(/-(\d+)$/.exec(String(job.jobId))?.[1] ?? '') })
+            // The run's own row names the committed file, so a later generation.get_run needs no plan in hand.
+            artifacts.push({ artifactId: job.artifactId, ...planned?.get(/-(\d+)$/.exec(String(job.jobId))?.[1] ?? ''), ...pick(job, ['fileName']) })
         } else unfinished.push(pick(job, ['jobId', 'queueState', 'providerState', 'storageState']))
     }
     return { ...pick(result, ['runId', 'state']), complete: monitor.complete === true, counts,

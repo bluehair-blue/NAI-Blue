@@ -64,7 +64,7 @@ async function readText(target, limit, optional = false) {
 export async function inspectAgentCommand({ inboxDir, requestId, waitMs = 0, signal }, project) {
     requireInput(typeof requestId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(requestId)
         && !/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(requestId))
-    requireInput(Number.isSafeInteger(waitMs) && waitMs >= 0 && waitMs <= 30_000)
+    requireInput(Number.isSafeInteger(waitMs) && waitMs >= 0 && waitMs <= 50_000)
     const inbox = await inspectPath(inboxDir, true)
     requireInput(path.basename(inbox) === 'inbox')
     const root = path.dirname(inbox)
@@ -74,14 +74,27 @@ export async function inspectAgentCommand({ inboxDir, requestId, waitMs = 0, sig
     requireInput(envelope.requestId === requestId)
     const deadline = performance.now() + waitMs
     const cancelled = () => ({ status: 'observation-cancelled', requestId, requiresAppProcess: true })
+    let failedReads = 0
     while (true) {
         if (signal?.aborted) return cancelled()
-        const [result, rejection, ready] = await Promise.all([
-            readText(path.join(root, 'results', `${requestId}.json`), RECEIPT_LIMIT, true),
-            readText(path.join(root, 'rejections', `${requestId}.json`), REQUEST_LIMIT, true),
-            readText(path.join(inbox, `${requestId}.ready.json`), REQUEST_LIMIT, true),
-        ])
-        if (ready !== null) requireInput(ready === archivedText)
+        let ready, result, rejection
+        try {
+            // The app writes its answer before retiring the ready file, so reading ready first means a missing
+            // ready plus a missing answer really is an unpublished request, which the caller may then publish.
+            ready = await readText(path.join(inbox, `${requestId}.ready.json`), REQUEST_LIMIT, true)
+            ;[result, rejection] = await Promise.all([
+                readText(path.join(root, 'results', `${requestId}.json`), RECEIPT_LIMIT, true),
+                readText(path.join(root, 'rejections', `${requestId}.json`), REQUEST_LIMIT, true),
+            ])
+            if (ready !== null) requireInput(ready === archivedText)
+        } catch (error) {
+            // Windows fails a read (EPERM, a passing link count) while the app renames or retires that file; retry briefly.
+            if (++failedReads > 3) throw error
+            try { await delay(20, undefined, { signal }) }
+            catch (abort) { if (abort.name === 'AbortError') return cancelled(); throw abort }
+            continue
+        }
+        failedReads = 0
         const projection = project(envelope, result === null ? null : JSON.parse(result),
             rejection === null ? null : JSON.parse(rejection))
         if (result !== null || rejection !== null) return projection

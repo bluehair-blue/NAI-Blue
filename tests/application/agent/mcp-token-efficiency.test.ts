@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { createAgentMcpServer, type McpAgentInbox, type McpUsageEntry } from '@/adapters/agent/mcp/mcp-stdio-server'
 import { AGENT_MCP_INSTRUCTIONS } from '@/adapters/agent/mcp/agent-workflow-guide'
+import { summarizeRun } from '@/adapters/agent/mcp/mcp-result-summary'
 import { type AgentCommand, type AgentCommandName } from '@/application/agent/agent-command-contract'
 import { agentResultDigest, type AgentCommandReceipt } from '@/application/agent/command-receipt-repository'
 import type { JsonObject } from '@/domain/composition/types'
@@ -9,7 +10,7 @@ import type { JsonObject } from '@/domain/composition/types'
 // Pins what an agent actually receives by default: no guide gate, compact results, bundled round trips.
 // The receipt-level contract behind detail:"full" is pinned by mcp-stdio-server.test.ts.
 const cleanups: (() => Promise<void>)[] = []
-afterEach(async () => { vi.useRealTimers(); await Promise.all(cleanups.splice(0).map(close => close())) })
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await Promise.all(cleanups.splice(0).map(close => close())) })
 
 const hash = '8b8311c4580cd5c1b7e3d8aff77154ff0a637b7a99322271938524f89661a594'
 const runId = `scene-batch-agent-${hash}`
@@ -45,7 +46,7 @@ function observed(requestId: string, command: AgentCommandName, result: JsonObje
 
 type Reply = (command: AgentCommand, requestId: string) => JsonObject | Promise<JsonObject>
 async function fixture(replies: Partial<Record<AgentCommandName, Reply>> = {}, overrides: Partial<McpAgentInbox> = {}) {
-    const invokes: { command: AgentCommand; requestId: string }[] = []
+    const invokes: { command: AgentCommand; requestId: string; waitMs?: number }[] = []
     const usage: McpUsageEntry[] = []
     const defaults: Partial<Record<AgentCommandName, Reply>> = {
         'generation.plan': (command, id) => observed(id, command.name, planResult),
@@ -53,8 +54,8 @@ async function fixture(replies: Partial<Record<AgentCommandName, Reply>> = {}, o
         'generation.get_run': (command, id) => observed(id, command.name, runResult(true)),
     }
     const server = createAgentMcpServer({
-        invoke: async (command, requestId) => {
-            invokes.push({ command, requestId })
+        invoke: async (command, requestId, _signal, waitMs) => {
+            invokes.push({ command, requestId, waitMs })
             const reply = replies[command.name] ?? defaults[command.name]
             return reply ? reply(command, requestId) : observed(requestId, command.name, { found: false })
         },
@@ -73,8 +74,18 @@ async function fixture(replies: Partial<Record<AgentCommandName, Reply>> = {}, o
         return { isError: result.isError === true, text: String(content[0].text), body: JSON.parse(String(content[0].text)) as Record<string, any>,
             images: content.filter(item => item.type === 'image').length, structured: result.structuredContent }
     }
-    return { client, call, invokes, usage, names: () => invokes.map(item => item.command.name), ids: () => invokes.map(item => item.requestId) }
+    return { client, call, invokes, usage, names: () => invokes.map(item => item.command.name), ids: () => invokes.map(item => item.requestId),
+        waits: () => invokes.map(item => item.waitMs) }
 }
+
+/** A manual clock: a reply that "takes" seconds moves it, so the waits handed to the inbox can be pinned exactly. */
+function slowClock() {
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const slow = (seconds: number, reply: Reply): Reply => (command, id) => { now += seconds * 1000; return reply(command, id) }
+    return { slow, advance: (seconds: number) => { now += seconds * 1000 } }
+}
+const unanswered: Reply = (_command, id) => ({ status: 'submitted-to-inbox', requestId: id, requiresAppProcess: true, accepted: false })
 
 describe('MCP adapter default view for agents', () => {
     it('runs tools with no prior guide read, generates a request ID and omits receipt overhead', async () => {
@@ -153,8 +164,15 @@ describe('MCP adapter default view for agents', () => {
 
         const pending = await fixture({ 'generation.enqueue': (_command, id) => ({ status: 'submitted-to-inbox', requestId: id, requiresAppProcess: true, accepted: false }) })
         const unanswered = await pending.call('generation.run', { requestId: 'stop-pending', input: planInput })
-        expect(unanswered.body).toMatchObject({ stage: 'enqueue', status: 'submitted-to-inbox', requestId: 'stop-pending-enq', accepted: false })
-        expect(unanswered.body.hint).toContain('do not resubmit')
+        expect(unanswered.body).toMatchObject({ stage: 'enqueue', status: 'submitted-to-inbox', requestId: 'stop-pending-enq', accepted: false, planId, planHash })
+        expect(unanswered.body.hint).toContain('generation.run again with the same requestId and input')
+        expect(unanswered.body.hint).toContain('nai-blue://requests/stop-pending-enq')
+
+        const refused = await fixture({ 'generation.plan': (_command, id) => ({ status: 'inbox-rejection', requestId: id, requiresAppProcess: true, accepted: false, code: 'AUTHENTICATION_FAILED' }) })
+        const refusal = await refused.call('generation.run', { requestId: 'stop-refused', input: planInput })
+        expect(refusal).toMatchObject({ isError: true, body: { stage: 'plan', status: 'inbox-rejection', code: 'AUTHENTICATION_FAILED' } })
+        expect(refusal.body.hint).toContain('returns the same refusal')
+        expect(refusal.body.hint).toContain('new requestId')
     })
 
     it('names the request or the run when a stage fails after the plan, so nothing has to be regenerated', async () => {
@@ -166,7 +184,7 @@ describe('MCP adapter default view for agents', () => {
         const waitFails = await fixture({ 'generation.get_run': () => { throw new Error('transport failed') } })
         const run = await waitFails.call('generation.run', { requestId: 'fail-wait', input: planInput })
         expect(run).toMatchObject({ isError: true, body: { stage: 'run', status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', runId } })
-        expect(run.body.hint).toContain('do not run again')
+        expect(run.body.hint).toContain('never start a new generation')
     })
 
     it('waits for completion across polls with fresh request IDs inside one call', async () => {
@@ -246,7 +264,7 @@ describe('MCP adapter default view for agents', () => {
         const closedAfterEnqueue = await fixture({}, { runtimeStatus: async () => ++checks <= 2 ? { status: 'ready' } : { status: 'unavailable', code: 'APP_NOT_RUNNING' } })
         const run = await closedAfterEnqueue.call('generation.run', { requestId: 'closed-after', input: planInput })
         expect(closedAfterEnqueue.names()).toEqual(['generation.plan', 'generation.enqueue'])
-        expect(run.body).toMatchObject({ stage: 'run', runId, status: 'adapter-error', code: 'APP_NOT_RUNNING', hint: expect.stringContaining('do not run again') })
+        expect(run.body).toMatchObject({ stage: 'run', runId, status: 'adapter-error', code: 'APP_NOT_RUNNING', hint: expect.stringContaining('never start a new generation') })
         expect(run.body).not.toHaveProperty('submissionAttempted')
         expect(run.body).not.toHaveProperty('accepted')
 
@@ -255,7 +273,7 @@ describe('MCP adapter default view for agents', () => {
         const enqueue = await blockedBeforeEnqueue.call('generation.run', { requestId: 'not-enqueued', input: planInput })
         expect(blockedBeforeEnqueue.names()).toEqual(['generation.plan'])
         expect(enqueue).toMatchObject({ isError: true, body: { stage: 'enqueue', code: 'ENQUEUE_NOT_SUBMITTED', planId, planHash,
-            hint: expect.stringContaining('generation.enqueue') } })
+            hint: expect.stringContaining('generation.run again with the same requestId and input') } })
         expect(enqueue.body).not.toHaveProperty('requestId')
 
         let polls = 0
@@ -287,5 +305,86 @@ describe('MCP adapter default view for agents', () => {
             ['tool', 'generation.run'], ['resource', 'nai-blue://guides/recovery']])
         expect(f.usage.every(entry => Number.isSafeInteger(entry.chars) && Object.keys(entry).sort().join() === 'chars,images,kind,name')).toBe(true)
         expect(f.usage[2].chars).toBeLessThan(760)
+    })
+
+    it('names the committed file from the run row when no plan is in hand, and prefers it over the planned name', () => {
+        const run = { found: true, runId: 'run-1', state: 'delivered', monitor: { complete: true, counts: { total: 2 } }, jobs: [
+            { jobId: 'job-0', storageState: 'succeeded', artifactId: 'artifact:job-0', fileName: 'saved_0.png' },
+            { jobId: 'job-1', storageState: 'succeeded', artifactId: 'artifact:job-1' }] }
+        expect(summarizeRun(run).artifacts).toEqual([{ artifactId: 'artifact:job-0', fileName: 'saved_0.png' }, { artifactId: 'artifact:job-1' }])
+        const planned = new Map([['0', { sceneId: 'scene-a', fileName: 'planned_0.png' }], ['1', { sceneId: 'scene-b', fileName: 'planned_1.png' }]])
+        expect(summarizeRun(run, planned).artifacts).toEqual([{ artifactId: 'artifact:job-0', sceneId: 'scene-a', fileName: 'saved_0.png' },
+            { artifactId: 'artifact:job-1', sceneId: 'scene-b', fileName: 'planned_1.png' }])
+    })
+})
+
+describe('one deadline per tool call', () => {
+    it('hands the plan and enqueue stages of generation.run the rest of the budget, not the base wait', async () => {
+        const { slow } = slowClock()
+        const f = await fixture({ 'generation.plan': slow(12.3456, (command, id) => observed(id, command.name, planResult)),
+            'generation.enqueue': slow(30, unanswered) }, { waitMs: 3000 })
+        const result = await f.call('generation.run', { requestId: 'budget', input: planInput })
+        expect(f.waits()).toEqual([40_000, 27_654])
+        expect(result).toMatchObject({ isError: false, body: { stage: 'enqueue', status: 'submitted-to-inbox', requestId: 'budget-enq', planId, planHash } })
+        await f.call('generation.run', { requestId: 'budget-max', input: planInput, waitSeconds: 50 })
+        // Only the upper limit gives way to the 5-second response reserve.
+        expect(f.waits()[2]).toBe(45_000)
+    })
+
+    it('still gives every stage the base wait with waitSeconds 0', async () => {
+        const { slow } = slowClock()
+        const f = await fixture({ 'generation.plan': slow(12, (command, id) => observed(id, command.name, planResult)) }, { waitMs: 3000 })
+        const result = await f.call('generation.run', { requestId: 'no-wait', input: planInput, waitSeconds: 0 })
+        expect(f.names()).toEqual(['generation.plan', 'generation.enqueue', 'generation.get_run'])
+        expect(f.waits()).toEqual([3000, 3000, 3000])
+        expect(result.body).toMatchObject({ stage: 'run', complete: true })
+    })
+
+    it('passes a zero wait once the hard limit is spent and returns the unfinished stage instead of failing', async () => {
+        const { slow } = slowClock()
+        const f = await fixture({ 'generation.plan': slow(50, (command, id) => observed(id, command.name, planResult)),
+            'generation.enqueue': unanswered }, { waitMs: 3000 })
+        const result = await f.call('generation.run', { requestId: 'spent', input: planInput })
+        expect(f.waits()).toEqual([40_000, 0])
+        expect(f.waits().every(wait => Number.isSafeInteger(wait) && wait! >= 0)).toBe(true)
+        expect(result).toMatchObject({ isError: false, body: { stage: 'enqueue', status: 'submitted-to-inbox', requestId: 'spent-enq' } })
+        expect(result.body.hint).toContain('generation.run again with the same requestId and input')
+    })
+
+    it('gives other tools 20 seconds for the whole call, shared by every image of artifact.get_images', async () => {
+        const { slow } = slowClock()
+        const f = await fixture({ 'artifact.get_image': slow(8, (command, id) => observed(id, command.name, { found: false })) }, { waitMs: 3000 })
+        await f.call('artifact.get_images', { requestId: 'shared', input: { artifactIds: ['artifact:a', 'artifact:b', 'artifact:c', 'artifact:d'] } })
+        // The fourth read falls back to the base wait because the hard limit is still far away.
+        expect(f.waits()).toEqual([20_000, 12_000, 4000, 3000])
+        await f.call('scene.patch_many', { requestId: 'patch', input: { presetId: 'preset-1', expectedRevision: 0, changes: [{ sceneId: 'scene-a' }] } })
+        await f.call('generation.get_run', { input: { runId } })
+        await f.call('generation.get_run', { input: { runId }, waitSeconds: 0 })
+        expect(f.waits().slice(4)).toEqual([20_000, 20_000, 3000])
+    })
+
+    it('gives each poll of a waiting read only the time left', async () => {
+        const { advance } = slowClock()
+        let polls = 0
+        const f = await fixture({ 'generation.get_run': (command, id) => { advance(4); return observed(id, command.name, runResult(++polls >= 3)) } }, { waitMs: 3000 })
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        const pending = f.call('generation.get_run', { input: { runId }, waitSeconds: 12, requestId: 'poll-budget' })
+        await vi.advanceTimersByTimeAsync(2000)
+        await vi.advanceTimersByTimeAsync(3000)
+        expect((await pending).body).toMatchObject({ result: { complete: true } })
+        expect(f.waits()).toEqual([12_000, 8000, 4000])
+    })
+
+    it('keeps the base wait for resource reads and the capability probe', async () => {
+        const inspected: (number | undefined)[] = []
+        const f = await fixture({}, { waitMs: 3000, inspect: async (requestId, _signal, waitMs) => {
+            inspected.push(waitMs)
+            return observed(requestId, 'generation.get_run', { found: false })
+        } })
+        await f.client.readResource({ uri: 'nai-blue://requests/saved-read' })
+        await f.client.readResource({ uri: 'nai-blue://capabilities' })
+        expect(inspected).toEqual([undefined])
+        expect(f.names()).toEqual(['system.describe_capabilities'])
+        expect(f.waits()).toEqual([undefined])
     })
 })

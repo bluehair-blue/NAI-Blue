@@ -10,6 +10,8 @@ import { adapterFingerprint, createRuntimeGuard, resolveInstalledRuntime } from 
 const repo = fileURLToPath(new URL('../', import.meta.url))
 const maxBytes = 65_536
 const maxConcurrentCalls = 8
+// A tool call's whole deadline (at most 50 s minus the response reserve) may go to one request's wait.
+const maxCallWaitMs = 50_000
 
 function requireInput(condition) {
     if (!condition) throw new Error('Agent MCP input is invalid.')
@@ -52,7 +54,7 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
     requireInput(path.basename(inboxDir) === 'inbox')
     await Promise.all(['results', 'rejections'].map(name => inspectPath(path.join(inboxDir, '..', name), true)))
     const { parseAgentCommandEnvelope, assertAgentRequestId, assertAgentPublicValue,
-        agentRequestHash, canonicalAgentSigningPayload } = modules.contract
+        agentRequestHash, canonicalAgentSigningPayload, AgentCommandError } = modules.contract
     const { canonicalSerialize } = modules.canonical
     const { getAgentCommandInputContract } = modules.inputs
     const { projectAgentInboxResult } = modules.projection
@@ -83,22 +85,39 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
             ?? await readText(path.join(inboxDir, `${requestId}.ready.json`), maxBytes, true)
         return raw === null ? null : bind(parseAgentCommandEnvelope(JSON.parse(raw)), requestId)
     }
-    async function inspect(requestId, signal) {
+    function callWait(value) {
+        if (value === undefined) return waitMs
+        requireInput(Number.isSafeInteger(value) && value >= 0 && value <= maxCallWaitMs)
+        return value
+    }
+    async function inspect(requestId, signal, wait) {
         assertAgentRequestId(requestId)
+        const observeMs = callWait(wait)
         requireInput(await archived(requestId) !== null)
         // Re-check the configured identity on every poll, not only before entering the wait.
-        return inspectAgentCommand({ inboxDir, requestId, waitMs, signal }, (envelope, result, rejection) =>
+        return inspectAgentCommand({ inboxDir, requestId, waitMs: observeMs, signal }, (envelope, result, rejection) =>
             projectAgentInboxResult(bind(parseAgentCommandEnvelope(envelope), requestId), result, rejection))
     }
-    async function publish(command, requestId) {
-        const envelope = await archived(requestId) ?? build(command, requestId)
-        requireInput(canonicalSerialize(envelope.command) === canonicalSerialize(command))
-        const { requestHash: _requestHash, authentication: _authentication, ...unsigned } = envelope
-        return submit(python, inboxDir, requestId, { connection,
-            unsignedPayload: canonicalSerialize(unsigned), signingPayload: canonicalAgentSigningPayload(envelope) })
+    /** Publishes only a request that left no trace; returns a final observation, or null when the caller should observe. */
+    async function prepare(command, requestId) {
+        const envelope = await archived(requestId)
+        if (envelope) {
+            if (canonicalSerialize(envelope.command) !== canonicalSerialize(command)) throw new AgentCommandError('REQUEST_ID_INPUT_MISMATCH')
+            // Re-publishing after a result or rejection would let the app execute a request it already answered.
+            const seen = await inspect(requestId, undefined, 0)
+            if (seen.status === 'submitted-to-inbox') return null
+            if (seen.status !== 'submission-unconfirmed') return seen
+        }
+        // No ready file: the earlier publication, if any, stopped between archive and ready.
+        const signed = envelope ?? build(command, requestId)
+        const { requestHash: _requestHash, authentication: _authentication, ...unsigned } = signed
+        await submit(python, inboxDir, requestId, { connection,
+            unsignedPayload: canonicalSerialize(unsigned), signingPayload: canonicalAgentSigningPayload(signed) })
+        return null
     }
 
     return {
+        waitMs,
         inspect,
         async readImage(requestId, signal) {
             assertAgentRequestId(requestId)
@@ -115,8 +134,10 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
                 && `sha256:${createHash('sha256').update(bytes).digest('hex')}` === image.contentChecksum)
             return { data: bytes.toString('base64'), mimeType: 'image/png' }
         },
-        async invoke(command, requestId, signal) {
+        async invoke(command, requestId, signal, wait) {
             assertAgentRequestId(requestId)
+            const observeMs = callWait(wait)
+            const startedAt = performance.now()
             const contract = getAgentCommandInputContract(command.name)
             requireInput(contract && Object.keys(command).sort().join() === 'input,name')
             assertAgentPublicValue(command.input)
@@ -127,15 +148,18 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
             try {
                 const fingerprint = canonicalSerialize(command)
                 let entry = pending.get(requestId)
-                if (entry) requireInput(entry.fingerprint === fingerprint)
+                if (entry) { if (entry.fingerprint !== fingerprint) throw new AgentCommandError('REQUEST_ID_INPUT_MISMATCH') }
                 else {
-                    entry = { fingerprint, promise: publish(structuredClone(command), requestId) }
+                    entry = { fingerprint, promise: prepare(structuredClone(command), requestId) }
                     pending.set(requestId, entry)
                 }
                 // Once signing begins, cancellation never retries/rolls back an uncertain publication.
-                try { await entry.promise }
+                let settled
+                try { settled = await entry.promise }
                 finally { if (pending.get(requestId) === entry) pending.delete(requestId) }
-                return await inspect(requestId, signal)
+                // A caller's wait is its deadline for the whole request, so signing and publication count against it.
+                return settled ?? await inspect(requestId, signal, wait === undefined ? observeMs
+                    : Math.max(0, Math.floor(observeMs - (performance.now() - startedAt))))
             } finally { active -= 1 }
         },
     }

@@ -7,7 +7,7 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import { assertSyncPayloadSafe } from '@/domain/sync/payload-safety'
 import { isAgentInboxRejectionCode } from '@/adapters/agent/inbox/process-agent-inbox-file'
-import { AGENT_GUIDE_TOPICS, AGENT_GUIDE_URI_PREFIX, AGENT_MCP_INSTRUCTIONS, AGENT_WORKFLOW_GUIDE_URI, agentHint } from './agent-workflow-guide'
+import { AGENT_GUIDE_TOPICS, AGENT_GUIDE_URI_PREFIX, AGENT_MCP_INSTRUCTIONS, AGENT_WORKFLOW_GUIDE_URI, RUN_RESUME_HINT, agentHint } from './agent-workflow-guide'
 import { ADVANCED_COMMANDS, MAX_IMAGES_PER_CALL, MAX_WAIT_SECONDS, REQUEST_ID_REQUIRED, SNAPSHOT_LISTS, advancedCommandGuide, listAgentMcpTools } from './mcp-tool-catalog'
 import { compactObservation, completedResult, plannedJobs, summarizePlan, summarizeResult, summarizeRun } from './mcp-result-summary'
 
@@ -15,10 +15,13 @@ export interface McpUsageEntry { kind: 'instructions' | 'tools-list' | 'tool' | 
 
 /** The Node entry owns signing/file I/O; application commands still own all business decisions. */
 export interface McpAgentInbox {
+    /** Base per-request wait (--wait-ms). A tool call's deadline shortens a stage below it only at the hard limit. */
+    readonly waitMs?: number
     runtimeStatus?(allowLaunch: boolean): Promise<JsonObject>
     readImage?(requestId: string, signal?: AbortSignal): Promise<{ data: string; mimeType: 'image/png' }>
-    invoke(command: AgentCommand, requestId: string, signal?: AbortSignal): Promise<JsonObject>
-    inspect(requestId: string, signal?: AbortSignal): Promise<JsonObject>
+    /** waitMs overrides the base wait for this call; an ID that already left a trace is observed, never published again. */
+    invoke(command: AgentCommand, requestId: string, signal?: AbortSignal, waitMs?: number): Promise<JsonObject>
+    inspect(requestId: string, signal?: AbortSignal, waitMs?: number): Promise<JsonObject>
     /** Sizes only, never content: lets a session's real MCP inflow be measured afterwards. */
     recordUsage?(entry: McpUsageEntry): void
 }
@@ -32,8 +35,13 @@ const imageUriPrefix = 'nai-blue://images/'
 const argumentKeys = new Set(['requestId', 'input', 'detail', 'waitSeconds', 'include', 'command', 'planOnly'])
 // Hosts commonly stop a tool call at 60 seconds; the last poll needs room to return before that.
 const pollReserveMs = 5000
+const hardLimitMs = MAX_WAIT_SECONDS * 1000 - pollReserveMs
 const defaultRunWaitSeconds = 40
-const runExistsHint = 'The run exists. Call generation.get_run with this runId; do not run again.'
+// Edits, plans and enqueues can take the app 10-70 s; one budget covers every inbox wait of the call.
+const defaultCallWaitSeconds = 20
+const runExistsHint = 'The run exists. Call generation.get_run with this runId and waitSeconds; never start a new generation for it.'
+const mismatchCode = 'REQUEST_ID_INPUT_MISMATCH'
+const isMismatch = (error: unknown) => error instanceof AgentCommandError && error.code === mismatchCode
 // Composite tools derive one request ID per stage, so the caller's root must leave room for the suffix.
 const maxRootRequestIdLength = 90
 
@@ -108,7 +116,7 @@ interface CallArguments {
     readonly planOnly: boolean
 }
 /** Tracks whether anything reached the inbox, because only earlier failures prove non-submission. */
-interface CallState { readonly signal: AbortSignal; readonly startedAt: number; attempted: boolean; lastRequestId?: string; hint?: string }
+interface CallState { readonly signal: AbortSignal; readonly startedAt: number; deadline: number; attempted: boolean; lastRequestId?: string; hint?: string }
 
 /** SDK framing stays outside application; tool names/schemas are static bindings while availability is live. */
 export function createAgentMcpServer(inbox: McpAgentInbox): Server {
@@ -195,6 +203,14 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         return { content: [{ type: 'text', text }, ...attachments], isError }
     }
 
+    /** The rest of the call's budget, but never less than the base wait unless the hard limit is closer. */
+    function stageWait(state: CallState): number {
+        const now = Date.now()
+        const floor = Math.min(inbox.waitMs ?? 0, state.startedAt + hardLimitMs - now)
+        // The upper clamp also bounds a wall clock that steps backwards during the call.
+        return Math.min(hardLimitMs, Math.max(0, Math.floor(Math.max(state.deadline - now, floor))))
+    }
+
     /** One application command through validation, runtime check and the inbox; returns its validated observation. */
     async function submit(state: CallState, name: AgentCommandName, input: JsonObject, requestId: string): Promise<JsonObject> {
         const contract = getAgentCommandInputContract(name)
@@ -212,7 +228,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         // Only failures before entering the inbox prove that nothing was submitted.
         state.attempted = true
         state.lastRequestId = requestId
-        return validatedObservation(await inbox.invoke({ name, input: validated }, requestId, state.signal), requestId, name)
+        return validatedObservation(await inbox.invoke({ name, input: validated }, requestId, state.signal, stageWait(state)), requestId, name)
     }
 
     async function previewAttachments(state: CallState, requestId: string): Promise<CallToolResult['content']> {
@@ -222,10 +238,8 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     }
 
     /** Polls with fresh request IDs because a reused ID replays the earlier observation. */
-    async function observeRun(state: CallState, input: JsonObject, firstRequestId: string, waitSeconds: number): Promise<JsonObject> {
-        // The budget covers the whole tool call, so earlier stages of generation.run shorten the wait.
-        // Only the upper limit gives way to the reserve; a short requested wait is honoured in full.
-        const deadline = state.startedAt + Math.min(waitSeconds * 1000, MAX_WAIT_SECONDS * 1000 - pollReserveMs)
+    async function observeRun(state: CallState, input: JsonObject, firstRequestId: string): Promise<JsonObject> {
+        // The call's deadline already counts the time earlier stages of generation.run used.
         let progress: JsonObject | undefined
         for (let attempt = 0; ; attempt += 1) {
             const observed = await submit(state, 'generation.get_run', input, attempt === 0 ? firstRequestId : `mcp-poll-${crypto.randomUUID()}`)
@@ -233,7 +247,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             // A later poll the application has not answered yet says less than the progress already seen.
             if (monitor?.nextAction !== 'wait') return completedResult(observed) || !progress ? observed : progress
             progress = observed
-            const remaining = deadline - Date.now()
+            const remaining = state.deadline - Date.now()
             if (remaining <= 0 || state.signal.aborted) return observed
             await pause(Math.min(2000 + attempt * 1000, 5000, remaining), state.signal)
             if (state.signal.aborted) return observed
@@ -245,7 +259,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const input = command === 'workspace.get_snapshot' && !args.full && args.include.length === 0 && args.input.limit === undefined
             ? { ...args.input, limit: 1 } : args.input
         const observed = command === 'generation.get_run' && args.waitSeconds
-            ? await observeRun(state, input, args.requestId, args.waitSeconds)
+            ? await observeRun(state, input, args.requestId)
             : await submit(state, command, input, args.requestId)
         const result = completedResult(observed)
         const attachments = command === 'artifact.get_image' && result?.found === true ? await previewAttachments(state, args.requestId) : []
@@ -256,6 +270,8 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     /**
      * Plan, enqueue and wait. Each stage keeps its own application verdict and the first unfinished stage is
      * returned as is. A failure after the plan names the stage's request or run, since the Queue may already hold work.
+     * Repeating the call with the same requestId and input resumes: stage IDs are fixed and a stage that left a trace is
+     * observed by the inbox instead of being published again.
      */
     async function runGeneration(state: CallState, args: CallArguments): Promise<CallToolResult> {
         const stages: Record<string, JsonObject> = {}
@@ -264,33 +280,42 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const failed = (stage: string, facts: Record<string, unknown>, hint?: string) => {
             const error = { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED' }
             const requestId = typeof facts.requestId === 'string' ? facts.requestId : undefined
-            const body = { ...error, ...facts, hint: hint ?? (facts.runId ? runExistsHint : agentHint(error, requestId)) }
+            const body = { ...error, ...facts, hint: hint ?? (facts.runId ? runExistsHint : agentHint({ ...error, ...facts }, requestId)) }
             if (args.full) stages[stage] = { ...body, requiresAppProcess: true } as JsonObject
             return finish(stage, body, true)
         }
-        const planObserved = stages.plan = await submit(state, 'generation.plan', args.input, `${args.requestId}-plan`)
+        const unanswered = (observed: JsonObject, summary?: Record<string, unknown>) => {
+            const view = compactObservation(observed, summary)
+            return ['submitted-to-inbox', 'submission-unconfirmed'].includes(String(observed.status))
+                ? { ...view, hint: `Not answered yet. ${RUN_RESUME_HINT} Or read nai-blue://requests/${String(observed.requestId)}.` } : view
+        }
+        const planRequestId = `${args.requestId}-plan`
+        let planObserved: JsonObject
+        try { planObserved = stages.plan = await submit(state, 'generation.plan', args.input, planRequestId) }
+        catch (error) { if (isMismatch(error)) return failed('plan', { code: mismatchCode, requestId: planRequestId }); throw error }
         const plan = completedResult(planObserved)
         if (args.planOnly || !plan || plan.status !== 'ready' || typeof plan.planId !== 'string' || typeof plan.planHash !== 'string') {
-            return finish('plan', compactObservation(planObserved, plan && summarizePlan(plan)), isRejected(planObserved))
+            return finish('plan', unanswered(planObserved, plan && summarizePlan(plan)), isRejected(planObserved))
         }
         const planFacts = (({ planId, estimatedAnlas, compatibilityStatuses, warnings }) =>
             ({ planId, estimatedAnlas, compatibilityStatuses, warnings }))(summarizePlan(plan))
         const enqueueRequestId = `${args.requestId}-enq`
         let enqueueObserved: JsonObject
         try { enqueueObserved = stages.enqueue = await submit(state, 'generation.enqueue', { planId: plan.planId, planHash: plan.planHash }, enqueueRequestId) }
-        catch {
+        catch (error) {
+            if (isMismatch(error)) return failed('enqueue', { code: mismatchCode, requestId: enqueueRequestId, ...planFacts })
             // Whether the enqueue reached the inbox decides if its request can be inspected or simply was never made.
             return state.lastRequestId === enqueueRequestId
                 ? failed('enqueue', { requestId: enqueueRequestId, ...planFacts })
                 : failed('enqueue', { code: 'ENQUEUE_NOT_SUBMITTED', ...planFacts, planHash: plan.planHash },
-                    'The plan is ready but its enqueue was not submitted. Submit this planId and planHash with generation.enqueue.')
+                    `The plan is ready but its enqueue was not submitted. ${RUN_RESUME_HINT}`)
         }
         const runId = completedResult(enqueueObserved)?.runId
         if (typeof runId !== 'string') {
-            return finish('enqueue', { ...compactObservation(enqueueObserved), ...planFacts, planHash: plan.planHash }, isRejected(enqueueObserved))
+            return finish('enqueue', { ...unanswered(enqueueObserved), ...planFacts, planHash: plan.planHash }, isRejected(enqueueObserved))
         }
         let runObserved: JsonObject
-        try { runObserved = stages.run = await observeRun(state, { runId }, `mcp-poll-${crypto.randomUUID()}`, args.waitSeconds ?? defaultRunWaitSeconds) }
+        try { runObserved = stages.run = await observeRun(state, { runId }, `mcp-poll-${crypto.randomUUID()}`) }
         catch { return failed('run', { runId, ...planFacts }) }
         const run = completedResult(runObserved)
         // The work is enqueued even though this read of it did not complete: say so, and leave out the read's own
@@ -302,7 +327,7 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
         const summary = summarizeRun(run, plannedJobs(plan))
         return finish('run', { runId, ...summary, ...planFacts,
             ...(summary.complete === false && summary.nextAction === 'wait'
-                ? { hint: 'Still generating. Call generation.get_run with this runId and waitSeconds; do not run again.' } : {}) }, false)
+                ? { hint: 'Still generating. Call generation.get_run with this runId and waitSeconds; never start a new generation for it.' } : {}) }, false)
     }
 
     async function readImages(state: CallState, args: CallArguments): Promise<CallToolResult> {
@@ -361,9 +386,14 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     server.setRequestHandler('tools/call', async (request, context): Promise<CallToolResult> => {
         const tool = request.params.name
         const full = (request.params.arguments as Record<string, unknown> | undefined)?.detail === 'full'
-        const state: CallState = { signal: context.mcpReq.signal, startedAt: Date.now(), attempted: false }
+        const startedAt = Date.now()
+        const state: CallState = { signal: context.mcpReq.signal, startedAt, deadline: startedAt, attempted: false }
         try {
             const args = parseArguments(state, tool, request.params.arguments)
+            // Only the upper limit gives way to the reserve; a short requested wait is honoured in full.
+            const budgetSeconds = tool === 'generation.run' ? args.waitSeconds ?? defaultRunWaitSeconds
+                : tool === 'generation.get_run' && args.waitSeconds !== undefined ? args.waitSeconds : defaultCallWaitSeconds
+            state.deadline = startedAt + Math.min(budgetSeconds * 1000, hardLimitMs)
             if (tool === 'generation.run') return await runGeneration(state, args)
             if (tool === 'artifact.get_images') return await readImages(state, args)
             if (tool === 'advanced.call') {
@@ -374,9 +404,10 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             if (!AGENT_COMMAND_NAMES.includes(tool as AgentCommandName)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
             return await callCommand(state, tool, tool as AgentCommandName, args)
         } catch (error) {
-            // A failure after submission names the request so the agent can inspect it instead of resubmitting.
+            // A failure after submission names the request so the agent can inspect it instead of starting new work.
+            // An ID taken by other input leaves that request in place, so it must not read as unsubmitted either.
             const result: JsonObject = state.attempted
-                ? { status: 'adapter-error', code: 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true,
+                ? { status: 'adapter-error', code: isMismatch(error) ? mismatchCode : 'AGENT_MCP_REQUEST_FAILED', requiresAppProcess: true,
                     ...(state.lastRequestId ? { requestId: state.lastRequestId } : {}) }
                 : { status: 'adapter-error', requiresAppProcess: true, accepted: false, submissionAttempted: false,
                     code: error instanceof AgentCommandError && ['UNSAFE_PAYLOAD', 'REQUEST_CANCELLED'].includes(error.code)
