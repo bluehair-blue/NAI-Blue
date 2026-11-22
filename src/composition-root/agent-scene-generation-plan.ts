@@ -9,7 +9,7 @@ import { hashCanonicalValue } from '@/domain/composition/canonical-serialize'
 import type { JsonObject } from '@/domain/composition/types'
 import { CURRENT_MAIN_QUEUE_POLICY } from '@/domain/queue/types'
 import { projectMainGenerationSemantic } from '@/services/generation/main-generation-semantic'
-import { CURRENT_NAI_PAYLOAD_BUILDER_REVISION } from '@/services/nai/compatibility'
+import { CURRENT_NAI_PAYLOAD_BUILDER_REVISION, queryNaiGenerationCompatibility } from '@/services/nai/compatibility'
 import { enqueueReviewedSceneQueue, getSceneQueuePlanningFacts, prepareSceneQueueReview,
     type SceneQueueReplayIdentity, type SceneQueueSubmission } from '@/services/queue/scene-queue-adapter'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
@@ -183,11 +183,14 @@ async function prepareAgentScenePlan(
         credentialReadinessFingerprint: digest({ pricingBasis }),
     }
     const capture = { ...captureContent, contentHash: measureSpanSync('agent-plan:capture-hash', () => hashDetachedGenerationCapture(captureContent)) }
-    const compatibilityEvidence = await measureSpan('agent-plan:compatibility-scan', detail => queryVerifiedNaiGenerationCompatibilityBatch(
-        facts.prepared.map(item => ({ params: item.prepared.params,
-            streaming: facts.streaming && !Boolean(item.prepared.params.sourceImage || item.prepared.params.mask) })),
-        CURRENT_NAI_PAYLOAD_BUILDER_REVISION, undefined, detail,
-    ))
+    const compatibilityRequests = facts.prepared.map(item => ({ params: item.prepared.params,
+        streaming: facts.streaming && !Boolean(item.prepared.params.sourceImage || item.prepared.params.mask) }))
+    // Evidence must match the seed. A seed drawn at random for this plan has no earlier success to find, and reading
+    // every succeeded job to learn that was most of a plan's time; the registry answer is the same without the read.
+    const compatibilityEvidence = policy.kind === 'random'
+        ? compatibilityRequests.map(request => queryNaiGenerationCompatibility(request.params, CURRENT_NAI_PAYLOAD_BUILDER_REVISION, request.streaming))
+        : await measureSpan('agent-plan:compatibility-scan', detail => queryVerifiedNaiGenerationCompatibilityBatch(
+            compatibilityRequests, CURRENT_NAI_PAYLOAD_BUILDER_REVISION, undefined, detail))
     const result = await measureSpan('agent-plan:plan-generation', () => planGeneration({ source: { kind: 'detached-generation-capture', capture }, count,
         seedPolicy: { kind: 'replay', traceId: capture.captureId }, budget: input.budget }, {
         // Detached planning never reads a WorkflowDraft or enters its planner.

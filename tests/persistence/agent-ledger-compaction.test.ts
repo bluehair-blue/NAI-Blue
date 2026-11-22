@@ -64,7 +64,7 @@ function fixture() {
         const next = { workspaceId: 'workspace-1', revision: (current?.revision ?? -1) + 1, records: [...current?.records ?? [], ...records] }
         await setIndexedDBItemStrict(KEY, JSON.stringify(all.length ? { schemaVersion: 2, ...next, compacted: all } : { schemaVersion: 1, ...next }))
     }
-    /** Expired rejected records with final receipts: every one is compactable once older than the newest 200. */
+    /** Expired rejected records with final receipts: every one is compactable once older than the newest 50. */
     async function fillers(count: number, prefix = 'f') {
         const rejected = { code: 'AGENT_HUMAN_REJECTED' }
         const envelopes = Array.from({ length: count }, (_, index) => request(`${prefix}${index}`))
@@ -106,10 +106,10 @@ describe('automatic execution history compaction', () => {
         const compacted = await f.ledger()
         expect(compacted.schemaVersion).toBe(2)
         expect(compacted.compacted).toEqual([{ requestId: 'settled', clientId: 'client-1', idempotencyKey: 'settled' },
-            ...Array.from({ length: 100 }, (_, index) => ({ requestId: `f${index}`, clientId: 'client-1', idempotencyKey: `f${index}` }))])
-        // 304 terminal records keep the newest 200; of the older 104 only the three ineligible specials stay.
-        expect(compacted.records.map(item => item.envelope.requestId).slice(0, 5)).toEqual(['unsettled', 'pending', 'unwritten', 'unexpired', 'f100'])
-        expect(compacted.records).toHaveLength(205)
+            ...Array.from({ length: 250 }, (_, index) => ({ requestId: `f${index}`, clientId: 'client-1', idempotencyKey: `f${index}` }))])
+        // 304 terminal records keep the newest 50; of the older 254 only the three ineligible specials stay.
+        expect(compacted.records.map(item => item.envelope.requestId).slice(0, 5)).toEqual(['unsettled', 'pending', 'unwritten', 'unexpired', 'f250'])
+        expect(compacted.records).toHaveLength(55)
         expect(parseAgentExecutionLedger(compacted, 'workspace-1')).toEqual(compacted)
 
         // Replay of a compacted request is answered by its saved receipt; nothing runs again.
@@ -138,9 +138,9 @@ describe('automatic execution history compaction', () => {
         await f.open().dispatcher.dispatch(f.request('trigger', { submittedAt: '2026-09-05T02:59:00.000Z', expiresAt: LATER }))
         const ledger = await f.ledger()
         expect(ledger.compacted).toHaveLength(5_000)
-        expect(ledger.compacted![0].requestId).toBe('old100')
-        expect(ledger.compacted!.at(-1)!.requestId).toBe('f109')
-        expect(ledger.records).toHaveLength(201)
+        expect(ledger.compacted![0].requestId).toBe('old250')
+        expect(ledger.compacted!.at(-1)!.requestId).toBe('f259')
+        expect(ledger.records).toHaveLength(51)
     })
 
     it('still refuses admission at 1,000 records that cannot be compacted', async () => {
@@ -168,9 +168,9 @@ describe('automatic execution history compaction', () => {
         expect(await live.dispatcher.dispatch(f.request('after-expiry', { submittedAt: '2026-09-05T02:59:00.000Z', expiresAt: LATER })))
             .toMatchObject({ state: 'needs-input', result: { code: 'AGENT_APPROVAL_REQUIRED' } })
         const ledger = await f.ledger()
-        expect(ledger.compacted).toHaveLength(800)
+        expect(ledger.compacted).toHaveLength(950)
         expect(ledger.records.map(item => item.envelope.requestId).at(-1)).toBe('after-expiry')
-        expect(ledger.records).toHaveLength(201)
+        expect(ledger.records).toHaveLength(51)
     })
 
     it('parses the pre-compaction shape and stays strict about the compacted shape', () => {

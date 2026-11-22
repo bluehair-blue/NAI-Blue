@@ -119,8 +119,9 @@ const approval = (reason?: string, canaryEligible = false): JsonObject => ({ cod
     ...(reason ? { issueCodes: [reason] } : {}),
     ...(reason === 'AGENT_COMPATIBILITY_DENIED' && canaryEligible ? { nextAction: 'review-one-image-canary-in-app' } : {}) })
 // Terminal history kept whole for audit; older eligible records keep only their identity.
-const KEEP_TERMINAL_RECORDS = 200
-const COMPACTION_MARGIN = 100
+// Every ledger write validates all full records (measured: 0.8 s per write at 209 records), so few are kept whole.
+const KEEP_TERMINAL_RECORDS = 50
+const COMPACTION_MARGIN = 50
 const MAX_FULL_RECORDS = 1_000
 const unknown = (): JsonObject => ({ code: 'AGENT_EXECUTION_UNKNOWN' })
 const failure = (code: string): JsonObject => ({ code })

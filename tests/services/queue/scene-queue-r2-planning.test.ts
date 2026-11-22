@@ -363,6 +363,18 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
         expect(runtime.dehydrate).not.toHaveBeenCalled()
     })
 
+    it('plans a freshly drawn random seed without reading succeeded jobs, with the same compatibility answer', async () => {
+        const fixed = (await agentFixture()).plan
+        // The fixture's builder always yields seed 7, so the random plan replays that seed the way a rebuild does.
+        const identity = fixed.jobs[0].prepared.replay!.identity
+        const mark = markSpans()
+        const { result } = await planAgentSceneGeneration({ ...agentInput, seedPolicy: { kind: 'random' } }, identity)
+        if (result.status !== 'ready' && result.status !== 'needs_input') throw new Error(JSON.stringify(result))
+        // No earlier success can carry a seed drawn for this plan, so the scan would only cost time.
+        expect(spansSince(mark).some(span => span.name === 'agent-plan:compatibility-scan')).toBe(false)
+        expect(result.plan.jobs.map(job => job.compatibility.status)).toEqual(fixed.jobs.map(job => job.compatibility.status))
+    })
+
     it('marks Scene preparation and its compatibility scan for DevTools, and plans unchanged without User Timing', async () => {
         const measure = vi.spyOn(performance, 'measure')
         const mark = markSpans()
