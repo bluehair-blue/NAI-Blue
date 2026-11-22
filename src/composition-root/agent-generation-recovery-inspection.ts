@@ -1,7 +1,7 @@
 import { assertAgentPublicValue } from '@/application/agent/agent-command-contract'
 import { ProviderResultSpoolError, type ProviderResultSpool } from '@/application/generation/provider-result-spool'
 import { journalMatchesJob, reservationMatchesJob, scenePresetId } from '@/adapters/generation/indexeddb-generation-run-reader'
-import type { JsonObject } from '@/domain/composition/types'
+import type { JsonObject, PortablePathRef } from '@/domain/composition/types'
 import { providerResultSpoolId, type SpoolReceipt } from '@/domain/queue/provider-result'
 import { hashGenerationJobSnapshot } from '@/services/queue/job-snapshot'
 import { getRuntimeQueueRepository, type IndexedDBQueueRepository } from '@/services/queue/indexeddb-queue-repository'
@@ -26,6 +26,13 @@ async function read<T>(work: () => Promise<T>): Promise<{ ok: true; value: T } |
 export function publicFileName(value: string | undefined): string | null {
     if (value === undefined || /[/\\]/.test(value)) return null
     try { assertAgentPublicValue({ fileName: value }); return value } catch { return null }
+}
+
+/** Root and separate segments only: a joined path string, a bookmark's ID or its display path never cross. */
+export function publicPortableDirectory(value: PortablePathRef | undefined): JsonObject | null {
+    if (value === undefined || !Array.isArray(value.segments) || value.segments.some(segment => typeof segment !== 'string' || /[/\\]/.test(segment))) return null
+    const directory = { root: value.kind === 'standard' ? value.root : 'bookmark', segments: [...value.segments] }
+    try { assertAgentPublicValue({ directory }); return directory } catch { return null }
 }
 
 function runtimePorts(): GenerationRecoveryInspectionPorts {

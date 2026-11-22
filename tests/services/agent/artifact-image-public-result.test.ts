@@ -16,7 +16,8 @@ const artifactId = 'artifact:scene-job-agent-8bb9724029a4f829995c5931da05c6f3de8
 describe('saved image result checksum byte alignment', () => {
     it('publishes the actual original checksum through the production handler and durable replay', async () => {
         mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: 'image/png', checksum: originalChecksum })
-        mocks.preview.mockResolvedValue({ bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), width: 480, height: 480 })
+        mocks.preview.mockResolvedValue({ bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70]), mimeType: 'image/jpeg',
+            width: 480, height: 480, sourceWidth: 1024, sourceHeight: 1024 })
         const saved = new Map<string, AgentCommandReceipt>()
         const receipts: CommandReceiptRepository = {
             get: async id => saved.get(id) ?? null,
@@ -37,13 +38,28 @@ describe('saved image result checksum byte alignment', () => {
             now: () => '2026-10-19T00:00:01.000Z' })
         const receipt = await dispatcher.dispatch(envelope)
         expect(receipt).toMatchObject({ state: 'completed', result: { found: true, artifactId, contentChecksum: originalChecksum,
-            resource: { requestId, mimeType: 'image/png', byteLength: 8, width: 480, height: 480 } } })
+            resource: { requestId, mimeType: 'image/jpeg', byteLength: 8, width: 480, height: 480, sourceWidth: 1024, sourceHeight: 1024 } } })
         expect(receipt.resultDigest).toBe(agentResultDigest(receipt.result!))
         expect(() => assertAgentPublicValue(receipt.result)).not.toThrow()
         expect(await dispatcher.dispatch(envelope)).toEqual(receipt)
         expect(mocks.read).toHaveBeenCalledExactlyOnceWith(artifactId)
-        expect(mocks.write).toHaveBeenCalledTimes(1)
+        // An old-shape request passes no preview options, so the renderer applies its 480 px default.
+        expect(mocks.preview).toHaveBeenCalledExactlyOnceWith(expect.anything(), {})
+        expect(mocks.write).toHaveBeenCalledExactlyOnceWith(`agent-commands/images/${requestId}.jpg`, expect.any(Uint8Array), { baseDir: 1 })
         expect(mocks.diagnostic).not.toHaveBeenCalled()
+    })
+
+    it('forwards maxSide and region to the renderer unchanged', async () => {
+        mocks.preview.mockClear()
+        mocks.read.mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: 'image/png', checksum: originalChecksum })
+        mocks.preview.mockResolvedValue({ bytes: new Uint8Array([0xff, 0xd8, 0xff]), mimeType: 'image/jpeg', width: 768, height: 384, sourceWidth: 1024, sourceHeight: 1536 })
+        const handler = createAgentArtifactImageHandler()
+        const region = { x: 0.25, y: 0.5, width: 0.75, height: 0.25 }
+        const result = await handler.execute(handler.validate({ artifactId, maxSide: 768, region }),
+            { envelope: { requestId: 'zoomed-read' } } as never)
+        expect(mocks.preview).toHaveBeenCalledExactlyOnceWith(expect.anything(), { maxSide: 768, region })
+        expect(result).toMatchObject({ found: true, resource: { mimeType: 'image/jpeg', width: 768, height: 384, sourceWidth: 1024, sourceHeight: 1536 } })
+        expect(JSON.stringify(result)).not.toMatch(/[A-Za-z]:[\\/]|agent-commands/)
     })
 
     it('changes neither the checksum nor the untyped high-entropy payload boundary', () => {

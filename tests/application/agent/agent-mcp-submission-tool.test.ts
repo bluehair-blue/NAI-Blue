@@ -74,6 +74,9 @@ print(json.dumps(signed["context"]))
         ['production.list', {}],
         ['production.get', { productionId: `production-${'a1b2c3d4'.repeat(8)}` }],
         ['production.plan_next', { productionId: `production-${'a1b2c3d4'.repeat(8)}`, expectedRevision: 0 }],
+        ['artifact.get_image', { artifactId: 'artifact:job-1', maxSide: 1536, region: { x: 0.25, y: 0.125, width: 0.5, height: 0.3333333333333333 } }],
+        ['artifact.import', { fileName: 'NAI_Blue_SCENE_nhr-photobooth-v5-draft3-20261122_nhr-v5-pose-draft3-1_10.png' }],
+        ['artifact.import', { fileName: '나하린 수정본 2.webp' }],
     ] satisfies [AgentCommandName, JsonObject][])('signs and publishes %s through the actual Python bridge with a fixture key', (name, input) => {
         const result = JSON.parse(runPython(`
 with tempfile.TemporaryDirectory() as directory:

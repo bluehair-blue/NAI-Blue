@@ -249,7 +249,7 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         const listed = await f.client.listTools()
         expect(listed.tools.map(item => item.name)).toEqual(['workspace.get_snapshot', 'scene.resolve_many', 'scene.patch_many',
             'generation.run', 'generation.enqueue', 'generation.get_run', 'generation.cancel', 'generation.retry_storage',
-            'artifact.get_images', 'r2.get_readiness', 'advanced.call'])
+            'artifact.get_images', 'artifact.import', 'r2.get_readiness', 'advanced.call'])
         expect(f.invokes).toEqual([])
         expect(JSON.stringify(await f.client.listTools())).toBe(JSON.stringify(listed))
         for (const tool of listed.tools) {
@@ -282,6 +282,33 @@ describe('Phase 10 official SDK server with simulated inbox', () => {
         expect(drifted.capabilities.find((item: { command: string }) => item.command === 'generation.plan')).toMatchObject({ available: false, reason: 'schema-version-mismatch' })
         expect(f.invokes).toHaveLength(2)
         expect(f.invokes[1].requestId).not.toBe(f.invokes[0].requestId)
+    })
+
+    it('accepts an installed build one command older without loosening the other capability checks', async () => {
+        // That build lacks artifact.import and still has the { artifactId }-only artifact.get_image contract.
+        const previousImageHash = `sha256:${hashCanonicalValue({ $schema: 'https://json-schema.org/draft/2020-12/schema',
+            ...{ type: 'object', properties: { artifactId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$' } }, required: ['artifactId'], additionalProperties: false } })}`
+        const previous = descriptors().filter(item => item.command !== 'artifact.import')
+            .map(item => item.command === 'artifact.get_image' ? { ...item, inputSchemaHash: previousImageHash } : item)
+        let current: unknown[] = previous
+        const f = await fixture({ invoke: async (command, requestId) => observed(requestId, command.name, { capabilities: current } as unknown as JsonObject) })
+        const read = async () => JSON.parse(String((await f.client.readResource({ uri: 'nai-blue://capabilities' })).contents[0].text))
+        const older = await read()
+        expect(older).toMatchObject({ status: 'fresh-application-capabilities', schemaMismatches: [] })
+        expect(older.capabilities).toHaveLength(AGENT_COMMAND_NAMES.length)
+        expect(older.capabilities.find((item: { command: string }) => item.command === 'artifact.get_image')).toMatchObject({ available: true })
+        expect(older.capabilities.find((item: { command: string }) => item.command === 'artifact.import'))
+            .toMatchObject({ available: false, reason: 'app-build-without-command' })
+        for (const invalid of [previous.slice(1), descriptors().filter(item => item.command !== 'generation.plan'),
+            [...previous.slice(1), previous[0]].slice(0, -2), [...descriptors(), descriptors()[0]]]) {
+            current = invalid
+            expect((await read()).status, JSON.stringify(invalid.length)).toBe('app-state-unconfirmed')
+        }
+        current = descriptors().map(item => item.command === 'generation.plan' ? { ...item, inputSchemaHash: previousImageHash } : item)
+        expect((await read()).schemaMismatches).toEqual(['generation.plan'])
+        current = descriptors().map(item => item.command === 'artifact.get_image' ? { command: item.command, available: true,
+            requiresAppProcess: true, canExecuteWhileAppClosed: false, requiresHumanApproval: false } : item)
+        expect((await read()).schemaMismatches).toEqual(['artifact.get_image'])
     })
 
     it('reports an unconfirmed app state when a fresh probe has no application receipt', async () => {

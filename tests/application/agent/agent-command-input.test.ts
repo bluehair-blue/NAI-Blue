@@ -10,7 +10,19 @@ const plan = (): JsonObject => ({ source: { kind: 'workflow-draft', draftId: '�
     count: 1, seedPolicy: { kind: 'random' }, budget: { maxImages: 100, maxAnlas: 1.25 } })
 const digest = `sha256:${'a'.repeat(64)}`
 const fixtures: Partial<Record<AgentCommandName, { valid: JsonObject[]; invalid: unknown[] }>> = {
-    'artifact.get_image': { valid: [{ artifactId: 'artifact:job-1' }], invalid: [{ artifactId: '../private.png' }, { artifactId: 'artifact:job-1', path: 'C:/private' }] },
+    'artifact.get_image': { valid: [{ artifactId: 'artifact:job-1' }, { artifactId: 'artifact:job-1', maxSide: 1536 },
+        { artifactId: 'artifact:job-1', maxSide: 64, region: { x: 0.25, y: 0.5, width: 0.5, height: 0.25 } },
+        { artifactId: 'artifact:job-1', region: { x: 0, y: 0, width: 1, height: 1 } }],
+    invalid: [{ artifactId: '../private.png' }, { artifactId: 'artifact:job-1', path: 'C:/private' }, { maxSide: 480 },
+        ...[63, 1537, 480.5, '480', null].map(maxSide => ({ artifactId: 'artifact:job-1', maxSide })),
+        ...[{ x: 0, y: 0, width: 1 }, { x: 0, y: 0, width: 0, height: 1 }, { x: -0.1, y: 0, width: 0.5, height: 0.5 },
+            { x: 0, y: 0, width: 0.5, height: 1.5 }, { x: '0', y: 0, width: 0.5, height: 0.5 }, { x: 0, y: 0, width: 0.5, height: 0.5, unit: 'px' }, [0, 0, 1, 1]]
+            .map(region => ({ artifactId: 'artifact:job-1', region }))] },
+    'artifact.import': { valid: [{ fileName: 'edited.png' }, { fileName: '나하린 수정본 2.webp' },
+        { fileName: 'NAI_Blue_SCENE_nhr-photobooth-v5-draft3-20261122_nhr-v5-pose-draft3-1_10.png' }],
+    invalid: [{}, { fileName: 'edited.jpg' }, { fileName: 'edited.PNG' }, { fileName: '../edited.png' }, { fileName: 'sub/edited.png' },
+        { fileName: 'sub\\edited.png' }, { fileName: 'C:edited.png' }, { fileName: 'a..b.png' }, { fileName: `${'a'.repeat(252)}.png` },
+        { fileName: 'edited.png', path: 'C:/private' }, { fileName: 1 }] },
     'production.create': { valid: [{ title: 'Batch', source: { kind: 'preset', presetId: 'preset-1', expectedRevision: 0 }, seedPolicy: { kind: 'random' }, budget: { maxImages: 2400, maxAnlas: 10 } }], invalid: [{}] },
     'production.list': { valid: [{}], invalid: [{ extra: true }] },
     'production.get': { valid: [{ productionId: 'production-1' }], invalid: [{ productionId: '../bad' }] },
@@ -96,6 +108,21 @@ describe('shared application command input contracts', () => {
         const capabilities = describeAgentCommandCapabilities(handlers, { ready: true, mode: 'suggest', globalPause: false })
         expect(() => assertAgentPublicValue({ capabilities })).not.toThrow()
         expect(JSON.stringify(capabilities)).not.toContain('$schema')
+    })
+    it('keeps a preview region inside the original and an import name inside the import folder', () => {
+        const image = getAgentCommandInputContract('artifact.get_image')!
+        const region = (value: JsonObject) => ({ artifactId: 'artifact:job-1', region: value })
+        expect(image.validate(region({ x: 0.7, y: 0.6, width: 0.3, height: 0.4 }))).toEqual(region({ x: 0.7, y: 0.6, width: 0.3, height: 0.4 }))
+        for (const outside of [{ x: 0.75, y: 0, width: 0.5, height: 0.5 }, { x: 0, y: 0.6, width: 0.5, height: 0.5 },
+            { x: Number.NaN, y: 0, width: 0.5, height: 0.5 }, { x: 0, y: 0, width: Infinity, height: 0.5 }]) {
+            expect(() => image.validate(region(outside)), JSON.stringify(outside)).toThrow()
+        }
+        const importing = getAgentCommandInputContract('artifact.import')!
+        for (const fileName of ['CON.png', 'nul.webp', ' edited.png', 'edited.png ', 'a|b.png', 'what?.png', 'tab\t.png']) {
+            expect(() => importing.validate({ fileName }), fileName).toThrow()
+        }
+        // Long generated names decode as Base64 by chance; the plain-file-name exemption must keep them sendable.
+        expect(() => assertAgentPublicValue({ fileName: 'NAI_Blue_SCENE_nhr-photobooth-v5-draft3-20261122_nhr-v5-pose-draft3-1_10.png' })).not.toThrow()
     })
     it('accepts only opaque Image2Image bindings and explicit clear, rejecting paths and other reference semantics', () => {
         const contract = getAgentCommandInputContract('scene.patch_many')!

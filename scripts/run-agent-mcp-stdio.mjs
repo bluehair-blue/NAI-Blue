@@ -12,6 +12,8 @@ const maxBytes = 65_536
 const maxConcurrentCalls = 8
 // A tool call's whole deadline (at most 50 s minus the response reserve) may go to one request's wait.
 const maxCallWaitMs = 50_000
+const previewFormats = Object.freeze({ __proto__: null,
+    'image/png': { extension: 'png', signature: '89504e470d0a1a0a' }, 'image/jpeg': { extension: 'jpg', signature: 'ffd8ff' } })
 
 function requireInput(condition) {
     if (!condition) throw new Error('Agent MCP input is invalid.')
@@ -126,13 +128,15 @@ export async function createAgentMcpInbox(options, modules, submit = submitAgent
             requireInput(observed.status === 'application-receipt' && receipt?.state === 'completed'
                 && receipt.command === 'artifact.get_image' && receipt.result?.found === true)
             const image = receipt.result.resource
-            requireInput(image && image.requestId === requestId && image.mimeType === 'image/png'
+            // Builds before larger previews write PNG; later ones JPEG. The receipt names which file to read.
+            const format = previewFormats[image?.mimeType]
+            requireInput(image && format && image.requestId === requestId
                 && Number.isSafeInteger(image.byteLength) && image.byteLength > 0 && image.byteLength <= 1_048_576
                 && /^sha256:[a-f0-9]{64}$/.test(image.contentChecksum))
-            const bytes = await readBytes(path.join(inboxDir, '..', 'images', `${requestId}.png`), 1_048_576)
-            requireInput(bytes.length === image.byteLength && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a'
+            const bytes = await readBytes(path.join(inboxDir, '..', 'images', `${requestId}.${format.extension}`), 1_048_576)
+            requireInput(bytes.length === image.byteLength && bytes.subarray(0, format.signature.length / 2).toString('hex') === format.signature
                 && `sha256:${createHash('sha256').update(bytes).digest('hex')}` === image.contentChecksum)
-            return { data: bytes.toString('base64'), mimeType: 'image/png' }
+            return { data: bytes.toString('base64'), mimeType: image.mimeType }
         },
         async invoke(command, requestId, signal, wait) {
             assertAgentRequestId(requestId)

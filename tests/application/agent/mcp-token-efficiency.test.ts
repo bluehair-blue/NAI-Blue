@@ -229,6 +229,82 @@ describe('MCP adapter default view for agents', () => {
         expect(f.invokes).toHaveLength(count)
     })
 
+    it('forwards maxSide and region only when given, to every image, and reports preview and source sizes', async () => {
+        const readImage = vi.fn(async () => ({ mimeType: 'image/jpeg' as const, data: '/9j/4AAQ' }))
+        const f = await fixture({ 'artifact.get_image': (command, id) => observed(id, command.name, { found: true, artifactId: command.input.artifactId,
+            contentChecksum: planHash, resource: { requestId: id, width: 768, height: 512, sourceWidth: 1024, sourceHeight: 1536,
+                mimeType: 'image/jpeg', byteLength: 12, contentChecksum: planId } }) }, { readImage })
+        await f.call('artifact.get_images', { requestId: 'plain', input: { artifactIds: ['artifact:job-0'] } })
+        expect(f.invokes[0].command.input).toEqual({ artifactId: 'artifact:job-0' })
+        const region = { x: 0.25, y: 0.5, width: 0.5, height: 0.25 }
+        const zoomed = await f.call('artifact.get_images', { requestId: 'zoom', input: { artifactIds: ['artifact:job-0', 'artifact:job-1'], maxSide: 768, region } })
+        expect(f.invokes.slice(1).map(item => item.command.input)).toEqual([{ artifactId: 'artifact:job-0', maxSide: 768, region },
+            { artifactId: 'artifact:job-1', maxSide: 768, region }])
+        expect(zoomed.body.images[0]).toEqual({ artifactId: 'artifact:job-0', contentChecksum: planHash, width: 768, height: 512, sourceWidth: 1024, sourceHeight: 1536 })
+        expect(zoomed.images).toBe(2)
+        const count = f.invokes.length
+        for (const input of [{ artifactIds: ['artifact:job-0'], maxSide: 2048 }, { artifactIds: ['artifact:job-0'], region: { x: 0.8, y: 0, width: 0.5, height: 1 } },
+            { artifactIds: ['artifact:job-0', 'artifact:job-1'], maxSide: 63 }, { artifactIds: ['artifact:job-0'], zoom: 2 }]) {
+            expect((await f.call('artifact.get_images', { input })).body).toMatchObject({ status: 'adapter-error', code: 'INVALID_COMMAND_INPUT', submissionAttempted: false })
+        }
+        expect(f.invokes).toHaveLength(count)
+    })
+
+    it('stops adding large previews once one response is full and explains a build that predates maxSide', async () => {
+        const readImage = vi.fn(async () => ({ mimeType: 'image/jpeg' as const, data: '/9j/4AAQ' }))
+        const f = await fixture({ 'artifact.get_image': (command, id) => observed(id, command.name, { found: true, artifactId: command.input.artifactId,
+            contentChecksum: planHash, resource: { requestId: id, width: 1024, height: 1536, sourceWidth: 1024, sourceHeight: 1536,
+                mimeType: 'image/jpeg', byteLength: 1_000_000, contentChecksum: planId } }) }, { readImage })
+        const full = await f.call('artifact.get_images', { requestId: 'big', input: { artifactIds: ['artifact:a', 'artifact:b', 'artifact:c', 'artifact:d'], maxSide: 1536 } })
+        expect(f.ids()).toEqual(['big-0', 'big-1', 'big-2'])
+        expect(full.images).toBe(3)
+        expect((full.body.images as JsonObject[])[3]).toMatchObject({ artifactId: 'artifact:d', status: 'not-read' })
+
+        const older = await fixture({ 'artifact.get_image': (_command, id) => ({ status: 'inbox-rejection', requestId: id, requiresAppProcess: true,
+            accepted: false, code: 'INVALID_COMMAND_INPUT' }) })
+        const refused = await older.call('artifact.get_images', { requestId: 'old', input: { artifactIds: ['artifact:a'], maxSide: 1024 } })
+        expect((refused.body.images as JsonObject[])[0].hint).toContain('may predate')
+        const plain = await older.call('artifact.get_images', { requestId: 'old-plain', input: { artifactIds: ['artifact:a'] } })
+        expect((plain.body.images as JsonObject[])[0].hint).not.toContain('may predate')
+    })
+
+    it('imports a local image through its own tool and explains each refusal', async () => {
+        const reply: Record<string, JsonObject> = { 'edited.png': { status: 'imported', artifactId: 'artifact:import-0123456789abcdef0123456789abcdef',
+            contentChecksum: planHash, width: 832, height: 1216, format: 'png', byteLength: 1234, fileName: 'edited.png' } }
+        const f = await fixture({ 'artifact.import': (command, id) => {
+            const fileName = String(command.input.fileName)
+            return reply[fileName] ? observed(id, command.name, reply[fileName]) : observed(id, command.name, { status: 'rejected', code: fileName.split('.')[0] }, 'rejected')
+        } })
+        const imported = await f.call('artifact.import', { input: { fileName: 'edited.png' } })
+        expect(imported).toMatchObject({ isError: false, body: { state: 'completed', result: reply['edited.png'] } })
+        expect(f.invokes[0].command).toEqual({ name: 'artifact.import', input: { fileName: 'edited.png' } })
+        for (const code of ['IMPORT_FILE_NOT_FOUND', 'IMPORT_NOT_AN_IMAGE', 'IMPORT_TOO_LARGE', 'IMPORT_UNAVAILABLE', 'AGENT_EDITING_CONSENT_REQUIRED']) {
+            const refused = await f.call('artifact.import', { input: { fileName: `${code}.png` } })
+            expect(refused, code).toMatchObject({ isError: true, body: { state: 'rejected', result: { code } } })
+            expect(refused.body.hint, code).toEqual(expect.any(String))
+        }
+        expect((await f.call('artifact.import', { input: { fileName: 'C:\\Users\\Private\\edited.png' } })).body)
+            .toMatchObject({ status: 'adapter-error', submissionAttempted: false })
+        expect(f.invokes).toHaveLength(6)
+    })
+
+    it('names the output folder once when every artifact shares it and per artifact otherwise', () => {
+        const scene = { root: 'pictures', segments: ['NAI_Blue_Scene', 'preset-1'] }
+        const job = (ordinal: number, directory?: JsonObject) => ({ jobId: `job-${ordinal}`, storageState: 'succeeded', artifactId: `artifact:job-${ordinal}`,
+            fileName: `saved_${ordinal}.png`, ...(directory ? { directory } : {}) })
+        const run = (jobs: JsonObject[]) => summarizeRun({ found: true, runId: 'run-1', state: 'delivered', monitor: { complete: true, counts: { total: jobs.length } }, jobs })
+        expect(run([job(0, scene), job(1, scene)])).toMatchObject({ outputDirectory: scene,
+            artifacts: [{ artifactId: 'artifact:job-0', fileName: 'saved_0.png' }, { artifactId: 'artifact:job-1', fileName: 'saved_1.png' }] })
+        expect(JSON.stringify(run([job(0, scene), job(1, scene)]).artifacts)).not.toContain('directory')
+        const other = { root: 'bookmark', segments: ['chosen'] }
+        const mixed = run([job(0, scene), job(1, other)])
+        expect(mixed).not.toHaveProperty('outputDirectory')
+        expect(mixed.artifacts).toEqual([{ artifactId: 'artifact:job-0', fileName: 'saved_0.png', directory: scene },
+            { artifactId: 'artifact:job-1', fileName: 'saved_1.png', directory: other }])
+        expect(run([job(0, scene), job(1)])).not.toHaveProperty('outputDirectory')
+        expect(run([job(0)])).not.toHaveProperty('outputDirectory')
+    })
+
     it('routes rare commands through advanced.call and refuses anything outside that list before submission', async () => {
         const f = await fixture({ 'production.list': (command, id) => observed(id, command.name, { requests: [] }) })
         const listed = await f.call('advanced.call', { command: 'production.list', input: {} })

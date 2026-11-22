@@ -492,6 +492,14 @@ function isPlainOutputFileName(value: string, normalized: string, fieldKey: stri
         && /\.(?:png|webp)$/.test(value)
 }
 
+function isPlainDirectorySegment(value: string, normalized: string, fieldKey: string | undefined, parentFieldKey: string | undefined): boolean {
+    // Folder names such as PB_ALL_KHR_20261019_cut1 decode as Base64 by chance. One bare segment of a
+    // portable directory (no separator, drive colon, `..`, Base64 `+`/`=`) skips generic entropy only.
+    return fieldKey !== undefined && parentFieldKey !== undefined
+        && normalizeSyncFieldKey(fieldKey) === 'segments' && normalizeSyncFieldKey(parentFieldKey) === 'directory'
+        && value === normalized && value.length <= 200 && !/[/\\:+=]/.test(value) && !value.includes('..')
+}
+
 function isDigestOrReferenceField(fieldKey: string | undefined): boolean {
     if (fieldKey === undefined) return false
     const normalized = normalizeSyncFieldKey(fieldKey)
@@ -613,7 +621,7 @@ function unsafeString(value: string, fieldKey?: string, parentFieldKey?: string)
     if (containsEncodedBinary(
         normalized,
         isOpaqueIdentifierField(fieldKey) || isMachineCode(normalized, fieldKey) || isStructuredFilename(value, fieldKey)
-            || isPlainOutputFileName(value, normalized, fieldKey),
+            || isPlainOutputFileName(value, normalized, fieldKey) || isPlainDirectorySegment(value, normalized, fieldKey, parentFieldKey),
         isDigestOrReferenceField(fieldKey),
         inertText,
         normalized !== value || !isGeneratedNaiQueueReference(value, fieldKey),

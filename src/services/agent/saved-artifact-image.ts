@@ -54,20 +54,49 @@ export async function materializeSceneImageSource(source: SceneImageSource): Pro
     return imageDataUrl(image.bytes, image.mimeType)
 }
 
+export const DEFAULT_AGENT_PREVIEW_SIDE = 480
+/** Decoded originals above this pixel count are refused by previews and imports alike. */
+export const MAX_AGENT_IMAGE_PIXELS = 16_777_216
+// Quality steps keep a detailed 1536 px preview under the byte limit instead of failing the read.
+const PREVIEW_JPEG_QUALITIES = [0.9, 0.8, 0.7, 0.6]
+
+export interface AgentImageRegion { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+export interface AgentPreviewOptions { readonly maxSide?: number; readonly region?: AgentImageRegion }
+
+/** Source crop in pixels and output size: the region (or whole image) scaled to maxSide on its long side, never upscaled. */
+export function agentPreviewGeometry(sourceWidth: number, sourceHeight: number, options: AgentPreviewOptions = {}) {
+    const region = options.region ?? { x: 0, y: 0, width: 1, height: 1 }
+    const span = (start: number, length: number, size: number) => {
+        const from = Math.min(size - 1, Math.max(0, Math.round(start * size)))
+        return [from, Math.max(1, Math.min(size, Math.round((start + length) * size)) - from)]
+    }
+    const [sx, sw] = span(region.x, region.width, sourceWidth)
+    const [sy, sh] = span(region.y, region.height, sourceHeight)
+    const scale = Math.min(1, (options.maxSide ?? DEFAULT_AGENT_PREVIEW_SIDE) / Math.max(sw, sh))
+    return { sx, sy, sw, sh, width: Math.max(1, Math.round(sw * scale)), height: Math.max(1, Math.round(sh * scale)) }
+}
+
 /** Re-encoding strips private metadata; previews are bounded independently of original resources. */
-export async function makeAgentImagePreview(image: Awaited<ReturnType<typeof readSavedArtifactImage>>) {
+export async function makeAgentImagePreview(image: Awaited<ReturnType<typeof readSavedArtifactImage>>, options: AgentPreviewOptions = {}) {
     const bitmap = await createImageBitmap(new Blob([new Uint8Array(image.bytes)], { type: image.mimeType }))
     try {
-        if (!bitmap.width || !bitmap.height || bitmap.width * bitmap.height > 16_777_216) throw new Error('Saved image dimensions exceed preview limits')
-        const scale = Math.min(1, 480 / Math.max(bitmap.width, bitmap.height))
+        if (!bitmap.width || !bitmap.height || bitmap.width * bitmap.height > MAX_AGENT_IMAGE_PIXELS) throw new Error('Saved image dimensions exceed preview limits')
+        const geometry = agentPreviewGeometry(bitmap.width, bitmap.height, options)
         const canvas = document.createElement('canvas')
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+        canvas.width = geometry.width
+        canvas.height = geometry.height
         const context = canvas.getContext('2d')
         if (!context) throw new Error('Image preview renderer is unavailable')
-        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Image preview encoding failed')), 'image/png'))
-        if (blob.size > MAX_AGENT_PREVIEW_BYTES) throw new Error('Image preview exceeds its byte limit')
-        return { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height }
+        // JPEG has no alpha; flatten onto white rather than the encoder's black.
+        context.fillStyle = '#ffffff'
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.drawImage(bitmap, geometry.sx, geometry.sy, geometry.sw, geometry.sh, 0, 0, canvas.width, canvas.height)
+        for (const quality of PREVIEW_JPEG_QUALITIES) {
+            const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Image preview encoding failed')), 'image/jpeg', quality))
+            if (blob.type !== 'image/jpeg') throw new Error('Image preview encoding failed')
+            if (blob.size <= MAX_AGENT_PREVIEW_BYTES) return { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: 'image/jpeg' as const,
+                width: canvas.width, height: canvas.height, sourceWidth: bitmap.width, sourceHeight: bitmap.height }
+        }
+        throw new Error('Image preview exceeds its byte limit')
     } finally { bitmap.close() }
 }

@@ -25,6 +25,9 @@ export const AGENT_COMMAND_EFFECTS: Readonly<Record<AgentCommandName, 'read' | '
     'production.get': 'read',
     'production.plan_next': 'plan',
     'artifact.get_image': 'read',
+    // Indexes a file placed in the dedicated import folder (creating that empty folder if missing); it changes
+    // no Scene, prompt, Queue entry or image file. The handler additionally requires active editing consent.
+    'artifact.import': 'plan',
 })
 
 export interface AgentCommandHandler {

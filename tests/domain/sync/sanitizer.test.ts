@@ -660,6 +660,18 @@ describe('sync payload sanitizer', () => {
         expect(() => assertSyncPayloadSafe({ filenameTemplate: 'LPS_KV_20261016_cut4_V45_g' })).not.toThrow()
     })
 
+    it('exempts only bare portable directory segments from generic entropy', () => {
+        const folder = 'PB_ALL_KHR_20261019_cut1'
+        expect(() => assertSyncPayloadSafe({ untyped: folder })).toThrow(SyncSanitizationError)
+        expect(() => assertSyncPayloadSafe({ segments: [folder] })).toThrow(SyncSanitizationError)
+        expect(() => assertSyncPayloadSafe({ directory: { root: 'pictures', segments: ['NAI_Blue_Scene', folder] } })).not.toThrow()
+        expect(() => assertSyncPayloadSafe({ file: { directory: { kind: 'standard', root: 'pictures', segments: [folder] }, fileName: 'a.png' } })).not.toThrow()
+        for (const segment of [`outputs/${folder}`, `..${folder}`, `C:${folder}`, folder.replace('_cut1', '+cut1'),
+            'sk-secretvalue0123456789_0', 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB']) {
+            expect(() => assertSyncPayloadSafe({ directory: { root: 'pictures', segments: [segment] } }), segment).toThrow(SyncSanitizationError)
+        }
+    })
+
     it('scans the full bounded value of nested Composition identifiers for encoded image bytes', () => {
         const source = structuredClone(typeFixtureDocument) as CompositionDocument
         source.createdBy = { ...source.createdBy, id: `${'A'.repeat(1_024)}iVBORw0KGgoAAAAA` }

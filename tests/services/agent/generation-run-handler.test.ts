@@ -4,7 +4,8 @@ import type { AgentCommandHandler } from '@/application/agent/runtime-capability
 import { deriveGenerationFulfillment, type ObservedTechnicalFact } from '@/application/generation/generation-fulfillment'
 import { assertAgentPublicValue } from '@/application/agent/agent-command-contract'
 
-const mocks = vi.hoisted(() => ({ getRun: vi.fn(), inspect: vi.fn(), getJob: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getRun: vi.fn(), inspect: vi.fn(), getJob: vi.fn(), getArtifact: vi.fn(async (): Promise<unknown> => null) }))
+vi.mock('@/services/organizer/runtime', () => ({ getRuntimeArtifactRepository: () => ({ get: mocks.getArtifact }) }))
 vi.mock('@/adapters/generation/indexeddb-generation-run-reader', async importOriginal => ({
     ...await importOriginal<object>(), getRuntimeGenerationRun: mocks.getRun,
 }))
@@ -79,13 +80,50 @@ describe('installed runtime get_run handler wiring', () => {
         const many = Array.from({ length: 150 }, (_, index) => `job-${index}`)
         mocks.getJob.mockImplementation(async (jobId: string) => ({ id: jobId, artifactReference: { artifactId: `artifact:${jobId}` },
             snapshot: { outputReservation: { relativePath: longName(Number(jobId.slice(4))) } } }))
+        mocks.getArtifact.mockImplementation(async (artifactId: string) => ({ artifactId, original: { file: { fileName: 'x.png',
+            directory: { kind: 'standard', root: 'pictures', segments: ['NAI_Blue_Scene', 'nhr-photobooth-v5-draft3-20261122'] } } } }))
         mocks.getRun.mockResolvedValue(deriveGenerationFulfillment({ batchId: 'run-3', queueState: 'completed', jobs: many.map(id => stored(id)) }))
         const bounded = await execute({ runId: 'run-3' })
-        const rows = bounded.jobs as { fileName?: string }[]
+        const rows = bounded.jobs as { fileName?: string; directory?: unknown }[]
+        expect(rows.every(job => job.directory !== undefined)).toBe(true)
         expect(new TextEncoder().encode(JSON.stringify(bounded)).byteLength).toBeLessThanOrEqual(40_000)
         expect(rows.length).toBeLessThan(100)
         expect(bounded).toMatchObject({ truncated: true, jobCount: 150 })
         expect(rows.every((job, index) => job.fileName === longName(index))).toBe(true)
         expect(() => assertAgentPublicValue(bounded)).not.toThrow()
+    })
+
+    it('adds the committed portable folder as root and separate segments, never a joined path or bookmark identity', async () => {
+        const execute = await getRunHandler()
+        const fact = (state: ObservedTechnicalFact['state']): ObservedTechnicalFact => ({ state,
+            source: 'fixture', referenceId: 'result', observedAt: '2026-11-22T00:00:00.000Z', kind: 'direct' })
+        const stored = (jobId: string) => ({ jobId, queueState: 'succeeded', interpretation: fact('succeeded'), provider: fact('succeeded'),
+            storage: fact('succeeded'), release: { policy: 'not-required' as const }, acceptance: { required: false } })
+        const folders: Record<string, unknown> = {
+            'job-standard': { kind: 'standard', root: 'pictures', segments: ['NAI_Blue_Scene', '나하린 포토부스'], displayPath: 'C:/Users/Private/Pictures/NAI_Blue_Scene' },
+            'job-bookmark': { kind: 'bookmark', bookmarkId: 'bookmark-secret-1', segments: ['selected', 'sub'], displayPath: 'D:/Private/selected' },
+            'job-nested': { kind: 'standard', root: 'pictures', segments: ['NAI_Blue_Scene', 'sub'] },
+            'job-unsafe': { kind: 'standard', root: 'pictures', segments: ['C:/Users/Private'] },
+        }
+        mocks.getJob.mockImplementation(async (jobId: string) => ({ id: jobId, artifactReference: jobId === 'job-unreferenced' ? null : { artifactId: `artifact:${jobId}` },
+            snapshot: { outputReservation: { relativePath: jobId === 'job-nested' ? 'sub/nested_0.png' : `${jobId}.png` } } }))
+        mocks.getArtifact.mockImplementation(async (artifactId: string) => {
+            const jobId = artifactId.slice('artifact:'.length)
+            if (jobId === 'job-failing') throw new Error('store failed')
+            return folders[jobId] === undefined ? null : { artifactId, original: { file: { directory: folders[jobId], fileName: jobId === 'job-nested' ? 'nested_0.png' : `${jobId}.png` } } }
+        })
+        mocks.getRun.mockResolvedValue(deriveGenerationFulfillment({ batchId: 'run-4', queueState: 'completed', jobs: [
+            stored('job-standard'), stored('job-bookmark'), stored('job-nested'), stored('job-unsafe'), stored('job-missing'), stored('job-failing'), stored('job-unreferenced'),
+        ] }))
+        const result = await execute({ runId: 'run-4' })
+        const rows = result.jobs as Record<string, unknown>[]
+        expect(rows[0]).toMatchObject({ fileName: 'job-standard.png', directory: { root: 'pictures', segments: ['NAI_Blue_Scene', '나하린 포토부스'] } })
+        expect(rows[1]).toMatchObject({ directory: { root: 'bookmark', segments: ['selected', 'sub'] } })
+        // A subfolder output has no bare reservation name; the committed Artifact supplies it.
+        expect(rows[2]).toMatchObject({ fileName: 'nested_0.png', directory: { root: 'pictures', segments: ['NAI_Blue_Scene', 'sub'] } })
+        for (const row of rows.slice(3)) expect(row).not.toHaveProperty('directory')
+        expect(rows[6]).not.toHaveProperty('artifactId')
+        expect(JSON.stringify(result)).not.toMatch(/Private|bookmark-secret|displayPath/)
+        expect(() => assertAgentPublicValue(result)).not.toThrow()
     })
 })

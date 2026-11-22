@@ -28,7 +28,9 @@ import { createAgentArtifactImageHandler } from './agent-artifact-image'
 import { getRuntimeQueueRepository } from '@/services/queue/indexeddb-queue-repository'
 import { hasAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
 import { hasAgentGenerationConsent } from '@/application/agent/agent-generation-consent'
-import { inspectGenerationRecovery, publicFileName } from './agent-generation-recovery-inspection'
+import { inspectGenerationRecovery, publicFileName, publicPortableDirectory } from './agent-generation-recovery-inspection'
+import { createAgentArtifactImportHandler } from './agent-artifact-import'
+import { getRuntimeArtifactRepository } from '@/services/organizer/runtime'
 
 const receipts = new IndexedDbCommandReceiptRepository()
 
@@ -85,9 +87,15 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
                 const stored = job.storageState === 'succeeded' ? await getRuntimeQueueRepository().getJob(job.jobId as string) : null
                 // The committed commit set is the reserved one (recovery inspection checks the
                 // artifact's commitSetHash against it), so the job read already names the file.
-                const fileName = publicFileName(stored?.snapshot.outputReservation?.relativePath)
-                return { ...job, ...(stored?.artifactReference ? { artifactId: stored.artifactReference.artifactId } : {}),
-                    ...(fileName === null ? {} : { fileName }) }
+                const artifactId = stored?.artifactReference?.artifactId
+                // The reservation keeps only a directory hash; the committed Artifact holds the portable folder
+                // and, for output placed in a subfolder, the bare file name the reservation path cannot give.
+                const artifact = artifactId === undefined ? null : await getRuntimeArtifactRepository().get(artifactId).catch(() => null)
+                const committed = artifact !== null && artifact.artifactId === artifactId ? artifact.original.file : undefined
+                const fileName = publicFileName(stored?.snapshot.outputReservation?.relativePath) ?? publicFileName(committed?.fileName)
+                const directory = publicPortableDirectory(committed?.directory)
+                return { ...job, ...(artifactId === undefined ? {} : { artifactId }),
+                    ...(fileName === null ? {} : { fileName }), ...(directory === null ? {} : { directory }) }
             }))
             boundGenerationRunStatus(result, run.jobs.length)
             if (jobId !== undefined && result.requestedJobFound === true) {
@@ -95,7 +103,13 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
             }
             return result
         },
-    }, createAgentArtifactImageHandler(), ...createAgentAuthoringReadHandlers(), ...createProductionRequestHandlers()]
+    }, createAgentArtifactImageHandler(), createAgentArtifactImportHandler({ artifacts: getRuntimeArtifactRepository(),
+        // Same "active" editingApproval that workspace.get_snapshot reports for this caller.
+        hasEditingConsent: clientId => {
+            const settings = useSettingsStore.getState()
+            return hasAgentAuthoringConsent(settings.agentAuthoringConsent, workspaceId, clientId)
+                && settings.agentExecutionPolicy.mode !== 'observe' && !settings.agentExecutionPolicy.globalPause
+        } }), ...createAgentAuthoringReadHandlers(), ...createProductionRequestHandlers()]
 }
 
 /** Singleton is shared by Data Hub and post-recovery startup; no second Queue or credential authority. */

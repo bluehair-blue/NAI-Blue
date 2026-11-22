@@ -7,7 +7,7 @@ import { AGENT_TOOL_DESCRIPTIONS } from './agent-workflow-guide'
 export type AgentMcpToolName = keyof typeof AGENT_TOOL_DESCRIPTIONS
 export const SNAPSHOT_LISTS = { presets: 'scenePresets', scenes: 'scenes', folders: 'folders', drafts: 'workflowDrafts' } as const
 export const MAX_WAIT_SECONDS = 50
-// A 480px preview is about 0.5 MB as base64; four keep one response near 2 MB.
+// Each preview is at most 1 MiB (JPEG; a 480px one is far smaller); four keep one response bounded.
 export const MAX_IMAGES_PER_CALL = 4
 export const ADVANCED_COMMANDS: readonly AgentCommandName[] = ['folder.plan_changes', 'folder.apply_changes',
     'production.create', 'production.list', 'production.get', 'production.plan_next']
@@ -74,7 +74,9 @@ export function listAgentMcpTools() {
         tool('generation.get_run', contractInput('generation.get_run'), ['waitSeconds']),
         tool('generation.cancel', contractInput('generation.cancel')),
         tool('generation.retry_storage', contractInput('generation.retry_storage')),
-        tool('artifact.get_images', fields({ artifactIds: { type: 'array', items: text, maxItems: MAX_IMAGES_PER_CALL } })),
+        tool('artifact.get_images', fields({ artifactIds: { type: 'array', items: text, maxItems: MAX_IMAGES_PER_CALL },
+            maxSide: integer, region: { type: 'object' } }, ['artifactIds'])),
+        tool('artifact.import', contractInput('artifact.import')),
         tool('r2.get_readiness', contractInput('r2.get_readiness')),
         tool('advanced.call', { type: 'object' }, [], { command: { enum: [...ADVANCED_COMMANDS] } }),
     ]

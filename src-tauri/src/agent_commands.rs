@@ -912,6 +912,7 @@ mod native {
                     | "production.get"
                     | "production.plan_next"
                     | "artifact.get_image"
+                    | "artifact.import"
             )
             || envelope.authentication.scheme != "hmac-sha256"
         {
@@ -1089,6 +1090,7 @@ assert result["accepted"] is False and result["status"] == "submitted-to-inbox"
                 "production.get",
                 "production.plan_next",
                 "artifact.get_image",
+                "artifact.import",
             ] {
                 let mut payload = signed();
                 payload["command"]["name"] = json!(name);

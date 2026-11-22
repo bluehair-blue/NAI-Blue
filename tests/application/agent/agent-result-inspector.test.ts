@@ -68,6 +68,31 @@ describe('Phase 10 read-only inbox inspection prerequisite (fixture files, no na
         await expect(other.readImage(f.requestId)).rejects.toThrow()
         expect(signer).not.toHaveBeenCalled()
     })
+    it('reads a JPEG preview from a newer app by the receipt mimeType and rejects a mismatched signature or extension', async () => {
+        const modules = { contract: await import('@/application/agent/agent-command-contract'),
+            canonical: await import('@/domain/composition/canonical-serialize'), inputs: await import('@/application/agent/agent-command-input'),
+            projection: await import('@/adapters/agent/mcp/inbox-result-projection') }
+        const connection = { workspaceId: 'fixture-workspace', clientId: 'fixture-client', keyId: 'fixture-key', actorKind: 'agent' }
+        const signer = vi.fn(async () => { throw new Error('Read must not sign or generate') })
+        const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9])
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5ioAAAAASUVORK5CYII=', 'base64')
+        const prepare = async (requestId: string, mimeType: string, bytes: Buffer, fileName: string) => {
+            const f = await fixture(requestId, { name: 'artifact.get_image', input: { artifactId: 'artifact:job', maxSide: 1536 } })
+            const result = { found: true, artifactId: 'artifact:job', resource: { requestId, mimeType, byteLength: bytes.length,
+                contentChecksum: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, width: 1, height: 1, sourceWidth: 1, sourceHeight: 1 } }
+            await mkdir(path.join(f.root, 'images'))
+            await writeFile(path.join(f.root, 'images', fileName), bytes)
+            await writeFile(f.resultPath, JSON.stringify({ ...f.receipt, result, resultDigest: agentResultDigest(result) }))
+            return createAgentMcpInbox({ connection, inboxDir: f.inboxDir, python: 'unused', waitMs: 0 }, modules, signer)
+        }
+        expect(await (await prepare('jpeg-read', 'image/jpeg', jpeg, 'jpeg-read.jpg')).readImage('jpeg-read'))
+            .toEqual({ mimeType: 'image/jpeg', data: jpeg.toString('base64') })
+        await expect((await prepare('jpeg-claims-png', 'image/jpeg', png, 'jpeg-claims-png.jpg')).readImage('jpeg-claims-png')).rejects.toThrow()
+        await expect((await prepare('png-claims-jpeg', 'image/png', jpeg, 'png-claims-jpeg.png')).readImage('png-claims-jpeg')).rejects.toThrow()
+        await expect((await prepare('wrong-extension', 'image/jpeg', jpeg, 'wrong-extension.png')).readImage('wrong-extension')).rejects.toThrow()
+        await expect((await prepare('webp-type', 'image/webp', jpeg, 'webp-type.webp')).readImage('webp-type')).rejects.toThrow()
+        expect(signer).not.toHaveBeenCalled()
+    })
     it('distinguishes an archive before publication from an actually published pending request without writing', async () => {
         const f = await fixture()
         expect(await f.inspect()).toMatchObject({ status: 'submission-unconfirmed', accepted: false })

@@ -55,12 +55,17 @@ export function summarizeRun(result: Row, planned?: Map<string, PlannedJob>): Ro
     for (const job of rows(result.jobs)) {
         if (job.storageState === 'succeeded' && typeof job.artifactId === 'string') {
             // The run's own row names the committed file, so a later generation.get_run needs no plan in hand.
-            artifacts.push({ artifactId: job.artifactId, ...planned?.get(/-(\d+)$/.exec(String(job.jobId))?.[1] ?? ''), ...pick(job, ['fileName']) })
+            artifacts.push({ artifactId: job.artifactId, ...planned?.get(/-(\d+)$/.exec(String(job.jobId))?.[1] ?? ''), ...pick(job, ['fileName', 'directory']) })
         } else unfinished.push(pick(job, ['jobId', 'queueState', 'providerState', 'storageState']))
     }
+    // Results of one run usually share a folder; naming it once keeps the summary short.
+    const directories = new Set(artifacts.map(artifact => JSON.stringify(artifact.directory ?? null)))
+    const outputDirectory = directories.size === 1 && artifacts[0]?.directory !== undefined ? artifacts[0].directory : undefined
     return { ...pick(result, ['runId', 'state']), complete: monitor.complete === true, counts,
         ...pick(monitor, ['nextAction', 'attention']), ...filled('recoveryActions', monitor.recoveryActions),
-        artifacts, ...filled('unfinished', unfinished), ...(result.truncated === true ? { truncated: true } : {}) }
+        ...(outputDirectory === undefined ? {} : { outputDirectory }),
+        artifacts: outputDirectory === undefined ? artifacts : artifacts.map(({ directory: _directory, ...artifact }) => artifact),
+        ...filled('unfinished', unfinished), ...(result.truncated === true ? { truncated: true } : {}) }
 }
 
 export function summarizeResult(command: AgentCommandName, result: JsonObject, include: readonly string[] = []): Row {

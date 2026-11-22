@@ -2,7 +2,7 @@ import { BaseDirectory, mkdir, writeFile } from '@tauri-apps/plugin-fs'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import type { AgentCommandHandler } from '@/application/agent/runtime-capability-registry'
 import { sha256Bytes } from '@/lib/binary-digest'
-import { makeAgentImagePreview, readSavedArtifactImage } from '@/services/agent/saved-artifact-image'
+import { makeAgentImagePreview, readSavedArtifactImage, type AgentImageRegion } from '@/services/agent/saved-artifact-image'
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import type { JsonObject } from '@/domain/composition/types'
 
@@ -14,14 +14,18 @@ export function createAgentArtifactImageHandler(): AgentCommandHandler {
         execute: async (input, context): Promise<JsonObject> => {
             try {
                 const image = await readSavedArtifactImage(input.artifactId as string)
-                const preview = await makeAgentImagePreview(image)
+                const preview = await makeAgentImagePreview(image, {
+                    ...(input.maxSide === undefined ? {} : { maxSide: input.maxSide as number }),
+                    ...(input.region === undefined ? {} : { region: input.region as unknown as AgentImageRegion }) })
                 const requestId = context.envelope.requestId
                 const directory = 'agent-commands/images'
                 await mkdir(directory, { baseDir: BaseDirectory.AppData, recursive: true })
-                await writeFile(`${directory}/${requestId}.png`, preview.bytes, { baseDir: BaseDirectory.AppData })
+                // The extension follows the encoding; the adapter reads the file named by the receipt's mimeType.
+                await writeFile(`${directory}/${requestId}.jpg`, preview.bytes, { baseDir: BaseDirectory.AppData })
                 return { found: true, artifactId: input.artifactId, contentChecksum: image.checksum,
-                    resource: { requestId, mimeType: 'image/png',
-                        byteLength: preview.bytes.length, contentChecksum: await sha256Bytes(preview.bytes), width: preview.width, height: preview.height } }
+                    resource: { requestId, mimeType: preview.mimeType, byteLength: preview.bytes.length,
+                        contentChecksum: await sha256Bytes(preview.bytes), width: preview.width, height: preview.height,
+                        sourceWidth: preview.sourceWidth, sourceHeight: preview.sourceHeight } }
             } catch (error) {
                 const diagnostic = reportDiagnostic(error, { operation: 'agent.artifact.image', stage: 'materialize' })
                 return { found: false, code: 'SAVED_IMAGE_UNAVAILABLE', diagnostic: { resourceId: diagnostic.eventId } }

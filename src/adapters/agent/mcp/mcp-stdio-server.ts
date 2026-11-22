@@ -18,7 +18,8 @@ export interface McpAgentInbox {
     /** Base per-request wait (--wait-ms). A tool call's deadline shortens a stage below it only at the hard limit. */
     readonly waitMs?: number
     runtimeStatus?(allowLaunch: boolean): Promise<JsonObject>
-    readImage?(requestId: string, signal?: AbortSignal): Promise<{ data: string; mimeType: 'image/png' }>
+    /** PNG from builds before larger previews, JPEG after; the saved receipt decides which. */
+    readImage?(requestId: string, signal?: AbortSignal): Promise<{ data: string; mimeType: 'image/png' | 'image/jpeg' }>
     /** waitMs overrides the base wait for this call; an ID that already left a trace is observed, never published again. */
     invoke(command: AgentCommand, requestId: string, signal?: AbortSignal, waitMs?: number): Promise<JsonObject>
     inspect(requestId: string, signal?: AbortSignal, waitMs?: number): Promise<JsonObject>
@@ -44,6 +45,14 @@ const mismatchCode = 'REQUEST_ID_INPUT_MISMATCH'
 const isMismatch = (error: unknown) => error instanceof AgentCommandError && error.code === mismatchCode
 // Composite tools derive one request ID per stage, so the caller's root must leave room for the suffix.
 const maxRootRequestIdLength = 90
+// Raw preview bytes after which artifact.get_images stops adding images to one response.
+const maxPreviewBytesPerCall = 2_500_000
+// Newest command; an installed build one release older reports every command but this one.
+const LATEST_COMMAND: AgentCommandName = 'artifact.import'
+// That older build's artifact.get_image took { artifactId } only, which still serves calls without maxSide and region.
+const PREVIOUS_SCHEMA_HASHES: Partial<Record<AgentCommandName, string>> = { 'artifact.get_image': `sha256:${hashCanonicalValue({
+    $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', required: ['artifactId'], additionalProperties: false,
+    properties: { artifactId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$' } } })}` }
 
 function validatedObservation(value: JsonObject, requestId: string, command?: AgentCommandName): JsonObject {
     if (value.requestId !== requestId || value.requiresAppProcess !== true) throw new AgentCommandError('INBOX_RESULT_MISMATCH')
@@ -79,9 +88,12 @@ function validatedObservation(value: JsonObject, requestId: string, command?: Ag
 
 /** Validate current registry facts before reporting them; local schema hashes are version checks, not policy. */
 function capabilityDescriptors(value: unknown): RuntimeCapabilityDescriptor[] {
-    if (!Array.isArray(value) || value.length !== AGENT_COMMAND_NAMES.length) throw new AgentCommandError('INVALID_CAPABILITIES')
+    if (!Array.isArray(value)) throw new AgentCommandError('INVALID_CAPABILITIES')
+    // The adapter updates before the installed app: a build without artifact.import reports exactly that one fewer.
+    const missing = AGENT_COMMAND_NAMES.length - value.length
+    if (missing !== 0 && !(missing === 1 && !value.some(item => item?.command === LATEST_COMMAND))) throw new AgentCommandError('INVALID_CAPABILITIES')
     const seen = new Set<string>()
-    return value.map(item => {
+    const descriptors = value.map(item => {
         if (!item || typeof item !== 'object' || Array.isArray(item)
             || Object.keys(item).some(key => !['command', 'available', 'reason', 'requiresAppProcess', 'canExecuteWhileAppClosed', 'requiresHumanApproval', 'inputSchemaHash'].includes(key))
             || !AGENT_COMMAND_NAMES.includes(item.command) || seen.has(item.command)
@@ -93,6 +105,8 @@ function capabilityDescriptors(value: unknown): RuntimeCapabilityDescriptor[] {
         seen.add(item.command)
         return structuredClone(item) as RuntimeCapabilityDescriptor
     })
+    return missing === 0 ? descriptors : [...descriptors, { command: LATEST_COMMAND, available: false, reason: 'app-build-without-command',
+        requiresAppProcess: true, canExecuteWhileAppClosed: false, requiresHumanApproval: false }]
 }
 
 const isRejected = (observed: JsonObject): boolean => observed.status === 'inbox-rejection' || observed.status === 'adapter-error'
@@ -169,7 +183,8 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
             const descriptors = capabilityDescriptors(receipt.result.capabilities).map(descriptor => {
                 const contract = getAgentCommandInputContract(descriptor.command)
                 if (descriptor.available && (contract === undefined
-                    || descriptor.inputSchemaHash !== `sha256:${hashCanonicalValue(contract.schema)}`)) {
+                    || (descriptor.inputSchemaHash !== `sha256:${hashCanonicalValue(contract.schema)}`
+                        && (descriptor.inputSchemaHash === undefined || descriptor.inputSchemaHash !== PREVIOUS_SCHEMA_HASHES[descriptor.command])))) {
                     schemaMismatches.push(descriptor.command)
                     return { ...descriptor, available: false, reason: 'schema-version-mismatch' }
                 }
@@ -331,23 +346,39 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     }
 
     async function readImages(state: CallState, args: CallArguments): Promise<CallToolResult> {
-        const artifactIds = args.input.artifactIds
-        if (Object.keys(args.input).join() !== 'artifactIds' || !Array.isArray(artifactIds)
+        const { artifactIds, ...options } = args.input
+        if (Object.keys(options).some(key => key !== 'maxSide' && key !== 'region') || !Array.isArray(artifactIds)
             || artifactIds.length < 1 || artifactIds.length > MAX_IMAGES_PER_CALL) throw new AgentCommandError('INVALID_COMMAND_INPUT')
         const contract = getAgentCommandInputContract('artifact.get_image')!
+        // Only fields the caller used are sent, so a plain read still validates on a build without maxSide and region.
+        const inputs = artifactIds.map(artifactId => ({ artifactId, ...options }) as JsonObject)
         // Check every ID first so an invalid later entry cannot leave earlier reads submitted.
-        for (const artifactId of artifactIds) { assertAgentPublicValue({ artifactId }); contract.validate({ artifactId }) }
+        for (const input of inputs) { assertAgentPublicValue(input); contract.validate(input) }
         const images: Record<string, unknown>[] = [], attachments: CallToolResult['content'] = [], observations: JsonObject[] = []
-        for (const [index, artifactId] of artifactIds.entries()) {
+        let previewBytes = 0
+        for (const [index, input] of inputs.entries()) {
+            const artifactId = input.artifactId
+            // Large previews are up to 1 MiB each; the rest of the list waits for another call rather than growing one response.
+            if (previewBytes >= maxPreviewBytesPerCall) {
+                images.push({ artifactId, status: 'not-read', hint: 'Response size limit reached. Request this image in another call.' })
+                continue
+            }
             const requestId = artifactIds.length === 1 ? args.requestId : `${args.requestId}-${index}`
-            const observed = await submit(state, 'artifact.get_image', { artifactId }, requestId)
+            const observed = await submit(state, 'artifact.get_image', input, requestId)
             observations.push(observed)
             const result = completedResult(observed)
             if (result?.found === true) {
-                const resource = result.resource as JsonObject | undefined
-                images.push({ artifactId, contentChecksum: result.contentChecksum, width: resource?.width, height: resource?.height })
+                const resource = (result.resource ?? {}) as JsonObject
+                previewBytes += Number(resource.byteLength) || 0
+                images.push({ artifactId, contentChecksum: result.contentChecksum, width: resource.width, height: resource.height,
+                    ...(resource.sourceWidth === undefined ? {} : { sourceWidth: resource.sourceWidth, sourceHeight: resource.sourceHeight }) })
                 attachments.push(...await previewAttachments(state, requestId))
-            } else images.push({ artifactId, ...compactObservation(observed, result) })
+            } else {
+                // An installed build from before maxSide and region refuses the whole input at admission.
+                const olderBuild = Object.keys(options).length > 0 && observed.status === 'inbox-rejection' && observed.code === 'INVALID_COMMAND_INPUT'
+                images.push({ artifactId, ...compactObservation(observed, result), ...(olderBuild
+                    ? { hint: 'The installed NAI Blue build refused maxSide/region and may predate them. Repeat without them (new requestId), or ask the human to update NAI Blue.' } : {}) })
+            }
             if (observed.status === 'adapter-error' || observed.status === 'observation-cancelled' || state.signal.aborted) break
         }
         // Preview images follow in the order of the rows that carry a contentChecksum.
@@ -429,8 +460,8 @@ export function createAgentMcpServer(inbox: McpAgentInbox): Server {
     server.setRequestHandler('resources/templates/list', async () => ({ resourceTemplates: [{
         uriTemplate: `${requestUriPrefix}{requestId}`, name: 'Saved command receipt', mimeType: 'application/json',
         description: 'Full historical receipt of one request. Reading does not replay the command.',
-    }, { uriTemplate: `${imageUriPrefix}{requestId}`, name: 'Authenticated saved image preview', mimeType: 'image/png',
-        description: 'Preview from a completed image read belonging to this client.' }] }))
+    }, { uriTemplate: `${imageUriPrefix}{requestId}`, name: 'Authenticated saved image preview', mimeType: 'image/jpeg',
+        description: 'Preview from a completed image read belonging to this client (PNG from older app builds).' }] }))
     server.setRequestHandler('resources/read', async (request, context) => {
         const uri = request.params.uri
         const textResource = (name: string, mimeType: string, text: string) => {

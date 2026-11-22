@@ -88,13 +88,60 @@ const runInspection: AgentCommandInputContract = {
     validate: input => Object.prototype.hasOwnProperty.call(input, 'jobId')
         ? selectedRun.validate(input) : run.validate(input),
 }
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/
+const unit = { type: 'number', minimum: 0, maximum: 1 }
+const extent = { type: 'number', exclusiveMinimum: 0, maximum: 1 }
+// Float sums such as 0.7 + 0.3 can land a hair above 1; the renderer clamps to the image.
+const REGION_EPSILON = 1e-9
+/** Optional fields stay absent when unused, so the same request still validates on builds without them. */
+const artifactImage: AgentCommandInputContract = {
+    schema: { $schema: dialect, type: 'object', properties: { artifactId: identifier, maxSide: integer(1536, 64),
+        region: { ...object({ x: unit, y: unit, width: extent, height: extent }),
+            description: 'Normalized 0-1 rectangle of the original; width and height above 0, inside the image.' } },
+    required: ['artifactId'], additionalProperties: false },
+    validate: input => {
+        const keys = Object.keys(input)
+        if (keys.some(key => !['artifactId', 'maxSide', 'region'].includes(key))
+            || typeof input.artifactId !== 'string' || !ID_PATTERN.test(input.artifactId)
+            || (input.maxSide !== undefined && (!Number.isSafeInteger(input.maxSide) || Number(input.maxSide) < 64 || Number(input.maxSide) > 1536))) {
+            throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        }
+        if (input.region !== undefined) {
+            const region = record(input.region, ['x', 'y', 'width', 'height'])
+            const [x, y, width, height] = [region.x, region.y, region.width, region.height]
+            if (![x, y, width, height].every(value => typeof value === 'number' && Number.isFinite(value))) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+            const [left, top, w, h] = [x, y, width, height] as number[]
+            if (left < 0 || top < 0 || left >= 1 || top >= 1 || w <= 0 || h <= 0 || w > 1 || h > 1
+                || left + w > 1 + REGION_EPSILON || top + h > 1 + REGION_EPSILON) {
+                throw new AgentCommandError('INVALID_COMMAND_INPUT')
+            }
+        }
+        return input
+    },
+}
+/** One bare image file name inside the fixed import folder; no separator, traversal, drive or device name. */
+export function isAgentImportFileName(value: unknown): value is string {
+    return typeof value === 'string' && value.length <= 255 && value.trim() === value
+        && /^[^<>:"/\\|?*\u0000-\u001f\u007f]+\.(?:png|webp)$/.test(value) && !value.includes('..')
+        // Windows also resolves a device name followed by spaces, and COM/LPT with superscript digits.
+        && !/^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])\s*\./i.test(value)
+}
+const artifactImport: AgentCommandInputContract = {
+    schema: { $schema: dialect, ...object({ fileName: { type: 'string', minLength: 5, maxLength: 255,
+        pattern: '^(?!.*\\.\\.)[^<>:"/\\\\|?*\\u0000-\\u001f\\u007f]+\\.(?:png|webp)$' } }) },
+    validate: input => {
+        if (!isAgentImportFileName(record(input, ['fileName']).fileName)) throw new AgentCommandError('INVALID_COMMAND_INPUT')
+        return input
+    },
+}
 const contracts: Partial<Record<AgentCommandName, AgentCommandInputContract>> = {
     'system.describe_capabilities': empty,
     'workspace.get_snapshot': workspaceSnapshotInputContract,
     ...agentAuthoringInputContracts,
     ...agentProductionInputContracts,
     'generation.get_run': runInspection,
-    'artifact.get_image': referenceContract({ artifactId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
+    'artifact.get_image': artifactImage,
+    'artifact.import': artifactImport,
     'generation.cancel': run,
     'generation.retry_storage': referenceContract({ jobId: identifier, runId: identifier }, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
     'generation.enqueue': referenceContract({ planId: digest, planHash: digest }, /^sha256:[a-f0-9]{64}$/),
