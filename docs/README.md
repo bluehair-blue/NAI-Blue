@@ -4,14 +4,14 @@
 
 - 정식 소스: `E:/AI_Project_Library/projects/nais/NAI-Blue`.
 - MCP 토큰 효율 재설계 (2026-11-22): [ADR-016](./architecture/ADR-016-mcp-token-efficiency.md). 가이드 잠금을 없애고 도구 목록·응답을 줄이고 생성 왕복을 묶었다. 상태: 검증중(자동 검사와 설치본 읽기 확인 완료, 실제 에이전트의 생성 한 바퀴는 미측정). 유입은 [측정 스크립트](../scripts/measure-agent-mcp-inflow.mjs)로 잰다. 기존 MCP 연결은 재연결해야 적용된다. 의도는 [의도 인덱스](./의도/INDEX.md).
-- MCP 호출 마감·재개·실행 이력 정비 (2026-11-22): [ADR-017](./architecture/ADR-017-mcp-call-deadline-and-execution-history.md). 상태: 사용본(2026-11-22 설치, 공개 MCP 검증 완료). 생성 한 번의 호출이 6~10회에서 2회로 줄었고 조기 반환이 없어졌다. 앱 처리 시간은 편집 7.9초, 계획 9초, 등록 25초로 목표에 못 미친다. 기존 MCP 연결은 재연결해야 한다. 실측과 남은 단계는 [원인과 구현 계획](./의도/MCP%20실전%20제약%20원인과%20구현%20계획.md).
-- 요청별 구간 시간, 프리뷰 확대, 로컬 이미지 등록, 저장 위치 (2026-11-22): [ADR-018](./architecture/ADR-018-agent-timings-previews-import-location.md). 상태: 사용본(2026-11-22 설치, 공개 MCP로 프리뷰·등록·저장 위치·구간 시간 확인). 처리 시간은 편집 3.2초, 2장 계획 5.1초, 2장 등록 13.6초이고 2장 생성이 `generation.run` 한 번으로 끝난다. 구간 시간으로 찾은 두 원인의 수정(무작위 시드 계획의 조회 생략, 이력 보관 50건)은 소스에만 있고 설치본에는 아직 없다.
-- Scene의 Precise Reference 결합과 프리셋 보관 (2026-11-22): [ADR-019](./architecture/ADR-019-scene-precise-references-and-preset-archive.md). 상태: 검증중(자동 검사와 개발 서버 화면 확인 완료, 설치본에는 아직 없다). `scene.patch_many`의 `preciseReferences`와 `presetArchived`, 프리셋 관리 창의 보관함. 설치하면 기존 MCP 연결은 재연결해야 한다.
+- MCP 호출 마감·재개·실행 이력 정비 (2026-11-22): [ADR-017](./architecture/ADR-017-mcp-call-deadline-and-execution-history.md). 상태: 사용본(2026-11-22 설치, 공개 MCP 검증 완료). 생성 한 번의 호출이 6~10회에서 2회로 줄었고 조기 반환이 없어졌다. 이 빌드의 앱 처리 시간(편집 7.9초, 계획 9초, 등록 25초)은 목표에 못 미쳤고 지금 설치본에서 이뤘다(아래 ADR-018 줄). 실측과 남은 단계는 [원인과 구현 계획](./의도/MCP%20실전%20제약%20원인과%20구현%20계획.md).
+- 요청별 구간 시간, 프리뷰 확대, 로컬 이미지 등록, 저장 위치 (2026-11-22): [ADR-018](./architecture/ADR-018-agent-timings-previews-import-location.md). 상태: 사용본(2026-11-22 설치, 공개 MCP로 프리뷰·등록·저장 위치·구간 시간 확인). 2장 생성이 `generation.run` 한 번으로 끝난다. 구간 시간으로 찾은 두 원인의 수정(무작위 시드 계획의 조회 생략, 이력 보관 50건)까지 설치본에 있다. 지금 설치본의 처리 시간은 편집 0.8초, 2장 계획 0.2초, 2장 등록 1.3초다(목표 3초·3초·8초, 프리셋 328개·Scene 3,262개).
+- Scene의 Precise Reference 결합과 프리셋 보관 (2026-11-22): [ADR-019](./architecture/ADR-019-scene-precise-references-and-preset-archive.md). 상태: 사용본(2026-11-22 설치, 공개 MCP로 레퍼런스 계획과 보관·복원 확인). `scene.patch_many`의 `preciseReferences`와 `presetArchived`, 프리셋 관리 창의 보관함. 설치본의 보관함 화면과 레퍼런스를 묶은 실제 생성은 미확인이다. 기존 MCP 연결은 재연결해야 한다.
 - 실제 실행 경로: `E:/AI_Project_Library/projects/nais/NAI Blue/NAI-Blue.exe`. 등록된 Windows 설치 하나만 사용한다.
 - MCP 자동 실행 수정 (2026-11-06 12:41 KST): [정식 연결 프로그램](../scripts/run-agent-mcp-stdio.mjs)과 [명령 분류](../src/adapters/agent/mcp/mcp-stdio-server.ts)를 새 연결에서 검증했다. 목록·상태·읽기는 닫힌 앱을 그대로 두고, 계획·변경 요청만 앱을 시작한다. 기존 연결은 재연결 시 적용된다.
 - [실제 설치본 검증](../scripts/verify-agent-mcp-runtime.mjs): 앱을 닫고 등록된 연결 인수에 `--verify-launch`를 추가해 재현한다. 목록·기능·상태 조회 후에도 프로세스가 없었고, 폴더 변경 미리보기 요청에서만 시작해 완료 응답을 받았다. 실행 전후 설치본 SHA-256과 워크스페이스 응답 다이제스트가 일치했다. 회귀 테스트 38개 통과. 변경 커밋은 `git log -- scripts/agent-runtime-guard.mjs`에서 확인한다.
 - 대표 결과: [저장 이미지 폴더 탐색](./releases/저장%20이미지%20폴더%20탐색.md). 상태: 사용본 설치·공개 MCP 검증 완료, 빌드 출력 부재 확인. 생성: 2026-11-06 12:10 KST, 수정: 12:28 KST.
-- 사용본 SHA-256: `aadd3ecdf814c8e40a65e70fccd94d2cc1d3cf0e434b43ffab84c2fa6c40fcb0` (1.3.6 로컬 빌드, 2026-11-22 설치. 소스는 커밋 `a9ff19a`까지의 앱 변경).
+- 사용본 SHA-256: `9ed9266a7161f6cf705bbdf019ab4bd5bd2e044a9a7fcb4952584ec523aa8307` (1.3.6 로컬 빌드, 2026-11-22 설치. 소스는 커밋 `2d30f42`까지의 앱 변경. 어댑터는 이 체크아웃의 최신 커밋을 쓴다).
 - 이전 결과: [시작 응답성 개선 기록](./releases/시작%20응답성.md), 소스 변경 이력은 Git에 보존한다.
 - [측정 근거](./releases/evidence/시작%20응답성%20측정.json): CPU·메모리·타이머 지연, 테스트와 실제 MCP 검증. 생성·수정 시각은 파일의 `recordedAt` 참조.
 - 변경 이력: `git log --oneline -- "docs/releases/시작 응답성.md"`; 커밋 ID는 완료 보고와 Git에서 확인한다.

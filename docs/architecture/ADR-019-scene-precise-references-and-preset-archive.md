@@ -1,7 +1,7 @@
 # ADR-019: Scene의 Precise Reference 결합과 프리셋 보관
 
 - 날짜: 2026-11-22
-- 상태: 구현했다. 자동 검사와 개발 서버 화면 확인까지 했고 설치본에는 올리지 않았다
+- 상태: 구현하고 설치본에 올려 공개 MCP로 확인했다(2026-11-22, 실행 해시 `9ed9266a…`). 설치본의 보관함 화면과 Precise Reference를 묶은 실제 생성은 확인하지 않았다
 - 기반: ADR-018. 범위와 완료 기준은 [MCP 실전 제약 원인과 구현 계획](../의도/MCP%20실전%20제약%20원인과%20구현%20계획.md)의 단계 4
 - 범위: Scene 데이터 모델과 저장소, 편집 계약(`scene.patch_many`), Scene 파라미터 조립, 프리셋 목록과 관리 창, 스냅샷·조회·계획, 어댑터 안내
 
@@ -77,7 +77,14 @@ Scene에 `preciseReferences`를 더했다. 항목은 `{ artifactId, contentCheck
 - 자동 검사: `npx vitest run` 2,970개 통과(건너뜀 4), `tsc --noEmit`, eslint, dependency-cruiser, knip, `node --test tests/scripts/agent-runtime-guard.test.mjs` 통과
 - 화면: 개발 서버(빈 데이터, 설치본 아님)에서 프리셋 관리 창을 열어 폴더와 하위 폴더를 만들고 보관 → 목록에서 사라지고 '보관함 (1)'이 생김 → 펼치면 "폴더 2개 · 씬 0개"와 복원·삭제 → 삭제 확인과 취소 → 복원하면 하위 폴더와 함께 돌아옴을 확인했다. 보관한 뒤 Scene 화면의 프리셋 목록에 기본 프리셋만 남는 것도 봤다
   - 이 확인에서 창이 낮으면(1280×800) 보관함이 목록 아래로 잘려 보이지 않는 배치 결함을 찾아 고쳤다. 폴더 열이 통째로 스크롤되고, 펼친 행과 삭제 확인이 보이는 자리로 온다
-- 하지 않은 것: 설치본 확인, 실제 작업 공간(프리셋 328개)에서의 처리 시간, Precise Reference를 묶은 실제 생성, 보관함에서 휴지통으로 보내는 동작의 화면 확인
+- 설치본(실행 해시 `9ed9266a…`, 프리셋 328개·Scene 3,262개)에서 공개 MCP로 확인한 것. 확인용 프리셋 `stage4-check-20261122`를 만들어 썼고 끝에 보관해 두었다
+  - 레퍼런스: 방금 생성한 두 이미지를 `character`와 `character&style`로 묶어 V4.5 Scene을 만들었고 `scene.resolve_many`가 그대로 돌려줬다. 그 Scene의 계획은 `ready`이고 호환성 프로필이 `…:generate:precise-reference+streaming`이다(예상 0 Anlas, 등록하지 않았다). 틀린 체크섬은 `AGENT_AUTHORING_TARGET_UNAVAILABLE`로 거절됐다
+  - 같은 Scene의 모델을 V5로 바꾸면 계획이 `invalid-model-settings`("NAI Diffusion V5는 아직 Precise Reference를 지원하지 않습니다")로 거절된다. `preciseReferences: null`로 지우면 조회가 `null`을 보이고 V5 계획이 통과한다
+  - 보관: `presetArchived: true`와 빈 `changes`가 받아들여지고 리비전은 3 그대로다. 기본 스냅샷은 프리셋 329 → 328, Scene 3,263 → 3,262에 `archived: 1`만 더하고, 목록은 `include: ["archived"]`에서만 나온다. Scene 조회는 `found: false, archived: true`, 계획은 `scene-preset-archived`와 `restore-preset`, 편집은 `AGENT_PRESET_ARCHIVED`와 복원 안내다
+  - 복원: `presetArchived: false`에 편집을 함께 실은 요청이 받아들여지고 리비전이 4가 된다. 기본 프리셋의 보관은 `AGENT_PRESET_NOT_ARCHIVABLE`이다
+  - 훑기: 편집 한 번의 훑기 세 번이 합쳐 7밀리초이고 328개가 모두 캐시에서 나왔다. 처리 시간은 편집 0.8초, 계획 0.2초, 2장 등록 1.3초다([측정 표](../의도/MCP%20실전%20제약%20원인과%20구현%20계획.md))
+- 이 확인에서 찾아 고친 것(어댑터): 스냅샷 요약이 요청한 목록과 상관없이 가장 긴 목록 기준의 `truncated: true`를 넘겨, 보관 프리셋 1개만 받아도 다음 페이지가 있다고 알렸다. 요청한 목록에 남은 행이 있을 때만 알리게 했다. 앱은 그대로이고 MCP 재연결만 필요하다
+- 하지 않은 것: 설치본의 보관함 화면(사람이 보는 쪽), Precise Reference를 묶은 실제 생성, 보관함에서 휴지통으로 보내는 동작의 화면 확인
 
 ## 알려진 한계
 
