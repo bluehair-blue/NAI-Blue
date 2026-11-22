@@ -28,7 +28,7 @@
 
 `nai-blue://guides/agent-workflow/v1`은 기본 순서와 주제 목록만 담는다(2,648자). 주제는 `recovery`, `production`, `image-source`, `consent`, `runtime`, `advanced`이고 `nai-blue://guides/<주제>`로 읽는다. 틀린 호출과 대기 상태의 응답에는 `hint` 한 줄이 붙고, 필요하면 그 주제의 URI를 가리킨다.
 
-### 3. 도구 목록을 고정하고 줄인다 (43,000자 → 7,743자)
+### 3. 도구 목록을 고정하고 줄인다 (43,000자 → 7,826자)
 
 - `tools/list`는 앱에 묻지 않는 고정 응답이다. 가용 상태는 호출 결과와 `nai-blue://capabilities`가 말한다. 스키마 해시 비교도 그 resource에 남는다
 - 설명은 도구별 한두 문장이고 `outputSchema`는 싣지 않는다
