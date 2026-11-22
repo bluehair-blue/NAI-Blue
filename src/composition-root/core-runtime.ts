@@ -35,6 +35,7 @@ import type {
 } from '@/services/queue/main-queue-runtime-dependencies'
 import { canonicalSerialize } from '@/domain/composition/canonical-serialize'
 import { normalizeOutputDirectoryPath } from '@/domain/output-commit-set'
+import { measureSpan } from '@/lib/user-timing'
 import {
     discardGeneratedProviderOriginal,
     releaseGeneratedOutputToR2,
@@ -82,10 +83,16 @@ function relativeOutputPath(
  * Joins Queue active claims, OutputWriter journals, and shallow filesystem
  * snapshots once, then delegates all naming decisions to the pure allocator.
  */
-export async function planOutputCommitSetBatch(
+export function planOutputCommitSetBatch(
     requests: readonly OutputCommitSetPlanningRequest[],
 ): Promise<readonly PlannedOutputCommitSet[]> {
-    if (requests.length === 0) return []
+    if (requests.length === 0) return Promise.resolve([])
+    return measureSpan('agent-plan:output-planning', () => planNonEmptyOutputCommitSetBatch(requests))
+}
+
+async function planNonEmptyOutputCommitSetBatch(
+    requests: readonly OutputCommitSetPlanningRequest[],
+): Promise<readonly PlannedOutputCommitSet[]> {
     const repository = getRuntimeQueueRepository()
     const platform = createRuntimeOutputPlatformAdapter()
     const [reservationSnapshot, pendingFinals] = await Promise.all([
@@ -101,8 +108,19 @@ export async function planOutputCommitSetBatch(
         return { request, directory, directoryIdentity, semantics }
     }))
     const parentReads = new Map<string, Promise<readonly string[]>>()
+    // Keys depend only on authority, directory identity, semantics and path, so every
+    // image of a batch that targets the same directory shares one hashing pass.
+    const occupiedByDirectory = new Map<string, readonly string[]>()
     const occupied = new Set(reservationSnapshot.activeCollisionKeys)
     for (const item of resolved) {
+        const collisionKey = (relativePath: string) => createOutputCollisionKey({
+            directoryAuthorityId: item.request.directoryAuthorityId,
+            directoryAuthorityFingerprint: item.directoryIdentity,
+            filesystemSemantics: item.semantics,
+            pathNormalizationRevision: OUTPUT_PATH_NORMALIZATION_REVISION,
+            relativePath,
+        })
+        const authority = `${item.request.directoryAuthorityId}\u0000${item.directoryIdentity}\u0000${item.semantics}`
         const kinds = generationOutputClaimKinds(item.request.claimPlan)
         const parents = new Map<string, { readonly directory: OutputFileRef; readonly relativeParent: string }>()
         for (const kind of kinds) {
@@ -114,33 +132,32 @@ export async function planOutputCommitSetBatch(
             parents.set(key, { directory, relativeParent })
         }
         for (const [key, parent] of parents) {
-            let entries = parentReads.get(key)
-            if (entries === undefined) {
-                entries = platform.readDirectoryEntries(parent.directory)
-                parentReads.set(key, entries)
+            const cacheKey = `entries\u0000${authority}\u0000${key}\u0000${parent.relativeParent}`
+            let keys = occupiedByDirectory.get(cacheKey)
+            if (keys === undefined) {
+                let entries = parentReads.get(key)
+                if (entries === undefined) {
+                    entries = platform.readDirectoryEntries(parent.directory)
+                    parentReads.set(key, entries)
+                }
+                keys = (await entries).map(name => collisionKey(
+                    parent.relativeParent === '' ? name : `${parent.relativeParent}/${name}`))
+                occupiedByDirectory.set(cacheKey, keys)
             }
-            for (const name of await entries) {
-                const relativePath = parent.relativeParent === '' ? name : `${parent.relativeParent}/${name}`
-                occupied.add(createOutputCollisionKey({
-                    directoryAuthorityId: item.request.directoryAuthorityId,
-                    directoryAuthorityFingerprint: item.directoryIdentity,
-                    filesystemSemantics: item.semantics,
-                    pathNormalizationRevision: OUTPUT_PATH_NORMALIZATION_REVISION,
-                    relativePath,
-                }))
-            }
+            keys.forEach(value => occupied.add(value))
         }
-        for (const final of pendingFinals) {
-            const relativePath = relativeOutputPath(item.directory, final, item.semantics)
-            if (relativePath === null) continue
-            occupied.add(createOutputCollisionKey({
-                directoryAuthorityId: item.request.directoryAuthorityId,
-                directoryAuthorityFingerprint: item.directoryIdentity,
-                filesystemSemantics: item.semantics,
-                pathNormalizationRevision: OUTPUT_PATH_NORMALIZATION_REVISION,
-                relativePath,
-            }))
+        // relativeOutputPath reads only the base directory and its normalized segments.
+        const pendingKey = `pending\u0000${authority}\u0000${String(item.directory.baseDir)}\u0000${
+            planningPathSegments(item.directory.path, item.semantics).join('/')}`
+        let pendingKeys = occupiedByDirectory.get(pendingKey)
+        if (pendingKeys === undefined) {
+            pendingKeys = pendingFinals.flatMap(final => {
+                const relativePath = relativeOutputPath(item.directory, final, item.semantics)
+                return relativePath === null ? [] : [collisionKey(relativePath)]
+            })
+            occupiedByDirectory.set(pendingKey, pendingKeys)
         }
+        pendingKeys.forEach(value => occupied.add(value))
     }
     const replayAllocations = new Map<number, PlannedOutputCommitSet>()
     const freshIndexes: number[] = []

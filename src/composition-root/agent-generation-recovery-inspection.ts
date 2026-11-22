@@ -23,7 +23,7 @@ async function read<T>(work: () => Promise<T>): Promise<{ ok: true; value: T } |
     try { return { ok: true, value: await work() } } catch (error) { return { ok: false, error } }
 }
 
-function publicFileName(value: string | undefined): string | null {
+export function publicFileName(value: string | undefined): string | null {
     if (value === undefined || /[/\\]/.test(value)) return null
     try { assertAgentPublicValue({ fileName: value }); return value } catch { return null }
 }

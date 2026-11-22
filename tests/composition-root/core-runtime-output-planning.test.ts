@@ -45,10 +45,16 @@ vi.mock('@/presentation/queue/zustand-style-lab-queue-presentation', () => ({ cr
 vi.mock('@/presentation/scene/zustand-scene-result-presentation', () => ({ createZustandSceneResultPresentation: vi.fn() }))
 vi.mock('@/adapters/generation/desktop-provider-result-spool', () => ({ DesktopProviderResultSpool: class {} }))
 vi.mock('@/application/folder/generation-folder-binding', () => ({ createGenerationFolderDocumentBinding: vi.fn() }))
+// Spies only core-runtime's directory-entry hashing; the allocator calls its own module binding.
+vi.mock('@/domain/output-commit-set', async importOriginal => {
+    const actual = await importOriginal<typeof import('@/domain/output-commit-set')>()
+    return { ...actual, createOutputCollisionKey: vi.fn(actual.createOutputCollisionKey) }
+})
 
 import { planOutputCommitSetBatch } from '@/composition-root/core-runtime'
 import { createGenerationOutputCommitSet } from '@/services/output/generation-output-commit-set'
 import { directoryIdentityForResolvedOutputDirectory } from '@/services/output/platform-adapter'
+import { createOutputCollisionKey } from '@/domain/output-commit-set'
 
 const folderBinding = {
     resourceType: 'generation-folder-document' as const,
@@ -138,6 +144,34 @@ describe('runtime output batch planning', () => {
         ])
         expect(result.map(allocation => allocation.fileName)).toEqual(['portrait-2.png', 'portrait-3.png'])
         expect(result.map(allocation => allocation.imageDisplayPath)).toEqual(['output/portrait-2.png', 'output/portrait-3.png'])
+    })
+
+    it('hashes each shared directory entry once per batch, not once per image, with unchanged allocations', async () => {
+        const entries = ['portrait.png', 'portrait-2.png', 'portrait-4.nai-blue.json', 'other.png', 'notes.txt']
+        runtime.entries.set('output', entries)
+        runtime.pending.push({ path: 'output/pending.png', displayPath: 'pending', baseDir: 1 })
+        const requests = [0, 1, 2].map(ordinal => ({
+            destination: { directory: 'output', workflowDefaultDirectory: 'output', extension: 'png' as const },
+            claimPlan: {
+                fileName: 'portrait.png', imageFormat: 'png' as const,
+                metadataMode: 'sidecar-only' as const, preserveProviderOriginal: false,
+            },
+            collisionPolicy: 'suffix' as const,
+            directoryAuthorityId: folderBinding.resourceId,
+            folderBinding,
+            reservationIdentity: { reservationId: `reservation:${ordinal}`, batchId: 'batch:1', jobId: `job:${ordinal}` },
+        }))
+
+        const measure = vi.spyOn(performance, 'measure')
+        const result = await planOutputCommitSetBatch(requests)
+
+        expect(measure).toHaveBeenCalledExactlyOnceWith('agent-plan:output-planning', expect.any(String))
+        const readEntries = (await Promise.all(runtime.readDirectoryEntries.mock.results.map(item => item.value)))
+            .reduce((sum: number, names: readonly string[]) => sum + names.length, 0)
+        expect(vi.mocked(createOutputCollisionKey)).toHaveBeenCalledTimes(readEntries + runtime.pending.length)
+        expect(readEntries).toBe(entries.length)
+        // portrait-4 is taken by its sidecar, so the allocator skips it exactly as before.
+        expect(result.map(allocation => allocation.fileName)).toEqual(['portrait-3.png', 'portrait-5.png', 'portrait-6.png'])
     })
 
     it.each([

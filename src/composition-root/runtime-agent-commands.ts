@@ -4,7 +4,7 @@ import { IndexedDbCommandReceiptRepository } from '@/adapters/agent/indexeddb-co
 import { IndexedDbGenerationPlanRepository } from '@/adapters/generation/indexeddb-generation-plan-repository'
 import { getWorkflowDraftRepository } from '@/adapters/workflow/indexeddb-workflow-draft-repository'
 import { getRuntimeGenerationRun } from '@/adapters/generation/indexeddb-generation-run-reader'
-import { projectGenerationRunStatus } from '@/application/generation/generation-run-monitor'
+import { boundGenerationRunStatus, projectGenerationRunStatus } from '@/application/generation/generation-run-monitor'
 import { createAgentGenerationPlanHandler } from '@/application/agent/agent-generation-plan-handler'
 import { getAgentCommandInputContract } from '@/application/agent/agent-command-input'
 import type { AgentCommandHandler } from '@/application/agent/runtime-capability-registry'
@@ -28,7 +28,7 @@ import { createAgentArtifactImageHandler } from './agent-artifact-image'
 import { getRuntimeQueueRepository } from '@/services/queue/indexeddb-queue-repository'
 import { hasAgentAuthoringConsent } from '@/application/agent/agent-authoring-consent'
 import { hasAgentGenerationConsent } from '@/application/agent/agent-generation-consent'
-import { inspectGenerationRecovery } from './agent-generation-recovery-inspection'
+import { inspectGenerationRecovery, publicFileName } from './agent-generation-recovery-inspection'
 
 const receipts = new IndexedDbCommandReceiptRepository()
 
@@ -83,8 +83,13 @@ async function createHandlers(workspaceId: string): Promise<readonly AgentComman
             const result = projectGenerationRunStatus(run, jobId)
             result.jobs = await Promise.all((result.jobs as JsonObject[]).map(async job => {
                 const stored = job.storageState === 'succeeded' ? await getRuntimeQueueRepository().getJob(job.jobId as string) : null
-                return stored?.artifactReference ? { ...job, artifactId: stored.artifactReference.artifactId } : job
+                // The committed commit set is the reserved one (recovery inspection checks the
+                // artifact's commitSetHash against it), so the job read already names the file.
+                const fileName = publicFileName(stored?.snapshot.outputReservation?.relativePath)
+                return { ...job, ...(stored?.artifactReference ? { artifactId: stored.artifactReference.artifactId } : {}),
+                    ...(fileName === null ? {} : { fileName }) }
             }))
+            boundGenerationRunStatus(result, run.jobs.length)
             if (jobId !== undefined && result.requestedJobFound === true) {
                 result.recoveryInspection = await inspectGenerationRecovery(input.runId as string, jobId)
             }

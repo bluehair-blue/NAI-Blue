@@ -15,8 +15,9 @@ import { enqueueReviewedSceneQueue, getSceneQueuePlanningFacts, prepareSceneQueu
 import { reportDiagnostic } from '@/services/diagnostics/error-registry'
 import { OutputDestinationOccupiedError } from '@/services/output/generation-output-commit-set'
 import { SceneQueueReviewConflict } from '@/services/queue/scene-queue-adapter'
-import { queryVerifiedNaiGenerationCompatibility } from '@/services/nai/verified-compatibility'
+import { queryVerifiedNaiGenerationCompatibilityBatch } from '@/services/nai/verified-compatibility'
 import { NovelAiModelCapabilityError } from '@/services/nai/adapter'
+import { measureSpan } from '@/lib/user-timing'
 
 export interface AgentSceneGenerationInput {
     readonly source: { readonly kind: 'scene'; readonly targets: readonly {
@@ -106,7 +107,15 @@ export function publicAgentScenePreview(plan: GenerationPlan<AgentScenePreparedJ
 }
 
 /** Reuses GUI Scene preparation and the generic plan hash/budget engine; never creates Queue state. */
-export async function planAgentSceneGeneration(
+export function planAgentSceneGeneration(
+    inputValue: AgentSceneGenerationInput,
+    identity?: SceneQueueReplayIdentity,
+    production?: ProductionSceneReplay,
+): Promise<{ result: PlanGenerationResult<AgentScenePreparedJob>; submission: SceneQueueSubmission }> {
+    return measureSpan('agent-plan:scene-preparation', () => prepareAgentScenePlan(inputValue, identity, production))
+}
+
+async function prepareAgentScenePlan(
     inputValue: AgentSceneGenerationInput,
     identity?: SceneQueueReplayIdentity,
     production?: ProductionSceneReplay,
@@ -170,10 +179,11 @@ export async function planAgentSceneGeneration(
         credentialReadinessFingerprint: digest({ pricingBasis }),
     }
     const capture = { ...captureContent, contentHash: hashDetachedGenerationCapture(captureContent) }
-    const compatibilityEvidence = await Promise.all(facts.prepared.map(item => queryVerifiedNaiGenerationCompatibility(
-        item.prepared.params, CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
-        facts.streaming && !Boolean(item.prepared.params.sourceImage || item.prepared.params.mask),
-    )))
+    const compatibilityEvidence = await measureSpan('agent-plan:compatibility-scan', () => queryVerifiedNaiGenerationCompatibilityBatch(
+        facts.prepared.map(item => ({ params: item.prepared.params,
+            streaming: facts.streaming && !Boolean(item.prepared.params.sourceImage || item.prepared.params.mask) })),
+        CURRENT_NAI_PAYLOAD_BUILDER_REVISION,
+    ))
     const result = await planGeneration({ source: { kind: 'detached-generation-capture', capture }, count,
         seedPolicy: { kind: 'replay', traceId: capture.captureId }, budget: input.budget }, {
         // Detached planning never reads a WorkflowDraft or enters its planner.

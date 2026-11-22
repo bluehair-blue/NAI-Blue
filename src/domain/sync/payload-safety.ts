@@ -483,6 +483,15 @@ function isStructuredFilename(value: string, fieldKey: string | undefined): bool
         && /^(?:[A-Z]+[0-9]*|[a-z]+[0-9]*|[A-Z][a-z]+[0-9]*|[0-9]+)$/.test(part))
 }
 
+function isPlainOutputFileName(value: string, normalized: string, fieldKey: string | undefined): boolean {
+    // Long generated basenames (preset_scene_ordinal) decode as Base64 by chance. Only a bare,
+    // undecorated image file name (no separator, drive colon, `..`, Base64 `+`/`=` or control
+    // character) skips generic entropy; credential/path/image checks still run.
+    return fieldKey !== undefined && normalizeSyncFieldKey(fieldKey) === 'filename'
+        && value === normalized && value.length <= 255 && !/[/\\:+=\u0000-\u001f\u007f]/.test(value) && !value.includes('..')
+        && /\.(?:png|webp)$/.test(value)
+}
+
 function isDigestOrReferenceField(fieldKey: string | undefined): boolean {
     if (fieldKey === undefined) return false
     const normalized = normalizeSyncFieldKey(fieldKey)
@@ -603,7 +612,8 @@ function unsafeString(value: string, fieldKey?: string, parentFieldKey?: string)
     if (containsLocalPathMaterial(nonUrlMaterial, inertText)) return true
     if (containsEncodedBinary(
         normalized,
-        isOpaqueIdentifierField(fieldKey) || isMachineCode(normalized, fieldKey) || isStructuredFilename(value, fieldKey),
+        isOpaqueIdentifierField(fieldKey) || isMachineCode(normalized, fieldKey) || isStructuredFilename(value, fieldKey)
+            || isPlainOutputFileName(value, normalized, fieldKey),
         isDigestOrReferenceField(fieldKey),
         inertText,
         normalized !== value || !isGeneratedNaiQueueReference(value, fieldKey),

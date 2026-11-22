@@ -84,9 +84,14 @@ export function projectGenerationRunStatus(run: GenerationFulfillmentProjection,
             acceptanceState: job.acceptance.state,
             ...(job.providerExecution === undefined ? {} : { providerExecution: job.providerExecution as unknown as JsonObject }),
         })) }
-    // Keep ledger detail within the public wire bound while counts cover the whole run.
+    return boundGenerationRunStatus(result, run.jobs.length)
+}
+
+/** Keep ledger detail within the public wire bound while counts cover the whole run.
+ * Callers that enrich job rows afterwards re-apply it. */
+export function boundGenerationRunStatus(result: JsonObject, totalJobs: number): JsonObject {
     const jobs = result.jobs as JsonObject[]
     while (jobs.length > 1 && new TextEncoder().encode(JSON.stringify(result)).byteLength > 40_000) jobs.pop()
-    result.truncated = jobs.length < run.jobs.length
+    result.truncated = jobs.length < totalJobs
     return result
 }

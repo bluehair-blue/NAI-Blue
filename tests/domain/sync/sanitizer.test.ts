@@ -641,6 +641,25 @@ describe('sync payload sanitizer', () => {
         ]) expect(() => assertSyncPayloadSafe({ filenameTemplate: value })).toThrow(SyncSanitizationError)
     })
 
+    it('exempts only a bare image fileName from generic entropy without relaxing credential, path or image checks', () => {
+        const name = (ordinal: number) => `NAI_Blue_SCENE_nhr-photobooth-v5-draft3-20261122_nhr-v5-pose-draft3-1_${ordinal}.png`
+        for (const ordinal of [0, 4, 8, 10, 99]) {
+            expect(() => assertSyncPayloadSafe({ untyped: name(ordinal) }), `untyped ${ordinal}`).toThrow(SyncSanitizationError)
+            expect(() => assertSyncPayloadSafe({ fileName: name(ordinal) }), `fileName ${ordinal}`).not.toThrow()
+            expect(() => assertSyncPayloadSafe({ file_name: name(ordinal).replace(/\.png$/, '.webp') })).not.toThrow()
+        }
+        for (const value of [
+            `outputs/${name(0)}`, `outputs\\${name(0)}`, `..${name(0)}`, `C:${name(0)}`, ` ${name(0)}`,
+            name(0).replace(/\.png$/, ''), name(0).replace(/\.png$/, '.json'), name(0).replace(/\.png$/, '.PNG'),
+            `${'NAI_Blue_SCENE_nhr-photobooth-v5-draft3-'.repeat(7)}1_0.png`, `NAI%5fBlue_SCENE_nhr-photobooth-v5-draft3-20261122_nhr-v5-pose-draft3-1_0.png`,
+            'sk-secretvalue0123456789_0.png', 'Bearer secretvalue01234567890123456789.png', 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB.png',
+            // Standard Base64 punctuation is not part of a generated file name.
+            name(0).replace('draft3-1_0', 'draft3+1_0'), name(0).replace(/\.png$/, '=.png'),
+        ]) expect(() => assertSyncPayloadSafe({ fileName: value }), value).toThrow(SyncSanitizationError)
+        expect(() => assertSyncPayloadSafe({ filenameTemplate: name(0) })).toThrow(SyncSanitizationError)
+        expect(() => assertSyncPayloadSafe({ filenameTemplate: 'LPS_KV_20261016_cut4_V45_g' })).not.toThrow()
+    })
+
     it('scans the full bounded value of nested Composition identifiers for encoded image bytes', () => {
         const source = structuredClone(typeFixtureDocument) as CompositionDocument
         source.createdBy = { ...source.createdBy, id: `${'A'.repeat(1_024)}iVBORw0KGgoAAAAA` }

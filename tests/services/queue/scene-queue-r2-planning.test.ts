@@ -148,8 +148,13 @@ async function agentFixture(input = agentInput) {
 }
 
 describe('agent Scene plans use the existing durable Scene Queue', () => {
-    it.each(['SY', 'KHR', 'JSH', 'APR', 'LSH'])('keeps %s plan handles when an optional filename preview fails output validation', async code => {
-        const basename = `PB_ALL_${code}_V5_01_b_20261018`
+    it.each([
+        ...['SY', 'KHR', 'JSH', 'APR', 'LSH'].map(code => [`PB_ALL_${code}_V5_01_b_20261018`, true] as const),
+        ['NAI_Blue_SCENE_nhr-photobooth-v5-draft3-20261122_nhr-v5-pose-draft3-1_0', true] as const,
+        // A credential-shaped name stays private; the plan handle must survive the null preview.
+        ['PB-AKIAABCDEFGHIJKLMNOP-01', false] as const,
+    ])('previews %s and keeps plan handles even when the optional filename preview is withheld', async (basename, previewed) => {
+        const code = basename.replace(/[^A-Za-z0-9]/g, '').slice(0, 40)
         runtime.scene.mockResolvedValue({ schemaVersion: 1, presetId: 'preset', revision: 2,
             updatedAt: '2026-09-05T00:00:00.000Z', scenes: [{ id: 'scene', name: 'Scene',
                 scenePrompt: params.prompt, filenameTemplate: basename, generationFolderId: 'child',
@@ -180,7 +185,7 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
 
         const receipt = await dispatcher.dispatch({ ...envelope, requestHash: agentRequestHash(envelope) })
         expect(receipt).toMatchObject({ state: 'completed', result: { status: 'ready',
-            review: { jobs: [{ destination: { fileName: code === 'SY' ? `${basename}.png` : null } }] } } })
+            review: { jobs: [{ destination: { fileName: previewed ? `${basename}.png` : null } }] } } })
         const plan = await plans.get(receipt.result!.planId as string)
         expect(receipt.result).toMatchObject({ planId: plan!.planId, planHash: plan!.planHash })
         expect(plan!.jobs[0]).toMatchObject({ semantic: { prompt: params.prompt, model: 'nai-diffusion-5-full',
@@ -355,6 +360,18 @@ describe('agent Scene plans use the existing durable Scene Queue', () => {
         expect(await enqueueAgentSceneGenerationPlan(plan, grant)).toMatchObject({ status: 'conflict' })
         expect(runtime.enqueue).not.toHaveBeenCalled()
         expect(runtime.dehydrate).not.toHaveBeenCalled()
+    })
+
+    it('marks Scene preparation and its compatibility scan for DevTools, and plans unchanged without User Timing', async () => {
+        const measure = vi.spyOn(performance, 'measure')
+        const { plan } = await agentFixture()
+        expect(measure.mock.calls.map(([name]) => name)).toEqual(['agent-plan:compatibility-scan', 'agent-plan:scene-preparation'])
+        measure.mockRestore()
+        vi.stubGlobal('performance', undefined)
+        try {
+            const { plan: untimed } = await agentFixture()
+            expect(untimed.jobs.map(job => job.destination)).toEqual(plan.jobs.map(job => job.destination))
+        } finally { vi.unstubAllGlobals() }
     })
 
     it('retains insufficient reviewed budget instead of minting a larger grant', async () => {

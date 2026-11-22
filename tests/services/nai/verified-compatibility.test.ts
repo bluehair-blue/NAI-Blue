@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { GenerationAttempt, GenerationJob } from '@/domain/queue/types'
 import type { GenerationParams } from '@/services/novelai-types'
-import { queryVerifiedNaiGenerationCompatibility } from '@/services/nai/verified-compatibility'
+import { queryVerifiedNaiGenerationCompatibility, queryVerifiedNaiGenerationCompatibilityBatch } from '@/services/nai/verified-compatibility'
 import { queryNaiGenerationCompatibility, CURRENT_NAI_PAYLOAD_BUILDER_REVISION as revision } from '@/services/nai/compatibility'
 import { CURRENT_NAI_MODEL_CATALOG_REVISION } from '@/services/nai/model-catalog'
 import { hashGenerationSemanticIntent } from '@/application/generation/plan-generation'
@@ -52,5 +52,90 @@ describe('exact live canary compatibility evidence', () => {
         if (fault === 'artifact') f.deps.verifyArtifact.mockResolvedValue(false)
         if (fault === 'catalog') (f.job.snapshot.providerExecutionEnvelope as { modelCatalogRevision: string }).modelCatalogRevision = 'old'
         expect((await queryVerifiedNaiGenerationCompatibility(params, revision, false, f.deps)).status).toBe('synthetic-only')
+    })
+})
+
+describe('plan-wide compatibility evidence scan', () => {
+    const intent = (seed: number) => ({ ...params, seed })
+    const jobFor = (id: string, seed: number) => {
+        const job = structuredClone(evidence().job) as unknown as { id: string; artifactReference: { artifactId: string };
+            snapshot: { providerExecutionEnvelope: { semanticIntentHash: string } } }
+        job.id = id
+        job.artifactReference.artifactId = `artifact:${id}`
+        job.snapshot.providerExecutionEnvelope.semanticIntentHash = hashGenerationSemanticIntent(projectMainGenerationSemantic(intent(seed), 'png'))
+        return job as unknown as GenerationJob
+    }
+    const attemptFor = (jobId: string) => {
+        const attempt = structuredClone(evidence().attempt) as { -readonly [K in keyof GenerationAttempt]: GenerationAttempt[K] }
+        attempt.id = `attempt:${jobId}`
+        attempt.jobId = jobId
+        ;(attempt.providerEvidence!.spoolReceipt as { attemptId: string }).attemptId = attempt.id
+        return attempt as GenerationAttempt
+    }
+    const paged = (pages: GenerationJob[][]) => ({
+        listJobs: vi.fn(async (cursor: string | null) => {
+            const index = cursor === null ? 0 : Number(cursor)
+            return { items: pages[index], nextCursor: index + 1 < pages.length ? String(index + 1) : null }
+        }),
+        listAttempts: vi.fn(async (jobId: string) => [attemptFor(jobId)]),
+        verifyArtifact: vi.fn(async () => true),
+    })
+    // Seed 1 is verified by job b (a matches but its artifact fails), seed 2 never matches,
+    // the unknown model is not synthetic-only, and seed 3 is verified on the second page.
+    const requests = [{ params: intent(1), streaming: false }, { params: intent(2), streaming: false },
+        { params: { ...intent(1), model: 'unknown-model' }, streaming: false }, { params: intent(3), streaming: false }]
+    const pages = () => [[jobFor('a', 1), jobFor('x', 9)], [jobFor('b', 1), jobFor('c', 3)], [jobFor('d', 3)]]
+    const configure = (deps: ReturnType<typeof paged>) => {
+        deps.verifyArtifact.mockImplementation(async (_artifactId: string, jobId: string) => jobId !== 'a')
+        return deps
+    }
+
+    it('reads each page once for the whole plan and gives every image the single-query result', async () => {
+        const batchDeps = configure(paged(pages()))
+        const batch = await queryVerifiedNaiGenerationCompatibilityBatch(requests, revision, batchDeps)
+        expect(batchDeps.listJobs).toHaveBeenCalledTimes(3)
+        const single = []
+        for (const request of requests) {
+            single.push(await queryVerifiedNaiGenerationCompatibility(request.params, revision, request.streaming, configure(paged(pages()))))
+        }
+        expect(batch).toEqual(single)
+        expect(batch.map(item => item.status)).toEqual(['live-canary-pass', 'synthetic-only', 'unsupported', 'live-canary-pass'])
+        expect(batch[0].fixture?.path).toBe('queue-attempt:attempt:b')
+        expect(batch[3].fixture?.path).toBe('queue-attempt:attempt:c')
+        // d matches only the already resolved seed 3, so it is never re-verified.
+        expect(batchDeps.listAttempts.mock.calls.map(([jobId]) => jobId)).toEqual(['a', 'b', 'c'])
+    })
+
+    it('stops paging once every scanned image is resolved and skips the scan when none needs it', async () => {
+        const deps = configure(paged(pages()))
+        const result = await queryVerifiedNaiGenerationCompatibilityBatch([requests[0], requests[3], requests[3]], revision, deps)
+        expect(result.map(item => item.status)).toEqual(['live-canary-pass', 'live-canary-pass', 'live-canary-pass'])
+        expect(deps.listJobs).toHaveBeenCalledTimes(2)
+        expect(deps.listAttempts.mock.calls.map(([jobId]) => jobId)).toEqual(['a', 'b', 'c'])
+        const none = paged(pages())
+        await queryVerifiedNaiGenerationCompatibilityBatch([requests[2]], revision, none)
+        expect(none.listJobs).not.toHaveBeenCalled()
+    })
+
+    it('grants nothing to unresolved images when a page read fails, keeping earlier resolutions', async () => {
+        const deps = configure(paged(pages()))
+        deps.listJobs.mockImplementation(async (cursor: string | null) => {
+            if (cursor === null) return { items: [jobFor('b', 1)], nextCursor: '1' }
+            throw new Error('page unavailable')
+        })
+        const result = await queryVerifiedNaiGenerationCompatibilityBatch([requests[0], requests[3]], revision, deps)
+        expect(result.map(item => item.status)).toEqual(['live-canary-pass', 'synthetic-only'])
+        expect(await queryVerifiedNaiGenerationCompatibility(intent(3), revision, false, deps)).toMatchObject({ status: 'synthetic-only' })
+    })
+
+    it('closes only the images whose matching job evidence is unreadable', async () => {
+        const deps = configure(paged(pages()))
+        deps.listAttempts.mockImplementation(async (jobId: string) => {
+            if (jobId === 'a') throw new Error('attempts unavailable')
+            return [attemptFor(jobId)]
+        })
+        const result = await queryVerifiedNaiGenerationCompatibilityBatch([requests[0], requests[3]], revision, deps)
+        expect(result.map(item => item.status)).toEqual(['synthetic-only', 'live-canary-pass'])
+        expect((await queryVerifiedNaiGenerationCompatibility(intent(1), revision, false, deps)).status).toBe('synthetic-only')
     })
 })
