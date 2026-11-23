@@ -57,3 +57,4 @@
 ## 참고: NAI Blue 밖에서 발생한 이슈 (구분 기록)
 
 - 동일 세션 중 에이전트 런타임(Copilot/Gemini)의 `mcp_call` 도구 호출 직렬화에서 `changes: [...]`, `targets: [...]` 배열 내부 객체가 `[null]`로 전달되는 오류가 발생해 GPT 워커로 우회 실행했다. 이는 NAI Blue MCP 서버 측 버그가 아닌 호출 클라이언트 측 이슈다.
+  - 2026-11-23 원인과 처리: Copilot 할당량이 떨어져 Vertex로 넘어간 Gemini 4 Neon 호출에서만 났다(9건 모두, Copilot 경유 19건은 정상). ADE의 `mcp_call`이 입력을 모양이 선언되지 않은 객체로 받았기 때문이고, 그 대화를 Vertex에 다시 보내 재현했다. ADE에서 도구를 `mcp_tool`로 바꾸고 입력을 `argumentsJson`(JSON 객체 문자열) 하나로 받게 고쳤다(`projects/CodexNext/ADE`의 INDEX '남은 일과 주의'). Pi 콘솔과 워커를 다시 켜야 적용된다.
