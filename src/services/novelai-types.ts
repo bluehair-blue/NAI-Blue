@@ -1,4 +1,5 @@
 import type { AssetModulePlan } from '@/lib/asset-modules/resolver'
+import type { PreciseReferenceCaption } from '@/domain/generation/precise-reference'
 import type { MetadataMode } from '@/domain/composition/types'
 import type { CompositionPlanHash } from '@/domain/composition/canonical-serialize'
 import type { PortablePathRef, RandomTraceEntry } from '@/domain/composition/types'
@@ -62,7 +63,7 @@ export interface GenerationParams {
     charImages?: string[]
     charStrength?: number[]
     charFidelity?: number[]
-    charReferenceType?: ('character' | 'style' | 'character&style' | 'costume' | 'delta')[]
+    charReferenceType?: (PreciseReferenceCaption | 'delta')[]
     charCacheKeys?: (string | null)[]
     charInfo?: number[]
     vibeImages?: string[]

@@ -1,3 +1,5 @@
+import type { PreciseReferenceCaption } from '@/domain/generation/precise-reference'
+
 export const COMPOSITION_SCHEMA_VERSION = 2 as const
 
 export type CompositionSchemaVersion = typeof COMPOSITION_SCHEMA_VERSION
@@ -80,7 +82,7 @@ export type CharacterPosition =
     | { mode: 'ai-choice'; extensions?: Extensions }
     | { mode: 'manual'; x: number; y: number; extensions?: Extensions }
 
-export type CharacterReferenceType = 'character' | 'style' | 'character&style' | 'costume' | 'delta' | 'vibe'
+export type CharacterReferenceType = PreciseReferenceCaption | 'delta' | 'vibe'
 
 export interface ResourceBinding {
     resourceId: EntityId

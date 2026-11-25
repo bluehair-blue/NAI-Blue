@@ -13,6 +13,7 @@ import type {
     SceneDocument,
     SceneRepositoryPort,
 } from './scene-repository'
+import { PRECISE_REFERENCE_CAPTIONS } from '@/domain/generation/precise-reference'
 import { resolveScenes, type ResolvedSceneAuthoring } from './resolve-scenes'
 
 export type SceneParameter =
@@ -219,8 +220,7 @@ function isCharacterOverride(value: unknown): value is CharacterSlotPatch {
                     'resourceId', 'enabled', 'referenceType', 'strength', 'fidelity',
                     'informationExtracted', 'extensions',
                 ]) && isId(binding.resourceId) && typeof binding.enabled === 'boolean'
-                && ['character', 'style', 'character&style', 'costume', 'delta', 'vibe']
-                    .includes(binding.referenceType as string)
+                && [...PRECISE_REFERENCE_CAPTIONS, 'delta', 'vibe'].includes(binding.referenceType as string)
                 && typeof binding.strength === 'number' && Number.isFinite(binding.strength)
                 && (binding.fidelity === undefined
                     || (typeof binding.fidelity === 'number' && Number.isFinite(binding.fidelity)))

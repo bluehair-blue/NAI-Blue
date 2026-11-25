@@ -344,6 +344,9 @@ describe('IndexedDbSceneRepository', () => {
         const references = [
             { artifactId: 'artifact:import-a', contentChecksum: `sha256:${'a'.repeat(64)}` as const, referenceType: 'character' as const, strength: 0.6, fidelity: 1 },
             { artifactId: 'artifact:job-b', contentChecksum: `sha256:${'b'.repeat(64)}` as const, referenceType: 'style' as const, strength: 0, fidelity: 0.25 },
+            // V5 shape: no fidelity, strength up to 5, the outfit type and the outfit toggle.
+            { artifactId: 'artifact:job-c', contentChecksum: `sha256:${'c'.repeat(64)}` as const, referenceType: 'outfit' as const, strength: 5 },
+            { artifactId: 'artifact:job-d', contentChecksum: `sha256:${'d'.repeat(64)}` as const, referenceType: 'character&style' as const, strength: 2.5, preferSameOutfit: false },
         ]
         const bound = document('preset:references', 3, [
             { ...authoringScene('scene:plain'), name: 'Renamed', preciseReferences: references },
@@ -357,6 +360,7 @@ describe('IndexedDbSceneRepository', () => {
         const stored = memory.values.get(V2_KEY)
         for (const invalid of [[references[0], { ...references[0], strength: 0.1 }], Array.from({ length: 11 }, (_, index) => ({ ...references[0], artifactId: `artifact:${index}` })),
             [{ ...references[0], referenceType: 'vibe' }], [{ ...references[0], fidelity: 2 }], [{ ...references[0], base64: 'AA==' }],
+            [{ ...references[0], strength: 5.5 }], [{ ...references[1], preferSameOutfit: true }], [{ ...references[2], preferSameOutfit: false }],
             [{ ...references[0], artifactId: 'C:/private.png' }], references[0]]) {
             const candidate = document('preset:references', 4, [{ ...authoringScene('scene:plain'), preciseReferences: invalid }] as unknown as SceneAuthoringRecord[])
             await expect(repository.commit(candidate, 3), JSON.stringify(invalid)).rejects.toBeInstanceOf(TypeError)

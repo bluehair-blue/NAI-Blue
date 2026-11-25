@@ -1,3 +1,4 @@
+import { preciseReferenceCaption } from '@/domain/generation/precise-reference'
 import { useCharacterStore } from '@/stores/character-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { useGenerationStore } from '@/stores/generation-store'
@@ -204,7 +205,7 @@ export async function buildLegacySceneGenerationParams(
             charImages: characterImagesWithData.map(img => img.base64!),
             charStrength: characterImagesWithData.map(img => img.strength),
             charFidelity: characterImagesWithData.map(img => img.fidelity ?? 0.6),
-            charReferenceType: characterImagesWithData.map(img => img.referenceType ?? 'character&style'),
+            charReferenceType: characterImagesWithData.map(img => preciseReferenceCaption(img.referenceType ?? 'character&style', img.preferSameOutfit)),
             charCacheKeys: characterImagesWithData.map(img => img.cacheKey || null),
             vibeImages: vibeImagesWithData.map(img => img.base64!),
             vibeInfo: vibeImagesWithData.map(img => img.informationExtracted),

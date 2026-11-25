@@ -1,3 +1,4 @@
+import { preciseReferenceCaption } from '@/domain/generation/precise-reference'
 import { buildStyleLabPrompt, formatWeightedPromptTags } from '@/lib/style-lab'
 import { createWildcardResolutionSession } from '@/lib/fragment-processor'
 import type { FragmentSequenceCommitProposal } from '@/domain/composition/fragment-resolver'
@@ -129,7 +130,7 @@ export async function buildLegacyStyleLabGenerationParams(
             charImages: characterImages.map(img => img.base64!),
             charStrength: characterImages.map(img => img.strength),
             charFidelity: characterImages.map(img => img.fidelity ?? 0.6),
-            charReferenceType: characterImages.map(img => img.referenceType ?? 'character&style'),
+            charReferenceType: characterImages.map(img => preciseReferenceCaption(img.referenceType ?? 'character&style', img.preferSameOutfit)),
             charCacheKeys: characterImages.map(img => img.cacheKey || null),
             vibeImages: vibeImages.map(img => img.base64!),
             vibeInfo: vibeImages.map(img => img.informationExtracted),

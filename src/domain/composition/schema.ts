@@ -1,3 +1,4 @@
+import { PRECISE_REFERENCE_CAPTIONS } from '@/domain/generation/precise-reference'
 import { COMPOSITION_SCHEMA_VERSION, type CompositionDocument } from './types'
 
 const SUPPORTED_SCHEMA_VERSION = COMPOSITION_SCHEMA_VERSION
@@ -76,14 +77,7 @@ const POSITIVE_PROMPT_SLOTS = [
     'detail',
     'quality',
 ] as const
-const CHARACTER_REFERENCE_TYPES = [
-    'character',
-    'style',
-    'character&style',
-    'costume',
-    'delta',
-    'vibe',
-] as const
+const CHARACTER_REFERENCE_TYPES = [...PRECISE_REFERENCE_CAPTIONS, 'delta', 'vibe'] as const
 const SOURCE_MODES = ['text-to-image', 'image-to-image', 'inpaint'] as const
 const RESOURCE_ROLES = [
     'source-image',

@@ -194,12 +194,40 @@ describe('adaptGenerationParams V5 capability boundary', () => {
         }))).rejects.toThrow('80%')
     })
 
-    it.each([
-        ['Vibe Transfer', { vibeImages: ['data:image/png;base64,AA=='] }],
-        ['Precise Reference', { charImages: ['data:image/png;base64,AA=='] }],
-    ])('rejects unsupported V5 %s before reference preprocessing', async (feature, overrides) => {
-        await expect(adaptGenerationParams('token', params(overrides))).rejects.toThrow(feature)
+    it('rejects unsupported V5 Vibe Transfer before reference preprocessing', async () => {
+        await expect(adaptGenerationParams('token', params({ vibeImages: ['data:image/png;base64,AA=='] }))).rejects.toThrow('Vibe Transfer')
         expect(prepareReferences).not.toHaveBeenCalled()
+    })
+
+    it('accepts V5 Full and Curated Precise References up to strength 5, including outfit references', async () => {
+        const references = { charImages: ['data:image/png;base64,AA==', 'data:image/png;base64,AQ=='],
+            charStrength: [5, 0], charReferenceType: ['costume' as const, 'character_mainoutfit' as const] }
+        for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated']) {
+            await expect(adaptGenerationParams('token', params({ model, ...references }))).resolves.toBeDefined()
+            // Image2Image keeps its references; only inpainting does not support them on V5.
+            await expect(adaptGenerationParams('token', params({ model, ...references, sourceImage: 'data:image/png;base64,source' })))
+                .resolves.toBeDefined()
+        }
+        expect(prepareReferences).toHaveBeenCalledTimes(4)
+    })
+
+    it.each([
+        ['V5 Full Medium', { model: 'nai-diffusion-5-full-medium', steps: 14 }, 'V5 Full Medium은 Precise Reference', 'model'],
+        ['V5 inpainting', { sourceImage: 'data:image/png;base64,source', mask: 'data:image/png;base64,mask' }, '인페인트', 'model'],
+        ['a V5 strength above 5', { charStrength: [5.01] }, '최대 5', 'preciseReferences'],
+        ['a V4.5 strength above 1', { model: 'nai-diffusion-4-5-full', charStrength: [1.01] }, '최대 1', 'preciseReferences'],
+        ['a V4.5 outfit reference', { model: 'nai-diffusion-4-5-full', charReferenceType: ['costume' as const] }, 'Outfit Reference', 'preciseReferences'],
+    ])('rejects Precise Reference on %s before reference preprocessing', async (_case, overrides, message, fieldPath) => {
+        const attempt = adaptGenerationParams('token', params({ charImages: ['data:image/png;base64,AA=='], ...overrides }))
+        await expect(attempt).rejects.toThrow(message)
+        await expect(attempt).rejects.toMatchObject({ name: 'NovelAiModelCapabilityError', fieldPath })
+        expect(prepareReferences).not.toHaveBeenCalled()
+    })
+
+    it('keeps V4.5 Precise Reference available for inpainting and ignores a stored outfit toggle', async () => {
+        await expect(adaptGenerationParams('token', params({ model: 'nai-diffusion-4-5-full', scheduler: 'karras',
+            charImages: ['data:image/png;base64,AA=='], charStrength: [1], charReferenceType: ['character_mainoutfit'],
+            sourceImage: 'data:image/png;base64,source', mask: 'data:image/png;base64,mask' }))).resolves.toBeDefined()
     })
 
     it('fails closed for an unknown provider model', async () => {

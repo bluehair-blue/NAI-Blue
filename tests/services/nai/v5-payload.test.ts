@@ -213,4 +213,30 @@ describe('NovelAI V5 payload', () => {
         expect(payload.input).toContain('teXt: speak')
         expect(payload.input).not.toContain('teXt: s jacket, don')
     })
+
+    it('sends V5 Precise References with the outfit captions, strength up to 5 and no Fidelity', () => {
+        const characterReferences = [
+            { referenceType: 'costume' as const, strength: 2.5, fidelity: 0.6, imageBase64: 'OUTFIT' },
+            { referenceType: 'character_mainoutfit' as const, strength: 1.5, fidelity: 0.9, imageBase64: 'CHARACTER' },
+            { referenceType: 'character&style_anyoutfit' as const, strength: 5, fidelity: 0.1, imageBase64: 'BOTH' },
+            { referenceType: 'style' as const, strength: 0.4, fidelity: 1, imageBase64: 'STYLE' },
+        ]
+        const caption = (base: string) => ({ caption: { base_caption: base, char_captions: [] }, legacy_uc: false })
+        for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated']) {
+            expect(buildGenerateImagePayload(request({ model }), { characterReferences }).parameters).toMatchObject({
+                director_reference_descriptions: ['costume', 'character_mainoutfit', 'character&style_anyoutfit', 'style'].map(caption),
+                director_reference_information_extracted: [1, 1, 1, 1],
+                director_reference_strength_values: [2.5, 1.5, 5, 0.4],
+                director_reference_secondary_strength_values: [0, 0, 0, 0],
+                director_reference_images: ['OUTFIT', 'CHARACTER', 'BOTH', 'STYLE'],
+            })
+        }
+        // V4.5 has neither the toggle nor a wider strength range: the base captions and 1 - fidelity stay as they were.
+        const legacy = buildGenerateImagePayload(request({ model: 'nai-diffusion-4-5-full' }), {
+            characterReferences: characterReferences.slice(1).map(reference => ({ ...reference, strength: 0.5 })),
+        }).parameters as { director_reference_secondary_strength_values: number[] }
+        expect(legacy).toMatchObject({ director_reference_descriptions: ['character', 'character&style', 'style'].map(caption),
+            director_reference_strength_values: [0.5, 0.5, 0.5] })
+        expect(legacy.director_reference_secondary_strength_values.map(value => Number(value.toFixed(6)))).toEqual([0.1, 0.9, 0])
+    })
 })

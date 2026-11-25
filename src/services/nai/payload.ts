@@ -8,6 +8,11 @@ import {
 } from '@/services/nai/presets'
 import { getNovelAiModelProfile, isNovelAiV5Model, mediumSettingsIssue, novelAiVerbatimSettingsIssue } from '@/services/nai/model-catalog'
 import { assembleV5TextPrompt } from '@/services/nai/text-assembly'
+import {
+    V4_PRECISE_REFERENCE_RULES,
+    preciseReferenceWireCaption,
+    type PreciseReferenceCaption,
+} from '@/domain/generation/precise-reference'
 
 // Release-supported builder authority is V4/V4.5/V5. Retired model identifiers
 // may still be parsed from old metadata, but the selectable model boundary
@@ -52,7 +57,7 @@ export interface I2iOptions {
 }
 
 export interface CharacterReferenceOptions {
-    referenceType: 'character' | 'style' | 'character&style' | 'costume' | 'delta'
+    referenceType: PreciseReferenceCaption | 'delta'
     strength: number
     fidelity: number
     cacheSecretKey?: string
@@ -110,6 +115,7 @@ export function buildGenerateImagePayload(
     const verbatimIssue = novelAiVerbatimSettingsIssue(req)
     if (verbatimIssue !== null) throw new Error(verbatimIssue)
     const isV5 = isNovelAiV5Model(presetModel)
+    const referenceRules = getNovelAiModelProfile(req.model)?.capabilities.preciseReferenceRules ?? V4_PRECISE_REFERENCE_RULES
     const skipCfgAboveSigma = varietySigma({ ...req, model: presetModel })
     const prompt = verbatim ? req.prompt : mergeQualityTags(
         removeComments(req.prompt),
@@ -230,12 +236,13 @@ export function buildGenerateImagePayload(
             ...(opts.characterReferences?.length
                 ? {
                     director_reference_descriptions: opts.characterReferences.map(ref => ({
-                        caption: { base_caption: ref.referenceType, char_captions: [] },
+                        caption: { base_caption: preciseReferenceWireCaption(ref.referenceType, referenceRules), char_captions: [] },
                         legacy_uc: false,
                     })),
                     director_reference_information_extracted: opts.characterReferences.map(() => 1),
                     director_reference_strength_values: opts.characterReferences.map(ref => ref.strength),
-                    director_reference_secondary_strength_values: opts.characterReferences.map(ref => 1 - ref.fidelity),
+                    director_reference_secondary_strength_values: opts.characterReferences
+                        .map(ref => referenceRules.fidelity ? 1 - ref.fidelity : 0),
                     ...(opts.characterReferences.some(ref => ref.cacheSecretKey)
                         ? {
                             director_reference_images_cached: opts.characterReferences

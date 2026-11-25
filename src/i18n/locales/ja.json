@@ -2588,12 +2588,16 @@
         "typeCharacterStyle": "キャラクター & スタイル",
         "typeCharacter": "キャラクター",
         "typeStyle": "スタイル",
+        "typeOutfit": "衣装 (V5)",
+        "preferSameOutfit": "同じ衣装を優先 (Prefer same outfit)",
+        "strengthOverModelMax": "このモデルの強度は最大 {{max}} です。下げると生成できます。",
+        "outfitNeedsV5": "衣装タイプは V5 Full と V5 Curated でのみ使えます。タイプを変えると生成できます。",
         "fidelity": "忠実度 (Fidelity)",
         "vibeDisabledMsg": "参照リファレンスがある場合は使用できません。",
         "clickToDisable": "クリックで無効化",
         "clickToEnable": "クリックで有効化",
-        "v5PrecisePending": "V5 はまだ Precise Reference に対応していません。",
-        "v5ReferenceAlternative": "キャラクタープロンプトを使うか、この参照画像を残したまま V4.5 に切り替えてください。",
+        "preciseUnsupported": "このモデルは Precise Reference に対応していません。",
+        "preciseUnsupportedAlternative": "この参照画像を残したまま V5 Full、V5 Curated または V4.5 に切り替えてください。",
         "v5VibePending": "V5 はまだ Vibe Transfer に対応していません。画像は保存され、V4.5 で再利用できます。"
     },
     "imageRef": {

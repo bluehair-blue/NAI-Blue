@@ -1,3 +1,4 @@
+import { preciseReferenceCaption } from '@/domain/generation/precise-reference'
 import type { AnlasPricingBasis } from '@/domain/queue/anlas-cost-consent'
 import type { CharacterGroup, CharacterPreset, CharacterPrompt } from '@/stores/character-prompt-store'
 import type { ReferenceImage } from '@/stores/character-store'
@@ -104,7 +105,7 @@ function referenceSnapshots(
             id: image.id,
             enabled: image.enabled !== false,
             kind: 'character' as const,
-            referenceType: image.referenceType,
+            referenceType: preciseReferenceCaption(image.referenceType, image.preferSameOutfit),
             strength: image.strength,
             fidelity: image.fidelity,
             informationExtracted: image.informationExtracted,
@@ -114,7 +115,7 @@ function referenceSnapshots(
             id: image.id,
             enabled: image.enabled !== false,
             kind: 'vibe' as const,
-            referenceType: image.referenceType,
+            referenceType: preciseReferenceCaption(image.referenceType, image.preferSameOutfit),
             strength: image.strength,
             fidelity: image.fidelity,
             informationExtracted: image.informationExtracted,

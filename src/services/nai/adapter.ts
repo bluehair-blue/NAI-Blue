@@ -1,6 +1,7 @@
 import type { BuildOptions, GenerationRequest } from '@/services/nai/payload'
 import {
     getNovelAiModelProfile,
+    isNovelAiMediumModel,
     isNovelAiV5Model,
     mediumSettingsIssue,
     novelAiVerbatimSettingsIssue,
@@ -46,8 +47,30 @@ export function validateNovelAiGenerationParams(params: GenerationParams) {
     if ((params.vibeImages?.length ?? 0) > 0 && !profile.capabilities.vibeTransfer) {
         throw new NovelAiModelCapabilityError('NAI Diffusion V5는 아직 Vibe Transfer를 지원하지 않습니다.')
     }
-    if ((params.charImages?.length ?? 0) > 0 && !profile.capabilities.preciseReference) {
-        throw new NovelAiModelCapabilityError('NAI Diffusion V5는 아직 Precise Reference를 지원하지 않습니다.')
+    if ((params.charImages?.length ?? 0) > 0) {
+        const rules = profile.capabilities.preciseReferenceRules
+        if (rules === null) {
+            throw new NovelAiModelCapabilityError(isNovelAiMediumModel(params.model)
+                ? 'V5 Full Medium은 Precise Reference를 지원하지 않습니다. V5 Full이나 V5 Curated를 선택하세요.'
+                : '선택한 이미지 모델은 Precise Reference를 지원하지 않습니다.')
+        }
+        if (params.mask && !rules.inpainting) {
+            throw new NovelAiModelCapabilityError(
+                'NAI Diffusion V5 인페인트는 아직 Precise Reference를 지원하지 않습니다. 레퍼런스를 끄거나 V4.5를 선택하세요.',
+            )
+        }
+        if (!rules.outfit && params.charReferenceType?.includes('costume')) {
+            throw new NovelAiModelCapabilityError(
+                'Outfit Reference는 NAI Diffusion V5에서만 사용할 수 있습니다.',
+                'preciseReferences', 'outfit references need V5 Full or V5 Curated',
+            )
+        }
+        if (params.charStrength?.some(strength => strength > rules.strengthMax)) {
+            throw new NovelAiModelCapabilityError(
+                `선택한 이미지 모델의 Precise Reference 강도는 최대 ${rules.strengthMax}입니다.`,
+                'preciseReferences', `reference strength 0-${rules.strengthMax} on this model`,
+            )
+        }
     }
     if (params.transparentBackground === true && !profile.capabilities.transparentBackground) {
         throw new NovelAiModelCapabilityError('투명 배경은 NAI Diffusion V5에서만 사용할 수 있습니다.')

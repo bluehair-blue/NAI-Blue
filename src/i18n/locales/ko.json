@@ -2642,12 +2642,16 @@
         "typeCharacterStyle": "캐릭터 & 스타일",
         "typeCharacter": "캐릭터",
         "typeStyle": "스타일",
+        "typeOutfit": "의상 (V5)",
+        "preferSameOutfit": "같은 의상 우선 (Prefer same outfit)",
+        "strengthOverModelMax": "이 모델의 강도는 최대 {{max}}이에요. 낮춰야 생성할 수 있어요.",
+        "outfitNeedsV5": "의상 타입은 V5 Full과 V5 Curated에서만 쓸 수 있어요. 타입을 바꿔야 생성할 수 있어요.",
         "fidelity": "충실도 (Fidelity)",
         "vibeDisabledMsg": "참조 레퍼런스가 있으면 사용할 수 없습니다.",
         "clickToDisable": "클릭하여 비활성화",
         "clickToEnable": "클릭하여 활성화",
-        "v5PrecisePending": "V5는 아직 Precise Reference를 지원하지 않아요.",
-        "v5ReferenceAlternative": "캐릭터 프롬프트를 쓰거나, 이 참조 이미지를 유지하고 V4.5로 바꿔 주세요.",
+        "preciseUnsupported": "이 모델은 Precise Reference를 지원하지 않아요.",
+        "preciseUnsupportedAlternative": "이 참조 이미지를 유지하고 V5 Full, V5 Curated 또는 V4.5로 바꿔 주세요.",
         "v5VibePending": "V5는 아직 Vibe Transfer를 지원하지 않아요. 이미지는 그대로 보관되어 V4.5에서 다시 쓸 수 있어요."
     },
     "imageRef": {

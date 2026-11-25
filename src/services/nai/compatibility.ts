@@ -80,6 +80,8 @@ function knownDivergence(query: NaiCompatibilityQuery): boolean {
     const capabilities = profile.capabilities
     if (query.action === 'img2img' && !capabilities.imageToImage) return true
     if (query.action === 'infill' && !capabilities.inpainting) return true
+    if (query.action === 'infill' && query.features.includes('precise-reference')
+        && capabilities.preciseReferenceRules?.inpainting !== true) return true
     return query.features.some(feature => {
         switch (feature) {
             case 'character-prompts': return !capabilities.characterPrompts

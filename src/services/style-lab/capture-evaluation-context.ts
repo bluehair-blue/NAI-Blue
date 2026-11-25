@@ -1,3 +1,4 @@
+import { preciseReferenceCaption } from '@/domain/generation/precise-reference'
 import { sha256Utf8 } from '@/domain/composition/canonical-serialize'
 import {
     createStyleEvaluationContext,
@@ -59,7 +60,7 @@ export function captureCurrentStyleEvaluationContext(
         kind,
         id: reference.id,
         enabled: reference.enabled !== false,
-        referenceType: reference.referenceType,
+        referenceType: preciseReferenceCaption(reference.referenceType, reference.preferSameOutfit),
         strength: reference.strength,
         fidelity: reference.fidelity,
         informationExtracted: reference.informationExtracted,

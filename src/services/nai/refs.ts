@@ -1,4 +1,6 @@
 import { NAI_ENDPOINTS } from '@/services/nai/endpoints'
+import { getNovelAiModelProfile } from '@/services/nai/model-catalog'
+import { fitV5ReferenceBucket } from '@/services/nai/reference-bucket'
 import type { CharacterReferenceOptions, I2iOptions, VibeOptions } from '@/services/nai/payload'
 import type { GenerationParams } from '@/services/novelai-types'
 
@@ -123,6 +125,36 @@ export async function normalizeCharacterReferenceImage(imageBase64: string): Pro
     return canvasToPngBase64(canvas)
 }
 
+/** V5 reference fit: cover-crop to the nearest aspect bucket, keeping real transparency. */
+export async function fitCharacterReferenceToBucket(imageBase64: string): Promise<string> {
+    const image = await loadImage(imageBase64)
+    const source = document.createElement('canvas')
+    source.width = image.width
+    source.height = image.height
+    const sourceContext = source.getContext('2d')
+    if (!sourceContext) throw new Error('Canvas context failed')
+    sourceContext.drawImage(image, 0, 0)
+    image.src = ''
+    // NovelAI results hide their metadata in the lowest alpha bit (254 in an opaque image, 1 in a transparent area).
+    // It is cleared on the original pixels, before resampling can smear it into values this check would miss.
+    const pixels = sourceContext.getImageData(0, 0, source.width, source.height)
+    for (let offset = 3; offset < pixels.data.length; offset += 4) {
+        if (pixels.data[offset] === 254) pixels.data[offset] = 255
+        else if (pixels.data[offset] === 1) pixels.data[offset] = 0
+    }
+    sourceContext.putImageData(pixels, 0, 0)
+
+    const fit = fitV5ReferenceBucket(source.width, source.height)
+    const canvas = document.createElement('canvas')
+    canvas.width = fit.width
+    canvas.height = fit.height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas context failed')
+    context.imageSmoothingQuality = 'high'
+    context.drawImage(source, 0 - fit.left, 0 - fit.top, fit.resizeWidth, fit.resizeHeight)
+    return canvasToPngBase64(canvas)
+}
+
 export interface NormalizedSource {
     width: number
     height: number
@@ -230,6 +262,9 @@ export async function prepareReferences(token: string, params: GenerationParams)
 
     const characterReferences: CharacterReferenceOptions[] = []
     const charImages = params.charImages ?? []
+    const normalizeReference = getNovelAiModelProfile(params.model)?.capabilities.preciseReferenceRules?.imageFit === 'bucket'
+        ? fitCharacterReferenceToBucket
+        : normalizeCharacterReferenceImage
     for (let index = 0; index < charImages.length; index++) {
         const cacheSecretKey = params.charCacheKeys?.[index] ?? undefined
         characterReferences.push({
@@ -237,7 +272,7 @@ export async function prepareReferences(token: string, params: GenerationParams)
             strength: params.charStrength?.[index] ?? 0.6,
             fidelity: params.charFidelity?.[index] ?? 0.6,
             cacheSecretKey,
-            imageBase64: cacheSecretKey ? undefined : await normalizeCharacterReferenceImage(charImages[index]),
+            imageBase64: cacheSecretKey ? undefined : await normalizeReference(charImages[index]),
         })
     }
 

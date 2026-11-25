@@ -1,5 +1,7 @@
+import type { PreciseReferenceCaption } from '@/domain/generation/precise-reference'
+
 export type CharacterResourceKind = 'character' | 'vibe'
-export type CharacterResourceReferenceType = 'character' | 'style' | 'character&style'
+export type CharacterResourceReferenceType = PreciseReferenceCaption
 
 export interface CharacterResourceContent {
     id: string

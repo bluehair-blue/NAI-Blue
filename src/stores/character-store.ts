@@ -14,8 +14,8 @@ export type {
     CharacterResourceRepository,
 } from '@/lib/composition/character-resource-repository'
 
-// 참조 레퍼런스 타입 (NovelAI 2026년 2월 업데이트)
-export type PreciseReferenceType = 'character' | 'style' | 'character&style'
+import { preciseReferenceCaption, type PreciseReferenceType } from '@/domain/generation/precise-reference'
+export type { PreciseReferenceType } from '@/domain/generation/precise-reference'
 
 export interface ReferenceImage {
     id: string
@@ -29,6 +29,8 @@ export interface ReferenceImage {
     strength: number
     fidelity: number
     referenceType: PreciseReferenceType
+    /** "Prefer same outfit" (V5). Absent means NovelAI's default for the reference type. */
+    preferSameOutfit?: boolean
     cacheKey?: string
 }
 
@@ -277,6 +279,7 @@ export const useCharacterStore = create<CharacterState>()(
                     strength: img.strength,
                     fidelity: img.fidelity,
                     referenceType: img.referenceType,
+                    preferSameOutfit: img.preferSameOutfit,
                     cacheKey: img.cacheKey,
                 })),
                 vibeImages: state.vibeImages.map(img => ({
@@ -307,13 +310,12 @@ export function createCharacterStoreResourceRepository(): CharacterResourceRepos
         ensureAvailable: () => useCharacterStore.getState().ensureImagesLoaded(),
         getByResourceId: (resourceId) => {
             const state = useCharacterStore.getState()
-            const character = state.characterImages.find(image => (
-                characterStoreResourceId('character', image.id) === resourceId
+            const image = state.characterImages.find(candidate => (
+                characterStoreResourceId('character', candidate.id) === resourceId
+            )) ?? state.vibeImages.find(candidate => (
+                characterStoreResourceId('vibe', candidate.id) === resourceId
             ))
-            if (character !== undefined) return character
-            return state.vibeImages.find(image => (
-                characterStoreResourceId('vibe', image.id) === resourceId
-            ))
+            return image && { ...image, referenceType: preciseReferenceCaption(image.referenceType, image.preferSameOutfit) }
         },
     }
 }

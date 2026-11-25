@@ -49,6 +49,7 @@ import {
     type CharacterResourceRepository,
 } from '@/lib/composition/character-resource-repository'
 import type { ScenePreciseReference } from '@/application/scene/scene-precise-references'
+import { preciseReferenceCaption, type PreciseReferenceType } from '@/domain/generation/precise-reference'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { assessPortableCompositionPlan } from '@/platform/portable-resources'
 import {
@@ -96,7 +97,8 @@ interface SceneMaterializedReference {
     informationExtracted: number
     strength: number
     fidelity: number
-    referenceType: 'character' | 'style' | 'character&style'
+    referenceType: PreciseReferenceType
+    preferSameOutfit?: boolean
     cacheKey?: string
 }
 
@@ -133,7 +135,7 @@ function referenceSnapshots(
             id: image.id,
             enabled: image.enabled !== false,
             kind: 'character' as const,
-            referenceType: image.referenceType,
+            referenceType: preciseReferenceCaption(image.referenceType, image.preferSameOutfit),
             strength: image.strength,
             fidelity: image.fidelity,
             informationExtracted: image.informationExtracted,
@@ -143,7 +145,7 @@ function referenceSnapshots(
             id: image.id,
             enabled: image.enabled !== false,
             kind: 'vibe' as const,
-            referenceType: image.referenceType,
+            referenceType: preciseReferenceCaption(image.referenceType, image.preferSameOutfit),
             strength: image.strength,
             fidelity: image.fidelity,
             informationExtracted: image.informationExtracted,
@@ -162,7 +164,7 @@ function scenePreciseReferenceSnapshot(reference: ScenePreciseReference): MainRe
         id: scenePreciseReferenceId(reference),
         enabled: true,
         kind: 'character',
-        referenceType: reference.referenceType,
+        referenceType: preciseReferenceCaption(reference.referenceType, reference.preferSameOutfit),
         strength: reference.strength,
         fidelity: reference.fidelity,
         informationExtracted: 1,
@@ -189,8 +191,8 @@ function withScenePreciseReferences(
                     enabled: true,
                     informationExtracted: 1,
                     strength: reference.strength,
-                    fidelity: reference.fidelity,
-                    referenceType: reference.referenceType,
+                    fidelity: reference.fidelity ?? 0.6,
+                    referenceType: preciseReferenceCaption(reference.referenceType, reference.preferSameOutfit),
                 })
             }
         },

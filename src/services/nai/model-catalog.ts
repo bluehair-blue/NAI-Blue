@@ -1,8 +1,15 @@
 import { DEFAULT_NAI_IMAGE_MODEL } from '@/domain/generation/model-default'
+import {
+    V4_PRECISE_REFERENCE_RULES,
+    V5_PRECISE_REFERENCE_RULES,
+    type PreciseReferenceRules,
+} from '@/domain/generation/precise-reference'
 
 export { DEFAULT_NAI_IMAGE_MODEL } from '@/domain/generation/model-default'
 
 /** Immutable revision of the model IDs and capability semantics below. */
+// V5 Precise Reference (2026-11-24) kept v2: only a route that was refused before became possible, so no earlier
+// live evidence can attest it, and a new revision would discard the evidence of every unchanged route.
 export const CURRENT_NAI_MODEL_CATALOG_REVISION = 'nai-blue-model-catalog-v2' as const
 
 export interface NaiImageModelCapabilities {
@@ -13,6 +20,8 @@ export interface NaiImageModelCapabilities {
     readonly transparentBackground: boolean
     readonly vibeTransfer: boolean
     readonly preciseReference: boolean
+    /** null exactly when preciseReference is false. */
+    readonly preciseReferenceRules: PreciseReferenceRules | null
     readonly enhanceMax: boolean
     readonly maxCharacters?: number
 }
@@ -40,10 +49,18 @@ const V5_CAPABILITIES: NaiImageModelCapabilities = {
     animeFurryMode: true,
     transparentBackground: true,
     vibeTransfer: false,
-    preciseReference: false,
+    preciseReference: true,
+    preciseReferenceRules: V5_PRECISE_REFERENCE_RULES,
     enhanceMax: true,
     // Oct 14 production frontend exposes 32; the public guide still says 22.
     maxCharacters: 32,
+}
+
+// NovelAI announced V5 Precise Reference for Full and Curated only.
+const V5_MEDIUM_CAPABILITIES: NaiImageModelCapabilities = {
+    ...V5_CAPABILITIES,
+    preciseReference: false,
+    preciseReferenceRules: null,
 }
 
 const LEGACY_CAPABILITIES: NaiImageModelCapabilities = {
@@ -54,6 +71,7 @@ const LEGACY_CAPABILITIES: NaiImageModelCapabilities = {
     transparentBackground: false,
     vibeTransfer: true,
     preciseReference: true,
+    preciseReferenceRules: V4_PRECISE_REFERENCE_RULES,
     enhanceMax: true,
 }
 
@@ -98,7 +116,7 @@ export const NAI_IMAGE_MODELS = [
         description: '절약 모드: 14 Steps, Euler Ancestral, CFG Rescale 0, Heavy UC를 사용하며 커스텀 네거티브는 지원하지 않아요.',
         recommended: false,
         deprecated: false,
-        capabilities: V5_CAPABILITIES,
+        capabilities: V5_MEDIUM_CAPABILITIES,
     },
     legacy(
         'nai-diffusion-4-5-full',

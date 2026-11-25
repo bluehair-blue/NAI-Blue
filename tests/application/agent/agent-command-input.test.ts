@@ -144,16 +144,21 @@ describe('shared application command input contracts', () => {
         const patch = (preciseReferences: unknown) => ({ presetId: 'preset', expectedRevision: 1,
             changes: [{ sceneId: 'scene', preciseReferences }] }) as JsonObject
         const ajv = new AjvJsonSchemaValidator().getValidator(contract.schema)
+        // V5 shape: no fidelity, strength up to 5, an outfit reference, and the outfit toggle on the two character types.
+        const v5 = { artifactId: 'artifact:import-1', contentChecksum: digest, referenceType: 'outfit', strength: 5 }
         for (const valid of [null, [], [reference(1)], [reference(1, { referenceType: 'style', strength: 0, fidelity: 0 }),
-            reference(2, { referenceType: 'character&style' })], Array.from({ length: 10 }, (_, index) => reference(index))]) {
+            reference(2, { referenceType: 'character&style' })], Array.from({ length: 10 }, (_, index) => reference(index)),
+            [v5, reference(2, { preferSameOutfit: true }), reference(3, { referenceType: 'character&style', preferSameOutfit: false })]]) {
             expect(contract.validate(patch(valid))).toEqual(patch(valid))
             expect(ajv(patch(valid)).valid).toBe(true)
             expect(() => assertAgentPublicValue(patch(valid))).not.toThrow()
         }
         for (const invalid of [Array.from({ length: 11 }, (_, index) => reference(index)), [reference(1), reference(1, { strength: 0.2 })],
-            [reference(1, { referenceType: 'vibe' })], [reference(1, { strength: 1.01 })], [reference(1, { fidelity: -0.1 })],
+            [reference(1, { referenceType: 'vibe' })], [reference(1, { strength: 5.01 })], [reference(1, { fidelity: -0.1 })],
             [reference(1, { artifactId: '../private.png' })], [reference(1, { contentChecksum: 'sha256:short' })],
-            [reference(1, { path: 'C:/private.png' })], [{ artifactId: 'artifact:import-1', contentChecksum: digest, referenceType: 'character', strength: 0.6 }],
+            [reference(1, { path: 'C:/private.png' })], [{ artifactId: 'artifact:import-1', contentChecksum: digest, referenceType: 'character', fidelity: 0.6 }],
+            [reference(1, { referenceType: 'costume' })], [reference(1, { preferSameOutfit: 'yes' })],
+            [reference(1, { referenceType: 'style', preferSameOutfit: true })], [{ ...v5, preferSameOutfit: false }],
             reference(1), 'none']) {
             expect(() => contract.validate(patch(invalid)), JSON.stringify(invalid)).toThrow()
         }

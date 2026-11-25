@@ -242,11 +242,9 @@ export async function materializeCharacterResourcesForNai(input: {
                         informationExtracted: binding.informationExtracted ?? 1,
                         strength: binding.strength,
                         fidelity: binding.fidelity ?? 0.6,
-                        referenceType: binding.referenceType === 'character'
-                            || binding.referenceType === 'style'
-                            || binding.referenceType === 'character&style'
-                            ? binding.referenceType
-                            : 'character&style',
+                        referenceType: binding.referenceType === 'vibe' || binding.referenceType === 'delta'
+                            ? 'character&style'
+                            : binding.referenceType,
                     }
                 } catch (error) {
                     errors.push({

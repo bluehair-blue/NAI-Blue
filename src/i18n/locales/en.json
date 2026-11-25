@@ -2633,12 +2633,16 @@
         "typeCharacterStyle": "Character & Style",
         "typeCharacter": "Character",
         "typeStyle": "Style",
+        "typeOutfit": "Outfit (V5)",
+        "preferSameOutfit": "Prefer same outfit",
+        "strengthOverModelMax": "This model takes a strength of at most {{max}}. Lower it to generate.",
+        "outfitNeedsV5": "The Outfit type works only with V5 Full and V5 Curated. Change the type to generate.",
         "fidelity": "Fidelity",
         "vibeDisabledMsg": "Cannot use with Reference active.",
         "clickToDisable": "Click to disable",
         "clickToEnable": "Click to enable",
-        "v5PrecisePending": "Precise Reference isn't available for V5 yet.",
-        "v5ReferenceAlternative": "Use character prompts, or keep this reference image and switch to V4.5.",
+        "preciseUnsupported": "This model doesn't support Precise Reference.",
+        "preciseUnsupportedAlternative": "Keep this reference image and switch to V5 Full, V5 Curated, or V4.5.",
         "v5VibePending": "Vibe Transfer isn't available for V5 yet. Your images stay saved and can be reused with V4.5."
     },
     "imageRef": {

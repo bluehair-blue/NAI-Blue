@@ -1352,11 +1352,14 @@ describe('Scene Composition v2 caller contract', () => {
         const refA = { artifactId: 'artifact:import-a', contentChecksum: `sha256:${'a'.repeat(64)}`, referenceType: 'character', strength: 0.7, fidelity: 0.9 }
         const refB = { artifactId: 'artifact:job-b', contentChecksum: `sha256:${'b'.repeat(64)}`, referenceType: 'character&style', strength: 0.35, fidelity: 0.2 }
         const v45 = { model: 'nai-diffusion-4-5-full' }
+        const v5Outfit = { artifactId: 'artifact:import-d', contentChecksum: `sha256:${'d'.repeat(64)}`, referenceType: 'outfit', strength: 3 }
+        const v5AnyOutfit = { ...refB, preferSameOutfit: false }
         resetRuntime(212, [scene('inherit', 1, { generation: v45 }), scene('none', 1, { generation: v45, preciseReferences: null }),
             scene('empty', 1, { generation: v45, preciseReferences: [] }), scene('own', 1, { generation: v45, preciseReferences: [refA, refB] }),
             scene('own-stronger', 1, { generation: v45, preciseReferences: [{ ...refA, strength: 0.8 }, refB] }),
             scene('own-other', 1, { generation: v45, preciseReferences: [{ ...refA, artifactId: 'artifact:import-c', contentChecksum: `sha256:${'c'.repeat(64)}` }, refB] }),
             scene('v5-own', 1, { generation: { model: 'nai-diffusion-5-full' }, preciseReferences: [refA] }),
+            scene('v5-outfit', 1, { generation: { model: 'nai-diffusion-5-full' }, preciseReferences: [v5Outfit, v5AnyOutfit] }),
             scene('v5-none', 1, { generation: { model: 'nai-diffusion-5-full' }, preciseReferences: null })])
         runtime.useCharacterStore.setState({
             characterImages: [{ id: 'global-character', base64: 'data:image/png;base64,R0xPQkFM', thumbnail: 'data:image/jpeg;base64,VEhVTUI=',
@@ -1391,7 +1394,7 @@ describe('Scene Composition v2 caller contract', () => {
             expect(queryNaiGenerationCompatibility(built.get('own')!, 'nai-blue-payload-v1', false).features).toContain('precise-reference')
             const readBindings = savedImageSource.mock.calls.map(call => (call as unknown[])[0])
             expect(readBindings).toEqual(expect.arrayContaining([refA, refB]))
-            expect(readBindings).toHaveLength(7)
+            expect(readBindings).toHaveLength(9)
 
             // Both the Composition plan and the reviewed Provider semantic bind each reference's content and parameters.
             const semantic = (id: string) => projectMainGenerationSemantic(built.get(id)!, 'png')
@@ -1401,9 +1404,17 @@ describe('Scene Composition v2 caller contract', () => {
             }
             expect(built.get('none')!.compositionPlanHash!.digest).not.toBe(built.get('inherit')!.compositionPlanHash!.digest)
 
-            // V5 has no Precise Reference: a bound list is refused, while null lets a V5 Scene opt out of the app's enabled references.
-            expect(() => validateNovelAiGenerationParams(built.get('v5-own')!)).toThrow(NovelAiModelCapabilityError)
-            expect(() => validateNovelAiGenerationParams({ ...built.get('v5-none')!, vibeImages: [], preEncodedVibes: [] })).not.toThrow()
+            // V5 Full takes the bound list, with the outfit type and toggle carried as captions and a strength above 1.
+            // V5 has no Vibe Transfer, so the inherited vibes are set aside to look at the references alone.
+            const withoutVibes = (id: string, overrides: Partial<GenerationParams> = {}) => ({ ...built.get(id)!, vibeImages: [], preEncodedVibes: [], ...overrides })
+            expect(built.get('v5-outfit')).toMatchObject({ charReferenceType: ['costume', 'character&style_anyoutfit'], charStrength: [3, 0.35] })
+            for (const id of ['v5-own', 'v5-outfit', 'v5-none']) expect(() => validateNovelAiGenerationParams(withoutVibes(id)), id).not.toThrow()
+            expect(queryNaiGenerationCompatibility(withoutVibes('v5-own'), 'nai-blue-payload-v1', false).status).toBe('synthetic-only')
+            // The same Scenes are refused on models that cannot honour them.
+            expect(() => validateNovelAiGenerationParams(withoutVibes('v5-outfit', { model: 'nai-diffusion-4-5-full' }))).toThrow(NovelAiModelCapabilityError)
+            expect(() => validateNovelAiGenerationParams(withoutVibes('v5-own', { model: 'nai-diffusion-5-full-medium', steps: 14 }))).toThrow(NovelAiModelCapabilityError)
+            expect(queryNaiGenerationCompatibility(withoutVibes('v5-own', { sourceImage: 'data:image/png;base64,AA==', mask: 'data:image/png;base64,AA==' }),
+                'nai-blue-payload-v1', false).status).toBe('known-divergence')
         } finally {
             savedImageSource.mockImplementation(async () => 'data:image/png;base64,SAVED_ARTIFACT_ORIGINAL')
         }
@@ -1447,6 +1458,63 @@ describe('Scene Composition v2 caller contract', () => {
             expect((parameters.director_reference_secondary_strength_values as number[])[0]).toBeCloseTo(0.25)
             expect(parameters).not.toHaveProperty('director_reference_images_cached')
             expect(parameters).not.toHaveProperty('reference_image_multiple')
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('sends V5 Scene references cover-cropped to a bucket, with outfit captions and no Fidelity', async () => {
+        const base = { contentChecksum: `sha256:${'a'.repeat(64)}`, strength: 2.5 }
+        resetRuntime(214, [scene('wire-v5', 1, { generation: { model: 'nai-diffusion-5-full' }, preciseReferences: [
+            { ...base, artifactId: 'artifact:import-a', referenceType: 'outfit' },
+            { ...base, artifactId: 'artifact:import-b', referenceType: 'character', preferSameOutfit: true, strength: 1.5 },
+            { ...base, artifactId: 'artifact:import-c', referenceType: 'character&style', preferSameOutfit: false, fidelity: 0.9 },
+        ] })])
+        class SyntheticImage {
+            width = 300
+            height = 200
+            onload: (() => void) | null = null
+            set src(value: string) {
+                if (value) queueMicrotask(() => this.onload?.())
+            }
+        }
+        const draws: number[][] = []
+        const alphas: number[][] = []
+        const createCanvas = () => {
+            const canvas = { width: 0, height: 0, toDataURL: () => 'data:image/png;base64,QlVDS0VU', getContext: () => ({
+                imageSmoothingQuality: 'low',
+                drawImage: (_image: unknown, ...placement: number[]) => draws.push([canvas.width, canvas.height, ...placement]),
+                getImageData: () => ({ data: new Uint8ClampedArray([9, 9, 9, 254, 9, 9, 9, 1, 9, 9, 9, 128, 9, 9, 9, 255]) }),
+                putImageData: (pixels: { data: Uint8ClampedArray }) => alphas.push([canvas.width, canvas.height,
+                    ...[...pixels.data].filter((_, index) => index % 4 === 3)]),
+            }) }
+            return canvas
+        }
+        vi.stubGlobal('Image', SyntheticImage)
+        vi.stubGlobal('document', { createElement: createCanvas })
+        try {
+            const target = runtime.useSceneStore.getState().presets[0]!.scenes[0]!
+            const { buildSceneGenerationParams } = await import('@/lib/scene-generation/build-scene-params')
+            const result = await buildSceneGenerationParams(target, { seed: 1 })
+            if (!result.success) throw new Error('Expected a V5 Scene plan with bound references')
+            const { adaptGenerationParams } = await import('@/services/nai/adapter')
+            const { buildGenerateImagePayload } = await import('@/services/nai/payload')
+            const adapted = await adaptGenerationParams('synthetic-no-provider', result.params)
+            const parameters = buildGenerateImagePayload(adapted.request, adapted.buildOptions).parameters as unknown as Record<string, unknown>
+            // Each original is copied 1:1 first, then 300x200 goes to the 1216x832 bucket: scaled to 1248x832,
+            // 16 pixels cut from each side, nothing padded.
+            expect(draws).toEqual(Array.from({ length: 3 }, () => [[300, 200, 0, 0], [1216, 832, -16, 0, 1248, 832]]).flat())
+            // The metadata bit NovelAI hides in alpha is cleared on the original, before scaling; real transparency stays.
+            expect(alphas).toEqual(Array.from({ length: 3 }, () => [300, 200, 255, 0, 128, 255]))
+            const caption = (value: string) => ({ caption: { base_caption: value, char_captions: [] }, legacy_uc: false })
+            expect(parameters).toMatchObject({
+                director_reference_descriptions: ['costume', 'character_mainoutfit', 'character&style_anyoutfit'].map(caption),
+                director_reference_information_extracted: [1, 1, 1],
+                director_reference_strength_values: [2.5, 1.5, 2.5],
+                director_reference_secondary_strength_values: [0, 0, 0],
+                director_reference_images: ['QlVDS0VU', 'QlVDS0VU', 'QlVDS0VU'],
+            })
+            expect(parameters).not.toHaveProperty('director_reference_images_cached')
         } finally {
             vi.unstubAllGlobals()
         }

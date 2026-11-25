@@ -52,9 +52,9 @@ describe('public Scene planning failures', () => {
         expect(() => assertAgentPublicValue(result)).not.toThrow()
         expect(save).not.toHaveBeenCalled()
     })
-    it('rejects a V5 Scene with Precise References through the same model capability issue', async () => {
+    it('rejects a V5 Full Medium Scene with Precise References through the same model capability issue', async () => {
         let failure: NovelAiModelCapabilityError | undefined
-        try { validateNovelAiGenerationParams({ model: 'nai-diffusion-5-full', steps: 28, sampler: 'k_euler_ancestral', cfg_rescale: 0,
+        try { validateNovelAiGenerationParams({ model: 'nai-diffusion-5-full-medium', steps: 14, sampler: 'k_euler_ancestral', cfg_rescale: 0,
             ucPreset: 0, negative_prompt: '', charImages: ['data:image/webp;base64,AA=='] } as never) } catch (error) {
             const issue = error as NovelAiModelCapabilityError
             failure = new NovelAiModelCapabilityError(issue.message, `source.targets[0].${issue.fieldPath}`, issue.nextAction)

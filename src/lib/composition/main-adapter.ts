@@ -27,6 +27,7 @@ import type {
     ResourceRef,
 } from '@/domain/composition/types'
 import { COMPOSITION_SCHEMA_VERSION } from '@/domain/composition/types'
+import type { PreciseReferenceCaption } from '@/domain/generation/precise-reference'
 import { createFallbackFilename, renderFilenameTemplate } from '@/lib/asset-modules/filename-template'
 import {
     projectCharacterPromptsToV2,
@@ -85,7 +86,7 @@ export interface MainReferenceSnapshot {
     id: string
     enabled: boolean
     kind: 'character' | 'vibe'
-    referenceType: 'character' | 'style' | 'character&style'
+    referenceType: PreciseReferenceCaption
     strength: number
     fidelity?: number
     informationExtracted?: number

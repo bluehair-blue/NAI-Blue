@@ -1,6 +1,7 @@
 import type { JsonObject } from '@/domain/composition/types'
 import { isGenerationFolderPathSegment } from '@/domain/generation-folders'
-import { MAX_SCENE_PRECISE_REFERENCES, PRECISE_REFERENCE_TYPES } from '@/application/scene/scene-precise-references'
+import { MAX_PRECISE_REFERENCE_STRENGTH, MAX_SCENE_PRECISE_REFERENCES, PRECISE_REFERENCE_TYPES,
+    isScenePreciseReference } from '@/application/scene/scene-precise-references'
 import { AgentCommandError } from './agent-command-contract'
 
 export interface AgentCommandInputContract {
@@ -42,9 +43,12 @@ const prompts = object({}, Object.fromEntries(['base', 'additional', 'character'
 const generation = object({}, { model: text(100, 1), sampler: text(100, 1), scheduler: text(100, 1), steps: number(1, 50),
     cfgScale: number(0, 100, false), cfgRescale: number(0, 1, false), smea: literal(false), smeaDyn: literal(false),
     variety: boolean, qualityToggle: boolean, ucPreset: number(0, 4), seed: number(0, 0xffff_ffff), seedLocked: boolean })
-const preciseReference = object({ artifactId: id, contentChecksum: hash,
+const preciseReferenceShape = object({ artifactId: id, contentChecksum: hash,
     referenceType: { schema: { enum: [...PRECISE_REFERENCE_TYPES] }, valid: value => PRECISE_REFERENCE_TYPES.some(type => type === value) },
-    strength: number(0, 1, false), fidelity: number(0, 1, false) })
+    strength: number(0, MAX_PRECISE_REFERENCE_STRENGTH, false) }, { fidelity: number(0, 1, false), preferSameOutfit: boolean })
+// The stored-form check adds what JSON Schema leaves out here: preferSameOutfit only on character and character&style.
+const preciseReference: Field = { schema: preciseReferenceShape.schema,
+    valid: value => preciseReferenceShape.valid(value) && isScenePreciseReference(value) }
 // null and an empty list both mean "no Precise Reference", as in the stored form; JSON Schema cannot say the Artifacts
 // are distinct, the validator does.
 const preciseReferences: Field = { schema: { oneOf: [{ type: 'null' }, { type: 'array',

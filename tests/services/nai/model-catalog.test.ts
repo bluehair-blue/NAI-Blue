@@ -34,11 +34,19 @@ describe('NovelAI model catalog', () => {
                 animeFurryMode: true,
                 transparentBackground: true,
                 vibeTransfer: false,
-                preciseReference: false,
+                preciseReference: true,
+                preciseReferenceRules: { strengthMax: 5, fidelity: false, outfit: true, inpainting: false, imageFit: 'bucket' },
                 enhanceMax: true,
                 maxCharacters: 32,
             },
         })
+        expect(getNovelAiModelProfile('nai-diffusion-5-curated')?.capabilities.preciseReferenceRules)
+            .toBe(NAI_IMAGE_MODELS[0].capabilities.preciseReferenceRules)
+        // NovelAI announced V5 Precise Reference for Full and Curated only.
+        expect(getNovelAiModelProfile('nai-diffusion-5-full-medium')?.capabilities)
+            .toMatchObject({ preciseReference: false, preciseReferenceRules: null })
+        expect(getNovelAiModelProfile('nai-diffusion-4-5-full')?.capabilities.preciseReferenceRules)
+            .toEqual({ strengthMax: 1, fidelity: true, outfit: false, inpainting: true, imageFit: 'canvas' })
         expect(NAI_IMAGE_MODELS[1]).toMatchObject({
             inpaintId: 'nai-diffusion-5-curated-inpainting',
             capabilities: { enhanceMax: true, maxCharacters: 32 },

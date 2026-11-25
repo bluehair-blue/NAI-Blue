@@ -1,4 +1,6 @@
-export type LegacyMainReferenceType = 'character' | 'style' | 'character&style' | 'costume' | 'delta'
+import type { PreciseReferenceCaption } from './precise-reference'
+
+export type LegacyMainReferenceType = PreciseReferenceCaption | 'delta'
 
 export interface LegacyMainCharacterImageInput {
     readonly base64: string

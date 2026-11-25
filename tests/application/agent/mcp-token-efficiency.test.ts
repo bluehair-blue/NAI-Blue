@@ -149,7 +149,7 @@ describe('MCP adapter default view for agents', () => {
         expect(lastPresets).not.toHaveProperty('nextOffset')
     })
 
-    it('forwards presetArchived only when the caller uses it and explains a refusal from an older build', async () => {
+    it('forwards presetArchived only when the caller uses it and explains a V5 reference refusal from an older build', async () => {
         const committed = (command: AgentCommand, id: string) => observed(id, command.name, { status: 'authoring-committed',
             command: 'scene.patch_many', resourceId: 'preset-1', revision: 4, targetHash: planHash })
         const f = await fixture({ 'scene.patch_many': committed })
@@ -165,13 +165,17 @@ describe('MCP adapter default view for agents', () => {
             .toMatchObject({ code: 'INVALID_COMMAND_INPUT', submissionAttempted: false })
         expect(f.invokes).toHaveLength(2)
         const refusing = (_command: AgentCommand, id: string) => ({ status: 'inbox-rejection', code: 'INVALID_COMMAND_INPUT', requestId: id, requiresAppProcess: true, accepted: false })
-        const older = await fixture({ 'scene.patch_many': refusing, 'workspace.get_snapshot': refusing })
-        const refused = await older.call('scene.patch_many', { input: { presetId: 'preset-1', expectedRevision: 4, changes: [], presetArchived: false } })
-        expect(refused.body.hint).toContain('may predate them')
-        expect((await older.call('workspace.get_snapshot', { include: ['archived'] })).body.hint).toContain('may predate them')
-        const referenced = { ...edit, changes: [{ sceneId: 'scene-a', preciseReferences: null }] }
-        expect((await older.call('scene.patch_many', { input: referenced })).body.hint).toContain('may predate them')
-        expect((await older.call('scene.patch_many', { input: edit })).body.hint).not.toContain('may predate them')
+        // The installed build knows the earlier reference shape, so only a V5-era field points at an older build.
+        const older = await fixture({ 'scene.patch_many': refusing })
+        const reference = { artifactId: 'artifact:import-1', contentChecksum: planHash, referenceType: 'character', strength: 0.6, fidelity: 0.6 }
+        const referenced = (preciseReferences: unknown) => ({ ...edit, changes: [{ sceneId: 'scene-a', preciseReferences }] })
+        const { fidelity: _fidelity, ...withoutFidelity } = reference
+        for (const newer of [{ ...reference, referenceType: 'outfit' }, { ...reference, strength: 2 }, { ...reference, preferSameOutfit: true }, withoutFidelity]) {
+            expect((await older.call('scene.patch_many', { input: referenced([newer]) })).body.hint, JSON.stringify(newer)).toContain('may predate V5 Precise Reference')
+        }
+        for (const known of [referenced([reference]), referenced(null), edit]) {
+            expect((await older.call('scene.patch_many', { input: known })).body.hint).not.toContain('may predate')
+        }
     })
 
     it('marks a Scene of an archived preset and attaches the restore hint to archive refusals', async () => {

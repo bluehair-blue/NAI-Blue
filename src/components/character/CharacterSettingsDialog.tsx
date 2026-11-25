@@ -26,6 +26,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useGenerationDraftStore } from '@/stores/generation-draft-store'
 import { getNovelAiModelProfile } from '@/services/nai/model-catalog'
+import { defaultPreferSameOutfit, supportsPreferSameOutfit } from '@/domain/generation/precise-reference'
+import { Switch } from '@/components/ui/switch'
 
 const SafeSlider = ({
     value,
@@ -70,6 +72,7 @@ export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean
     const { t } = useTranslation()
     const model = useGenerationDraftStore(state => state.model)
     const capabilities = getNovelAiModelProfile(model)?.capabilities
+    const preciseReferenceRules = capabilities?.preciseReferenceRules ?? null
     const {
         characterImages,
         vibeImages,
@@ -284,6 +287,7 @@ export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean
             )}
             {images.map(img => {
                 const isEnabled = img.enabled !== false // undefined도 true로 취급 (하위 호환)
+                const referenceType = img.referenceType || 'character&style'
                 return (
                     <div 
                         key={img.id} 
@@ -349,8 +353,9 @@ export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean
                                     {t('characterDialog.referenceType', '참조 타입')}
                                 </Label>
                                 <Select
-                                    value={img.referenceType || 'character&style'}
-                                    onValueChange={(v) => onUpdate(img.id, { referenceType: v as PreciseReferenceType })}
+                                    value={referenceType}
+                                    // A new type starts from its own "Prefer same outfit" default instead of the previous type's choice.
+                                    onValueChange={(v) => onUpdate(img.id, { referenceType: v as PreciseReferenceType, preferSameOutfit: undefined })}
                                     disabled={!isEnabled}
                                 >
                                     <SelectTrigger className="h-8 text-xs">
@@ -366,21 +371,57 @@ export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean
                                         <SelectItem value="style">
                                             {t('characterDialog.typeStyle', '스타일')}
                                         </SelectItem>
+                                        {/* A stored Outfit reference stays visible on a model that cannot use it. */}
+                                        {(preciseReferenceRules?.outfit || referenceType === 'outfit') && (
+                                            <SelectItem value="outfit">
+                                                {t('characterDialog.typeOutfit', '의상 (V5)')}
+                                            </SelectItem>
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>
+                            {preciseReferenceRules?.outfit && supportsPreferSameOutfit(referenceType) && (
+                                <div className="flex items-center justify-between gap-3">
+                                    <Label htmlFor={`prefer-same-outfit-${img.id}`} className="text-xs text-muted-foreground">
+                                        {t('characterDialog.preferSameOutfit', '같은 의상 우선 (Prefer same outfit)')}
+                                    </Label>
+                                    <Switch
+                                        id={`prefer-same-outfit-${img.id}`}
+                                        checked={img.preferSameOutfit ?? defaultPreferSameOutfit(referenceType)}
+                                        onChange={(event) => onUpdate(img.id, { preferSameOutfit: event.target.checked })}
+                                        disabled={!isEnabled}
+                                    />
+                                </div>
+                            )}
                             {/* Strength - Slider */}
                             <SafeSlider
                                 label={t('characterDialog.strength', '강도 (Strength)')}
                                 value={[img.strength]}
+                                max={preciseReferenceRules?.strengthMax ?? 1}
                                 onValueCommit={([v]) => onUpdate(img.id, { strength: v })}
                             />
-                            {/* Fidelity - Slider */}
-                            <SafeSlider
-                                label={t('characterDialog.fidelity', '충실도 (Fidelity)')}
-                                value={[img.fidelity ?? 0.6]}
-                                onValueCommit={([v]) => onUpdate(img.id, { fidelity: v })}
-                            />
+                            {/* Fidelity - Slider: V5 has no Fidelity control */}
+                            {preciseReferenceRules?.fidelity !== false && (
+                                <SafeSlider
+                                    label={t('characterDialog.fidelity', '충실도 (Fidelity)')}
+                                    value={[img.fidelity ?? 0.6]}
+                                    onValueCommit={([v]) => onUpdate(img.id, { fidelity: v })}
+                                />
+                            )}
+                            {/* Values kept from another model that this model would refuse at generation. */}
+                            {preciseReferenceRules && img.strength > preciseReferenceRules.strengthMax && (
+                                <p className="text-xs text-destructive">
+                                    {t('characterDialog.strengthOverModelMax', {
+                                        max: preciseReferenceRules.strengthMax,
+                                        defaultValue: '이 모델의 강도는 최대 {{max}}이에요. 낮춰야 생성할 수 있어요.',
+                                    })}
+                                </p>
+                            )}
+                            {preciseReferenceRules && !preciseReferenceRules.outfit && referenceType === 'outfit' && (
+                                <p className="text-xs text-destructive">
+                                    {t('characterDialog.outfitNeedsV5', '의상 타입은 V5 Full과 V5 Curated에서만 쓸 수 있어요. 타입을 바꿔야 생성할 수 있어요.')}
+                                </p>
+                            )}
                         </div>
                     </div>
                 )
@@ -426,10 +467,10 @@ export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean
                             <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/90 p-6 text-center">
                                 <Lock className="mb-2 h-8 w-8 text-muted-foreground" aria-hidden="true" />
                                 <p className="text-sm font-medium text-foreground">
-                                    {t('characterDialog.v5PrecisePending', 'V5는 아직 Precise Reference를 지원하지 않아요.')}
+                                    {t('characterDialog.preciseUnsupported', '이 모델은 Precise Reference를 지원하지 않아요.')}
                                 </p>
                                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                    {t('characterDialog.v5ReferenceAlternative', '캐릭터 프롬프트를 사용하거나, 이 참조 이미지를 유지한 채 V4.5로 바꿔 주세요.')}
+                                    {t('characterDialog.preciseUnsupportedAlternative', '이 참조 이미지를 유지하고 V5 Full, V5 Curated 또는 V4.5로 바꿔 주세요.')}
                                 </p>
                             </div>
                         )}
