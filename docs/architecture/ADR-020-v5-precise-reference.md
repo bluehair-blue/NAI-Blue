@@ -1,7 +1,7 @@
 # ADR-020: V5 Precise Reference
 
 - 날짜: 2026-11-25
-- 상태: 구현하고 자동 검사를 통과했다. 설치본에는 아직 올리지 않았고, NovelAI에 실제로 보낸 적이 없다
+- 상태: 구현하고 설치본에 올려 공개 MCP로 확인했다(2026-11-25, 실행 해시 `8a21a7b5…`). NovelAI에 실제로 보낸 적이 없다
 - 기반: ADR-019(Scene의 Precise Reference 결합)
 - 범위: 모델 카탈로그, 요청 조립과 레퍼런스 이미지 준비, 레퍼런스 설정 창, Scene 편집 계약(`scene.patch_many`), 어댑터 안내
 
@@ -82,6 +82,7 @@ V4.5·V4에서 "같은 의상 우선"은 거절하지 않고 그 모델의 고�
 - 어댑터가 받아들이는 `scene.patch_many`의 이전 해시를 지금 설치본(`9ed9266a…`)의 것으로 바꿨다. 설치본이 이미 가진 보관·`includeArchived` 이전의 해시와 안내는 뺐다
 - 옛 모양(강도 1 이하, fidelity 있음, outfit·토글 없음)의 호출은 설치본에서도 된다. 새 모양을 설치본이 거절하면 어댑터가 앱 갱신 안내를 붙인다
 - 설치본은 V5 Scene의 레퍼런스를 계속 거절한다. V5 레퍼런스는 새 빌드를 설치해야 된다
+- 2026-11-25에 새 빌드를 설치해 이 구간은 끝났다. 앱이 알리는 `scene.patch_many` 해시가 어댑터의 것과 같다. 이전 해시의 수용과 안내는 코드에 남아 있다
 
 ## 검토 비서(Gemini 4 Neon)의 지적과 처리
 
@@ -117,6 +118,15 @@ V4.5·V4에서 "같은 의상 우선"은 거절하지 않고 그 모델의 고�
   - V5 Full Medium: 잠금 안내가 뜬다
   - 캐릭터에서 스위치를 켠 뒤 타입을 캐릭터 & 스타일로 바꾸면 저장값이 비고 스위치는 기본(켬)으로 보인다
 - 실제 브라우저 캔버스의 맞춤(알파 비트를 섞은 시험 이미지): 300×200 → 1216×832, 832×1216 → 그대로, 2000×3000 → 832×1216. 투명 영역이 남고, 크기가 같거나 줄어든 둘은 알파가 0과 255뿐이다. 키운 하나는 투명 영역의 경계에만 중간 값이 생긴다. V4.5 경로는 전처럼 1536×1024 불투명이다(검토 반영 전 코드로 확인)
+
+- 설치본(실행 해시 `8a21a7b5…`, 소스 `105f924`)에서 등록된 MCP 연결로 확인한 것(2026-11-25)
+  - 설치된 실행 파일은 로컬 빌드(`a6798130…`)와 3바이트만 다르다. 묶을 때 들어가는 설치 형식 표시(`UNK` → `NSS`)다
+  - `verify-agent-mcp-runtime.mjs`: verified true, 같은 해시. `nai-blue://capabilities`의 `schemaMismatches`가 비어 있다
+  - 보관해 둔 확인용 프리셋 `stage4-check-20261122`를 복원해 V5 Full Scene에 outfit(강도 2.5)과 character·`preferSameOutfit: true`(강도 1.5)를 묶었고 `scene.resolve_many`가 그대로 돌려줬다. `fidelity`는 보내지 않았다
+  - 그 Scene의 계획이 `ready`이고 호환성 프로필이 `…:nai-diffusion-5-full:generate:precise-reference+streaming`(`synthetic-only`)이다. 예상 12 Anlas이고 등록하지 않았다
+  - 같은 Scene의 모델을 V4.5로 바꾸면 계획이 `invalid-model-settings`, `fieldPath: source.targets[0].preciseReferences`("Outfit Reference는 NAI Diffusion V5에서만 사용할 수 있습니다")로 거절된다
+  - 끝에 Scene을 V5·`preciseReferences: null`로 되돌리고 프리셋을 다시 보관했다(리비전 7)
+- 하지 않은 것: V5 레퍼런스를 묶은 실제 생성, 설치본의 레퍼런스 설정 창(사람이 보는 쪽)
 
 ## 알려진 한계
 
