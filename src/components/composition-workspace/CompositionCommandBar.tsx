@@ -289,7 +289,7 @@ export function CompositionCommandBar({
                             {generation.generating ? <Square className="mr-2 h-4 w-4 shrink-0" /> : <Play className="mr-2 h-4 w-4 shrink-0" />}
                             <span className="truncate whitespace-nowrap">{generation.progressLabel ?? (generation.generating ? generation.cancelLabel ?? labels.cancel : generation.generateLabel ?? labels.generate)}</span>
                             {!generation.generating && generation.shortcutLabel && (
-                                <kbd className="ml-2 hidden shrink-0 rounded bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[11px] font-medium xl:inline">
+                                <kbd className="ml-2 hidden shrink-0 py-0.5 font-mono text-[11px] font-medium xl:inline">
                                     {generation.shortcutLabel}
                                 </kbd>
                             )}

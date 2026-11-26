@@ -55,6 +55,9 @@ export default {
     			}
     		},
     		textColor: {
+    			success: 'oklch(var(--success-text) / <alpha-value>)',
+    			warning: 'oklch(var(--warning-text) / <alpha-value>)',
+    			info: 'oklch(var(--info-text) / <alpha-value>)',
     			destructive: {
     				DEFAULT: 'oklch(var(--destructive-text) / <alpha-value>)',
     				foreground: 'oklch(var(--destructive-foreground) / <alpha-value>)'

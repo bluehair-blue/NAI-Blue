@@ -321,7 +321,7 @@ export default function FolderWorkbench() {
                                         {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : overImageLimit ? t('productionRequests.save') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}
                                         <ArrowRight aria-hidden="true" />
                                         {!busy && generateShortcutLabel && (
-                                            <kbd className="hidden rounded bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[11px] font-medium xl:inline">
+                                            <kbd className="hidden py-0.5 font-mono text-[11px] font-medium xl:inline">
                                                 {generateShortcutLabel}
                                             </kbd>
                                         )}

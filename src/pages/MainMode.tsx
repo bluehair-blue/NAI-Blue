@@ -1177,7 +1177,7 @@ export default function MainMode() {
                             : generationControl.generateLabel)}
                 </span>
                 {!generationControl.generating && generationControl.shortcutLabel && (
-                    <kbd className="ml-1 shrink-0 rounded bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[11px] font-medium">
+                    <kbd className="ml-1 shrink-0 py-0.5 font-mono text-[11px] font-medium">
                         {generationControl.shortcutLabel}
                     </kbd>
                 )}
