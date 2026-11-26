@@ -465,7 +465,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             {!isMac && !isMobileRuntime && <CustomTitleBar />}
 
             <header className="fb-app-header z-10 flex min-w-0 shrink-0 items-center gap-1 border-b border-border/45 bg-card px-2 py-2 sm:px-3 lg:pl-0">
-                <div className="fb-app-brand hidden shrink-0 items-center px-3 text-lg font-semibold tracking-tight md:flex lg:w-[232px] lg:px-5">
+                <div className="fb-app-brand hidden shrink-0 items-center text-lg font-semibold tracking-tight lg:flex lg:w-[232px] lg:px-5">
                     NAI <span className="ml-1 text-primary">Blue</span>
                 </div>
                 <nav
@@ -479,18 +479,20 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                             ? t(item.compactLabelKey, item.compactFallbackLabel ?? fullLabel)
                             : fullLabel
                         const MobileIcon = item.path === '/folders' ? Images : item.path === '/queue' ? History : item.icon
+                        // From 640px the four links give way with an ellipsis: a wide fallback font or a longer locale label must not push the
+                        // last link under Tools. Below that the two compact links keep their width; a 2px shortfall there would cost letters.
                         return (
                             <Link
                                 key={item.path}
                                 to={item.path}
                                 aria-current={active ? 'page' : undefined}
                                 aria-label={fullLabel}
-                                className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3"
+                                className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center sm:shrink justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3"
                             >
-                                <span className="inline-flex items-center gap-2">
+                                <span className="inline-flex min-w-0 items-center gap-2">
                                     <MobileIcon className="h-4 w-4 shrink-0 sm:hidden" aria-hidden="true" />
-                                    <span className="sm:hidden">{compactLabel}</span>
-                                    <span className="hidden sm:inline">{fullLabel}</span>
+                                    <span className="truncate sm:hidden">{compactLabel}</span>
+                                    <span className="hidden truncate sm:block">{fullLabel}</span>
                                 </span>
                             </Link>
                         )
@@ -502,17 +504,23 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                             ref={workbenchToolsRef}
                             data-active={activeToolsItem ? '' : undefined}
                             type="button"
-                            className="fb-app-tools inline-flex min-h-11 min-w-11 shrink-0 items-center gap-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-1.5 lg:px-3"
+                            // The active route name sits in a track that may collapse to zero and min-content stops the button there, so the name
+                            // shortens first. The shrink factor is huge on purpose: a 100:1 split still took a fraction of a pixel from the links,
+                            // and any shortfall turns their labels into ellipses.
+                            className={cn(
+                                'fb-app-tools inline-grid min-h-11 min-w-min shrink-[1000000] items-center gap-x-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-x-1.5 lg:px-3',
+                                activeToolsItem ? 'grid-cols-[max-content_minmax(0,auto)_max-content]' : 'grid-cols-[max-content_max-content]',
+                            )}
                         >
-                            <span className="max-w-[9.5rem] truncate sm:max-w-[11rem]">
-                                {t('folderWorkbench.navigation.tools', '도구')}
-                                {activeToolsItem && (
+                            <span>{t('folderWorkbench.navigation.tools', '도구')}</span>
+                            {activeToolsItem && (
+                                <span className="max-w-[7rem] truncate sm:max-w-[8.5rem]">
                                     <span className="hidden min-[440px]:inline">
-                                        {' · '}
+                                        {'· '}
                                         {t(activeToolsItem.labelKey, activeToolsItem.fallbackLabel)}
                                     </span>
-                                )}
-                            </span>
+                                </span>
+                            )}
                             <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
                         </button>
                     </DropdownMenuTrigger>

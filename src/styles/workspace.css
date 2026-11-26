@@ -53,9 +53,11 @@
   .workspace-editor-actions { margin-left: 8px; }
   .workspace-editor-actions span { display: none; }
 }
+@media (max-width: 767px) {
+  .workspace-editor-actions { display: none; } /* Four primary links need the width; labelled Prompt/History entries remain in Tools. */
+}
 @media (max-width: 639px) {
   .workspace-content-inset, .workspace-page-inset, .workspace-settings-content, .workspace-library-header, .workspace-queue-header { padding: 20px 16px; }
   .workspace-heading h1, h1.workspace-title { font-size: 30px; }
   .workspace-heading { margin-bottom: 20px; }
-  .workspace-editor-actions { display: none; } /* Labelled Prompt/History entries remain in Tools. */
 }

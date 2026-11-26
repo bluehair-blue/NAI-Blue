@@ -129,6 +129,8 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   Prompt and History remain named menu actions. No horizontal navigation scroll.
 - `640–1199px`: four primary destinations in the top header (Create images, Single, Scenes, Work history), grouped Tools menu (active Tools route name appended from `440px`) with shortcut bindings, and theme toggle. Center workspace remains primary; Prompt opens as a non-modal,
   horizontally resizable panel anchored below the header without a scrim, while History remains a sheet.
+  The header's Prompt and History icon buttons appear from `768px` (below that they are Tools menu entries) and the NAI Blue wordmark from `1024px`,
+  so the four links and Tools fit in English and Japanese as well. Primary links shrink with an ellipsis before they can overlap Tools.
 - `1200px+`: Prompt is a persistent left rail on Main (`/advanced`) at `360px` (`1200–1535px`), `420px` (`1536–1799px`), and `500px` (`1800px+`). Scene views own their own prompt editor and inherited reference settings without mounting the Main prompt rail or sheet. History opens on demand in a sheet.
 - Scene grids render one column below `640px`, at most two below `1024px`, and
   honor the stored column preference on desktop.

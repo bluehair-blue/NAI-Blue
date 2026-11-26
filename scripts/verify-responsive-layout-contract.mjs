@@ -846,6 +846,46 @@ async function assertWideCompositionCoreLoop(page, route, viewport) {
     await promptEditor.fill(initialValue)
 }
 
+// One run sees one language (hosted runners report en-US, a developer machine its own), yet the header's
+// width budget depends on the labels: this sweep keeps every shipped locale inside the gate at the tight widths.
+const HEADER_FIT_LOCALES = ['en-US', 'ja-JP', 'ko-KR']
+const HEADER_FIT_WIDTHS = [640, 767, 768, 1024]
+
+async function assertHeaderFitsEveryLocale(browser) {
+    for (const locale of HEADER_FIT_LOCALES) {
+        for (const width of HEADER_FIT_WIDTHS) {
+            console.log(`Checking header fit in ${locale} at ${width}px`)
+            const page = await browser.newPage({ locale, viewport: { width, height: 800 } })
+            try {
+                page.setDefaultTimeout(20_000)
+                await page.route('**/*', route => {
+                    const requestUrl = route.request().url()
+                    return requestUrl.startsWith(baseUrl) || !/^https?:/i.test(requestUrl) ? route.continue() : route.abort()
+                })
+                await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
+                await page.waitForSelector('.fb-app-header .fb-app-navigation a')
+                await page.evaluate(async () => {
+                    await Promise.race([
+                        document.fonts?.ready ?? Promise.resolve(),
+                        new Promise(resolve => setTimeout(resolve, 750)),
+                    ])
+                    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+                })
+                const context = `header in ${locale} @ ${width}px`
+                assertVisibleCtaLayout(await collectVisibleCtaReport(page, '.fb-app-header'), context)
+                assert.equal(await page.locator('.fb-app-navigation a').count(), 4, `${context} must show four primary links`)
+                assert.equal(
+                    await page.locator('.fb-app-header .workspace-editor-actions').isVisible(),
+                    width >= 768,
+                    `${context}: Prompt and History header buttons appear from 768px`,
+                )
+            } finally {
+                await page.close()
+            }
+        }
+    }
+}
+
 async function waitForReady(child) {
     let output = ''
     const started = Date.now()
@@ -908,6 +948,8 @@ async function main() {
         try {
             for (const viewport of VIEWPORTS) {
                 const page = await browser.newPage({
+                    // Hosted runners report en-US while a developer machine reports its own language; this pins either one locally.
+                    ...(process.env.RESPONSIVE_CONTRACT_LOCALE ? { locale: process.env.RESPONSIVE_CONTRACT_LOCALE } : {}),
                     viewport: { width: viewport.width, height: viewport.height },
                     hasTouch: Boolean(viewport.mobile),
                     isMobile: Boolean(viewport.mobile),
@@ -1424,6 +1466,7 @@ async function main() {
                 }
                 await page.close()
             }
+            await assertHeaderFitsEveryLocale(browser)
             verifyDialogSourceContracts()
         } finally {
             await closeBrowser(browser)
