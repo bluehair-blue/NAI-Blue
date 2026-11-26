@@ -596,7 +596,7 @@ export default function QueueCenter() {
             <header className="workspace-queue-header shrink-0">
                 <div className="space-y-4">
                     <div className="workspace-heading">
-                        <h1 className="text-xl font-semibold">{t('queue.title', 'Queue Center')}</h1>
+                        <h1 className="text-xl font-semibold">{t('queue.title', 'Work history')}</h1>
                         <p>{t('workspace.queueHint', '진행 상황을 확인하고, 완료된 이미지와 확인이 필요한 작업을 살펴보세요.')}</p>
                         <Button asChild variant="outline" className="mt-3">
                             <Link to="/review-queue-preview">

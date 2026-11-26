@@ -1093,8 +1093,8 @@ function ResultStep({
                     {cancelled
                         ? t('guided.single.result.cancelledDescription', '비용은 다시 승인하지 않았어요. 같은 설정으로 다시 시도하거나 설정을 수정할 수 있어요.')
                         : needsAttention
-                            ? t('guided.single.result.needsAttentionDescription', '큐 센터에서 막힌 이유를 확인한 뒤 다시 시도하거나 설정을 수정해 주세요.')
-                            : t('guided.single.result.failedDescription', '큐 센터에서 실패 원인을 확인한 뒤 같은 설정으로 다시 시도할 수 있어요.')}
+                            ? t('guided.single.result.needsAttentionDescription', '작업 기록에서 막힌 이유를 확인한 뒤 다시 시도하거나 설정을 수정해 주세요.')
+                            : t('guided.single.result.failedDescription', '작업 기록에서 실패 원인을 확인한 뒤 같은 설정으로 다시 시도할 수 있어요.')}
                 </p>
                 <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row sm:flex-wrap">
                     <Button type="button" onClick={onRetry}>
@@ -1106,7 +1106,7 @@ function ResultStep({
                         {t('guided.single.result.edit', '설정 수정하기')}
                     </Button>
                     <Button asChild variant="ghost">
-                        <Link to="/guided-preview/task/batch/queue">{t('guided.single.result.openQueue', '큐 센터 열기')}</Link>
+                        <Link to="/guided-preview/task/batch/queue">{t('guided.single.result.openQueue', '작업 기록 열기')}</Link>
                     </Button>
                 </div>
             </div>
@@ -1127,7 +1127,7 @@ function ResultStep({
                         {t('guided.single.result.retryPreview', '다시 불러오기')}
                     </Button>
                     <Button asChild variant="ghost">
-                        <Link to="/guided-preview/task/batch/queue">{t('guided.single.result.openQueue', '큐 센터 열기')}</Link>
+                        <Link to="/guided-preview/task/batch/queue">{t('guided.single.result.openQueue', '작업 기록 열기')}</Link>
                     </Button>
                 </div>
             </div>

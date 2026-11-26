@@ -113,7 +113,7 @@ export async function queueManualReviewGeneration(
         })
     } catch {
         throw new ManualReviewGenerationError(
-            '요청 접수 상태를 확인할 수 없습니다. 중복 생성을 막기 위해 큐 센터에서 먼저 상태를 확인해 주세요.',
+            '요청 접수 상태를 확인할 수 없습니다. 중복 생성을 막기 위해 작업 기록에서 먼저 상태를 확인해 주세요.',
             true,
         )
     }
@@ -125,7 +125,7 @@ export async function queueManualReviewGeneration(
 
     const jobId = result.jobIds[0]
     if (jobId === undefined) {
-        throw new ManualReviewGenerationError('큐 접수 결과를 확인할 수 없습니다. 큐 센터에서 상태를 확인해 주세요.', true)
+        throw new ManualReviewGenerationError('큐 접수 결과를 확인할 수 없습니다. 작업 기록에서 상태를 확인해 주세요.', true)
     }
     useQueueStore.getState().setSelectedBatchId(result.batchId)
     return { batchId: result.batchId, jobId }

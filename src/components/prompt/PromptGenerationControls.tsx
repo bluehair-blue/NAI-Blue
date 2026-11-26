@@ -114,7 +114,7 @@ export function PromptGenerationControls({ isSceneMode }: PromptGenerationContro
             selectDurableBatch(result.batch.id)
             toast({
                 title: t('queue.enqueued', 'Added to durable queue'),
-                description: t('queue.enqueuedCount', '{{count}} jobs are ready in Queue Center.', { count: result.jobs.length }),
+                description: t('queue.enqueuedCount', '{{count}} jobs are ready in Work history.', { count: result.jobs.length }),
             })
             return true
         } catch (error) {

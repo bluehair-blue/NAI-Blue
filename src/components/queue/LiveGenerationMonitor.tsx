@@ -66,7 +66,7 @@ export function LiveGenerationMonitor() {
                     {selectedJob?.preview && <img src={selectedJob.preview} alt={t('liveGeneration.inProgress', '생성 중 프리뷰')} className="max-h-[65vh] w-full object-contain" />}
                     {selectedJob && <>
                         <p>{selectedJob.progress.current} / {selectedJob.progress.total}</p>
-                        <Link to="/queue" className="min-h-11 underline" onClick={() => { selectBatch(selectedJob.batchId); setSelectedJobId(null) }}>{t('liveGeneration.queue', '큐 센터에서 보기')}</Link>
+                        <Link to="/queue" className="min-h-11 underline" onClick={() => { selectBatch(selectedJob.batchId); setSelectedJobId(null) }}>{t('liveGeneration.queue', '작업 기록에서 보기')}</Link>
                     </>}
                     {selectedJobId && !selectedJob && <button type="button" className="min-h-11 underline" onClick={() => { setSelectedJobId(null); openSupport('history') }}>{t('liveGeneration.history', '생성 내역')}</button>}
                 </DialogContent>

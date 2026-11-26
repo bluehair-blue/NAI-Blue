@@ -116,7 +116,7 @@ export default function ManualReviewPreview() {
     const [message, setMessage] = useState(() => session.pending
         ? '이전 요청 상태를 확인하고 있습니다…'
         : session.uncertainCardIds.includes(reviewCards[session.activeIndex]?.id ?? '')
-            ? '이전 요청의 접수 상태가 확인되지 않았습니다. 큐 센터에서 먼저 확인하세요.'
+            ? '이전 요청의 접수 상태가 확인되지 않았습니다. 작업 기록에서 먼저 확인하세요.'
             : '내용을 확인한 뒤 이 프롬프트로 한 장을 생성하세요.')
     const [requestError, setRequestError] = useState<{ message: string, mayHaveEnqueued: boolean } | null>(null)
     const actionLock = useRef(false)
@@ -163,7 +163,7 @@ export default function ManualReviewPreview() {
         persistSession(nextSession)
         setRequestError(null)
         setMessage(uncertainCardIds.includes(nextCardId)
-            ? '이 카드의 접수 상태가 확인되지 않았습니다. 중복 요청 방지를 위해 큐 센터에서 먼저 확인하세요.'
+            ? '이 카드의 접수 상태가 확인되지 않았습니다. 중복 요청 방지를 위해 작업 기록에서 먼저 확인하세요.'
             : session.completedJobIds[nextCardId]
             ? '이 카드의 결과 프리뷰가 준비되어 있습니다.'
             : '내용을 확인한 뒤 이 프롬프트로 한 장을 생성하세요.')
@@ -300,15 +300,15 @@ export default function ManualReviewPreview() {
                     })
                     setRequestError({
                         message: job.state === 'failed'
-                            ? '생성이 실패했습니다. 큐 센터에서 결과와 원인을 확인하세요.'
-                            : '요청이 완료되지 않았습니다. 큐 센터에서 상태를 확인하세요.',
+                            ? '생성이 실패했습니다. 작업 기록에서 결과와 원인을 확인하세요.'
+                            : '요청이 완료되지 않았습니다. 작업 기록에서 상태를 확인하세요.',
                         mayHaveEnqueued: true,
                     })
                     return
                 }
                 if (job.state === 'blocked' || job.state === 'recovering') {
                     setQueuePhase('attention')
-                    setMessage('요청 상태 확인이 필요합니다. 큐 센터에서 확인한 뒤 이 화면으로 돌아오세요.')
+                    setMessage('요청 상태 확인이 필요합니다. 작업 기록에서 확인한 뒤 이 화면으로 돌아오세요.')
                 } else if (job.state === 'running' || job.state === 'leased') {
                     setQueuePhase('running')
                     setMessage('이미지 생성 중입니다. 결과가 저장되면 프리뷰가 표시됩니다.')
@@ -344,7 +344,7 @@ export default function ManualReviewPreview() {
                 <header className="flex flex-wrap items-start justify-between gap-5">
                     <div className="min-w-0">
                         <Button asChild variant="ghost" className="-ml-3 mb-5">
-                            <Link to="/queue"><ChevronLeft className="mr-1 h-4 w-4" />큐 센터</Link>
+                            <Link to="/queue"><ChevronLeft className="mr-1 h-4 w-4" />작업 기록</Link>
                         </Button>
                         <p className="mb-2 text-sm font-medium text-primary">사람이 확인하는 생성 흐름</p>
                         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">한 장씩 보고, 직접 시작</h1>
@@ -361,7 +361,7 @@ export default function ManualReviewPreview() {
                     <details data-testid="manual-review-agent-connection">
                         <summary className="min-h-11 cursor-pointer py-2.5 font-medium">파일 에이전트 요청과 생성 설정 검토</summary>
                         <p className="mt-2 text-sm text-muted-foreground">
-                            파일 요청에서 만들어진 동일한 생성 계획을 확인하고 승인하면 Main Queue가 실행합니다. 승인된 배치와 결과 프리뷰는 큐 센터에서 확인할 수 있습니다.
+                            파일 요청에서 만들어진 동일한 생성 계획을 확인하고 승인하면 Main Queue가 실행합니다. 승인된 배치와 결과 프리뷰는 작업 기록에서 확인할 수 있습니다.
                         </p>
                         <div className="mt-4"><AgentCommandPanel /></div>
                     </details>
@@ -507,7 +507,7 @@ export default function ManualReviewPreview() {
                         {requestError && <TriangleAlert className="mr-1 inline h-4 w-4 align-[-3px]" aria-hidden="true" />}
                         {pending && <LoaderCircle className="mr-1 inline h-4 w-4 animate-spin align-[-3px]" aria-hidden="true" />}
                         {requestError?.message ?? message}
-                        {(requestError || pending || activeRequestUncertain) && <Link className="ml-2 font-medium text-primary underline-offset-4 hover:underline" to="/queue">큐 센터 확인</Link>}
+                        {(requestError || pending || activeRequestUncertain) && <Link className="ml-2 font-medium text-primary underline-offset-4 hover:underline" to="/queue">작업 기록 확인</Link>}
                     </p>
                 </section>
 

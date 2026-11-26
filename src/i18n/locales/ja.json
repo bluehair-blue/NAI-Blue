@@ -1,6 +1,6 @@
 {
   "liveGeneration": {
-    "queue": "キューセンターで表示",
+    "queue": "作業の記録で表示",
     "title": "リアルタイム生成",
     "counts": "生成中 {{processing}} · 待機 {{waiting}}",
     "attention": "確認が必要 {{count}}",
@@ -1375,16 +1375,16 @@
                 "waitingTitle": "画像を仕上げています。",
                 "waitingDescription": "完了するとすぐに結果を表示します。別の作業へ移動しても生成は続きます。",
                 "failedTitle": "画像を生成できませんでした。",
-                "failedDescription": "キューセンターで原因を確認してから、同じ設定でもう一度お試しください。",
+                "failedDescription": "作業の記録で原因を確認してから、同じ設定でもう一度お試しください。",
                 "cancelledTitle": "画像生成はキャンセルされました。",
                 "cancelledDescription": "新しいコストは承認されていません。同じ設定で再試行するか、先に設定を修正できます。",
                 "needsAttentionTitle": "続行するにはジョブの確認が必要です。",
-                "needsAttentionDescription": "キューセンターで停止理由を確認してから、再試行または設定を修正してください。",
+                "needsAttentionDescription": "作業の記録で停止理由を確認してから、再試行または設定を修正してください。",
                 "retryGeneration": "同じ設定で再試行",
                 "previewErrorTitle": "完成した画像を読み込めませんでした。",
                 "previewErrorDescription": "元ファイルの場所とキューの状態を確認して、もう一度お試しください。",
                 "retryPreview": "もう一度読み込む",
-                "openQueue": "キューセンターを開く",
+                "openQueue": "作業の記録を開く",
                 "imageAlt": "完成した生成画像",
                 "keepEyebrow": "次の作業",
                 "keepTitle": "この設定が気に入ったら？",
@@ -1936,7 +1936,7 @@
         "settings": "設定",
         "styleLab": "画風研究所",
         "promptEditor": "プロンプトエディター",
-        "queue": "キューセンター",
+        "queue": "作業の記録",
         "organizer": "結果整理",
         "r2Upload": "R2アップロード",
         "trash": "ゴミ箱",
@@ -2092,7 +2092,7 @@
             "copy": "ジョブの状態をコピー",
             "notRequested": "指定なし"
         },
-        "title": "キューセンター",
+        "title": "作業の記録",
         "enqueued": "バックグラウンドキューに追加しました",
         "selectScenes": "フォルダー別にSceneを選択",
         "selectScenesTitle": "複数フォルダーからSceneを選択",
@@ -2105,7 +2105,7 @@
         "sceneJobCount": "{{scene}}の生成数",
         "enqueueSelectedScenes": "{{count}}件をキューに追加",
         "activity": {
-            "open": "キューセンターを開く · {{summary}}",
+            "open": "作業の記録を開く · {{summary}}",
             "summary": "実行中 {{processing}}件 · 待機中 {{waiting}}件 · 要確認 {{attention}}件",
             "attention": "要確認",
             "processing": "実行中",
@@ -2114,9 +2114,9 @@
             "indicator": "{{label}} {{count}}件",
             "reservedJobs": "予約ジョブ",
             "scheduleHint": "ジョブを予約すると、ここに表示されます。",
-            "openDetails": "詳細と操作はキューセンターで確認"
+            "openDetails": "詳細と操作は作業の記録で確認"
         },
-    "enqueuedCount": "{{count}}件のジョブをキューセンターに追加しました。",
+    "enqueuedCount": "{{count}}件のジョブを作業の記録に追加しました。",
     "enqueueFailed": "キューへの追加に失敗しました",
     "legacyPending": "既存のScene項目が{{count}}件待機しています。",
     "legacyRetained": "移行時に現在のパラメーターを記録し、ロールバックできるよう既存項目数を保持します。",
@@ -3768,10 +3768,10 @@
                 "action": "R2設定を開く"
             },
             "queue": {
-                "title": "5. Queue Center",
+                "title": "5. 作業の記録",
                 "description": "再試行、再キュー、キャンセル、最終結果を確認します。",
-                "help": "Queue Centerはworker数、rotation、retry、stale-result契約を変更せず永続job状態を表示します。",
-                "action": "Queue Centerを開く"
+                "help": "作業の記録はworker数、rotation、retry、stale-result契約を変更せず永続job状態を表示します。",
+                "action": "作業の記録を開く"
             }
         },
         "capabilities": {

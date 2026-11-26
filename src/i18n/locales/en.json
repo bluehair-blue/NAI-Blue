@@ -1,6 +1,6 @@
 {
   "liveGeneration": {
-    "queue": "Open Queue Center",
+    "queue": "Open Work history",
     "title": "Live generation",
     "counts": "Generating {{processing}} · Waiting {{waiting}}",
     "attention": "Needs attention {{count}}",
@@ -1375,16 +1375,16 @@
                 "waitingTitle": "Finishing your image…",
                 "waitingDescription": "The result will appear here as soon as it is ready. Generation continues if you move to another task.",
                 "failedTitle": "We couldn't create the image.",
-                "failedDescription": "Review the cause in Queue Center, then retry with the same settings.",
+                "failedDescription": "Review the cause in Work history, then retry with the same settings.",
                 "cancelledTitle": "Image generation was cancelled.",
                 "cancelledDescription": "No new cost was approved. You can retry with the same settings or edit them first.",
                 "needsAttentionTitle": "This job needs attention before it can continue.",
-                "needsAttentionDescription": "Review what blocked it in Queue Center, then retry or edit the settings.",
+                "needsAttentionDescription": "Review what blocked it in Work history, then retry or edit the settings.",
                 "retryGeneration": "Retry with the same settings",
                 "previewErrorTitle": "We couldn't load the finished image.",
                 "previewErrorDescription": "Check the original file location and queue status, then try again.",
                 "retryPreview": "Try again",
-                "openQueue": "Open Queue Center",
+                "openQueue": "Open Work history",
                 "imageAlt": "Finished generated image",
                 "keepEyebrow": "Next step",
                 "keepTitle": "Like these settings?",
@@ -1937,7 +1937,7 @@
         "settings": "Settings",
         "styleLab": "Style Lab",
         "promptEditor": "Prompt Editor",
-        "queue": "Queue Center",
+        "queue": "Work history",
         "organizer": "Organize Results",
         "r2Upload": "R2 Upload",
         "trash": "Trash",
@@ -2098,7 +2098,7 @@
         "r2Source": { "folder": "Selected folder", "ancestor": "Parent folder", "workspace": "Default profile", "cleared": "Inheritance cleared", "profile-snapshot": "Selected profile", "legacy-output": "Existing output settings" },
         "r2DestinationSource": "Bucket: {{bucket}} · prefix: {{prefix}}",
         "r2MoreDestinations": "{{count}} more R2 destinations",
-        "title": "Queue Center",
+        "title": "Work history",
         "enqueued": "Added to durable queue",
         "selectScenes": "Select scenes from folders",
         "selectScenesTitle": "Select scenes from multiple folders",
@@ -2131,7 +2131,7 @@
         "reservationSummary": "The complete output file set is reserved before work starts. Existing files are never overwritten.",
         "appOpenProcessing": "Jobs run while NAI Blue is open. Interrupted work resumes after the app reopens.",
         "activity": {
-            "open": "Open Queue Center · {{summary}}",
+            "open": "Open Work history · {{summary}}",
             "summary": "{{processing}} in progress · {{waiting}} waiting · {{attention}} need attention",
             "attention": "Needs attention",
             "processing": "In progress",
@@ -2140,9 +2140,9 @@
             "indicator": "{{label}} {{count}}",
             "reservedJobs": "Scheduled jobs",
             "scheduleHint": "Scheduled work will appear here.",
-            "openDetails": "Open Queue Center for details and controls"
+            "openDetails": "Open Work history for details and controls"
         },
-    "enqueuedCount": "{{count}} jobs are ready in Queue Center.",
+    "enqueuedCount": "{{count}} jobs are ready in Work history.",
     "enqueueFailed": "Couldn't add this to the queue. Please try again shortly.",
     "legacyPending": "{{count}} existing Scene items are waiting.",
     "legacyRetained": "Transfer records current parameters and keeps existing item counts available for rollback.",
@@ -3816,10 +3816,10 @@
                 "action": "Open R2 setup"
             },
             "queue": {
-                "title": "5. Queue Center",
+                "title": "5. Work history",
                 "description": "Inspect retries, requeues, cancellations, and terminal outcomes.",
-                "help": "Queue Center exposes durable job state without changing worker, rotation, retry, or stale-result contracts.",
-                "action": "Open Queue Center"
+                "help": "Work history exposes durable job state without changing worker, rotation, retry, or stale-result contracts.",
+                "action": "Open Work history"
             }
         },
         "capabilities": {

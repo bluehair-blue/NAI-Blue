@@ -99,7 +99,7 @@ export function QueueActivityLinkView({
             attention: summary.needsAttention,
         },
     )
-    const accessibleLabel = t('queue.activity.open', 'Open Queue Center · {{summary}}', { summary: summaryLabel })
+    const accessibleLabel = t('queue.activity.open', 'Open Work history · {{summary}}', { summary: summaryLabel })
     const headline = indicator.count === 0
         ? t('queue.activity.idle', 'No active jobs')
         : t('queue.activity.indicator', '{{label}} {{count}}', {
@@ -108,7 +108,7 @@ export function QueueActivityLinkView({
         })
 
     return (
-        <section className="shrink-0 px-6 pb-4" aria-label={t('queue.activity.reservedJobs', '예약 작업')}>
+        <section className="shrink-0 px-6 pb-4" aria-label={t('queue.activity.reservedJobs', '작업 기록')}>
             <NavLink
                 to={to}
                 onClick={closeSupportSheet}
@@ -124,7 +124,7 @@ export function QueueActivityLinkView({
                 <div className="flex items-center gap-2">
                     <ListTodo className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                     <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">{t('queue.activity.reservedJobs', '예약 작업')}</p>
+                        <p className="text-sm font-semibold">{t('queue.activity.reservedJobs', '작업 기록')}</p>
                         <p className="mt-1 break-words text-xs leading-snug text-muted-foreground">{headline}</p>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -152,7 +152,7 @@ export function QueueActivityLinkView({
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                     {total === 0
                         ? t('queue.activity.scheduleHint', '작업을 예약하면 여기에 표시됩니다.')
-                        : t('queue.activity.openDetails', '상세 현황과 제어는 큐 센터에서 확인')}
+                        : t('queue.activity.openDetails', '상세 현황과 제어는 작업 기록에서 확인')}
                 </p>
             </NavLink>
         </section>
