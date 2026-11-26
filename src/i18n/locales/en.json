@@ -282,6 +282,7 @@
             "unfiled": "Images without a folder",
             "imageWorkspace": "Image workspace",
             "folders": "Folders",
+            "generationFoldersGroup": "Working folders",
             "preparing": "Getting ready…",
             "makeImages": "Make {{count}} images",
             "addImages": "Add images",
@@ -371,6 +372,17 @@
     "app": {
         "name": "NAI Blue",
         "description": "NovelAI Integrated Studio"
+    },
+    "savedOutputs": {
+        "title": "Saved image folders",
+        "count": "{{count}} saved images",
+        "loading": "Loading saved folders…",
+        "retry": "{{count}} unreadable save locations · Check again",
+        "more": "Show more folders",
+        "detailDescription": "Inspect the saved image and add an asset from its prompt or open it in Single generation.",
+        "addAsAsset": "Add asset from this prompt",
+        "addedAsAsset": "Added an asset from this prompt.",
+        "openInSingle": "Open in Single"
     },
     "commandPalette": {
         "description": "Search and run navigation, panel, and action commands.",

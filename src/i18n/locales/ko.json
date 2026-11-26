@@ -282,6 +282,7 @@
             "unfiled": "폴더 없는 이미지",
             "imageWorkspace": "이미지 작업 공간",
             "folders": "폴더",
+            "generationFoldersGroup": "작업 폴더",
             "preparing": "준비하고 있어요…",
             "makeImages": "{{count}}장 만들기",
             "addImages": "이미지 추가",
@@ -371,6 +372,17 @@
     "app": {
         "name": "NAI Blue",
         "description": "NovelAI 통합 스튜디오"
+    },
+    "savedOutputs": {
+        "title": "저장된 이미지 폴더",
+        "count": "저장된 이미지 {{count}}장",
+        "loading": "저장 폴더 불러오는 중…",
+        "retry": "읽지 못한 저장 위치 {{count}}개 · 다시 확인",
+        "more": "폴더 더 보기",
+        "detailDescription": "저장된 이미지를 확인하고 프롬프트로 에셋을 추가하거나 단건 생성으로 열 수 있어요.",
+        "addAsAsset": "이 프롬프트로 에셋 추가",
+        "addedAsAsset": "프롬프트로 에셋을 추가했어요.",
+        "openInSingle": "단건 생성으로 열기"
     },
     "commandPalette": {
         "description": "화면 이동, 패널 열기, 실행 명령을 검색해 바로 실행합니다.",

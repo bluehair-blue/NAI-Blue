@@ -198,11 +198,15 @@ export default function FolderWorkbench() {
             return false
         } finally { unlock() }
     }
-    const addAssets = async (inputs: FolderAssetInput[], template?: SceneFolderTemplate): Promise<boolean> => {
-        if (busyRef.current || !sceneAuthorityReady || !concreteFolder || inputs.length === 0) return false
+    const addAssetsToFolder = async (
+        targetFolder: NonNullable<typeof concreteFolder>,
+        inputs: FolderAssetInput[],
+        template?: SceneFolderTemplate,
+    ): Promise<boolean> => {
+        if (busyRef.current || !sceneAuthorityReady || inputs.length === 0) return false
         lock()
         try {
-            const preset = createFolderAssetPreset({ name: concreteFolder.name, folderId: concreteFolder.id, rows: inputs, template })
+            const preset = createFolderAssetPreset({ name: targetFolder.name, folderId: targetFolder.id, rows: inputs, template })
             useSceneStore.getState().importPreset(preset)
             // Import assigns a new preset ID; verify that the authority bridge committed this exact set before claiming success.
             const importedId = useSceneStore.getState().activePresetId
@@ -212,8 +216,26 @@ export default function FolderWorkbench() {
             if (!saved || preset.scenes.some(scene => !savedIds.has(scene.id))) {
                 throw new Error(t('folderWorkbench.saveUnconfirmed', '항목 저장을 확인하지 못했습니다. 현재 폴더와 오류를 확인하세요. 자동으로 다시 추가하지 않습니다.'))
             }
-            // The explicit import selects only its verified IDs, so the next step never widens to older assets.
-            updateView({ query: '', filter: 'all', selected: preset.scenes.map(scene => JSON.stringify([importedId, scene.id])), page: 0 })
+            const nextScopeKey = targetFolder.id
+            const previous = viewStateRef.current.views
+            const current = Object.prototype.hasOwnProperty.call(previous, nextScopeKey) ? previous[nextScopeKey] : emptyFolderView()
+            const nextViews = { ...previous }
+            delete nextViews[nextScopeKey]
+            nextViews[nextScopeKey] = {
+                ...current,
+                query: '',
+                filter: 'all',
+                selected: preset.scenes.map(scene => JSON.stringify([importedId, scene.id])),
+                page: 0,
+                scrollTop: 0,
+            }
+            const bounded = Object.fromEntries(Object.entries(nextViews).slice(-32))
+            viewStateRef.current = { folderId: targetFolder.id, views: bounded }
+            setViews(bounded)
+            setViewSaved(saveFolderWorkbenchView(viewStateRef.current))
+            setFolderId(targetFolder.id)
+            setActiveFolder(targetFolder.id)
+            setSavedDirectory(null)
             setSuccess(t('folderWorkbench.start.saved', '{{count}}개 이미지를 추가하고 선택했어요.', { count: inputs.length }))
             setQueued(false)
             setComposerOpen(false)
@@ -221,6 +243,15 @@ export default function FolderWorkbench() {
             return true
         } catch (cause) { reportError(cause); return false }
         finally { unlock() }
+    }
+    const addAssets = async (inputs: FolderAssetInput[], template?: SceneFolderTemplate): Promise<boolean> => {
+        if (!concreteFolder) return false
+        return addAssetsToFolder(concreteFolder, inputs, template)
+    }
+    const addAssetFromSavedOutput = async (input: { name: string; prompt: string }): Promise<boolean> => {
+        const targetFolder = concreteFolder ?? folders[0]
+        if (!targetFolder) return false
+        return addAssetsToFolder(targetFolder, [{ name: input.name, prompt: input.prompt, count: 1 }])
     }
 
     const folderTitle = concreteFolder?.name ?? (folderId === null
@@ -265,7 +296,7 @@ export default function FolderWorkbench() {
     return (
         <div className="fb-workspace" data-testid="folder-workbench">
             <aside className="fb-sidebar">{folderPanel}</aside>
-            {savedDirectory !== null ? <SavedOutputGallery key={savedDirectory} directoryKey={savedDirectory} images={savedOutputs.images} onFolders={() => setFolderSheetOpen(true)} />
+            {savedDirectory !== null ? <SavedOutputGallery key={savedDirectory} directoryKey={savedDirectory} images={savedOutputs.images} onFolders={() => setFolderSheetOpen(true)} onAddAssetFromPrompt={addAssetFromSavedOutput} />
                 : <section className="fb-main" aria-label={t('folderWorkbench.design.imageWorkspace', '이미지 작업 공간')}>
                 <div ref={contentRef} onScroll={event => {
                     const current = viewStateRef.current.views[scopeKey] ?? emptyFolderView()

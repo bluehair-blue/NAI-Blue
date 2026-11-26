@@ -282,6 +282,7 @@
             "unfiled": "フォルダーに入っていない画像",
             "imageWorkspace": "画像を作る場所",
             "folders": "フォルダー",
+            "generationFoldersGroup": "作業フォルダー",
             "preparing": "準備しています…",
             "makeImages": "{{count}}枚作る",
             "addImages": "画像を追加",
@@ -371,6 +372,17 @@
     "app": {
         "name": "NAI Blue",
         "description": "NovelAI 統合スタジオ"
+    },
+    "savedOutputs": {
+        "title": "保存済み画像フォルダー",
+        "count": "保存済み画像 {{count}}枚",
+        "loading": "保存フォルダーを読み込み中…",
+        "retry": "読み込めない保存先 {{count}}件 · 再確認",
+        "more": "フォルダーをもっと見る",
+        "detailDescription": "保存済み画像を確認し、プロンプトからアセットを追加したり単発生成で開いたりできます。",
+        "addAsAsset": "このプロンプトでアセット追加",
+        "addedAsAsset": "プロンプトからアセットを追加しました。",
+        "openInSingle": "単発生成で開く"
     },
     "commandPalette": {
         "description": "画面移動・パネル・実行コマンドを検索してすぐ実行します。",

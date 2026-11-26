@@ -184,9 +184,12 @@ export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onM
                 />
             </div>
             <div className="fb-folder-tree">
-                {renderFolders(null)}
-                {(savedDirectories.length > 0 || savedLoading || !!savedUnavailable) && <section className="mt-5 border-t border-border pt-4">
-                    <h3 className="mb-2 text-base font-semibold">{t('savedOutputs.title', '저장된 이미지 폴더')}</h3>
+                <section aria-label={t('folderWorkbench.design.generationFoldersGroup', '작업 폴더')}>
+                    <h3 className="mb-1 px-2 text-xs font-semibold text-muted-foreground">{t('folderWorkbench.design.generationFoldersGroup', '작업 폴더')}</h3>
+                    {renderFolders(null)}
+                </section>
+                {(savedDirectories.length > 0 || savedLoading || !!savedUnavailable) && <section className="mt-5 border-t border-border pt-4" aria-label={t('savedOutputs.title', '저장된 이미지 폴더')}>
+                    <h3 className="mb-1 px-2 text-xs font-semibold text-muted-foreground">{t('savedOutputs.title', '저장된 이미지 폴더')}</h3>
                     {savedLoading && <p role="status" className="text-sm text-muted-foreground">{t('savedOutputs.loading', '저장 폴더 불러오는 중…')}</p>}
                     {!!savedUnavailable && <button type="button" onClick={onRetrySaved} className="min-h-11 text-left text-sm underline">{t('savedOutputs.retry', '읽지 못한 저장 위치 {{count}}개 · 다시 확인', { count: savedUnavailable })}</button>}
                     {renderSaved(savedTree)}
