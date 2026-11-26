@@ -50,6 +50,9 @@ the matching `color-scheme`. All color declarations consume OKLCH channel tokens
 | destructive | `0.550 0.215 26` | `0.540 0.205 25` |
 | destructive-text | `0.520 0.215 26` | `0.740 0.150 25` |
 | destructive-foreground | `0.985 0.005 260` | `0.985 0.005 260` |
+| warning-text | `0.480 0.105 75` | `0.780 0.140 75` |
+| success-text | `0.460 0.115 150` | `0.690 0.160 150` |
+| info-text | `0.470 0.145 250` | `0.720 0.150 250` |
 
 Shared category type: title `36px/1.2` desktop and `30px/1.2` mobile; section
 heading `22px/1.4`; navigation, controls and descriptions `16px/1.5`; quiet
@@ -69,6 +72,11 @@ Guided welcome ambient tokens retain their definitions in `globals.css`.
 `text-destructive` consumes `--destructive-text` (`>= 4.5:1` across `background`,
 `canvas`, and `card` in both themes), while `bg-destructive`, `border-destructive`,
 and `text-destructive-foreground` keep `--destructive` and `--destructive-foreground`.
+`text-warning`, `text-success`, and `text-info` consume `--warning-text`,
+`--success-text`, and `--info-text` the same way (`>= 4.5:1` on `background`,
+`canvas`, `card`, and a card tinted with that status at 10%, in both themes);
+fills and borders (`bg-warning`, `border-warning`, the unsaved-change dot) keep the
+base status token.
 `--radius-control = 4px`; docked panels have no radius. The category shell uses
 16px body/control text and 14px metadata; user-selected prompt text sizes remain
 owned by the prompt editor.
@@ -117,9 +125,9 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   padding is reserved for repeated data rows, not shell-level panels.
 - Section rhythm: `32px` between major regions. Related controls may use `8px`
   or `12px` internal gaps.
-- Below `640px`: two primary destinations (Create images, Job history), labelled Tools menu (with Single and Scenes in its first group) and theme toggle.
+- Below `640px`: two primary destinations (Create images, Work history), labelled Tools menu (with Single and Scenes in its first group) and theme toggle.
   Prompt and History remain named menu actions. No horizontal navigation scroll.
-- `640–1199px`: four primary destinations in the top header (Create images, Single, Scenes, Job history), grouped Tools menu with active route label and shortcut bindings, and theme toggle. Center workspace remains primary; Prompt opens as a non-modal,
+- `640–1199px`: four primary destinations in the top header (Create images, Single, Scenes, Work history), grouped Tools menu (active Tools route name appended from `440px`) with shortcut bindings, and theme toggle. Center workspace remains primary; Prompt opens as a non-modal,
   horizontally resizable panel anchored below the header without a scrim, while History remains a sheet.
 - `1200px+`: Prompt is a persistent left rail on Main (`/advanced`) at `360px` (`1200–1535px`), `420px` (`1536–1799px`), and `500px` (`1800px+`). Scene views own their own prompt editor and inherited reference settings without mounting the Main prompt rail or sheet. History opens on demand in a sheet.
 - Scene grids render one column below `640px`, at most two below `1024px`, and
@@ -130,15 +138,17 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
 ## 5. Components and Information Architecture
 
 - **Workspace shell:** every category shares the workbench header: Create images,
-  Single, Scenes, Job history (`640px+`; Create images and Job history below `640px`),
-  grouped Tools menu (with active route name and keyboard shortcut bindings) and theme.
+  Single, Scenes, Work history (`640px+`; Create images and Work history below `640px`),
+  grouped Tools menu and theme. The Tools trigger keeps its "Tools" label at every
+  width and appends the active Tools route name (`Tools · Library`) only from
+  `440px`. Menu items show their keyboard shortcut bindings.
   Tools lists named specialist destinations by group and marks the active route. Prompt and History remain directly available on
   desktop authoring screens and in the labelled Tools menu at compact widths.
   Prompt docks only for Main at desktop widths; Scene and utility categories do not mount
   unrelated Main authoring rails. The header spans the whole viewport.
 - **Category rhythm:** title, one short next-step description, then the task.
-  The asset workbench (`/folders`) places a compact title (`32px` desktop, `24px`
-  mobile) and primary actions on one header row above the input or gallery, omits
+  The asset workbench (`/folders`) places the shared category title (`36px` desktop,
+  `30px` mobile) and primary actions on one header row above the input or gallery, omits
   redundant breadcrumb/step chrome across viewports (the folder rail or labelled
   Folders button conveys scope), and hides 0-item secondary disclosures across
   workspace surfaces. Use 32px horizontal
@@ -188,6 +198,10 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
 - **SceneMode:** title and critical create/edit controls stay visible. Import,
   rotation, queue, export, and sharing remain reachable in grouped overflow
   menus on compact widths. The preset/view row wraps without horizontal scroll.
+  The `/scenes` command bar carries one "Images per add" counter; a card's queue
+  increase adds that many images to its scene.
+  On `/scenes/:id`, the wildcard (fragment) preview button sits in the scene prompt
+  editor's slot toolbar at every width, and `Ctrl/Cmd+F` opens the same dialog.
 - **Settings:** desktop uses a sticky section rail and broad content column.
   Mobile uses one section select at the top; every section remains reachable.
 - **History:** empty/loading/error states occupy the panel without ornamental
@@ -203,6 +217,27 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   without workspace navigation or generation/edit/save entry points. Retry,
   diagnostic export, backup guidance, and safe exit remain direct native-button
   actions with 44px touch targets and visible keyboard focus.
+- **Keyboard and command finder:** `Ctrl/Cmd+K` opens the command finder. It
+  lists navigation destinations (grouped like the menus, with their bindings),
+  panels (Prompt where the route has one, History, My work), actions (run the
+  current screen's primary action on `/folders`, `/advanced`, `/scenes` and
+  `/scenes/:id`; theme switch) and the shortcut settings. Esc closes it and
+  returns focus to where it was opened, unless a command moved focus itself.
+  `Ctrl/Cmd+Enter` runs the route's primary action: Main generation on
+  `/advanced` and inside the prompt sheet on any route, image creation on
+  `/folders`, scene generation on `/scenes` and `/scenes/:id`. A local editor
+  that owns the key (folder composer, inline description editor) consumes it
+  first. A Main start blocked by low Steps reveals the prompt surface, focuses
+  Steps and explains why, whichever entry ran it. The filled primary button shows
+  its binding in a `<kbd>` without a chip fill: the command bar and folder
+  workbench from `1280px`, the docked rail button always. `Alt+1..N` selects
+  prompt slots inside Main and Scene prompt editors. `Ctrl/Cmd+1..8` follow the
+  order destinations appear in the menus. Global shortcuts stand down while a
+  modal dialog, alert dialog, open menu or open select listbox is up, and on key
+  repeat; in those cases the browser default (find bar, print, reload) is still
+  blocked. Keys an inner owner already handled and IME composition pass through
+  untouched. The non-modal prompt sheet and prompt autocomplete list are not
+  blocking layers.
 - **Icons:** Lucide only except existing product logos. Every icon-only action has
   an accessible name and tooltip where hover exists.
 - **Guided shell:** one question owns the reading order. Choice rows use a 1px
