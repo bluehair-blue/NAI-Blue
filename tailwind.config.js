@@ -54,6 +54,12 @@ export default {
 					'5': 'oklch(var(--chart-5) / <alpha-value>)'
     			}
     		},
+    		textColor: {
+    			destructive: {
+    				DEFAULT: 'oklch(var(--destructive-text) / <alpha-value>)',
+    				foreground: 'oklch(var(--destructive-foreground) / <alpha-value>)'
+    			}
+    		},
     		borderRadius: {
     			lg: 'var(--radius)',
     			md: 'calc(var(--radius) - 2px)',

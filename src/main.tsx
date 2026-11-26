@@ -97,7 +97,7 @@ const showSplashError = (message: string) => {
     const splash = document.getElementById('splash-screen')
     if (splash) {
         const errorDiv = document.createElement('div')
-        errorDiv.style.cssText = 'color: oklch(var(--destructive)); margin-top: 20px; padding: 10px; max-width: 400px; text-align: center;'
+        errorDiv.style.cssText = 'color: oklch(var(--destructive-text)); margin-top: 20px; padding: 10px; max-width: 400px; text-align: center;'
         errorDiv.textContent = message
         splash.appendChild(errorDiv)
     }

@@ -47,6 +47,9 @@ the matching `color-scheme`. All color declarations consume OKLCH channel tokens
 | accent-foreground | `0.345 0.130 264` | `0.895 0.050 264` |
 | border | `0.820 0.025 265` | `0.380 0.041 265` |
 | input | `0.735 0.035 265` | `0.475 0.047 265` |
+| destructive | `0.550 0.215 26` | `0.540 0.205 25` |
+| destructive-text | `0.520 0.215 26` | `0.740 0.150 25` |
+| destructive-foreground | `0.985 0.005 260` | `0.985 0.005 260` |
 
 Shared category type: title `36px/1.2` desktop and `30px/1.2` mobile; section
 heading `22px/1.4`; navigation, controls and descriptions `16px/1.5`; quiet
@@ -63,6 +66,9 @@ tokens move lighter in dark mode so text, icons, and focus states remain legible
 
 Status colors (`success`, `warning`, `destructive`, `info`), scrim, charts and
 Guided welcome ambient tokens retain their definitions in `globals.css`.
+`text-destructive` consumes `--destructive-text` (`>= 4.5:1` across `background`,
+`canvas`, and `card` in both themes), while `bg-destructive`, `border-destructive`,
+and `text-destructive-foreground` keep `--destructive` and `--destructive-foreground`.
 `--radius-control = 4px`; docked panels have no radius. The category shell uses
 16px body/control text and 14px metadata; user-selected prompt text sizes remain
 owned by the prompt editor.

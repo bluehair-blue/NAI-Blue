@@ -22,7 +22,7 @@ function showBootError(message: string) {
     const errorDiv = document.createElement('div')
     errorDiv.id = 'boot-error'
     errorDiv.style.cssText = [
-        'color: oklch(var(--destructive))',
+        'color: oklch(var(--destructive-text))',
         'margin-top: 20px',
         'padding: 10px',
         'max-width: 720px',

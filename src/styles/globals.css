@@ -58,6 +58,7 @@
     --accent: 0.875 0.050 265;
     --accent-foreground: 0.345 0.130 264;
     --destructive: 0.550 0.215 26;
+    --destructive-text: 0.520 0.215 26;
     --destructive-foreground: 0.985 0.005 260;
     --border: 0.820 0.025 265;
     --input: 0.735 0.035 265;
@@ -111,7 +112,8 @@
     --muted-foreground: 0.750 0.030 265;
     --accent: 0.315 0.077 264;
     --accent-foreground: 0.895 0.050 264;
-    --destructive: 0.640 0.205 25;
+    --destructive: 0.540 0.205 25;
+    --destructive-text: 0.740 0.150 25;
     --destructive-foreground: 0.985 0.005 260;
     --border: 0.380 0.041 265;
     --input: 0.475 0.047 265;
