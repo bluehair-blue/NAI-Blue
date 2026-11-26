@@ -14,13 +14,6 @@
     "saved": "完了",
     "history": "生成履歴"
   },
-  "savedOutputs": {
-    "title": "保存済み画像フォルダー",
-    "count": "保存済み画像 {{count}} 枚",
-    "loading": "保存フォルダーを読み込み中…",
-    "retry": "読み込めない保存先 {{count}} 件 · 再試行",
-    "more": "フォルダーをさらに表示"
-  },
   "readableChoices": {
     "observeHint": "参照のみ許可します。生成・編集のリクエストは実行しません。",
     "suggestHint": "生成キューへの登録には、毎回人の承認が必要です。",
@@ -64,15 +57,15 @@
             "PRODUCTION_SOURCE_CHANGED": "対象の説明や設定が変わりました。現在の対象で新しいリクエストを保存してください。",
             "PRODUCTION_PREVIOUS_CHILD_NOT_COMPLETE": "前のバッチの生成・保存・指定されたアップロードが完了すると、次のバッチを確認できます。",
             "PRODUCTION_BUDGET_EXCEEDED": "予想費用がAnlasの合計上限を超えています。費用と枚数を確認し、新しいリクエストを保存してください。",
-            "PRODUCTION_SUBMISSION_UNKNOWN": "キューへの追加を確認できませんでした。再実行せず、作業履歴を確認してください。",
-            "PRODUCTION_QUEUE_BINDING_CONFLICT": "キューへの追加を確認できませんでした。再実行せず、作業履歴を確認してください。",
-            "PRODUCTION_CHILD_NEEDS_ATTENTION": "現在のバッチに確認が必要な結果があります。作業履歴で生成・保存・アップロードの状態を確認してください。",
+            "PRODUCTION_SUBMISSION_UNKNOWN": "キューへの追加を確認できませんでした。再実行せず、作業の記録を確認してください。",
+            "PRODUCTION_QUEUE_BINDING_CONFLICT": "キューへの追加を確認できませんでした。再実行せず、作業の記録を確認してください。",
+            "PRODUCTION_CHILD_NEEDS_ATTENTION": "現在のバッチに確認が必要な結果があります。作業の記録で生成・保存・アップロードの状態を確認してください。",
             "PRODUCTION_REVIEW_CHANGED": "確認内容が変わりました。現在の費用と保存先を再確認してください。",
             "PRODUCTION_PLAN_CONFLICT": "確認内容が変わりました。現在の費用と保存先を再確認してください。",
             "PRODUCTION_PLAN_UNAVAILABLE": "現在の設定ではバッチを準備できませんでした。生成設定と保存先を確認してください。",
             "PRODUCTION_UNAVAILABLE": "現在の設定ではバッチを準備できませんでした。生成設定と保存先を確認してください。",
-            "PRODUCTION_SUBMISSION_ALREADY_RESERVED": "このバッチは処理中、またはキューに追加済みです。作業履歴を確認してください。",
-            "PRODUCTION_ALREADY_ADMITTED": "このバッチは処理中、またはキューに追加済みです。作業履歴を確認してください。"
+            "PRODUCTION_SUBMISSION_ALREADY_RESERVED": "このバッチは処理中、またはキューに追加済みです。作業の記録を確認してください。",
+            "PRODUCTION_ALREADY_ADMITTED": "このバッチは処理中、またはキューに追加済みです。作業の記録を確認してください。"
         },
         "heading": "保存した制作リクエスト ({{count}})",
         "description": "対象と枚数を保存し、各バッチの現在の費用と保存先を確認します。バッチごとに確認と承認が必要です。",
@@ -87,7 +80,7 @@
         "refresh": "更新",
         "showStatus": "進行状況を確認",
         "review": "次のバッチを確認",
-        "openQueue": "作業履歴を見る",
+        "openQueue": "作業の記録を見る",
         "empty": "選択した画像を制作リクエストとして保存すると、ここから続けられます。",
         "saved": "制作リクエストを保存しました。進行状況から次のバッチを確認してください。",
         "queued": "承認したバッチをキューに追加しました。保存とアップロードの結果を確認してから次のバッチに進めます。",
@@ -99,7 +92,7 @@
         "next": {
             "review-next-batch": "次のバッチを確認できます。",
             "wait": "現在のバッチの完了を待っています。",
-            "check-results": "作業履歴で生成・保存・アップロードの結果を確認してください。",
+            "check-results": "作業の記録で生成・保存・アップロードの結果を確認してください。",
             "complete": "全バッチの生成・保存・指定されたアップロードが完了しました。"
         }
     },
@@ -328,10 +321,7 @@
             "sharedDescription": "すべての画像に入れる説明",
             "noSharedDescription": "追加の説明はありません。",
             "uploadInternet": "インターネットに画像を送る",
-            "uploadOn": "作ったあとに自動で送ります。",
             "uploadOff": "今はパソコンにだけ保存します。",
-            "connectionReady": "保存した接続先を使います。",
-            "connectionNeeded": "先に接続を確認してください。",
             "uploadSettings": "画像を送る設定",
             "includeChildren": "中のフォルダーの画像も見る",
             "addToFolder": "{{name}}フォルダーに入れます。",
@@ -366,7 +356,9 @@
             "navScenes": "シーン",
             "navHistory": "作業の記録",
             "navCreateCompact": "作成",
-            "navHistoryCompact": "履歴"
+            "navHistoryCompact": "履歴",
+            "addFailed": "アセットを追加できませんでした。作業フォルダーと保存状態を確認してください。",
+            "editBlocked": "別の保存が終わってからもう一度お試しください。"
         }
     },
     "app": {
@@ -382,7 +374,16 @@
         "detailDescription": "保存済み画像を確認し、プロンプトからアセットを追加したり単発生成で開いたりできます。",
         "addAsAsset": "このプロンプトでアセット追加",
         "addedAsAsset": "プロンプトからアセットを追加しました。",
-        "openInSingle": "単発生成で開く"
+        "openInSingle": "単発生成で開く",
+        "readFailed": "保存された画像ファイルを読み込めませんでした。移動または削除されていないか確認してください。",
+        "characterConflict": "この画像のキャラクタープロンプトがすでに入っているため読み込めませんでした。キャラクタープロンプトを整理してからもう一度お試しください。",
+        "applyFailedReason": "プロンプトを読み込めませんでした。({{reason}})",
+        "applyFailed": "プロンプトを読み込めませんでした。",
+        "overwriteNotice": "現在のプロンプトとキャラクタープロンプトがこの画像のものに置き換わり、現在のプリセットに保存されます。",
+        "overwriteAndOpen": "上書きして開く",
+        "cancelOverwrite": "キャンセル",
+        "addTarget": "アセットは {{name}} フォルダーに追加されます。",
+        "noAddTarget": "アセットを入れるフォルダーがありません。先にフォルダーを作成してください。"
     },
     "commandPalette": {
         "description": "画面移動・パネル・実行コマンドを検索してすぐ実行します。",
@@ -1436,7 +1437,9 @@
         "moveUp": "上へ移動",
         "moveDown": "下へ移動",
         "moreActions": "その他の操作",
-        "close": "閉じる"
+        "close": "閉じる",
+        "back": "戻る",
+        "next": "次へ"
     },
     "credentialVault": {
         "title": "Credential Vault",
@@ -1707,7 +1710,6 @@
         "gridColumnsDesc": "グリッド列数変更",
         "deletePreset": "プリセット削除",
         "wildcardPreview": "ワイルドカードプレビュー",
-        "characterLayout": "キャラクター配置",
         "composition": {
             "mode": "モード",
             "recipe": "レシピ",
@@ -1718,9 +1720,9 @@
             "applyBulkRecipe": "レシピを適用",
             "bulkApplied": "{{count}}シーンにレシピを適用しました",
             "inherited": "デフォルト",
-            "override": "オーバーライド",
-            "advancedCompatibility": "詳細 / 互換プロンプト"
-        }
+            "override": "オーバーライド"
+        },
+        "queueStepCount": "一度に追加する枚数"
     },
     "composition": {
         "commandBar": "生成コントロール",
@@ -1942,14 +1944,11 @@
         "charRefWarning": "キャラクター参照が検出されました。Director Tools経由で抽出がサポートされています。"
     },
     "nav": {
-        "main": "メイン",
-        "scenes": "シーンモード",
         "web": "ウェブ",
         "library": "ライブラリ",
         "settings": "設定",
         "styleLab": "画風研究所",
         "promptEditor": "プロンプトエディター",
-        "queue": "作業の記録",
         "organizer": "結果整理",
         "r2Upload": "R2アップロード",
         "trash": "ゴミ箱",
@@ -2125,7 +2124,7 @@
             "waiting": "待機中",
             "idle": "有効なジョブなし",
             "indicator": "{{label}} {{count}}件",
-            "reservedJobs": "予約ジョブ",
+            "reservedJobs": "作業の記録",
             "scheduleHint": "ジョブを予約すると、ここに表示されます。",
             "openDetails": "詳細と操作は作業の記録で確認"
         },
@@ -2200,6 +2199,25 @@
             "partial": "一部完了",
             "needsAttention": "要確認",
             "delivered": "提供済み"
+        },
+        "deliveryJobs": "R2配信ジョブ",
+        "issue": {
+            "title": "復旧操作",
+            "r2Missing": "この端末に保存済み · R2配信ジョブの作成が必要",
+            "r2Failed": "この端末に保存済み · R2配信の対応が必要",
+            "sceneLinkPending": "この端末に保存済み · Sceneの紐付けの再試行が必要",
+            "outputReservationConflict": "出力予約の競合 · 再計画が必要",
+            "directoryAuthorizationRequired": "出力フォルダーへのアクセス権限が必要です"
+        },
+        "action": {
+            "replan": "再計画",
+            "grantDirectoryAccess": "フォルダーへのアクセスを許可",
+            "retryStorage": "保存のみ再試行",
+            "retryR2Release": "R2配信を再開",
+            "retrySceneLink": "Sceneの紐付けを再試行",
+            "abandonReservation": "予約を解除",
+            "discardResult": "結果を破棄して予約を解除",
+            "reviewProviderUnknown": "Providerの状態を確認"
         }
     },
     "workflow": {
@@ -2766,7 +2784,8 @@
         "lowStepsBlockedTitle": "Stepsを確認してください",
         "lowStepsDescription": "{{steps}} stepsでは画像が完成する前に終了し、ぼやけることがあります。通常は28 stepsを推奨します。",
         "lowStepsCautionRange": "{{threshold}}未満は実験向けです。",
-        "restoreRecommendedSteps": "28 stepsに戻す"
+        "restoreRecommendedSteps": "28 stepsに戻す",
+        "cancelling": "キャンセル中…"
     },
     "diagnosticDrawer": {
         "open": "診断ログを開く",
@@ -2803,7 +2822,6 @@
         "coreTitle": "基本設定",
         "detailedTitle": "詳細設定",
         "detailedDescription": "CFG Scale・Sampler・Schedulerなどの詳細オプションを設定します。",
-        "description": "StepsやCFG Scaleなどの生成パラメータを設定します。",
         "model": "モデル",
         "modelDescriptions": {
             "nai-diffusion-5-full": "表現の幅が最も広く、指示に忠実な V5 の基本おすすめモデルです。",
@@ -3908,6 +3926,12 @@
         "reason_AGENT_OUTPUT_DENIED": "許可されていない保存操作です",
         "reason_AGENT_R2_DENIED": "許可されていないR2保存先です",
         "reason_AGENT_OBSERVE_ONLY": "現在のモードでは参照のみ可能です",
-        "reason_AUTHENTICATION_FAILED": "接続権限が無効になっています"
+        "reason_AUTHENTICATION_FAILED": "接続権限が無効になっています",
+        "authoringChanges": "変更内容"
+    },
+    "rotation": {
+        "stopped": "ローテーションを中断しました",
+        "resumeLater": "現在の位置を保存しました。あとで続きから生成できます。",
+        "stopAndResume": "中断してあとで続ける"
     }
 }

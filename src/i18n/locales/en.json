@@ -14,13 +14,6 @@
     "saved": "Complete",
     "history": "Generation history"
   },
-  "savedOutputs": {
-    "title": "Saved image folders",
-    "count": "{{count}} saved images",
-    "loading": "Loading saved folders…",
-    "retry": "{{count}} unavailable locations · Retry",
-    "more": "Show more folders"
-  },
   "readableChoices": {
     "observeHint": "Read access only. Generation and editing requests do not run.",
     "suggestHint": "A person approves each request to add jobs to the generation queue.",
@@ -64,15 +57,15 @@
             "PRODUCTION_SOURCE_CHANGED": "The selected source content or settings changed. Save a new request with the current selection.",
             "PRODUCTION_PREVIOUS_CHILD_NOT_COMPLETE": "Complete generation, storage and requested uploads for the previous batch before reviewing the next one.",
             "PRODUCTION_BUDGET_EXCEEDED": "The estimated cost exceeds the total Anlas limit. Check costs and quantities, then save a new request.",
-            "PRODUCTION_SUBMISSION_UNKNOWN": "Queue submission could not be confirmed. Check job history before taking further action; do not submit again.",
-            "PRODUCTION_QUEUE_BINDING_CONFLICT": "Queue submission could not be confirmed. Check job history before taking further action; do not submit again.",
-            "PRODUCTION_CHILD_NEEDS_ATTENTION": "The current batch needs attention. Check generation, storage and upload results in job history.",
+            "PRODUCTION_SUBMISSION_UNKNOWN": "Queue submission could not be confirmed. Check Work history before taking further action; do not submit again.",
+            "PRODUCTION_QUEUE_BINDING_CONFLICT": "Queue submission could not be confirmed. Check Work history before taking further action; do not submit again.",
+            "PRODUCTION_CHILD_NEEDS_ATTENTION": "The current batch needs attention. Check generation, storage and upload results in Work history.",
             "PRODUCTION_REVIEW_CHANGED": "The review changed. Review current costs and output locations again.",
             "PRODUCTION_PLAN_CONFLICT": "The review changed. Review current costs and output locations again.",
             "PRODUCTION_PLAN_UNAVAILABLE": "The batch could not be prepared with current settings. Check generation settings and output locations.",
             "PRODUCTION_UNAVAILABLE": "The batch could not be prepared with current settings. Check generation settings and output locations.",
-            "PRODUCTION_SUBMISSION_ALREADY_RESERVED": "This batch is already being processed or queued. Check job history.",
-            "PRODUCTION_ALREADY_ADMITTED": "This batch is already being processed or queued. Check job history."
+            "PRODUCTION_SUBMISSION_ALREADY_RESERVED": "This batch is already being processed or queued. Check Work history.",
+            "PRODUCTION_ALREADY_ADMITTED": "This batch is already being processed or queued. Check Work history."
         },
         "heading": "Saved production requests ({{count}})",
         "description": "Save the selected images and quantities, then review current costs and output locations for each batch. Every batch needs your review and approval.",
@@ -87,7 +80,7 @@
         "refresh": "Refresh",
         "showStatus": "Check progress",
         "review": "Review next batch",
-        "openQueue": "View job history",
+        "openQueue": "View Work history",
         "empty": "Save selected images as a production request to continue here.",
         "saved": "Production request saved. Check progress to review the next batch.",
         "queued": "Approved batch added to the queue. Confirm storage and upload results before reviewing the next batch.",
@@ -99,7 +92,7 @@
         "next": {
             "review-next-batch": "Ready to review the next batch.",
             "wait": "Waiting for the current batch to finish.",
-            "check-results": "Check generation, storage and upload results in job history.",
+            "check-results": "Check generation, storage and upload results in Work history.",
             "complete": "All batches are generated, stored and uploaded where requested."
         }
     },
@@ -328,10 +321,7 @@
             "sharedDescription": "Description for every image",
             "noSharedDescription": "No extra description added.",
             "uploadInternet": "Put images online",
-            "uploadOn": "Send images automatically after they are made.",
             "uploadOff": "Images are saved only on your computer for now.",
-            "connectionReady": "Uses your saved connection.",
-            "connectionNeeded": "Check the connection first.",
             "uploadSettings": "Online sharing settings",
             "includeChildren": "Show images in folders inside this one",
             "addToFolder": "Add to the {{name}} folder.",
@@ -366,7 +356,9 @@
             "navScenes": "Scenes",
             "navHistory": "Work history",
             "navCreateCompact": "Create",
-            "navHistoryCompact": "History"
+            "navHistoryCompact": "History",
+            "addFailed": "Couldn't add the asset. Check the target folder and save status.",
+            "editBlocked": "Try again after the other save finishes."
         }
     },
     "app": {
@@ -382,7 +374,16 @@
         "detailDescription": "Inspect the saved image and add an asset from its prompt or open it in Single generation.",
         "addAsAsset": "Add asset from this prompt",
         "addedAsAsset": "Added an asset from this prompt.",
-        "openInSingle": "Open in Single"
+        "openInSingle": "Open in Single",
+        "readFailed": "Couldn't read the saved image file. Check whether it was moved or deleted.",
+        "characterConflict": "This image's character prompts are already loaded, so it couldn't be opened. Clear the character prompts and try again.",
+        "applyFailedReason": "Couldn't load the prompt. ({{reason}})",
+        "applyFailed": "Couldn't load the prompt.",
+        "overwriteNotice": "Your current prompt and character prompts will be replaced with this image's and saved to the current preset.",
+        "overwriteAndOpen": "Overwrite and open",
+        "cancelOverwrite": "Cancel",
+        "addTarget": "The asset will be added to {{name}}.",
+        "noAddTarget": "There's no folder to add the asset to. Create a folder first."
     },
     "commandPalette": {
         "description": "Search and run navigation, panel, and action commands.",
@@ -1453,7 +1454,9 @@
         "moveUp": "Move up",
         "moveDown": "Move down",
         "moreActions": "More actions",
-        "close": "Close"
+        "close": "Close",
+        "back": "Back",
+        "next": "Next"
     },
     "credentialVault": {
         "title": "Credential Vault",
@@ -1708,7 +1711,6 @@
         "gridColumnsDesc": "Change grid column count",
         "deletePreset": "Delete Preset",
         "wildcardPreview": "Wildcard preview",
-        "characterLayout": "Character layout",
         "composition": {
             "mode": "Mode",
             "recipe": "Recipe",
@@ -1719,9 +1721,9 @@
             "applyBulkRecipe": "Apply recipe",
             "bulkApplied": "Recipe applied to {{count}} scenes",
             "inherited": "Default",
-            "override": "Override",
-            "advancedCompatibility": "Advanced / compatibility prompt"
-        }
+            "override": "Override"
+        },
+        "queueStepCount": "Images per add"
     },
     "composition": {
         "commandBar": "Generation controls",
@@ -1943,14 +1945,11 @@
         "charRefWarning": "Character Reference detected. Extraction supported via Director Tools."
     },
     "nav": {
-        "main": "Main",
-        "scenes": "Scene Mode",
         "web": "Web",
         "library": "Library",
         "settings": "Settings",
         "styleLab": "Style Lab",
         "promptEditor": "Prompt Editor",
-        "queue": "Work history",
         "organizer": "Organize Results",
         "r2Upload": "R2 Upload",
         "trash": "Trash",
@@ -2151,7 +2150,7 @@
             "waiting": "Waiting",
             "idle": "No active jobs",
             "indicator": "{{label}} {{count}}",
-            "reservedJobs": "Scheduled jobs",
+            "reservedJobs": "Work history",
             "scheduleHint": "Scheduled work will appear here.",
             "openDetails": "Open Work history for details and controls"
         },
@@ -2811,7 +2810,8 @@
         "lowStepsBlockedTitle": "Check Steps first",
         "lowStepsDescription": "{{steps}} steps can stop before the image is resolved and produce a blurred result. Use 28 steps for normal generation.",
         "lowStepsCautionRange": "Values below {{threshold}} are intended for experiments.",
-        "restoreRecommendedSteps": "Restore 28 steps"
+        "restoreRecommendedSteps": "Restore 28 steps",
+        "cancelling": "Cancelling…"
     },
     "diagnosticDrawer": {
         "open": "Open diagnostics",
@@ -2848,7 +2848,6 @@
         "coreTitle": "Core Settings",
         "detailedTitle": "Detailed Settings",
         "detailedDescription": "Configure detailed generation parameters such as CFG Scale, Sampler, and Scheduler.",
-        "description": "Configure generation parameters like Steps and CFG Scale.",
         "model": "Model",
         "modelDescriptions": {
             "nai-diffusion-5-full": "Recommended V5 model with the widest creative range and strongest prompt following.",
@@ -4004,6 +4003,12 @@
         "reason_AGENT_OUTPUT_DENIED": "Output action is not permitted",
         "reason_AGENT_R2_DENIED": "R2 destination is not permitted",
         "reason_AGENT_OBSERVE_ONLY": "Current mode permits reads only",
-        "reason_AUTHENTICATION_FAILED": "Client access is no longer valid"
+        "reason_AUTHENTICATION_FAILED": "Client access is no longer valid",
+        "authoringChanges": "Changes"
+    },
+    "rotation": {
+        "stopped": "Rotation stopped",
+        "resumeLater": "Your position was saved. You can continue generating later.",
+        "stopAndResume": "Stop and continue later"
     }
 }

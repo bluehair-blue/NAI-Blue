@@ -14,13 +14,6 @@
     "saved": "완료",
     "history": "생성 내역"
   },
-  "savedOutputs": {
-    "title": "저장된 이미지 폴더",
-    "count": "저장된 이미지 {{count}}장",
-    "loading": "저장 폴더 불러오는 중…",
-    "retry": "읽지 못한 저장 위치 {{count}}개 · 다시 확인",
-    "more": "폴더 더 보기"
-  },
   "readableChoices": {
     "observeHint": "작업 조회만 허용해요. 생성·편집 요청은 실행하지 않아요.",
     "suggestHint": "생성 큐에 등록할 때마다 사람이 승인해요.",
@@ -328,10 +321,7 @@
             "sharedDescription": "모든 이미지에 넣을 설명",
             "noSharedDescription": "따로 넣은 설명이 없어요.",
             "uploadInternet": "인터넷에 올리기",
-            "uploadOn": "만든 뒤 자동으로 올려요.",
             "uploadOff": "지금은 컴퓨터에만 저장해요.",
-            "connectionReady": "저장된 연결을 사용해요.",
-            "connectionNeeded": "먼저 연결을 확인해 주세요.",
             "uploadSettings": "올리기 설정",
             "includeChildren": "안쪽 폴더 이미지도 보기",
             "addToFolder": "{{name}} 폴더에 담아요.",
@@ -366,7 +356,9 @@
             "navScenes": "씬",
             "navHistory": "작업 기록",
             "navCreateCompact": "만들기",
-            "navHistoryCompact": "기록"
+            "navHistoryCompact": "기록",
+            "addFailed": "에셋을 추가하지 못했어요. 작업 폴더와 저장 상태를 확인해 주세요.",
+            "editBlocked": "다른 저장이 끝난 뒤 다시 시도해 주세요."
         }
     },
     "app": {
@@ -382,7 +374,16 @@
         "detailDescription": "저장된 이미지를 확인하고 프롬프트로 에셋을 추가하거나 단건 생성으로 열 수 있어요.",
         "addAsAsset": "이 프롬프트로 에셋 추가",
         "addedAsAsset": "프롬프트로 에셋을 추가했어요.",
-        "openInSingle": "단건 생성으로 열기"
+        "openInSingle": "단건 생성으로 열기",
+        "readFailed": "저장된 이미지 파일을 읽지 못했어요. 파일이 옮겨졌거나 지워졌는지 확인해 주세요.",
+        "characterConflict": "이 이미지의 캐릭터 프롬프트가 이미 들어 있어 불러오지 못했어요. 캐릭터 프롬프트를 정리한 뒤 다시 시도해 주세요.",
+        "applyFailedReason": "프롬프트를 불러오지 못했어요. ({{reason}})",
+        "applyFailed": "프롬프트를 불러오지 못했어요.",
+        "overwriteNotice": "지금 프롬프트와 캐릭터 프롬프트가 이 이미지의 것으로 바뀌고, 지금 프리셋에 저장돼요.",
+        "overwriteAndOpen": "덮어쓰고 열기",
+        "cancelOverwrite": "취소",
+        "addTarget": "에셋은 {{name}} 폴더에 추가돼요.",
+        "noAddTarget": "에셋을 넣을 폴더가 없어요. 먼저 폴더를 만들어 주세요."
     },
     "commandPalette": {
         "description": "화면 이동, 패널 열기, 실행 명령을 검색해 바로 실행합니다.",
@@ -1461,7 +1462,9 @@
         "moveUp": "위로 이동",
         "moveDown": "아래로 이동",
         "moreActions": "더보기",
-        "close": "닫기"
+        "close": "닫기",
+        "back": "이전",
+        "next": "다음"
     },
     "credentialVault": {
         "title": "Credential Vault",
@@ -1716,7 +1719,6 @@
         "gridColumnsDesc": "그리드 열 개수 변경",
         "deletePreset": "프리셋 삭제",
         "wildcardPreview": "와일드카드 미리보기",
-        "characterLayout": "캐릭터 배치",
         "composition": {
             "mode": "모드",
             "recipe": "레시피",
@@ -1727,9 +1729,9 @@
             "applyBulkRecipe": "레시피 적용",
             "bulkApplied": "{{count}}개 씬에 레시피를 적용했습니다",
             "inherited": "기본값",
-            "override": "오버라이드",
-            "advancedCompatibility": "고급 / 호환 프롬프트"
-        }
+            "override": "오버라이드"
+        },
+        "queueStepCount": "한 번에 추가할 장수"
     },
     "composition": {
         "commandBar": "생성 명령",
@@ -1951,14 +1953,11 @@
         "charRefWarning": "캐릭터 레퍼런스가 감지되었습니다. Director Tools를 통해 추출이 지원됩니다."
     },
     "nav": {
-        "main": "메인",
-        "scenes": "씬 모드",
         "web": "웹",
         "library": "라이브러리",
         "settings": "설정",
         "styleLab": "그림체 연구소",
         "promptEditor": "프롬프트 에디터",
-        "queue": "작업 기록",
         "organizer": "결과 정리",
         "r2Upload": "R2 업로드",
         "trash": "휴지통",
@@ -2847,7 +2846,8 @@
         "lowStepsBlockedTitle": "Steps를 먼저 확인하세요",
         "lowStepsDescription": "{{steps}} steps는 완성 전에 종료되어 흐린 결과가 나올 수 있습니다. 일반 생성은 28 steps를 권장합니다.",
         "lowStepsCautionRange": "{{threshold}} 미만은 실험용입니다.",
-        "restoreRecommendedSteps": "28 steps로 복원"
+        "restoreRecommendedSteps": "28 steps로 복원",
+        "cancelling": "취소하는 중…"
     },
     "diagnosticDrawer": {
         "open": "진단 로그 열기",
@@ -2884,7 +2884,6 @@
         "coreTitle": "핵심 설정",
         "detailedTitle": "세부 설정",
         "detailedDescription": "CFG Scale, Sampler, Scheduler 등 세부 생성 옵션을 설정합니다.",
-        "description": "Steps, CFG Scale 등 생성 파라미터를 설정합니다.",
         "model": "모델",
         "modelDescriptions": {
             "nai-diffusion-5-full": "표현 범위가 가장 넓고 지시를 잘 따르는 V5 기본 추천 모델이에요.",
@@ -4013,6 +4012,12 @@
         "reason_AGENT_OUTPUT_DENIED": "허용되지 않은 저장 작업입니다",
         "reason_AGENT_R2_DENIED": "허용되지 않은 R2 저장 대상입니다",
         "reason_AGENT_OBSERVE_ONLY": "현재 모드는 조회만 허용합니다",
-        "reason_AUTHENTICATION_FAILED": "접속 권한이 더 이상 유효하지 않습니다"
+        "reason_AUTHENTICATION_FAILED": "접속 권한이 더 이상 유효하지 않습니다",
+        "authoringChanges": "바뀌는 내용"
+    },
+    "rotation": {
+        "stopped": "로테이션 중단",
+        "resumeLater": "현재 위치를 저장했습니다. 나중에 이어서 생성할 수 있습니다.",
+        "stopAndResume": "중단하고 나중에 이어서"
     }
 }
