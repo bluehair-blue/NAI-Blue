@@ -955,6 +955,7 @@ export default function SceneMode() {
     return (
         <SceneCompositionWorkspace
             simplified
+            hideCommandBar={scenes.length === 0 && !isGenerating && !rotationActive}
             recipe={{
                 value: bulkRecipeId,
                 label: t('scene.composition.recipe', 'Recipe'),
@@ -1187,16 +1188,18 @@ export default function SceneMode() {
                         <FolderTree className="h-4 w-4 sm:mr-2" />
                         <span className="hidden sm:inline">{t('scene.folderManager.title', '씬 폴더 관리')}</span>
                     </Button>
-                    <Button
-                        size="icon"
-                        className="h-11 w-11 shrink-0 sm:w-auto sm:px-3"
-                        aria-label={t('scene.addScene')}
-                        onClick={handleAddScene}
-                        disabled={!activePresetId || isGenerating}
-                    >
-                        <Plus className="h-4 w-4 sm:mr-2" />
-                        <span className="hidden sm:inline">{t('scene.addScene')}</span>
-                    </Button>
+                    {scenes.length > 0 && (
+                        <Button
+                            size="icon"
+                            className="h-11 w-11 shrink-0 sm:w-auto sm:px-3"
+                            aria-label={t('scene.addScene')}
+                            onClick={handleAddScene}
+                            disabled={!activePresetId || isGenerating}
+                        >
+                            <Plus className="h-4 w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">{t('scene.addScene')}</span>
+                        </Button>
+                    )}
                     <Button
                         variant="outline"
                         className="h-11 shrink-0 px-3"
@@ -1408,6 +1411,7 @@ export default function SceneMode() {
                     </div>
                 </div>
 
+                {scenes.length > 0 && (
                 <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:pl-2 sm:pt-0">
                     <Tip content={t('scene.thumbnailLayout', '세로/가로 썸네일 전환')}>
                         <Button
@@ -1433,6 +1437,7 @@ export default function SceneMode() {
                         </Button>
                     </Tip>
                 </div>
+                )}
             </div>
 
             <div
@@ -1448,9 +1453,9 @@ export default function SceneMode() {
                             <h3 className="text-base font-semibold text-foreground">{t('scene.noScenes')}</h3>
                             <p className="mt-1 text-sm leading-relaxed">{t('scene.noScenesDesc')}</p>
                         </div>
-                        <Button className="h-11 px-4" variant="outline" onClick={handleAddScene} disabled={isGenerating}>
+                        <Button className="h-11 px-4" variant="default" data-testid="scene-empty-create" onClick={handleAddScene} disabled={isGenerating}>
                             <Plus className="mr-2 h-5 w-5" />
-                            {t('scene.addScene')}
+                            {t('scene.createFirstScene', '첫 씬 만들기')}
                         </Button>
                     </div>
                 ) : (

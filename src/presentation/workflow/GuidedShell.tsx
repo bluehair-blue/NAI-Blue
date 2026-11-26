@@ -111,7 +111,7 @@ export function GuidedShell({ children }: GuidedShellProps) {
                 </main>
                 {docked && (
                     <aside className="w-[var(--activity-rail-width)] shrink-0 border-l border-border/45 bg-card/65" aria-label={t('guided.activity.title', '내 작업')}>
-                        <MyWorkActivity queueTarget="/guided-preview/task/batch/queue" />
+                        <MyWorkActivity queueTarget="/guided-preview/task/batch/queue" hideEmptyCards={home} />
                     </aside>
                 )}
             </div>

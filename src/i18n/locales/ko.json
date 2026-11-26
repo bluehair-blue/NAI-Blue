@@ -1652,6 +1652,7 @@
         "description": "프롬프트를 카드로 저장하고 대량 생성하세요",
         "generateAll": "예약 생성",
         "addScene": "씬 추가",
+        "createFirstScene": "첫 씬 만들기",
         "defaultName": "씬 {{num}}",
         "noScenes": "씬이 없습니다",
         "noScenesDesc": "첫 번째 씬을 추가하여 시작하세요",

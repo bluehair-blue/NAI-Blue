@@ -1643,6 +1643,7 @@
         "description": "プロンプトをカードとして保存し、一括生成",
         "generateAll": "すべて生成",
         "addScene": "シーン追加",
+        "createFirstScene": "最初のシーンを作成",
         "defaultName": "シーン {{num}}",
         "noScenes": "シーンがありません",
         "noScenesDesc": "最初のシーンを追加して始めましょう",

@@ -653,6 +653,7 @@ export default function QueueCenter() {
                     </div>
                     )}
                 </div>
+                {(batches.length > 0 || legacyQueueCount > 0) && (
                 <details className="workspace-disclosure">
                     <summary>{t('workspace.queueOptions', '실행 방식 · 오류 처리')}</summary>
                     <div className="workspace-toolbar">
@@ -691,6 +692,7 @@ export default function QueueCenter() {
                         )}
                     </div>
                 </details>
+                )}
             </header>
 
             {selectedBatch?.pauseReason === 'r2-readiness' && (
@@ -801,6 +803,40 @@ export default function QueueCenter() {
             {fulfillment !== null && fulfillment.runId === selectedBatchId && !fulfillmentError
                 && <GenerationRunSummary key={`monitor:${fulfillment.runId}`} run={fulfillment} />}
 
+            {fulfillment !== null && fulfillment.runId === selectedBatchId && !fulfillmentError && fulfillment.issues.length > 0 && (
+                <section
+                    className="shrink-0 border-b border-warning/30 bg-warning/10 px-3 py-3 text-xs sm:px-5"
+                    role="status"
+                    aria-label={t('queue.fulfillment.issue.title', 'Recovery actions')}
+                >
+                    <p className="font-medium">{t('queue.fulfillment.issue.title', 'Recovery actions')}</p>
+                    <ul className="mt-2 space-y-2 text-muted-foreground">
+                        {fulfillment.issues.map(issue => (
+                            <li key={`${issue.jobId}:${issue.code}:${issue.action.kind}`} className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant={issue.action.requiresHuman ? 'outline' : 'default'}
+                                    size="sm"
+                                    className="min-h-11"
+                                    disabled={busy}
+                                    onClick={() => {
+                                        if (issue.action.kind === 'abandon-reservation'
+                                            || issue.action.kind === 'discard-result-and-abandon-reservation') {
+                                            setDestructiveIssue(issue)
+                                            return
+                                        }
+                                        void runFulfillmentAction(issue).catch(() => undefined)
+                                    }}
+                                >
+                                    {fulfillmentActionLabel(issue)}
+                                </Button>
+                                <span>{fulfillmentIssueLabel(issue)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+
             {selectedBatchId !== null && (
                 <details
                     className="shrink-0 border-b border-border bg-muted/10"
@@ -859,34 +895,6 @@ export default function QueueCenter() {
                                         </ul>
                                     </details>
                                 )}
-                                {fulfillment.issues.length > 0 && (
-                                    <div className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2 text-xs" role="status">
-                                        <p className="font-medium">{t('queue.fulfillment.issue.title', 'Recovery actions')}</p>
-                                        <ul className="mt-1 space-y-1 text-muted-foreground">
-                                            {fulfillment.issues.map(issue => (
-                                                <li key={`${issue.jobId}:${issue.code}:${issue.action.kind}`} className="flex flex-wrap items-center gap-2">
-                                                    <Button
-                                                        type="button"
-                                                        variant={issue.action.requiresHuman ? 'outline' : 'default'}
-                                                        size="sm"
-                                                        disabled={busy}
-                                                        onClick={() => {
-                                                            if (issue.action.kind === 'abandon-reservation'
-                                                                || issue.action.kind === 'discard-result-and-abandon-reservation') {
-                                                                setDestructiveIssue(issue)
-                                                                return
-                                                            }
-                                                            void runFulfillmentAction(issue).catch(() => undefined)
-                                                        }}
-                                                    >
-                                                        {fulfillmentActionLabel(issue)}
-                                                    </Button>
-                                                    <span>{fulfillmentIssueLabel(issue)}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
                             </div>
                         )}
                         <Button
@@ -903,6 +911,7 @@ export default function QueueCenter() {
                 </details>
             )}
 
+            {batches.length > 0 && (
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:px-5">
                 <Activity className="h-4 w-4 text-muted-foreground" />
                 <select
@@ -915,6 +924,7 @@ export default function QueueCenter() {
                 </select>
                 <span className="text-xs text-muted-foreground">{t('queue.jobs', '{{count}} jobs', { count: filteredTotal })}</span>
             </div>
+            )}
 
             <div
                 ref={viewportRef}

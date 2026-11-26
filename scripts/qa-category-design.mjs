@@ -80,18 +80,11 @@ try {
         await page.getByRole('link', { name: '에셋 작업대에서 시작하기' }).click()
         await page.waitForURL('**/folders')
     })
-    await check('empty queue can switch execution authority', async () => {
+    await check('empty queue hides 0-item options and filters', async () => {
         await visit('queue')
         const options = page.locator('details.workspace-disclosure').filter({ hasText: '실행 방식 · 오류 처리' })
-        await options.waitFor()
-        assert.equal(await options.evaluate(element => element.open), false)
-        await options.locator('summary').click()
-        const authority = options.locator('select').filter({ has: page.locator('option[value="durable"]') })
-        await authority.selectOption('legacy')
-        await page.waitForFunction(() => document.querySelector('select option[value="durable"]')?.parentElement?.value === 'legacy')
-        await authority.selectOption('durable')
-        await page.waitForFunction(() => document.querySelector('select option[value="durable"]')?.parentElement?.value === 'durable')
-        assert.equal(await options.locator('select').filter({ has: page.locator('option[value="stop-on-first-error"]') }).count(), 0)
+        assert.equal(await options.count(), 0)
+        assert.equal(await page.locator('select[aria-label="상태 필터"], select[aria-label="Status filter"]').count(), 0)
     })
     await check('style preparation and mobile section selection', async () => {
         await visit('style-lab')
@@ -152,6 +145,11 @@ try {
         assert.equal(await page.getByRole('button', { name: '계속', exact: true }).isVisible(), true)
         assert.equal(await page.getByRole('button', { name: '전체 취소', exact: true }).isVisible(), true)
         await options.click()
+        const authority = page.locator('select').filter({ has: page.locator('option[value="durable"]') })
+        await authority.selectOption('legacy')
+        await page.waitForFunction(() => document.querySelector('select option[value="durable"]')?.parentElement?.value === 'legacy')
+        await authority.selectOption('durable')
+        await page.waitForFunction(() => document.querySelector('select option[value="durable"]')?.parentElement?.value === 'durable')
         const policy = page.locator('select').filter({ has: page.locator('option[value="stop-on-first-error"]') })
         await policy.selectOption('pause-on-fatal')
         // Queue controls project the repository after the async write and revision refresh.

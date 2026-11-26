@@ -146,8 +146,12 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   canvases and user-sized prompt editors stay independent.
 - **Progressive disclosure:** initial views expose the frequent next action;
   labelled disclosures contain execution policies, capability summaries and
-  comparison statistics. Active progress, errors, cancellation and consent stay
-  visible. Empty Queue links to the workbench; empty Style Lab links to artist
+  comparison statistics only when active items exist. 0-item secondary blocks
+  (Queue execution options and filter strip, SceneMode command bar and grid
+  toggles, LiveGenerationMonitor idle strip, and Guided home 0-count activity
+  cards) stay hidden until work exists. Active progress, errors, cancellation,
+  blocked/failed recovery actions, and consent stay visible outside disclosures.
+  Empty Queue links to the workbench; empty Style Lab links to artist
   preparation. Mobile Style Lab uses a labelled selector for all eight sections.
   Reference: [NN/g, Progressive Disclosure](https://www.nngroup.com/articles/progressive-disclosure/),
   consulted 2026-09-09. Local browser checks verify layout and navigation, not

@@ -1644,6 +1644,7 @@
         "description": "Save prompts as cards and batch generate",
         "generateAll": "Generate All",
         "addScene": "Add Scene",
+        "createFirstScene": "Create first scene",
         "defaultName": "Scene {{num}}",
         "noScenes": "No Scenes",
         "noScenesDesc": "Add your first scene to get started",

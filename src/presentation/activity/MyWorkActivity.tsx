@@ -336,12 +336,15 @@ function DraftActivityRows({ drafts }: { drafts: readonly ActivityDraft[] }) {
 export function MyWorkActivity({
     headingIsDecorative = false,
     queueTarget = '/queue',
+    hideEmptyCards = false,
 }: {
     headingIsDecorative?: boolean
     queueTarget?: string
+    hideEmptyCards?: boolean
 }) {
     const { t } = useTranslation()
     const readModel = useMyWorkActivityReadModel()
+    const hasActiveQueue = readModel.queue.processing > 0 || readModel.queue.waiting > 0 || readModel.queue.needsAttention > 0
 
     return (
         <div className="flex h-full min-h-0 flex-col" data-testid="my-work-activity">
@@ -355,12 +358,12 @@ export function MyWorkActivity({
                 </p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-                <DraftActivityRows drafts={readModel.drafts} />
-                <QueueActivityLinkView
+                {(!hideEmptyCards || readModel.drafts.length > 0) && <DraftActivityRows drafts={readModel.drafts} />}
+                {(!hideEmptyCards || hasActiveQueue) && <QueueActivityLinkView
                     summary={readModel.queue}
                     testId="my-work-queue-activity"
                     to={queueTarget}
-                />
+                />}
                 <CredentialActivityRows />
             </div>
         </div>

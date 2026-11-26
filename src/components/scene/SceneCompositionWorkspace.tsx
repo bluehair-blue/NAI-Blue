@@ -46,6 +46,7 @@ export interface SceneCompositionWorkspaceProps {
     onResetOverride?: () => void
     onRepairIssue?: (issue: ReadonlyCompositionIssue) => void
     simplified?: boolean
+    hideCommandBar?: boolean
 }
 
 /**
@@ -80,6 +81,7 @@ export function SceneCompositionWorkspace({
     onResetOverride,
     onRepairIssue,
     simplified = false,
+    hideCommandBar = false,
 }: SceneCompositionWorkspaceProps) {
     const { t } = useTranslation()
     const [modulesOpen, setModulesOpen] = useState(false)
@@ -210,11 +212,11 @@ export function SceneCompositionWorkspace({
         <div className="h-full min-h-0 min-w-0">
             <CompositionWorkspaceLayout
                 desktopRails={false}
-                commandBar={commandBar}
+                commandBar={hideCommandBar ? null : commandBar}
                 moduleStack={moduleStack}
                 workspace={children}
                 inspector={inspector}
-                mobileDock={(
+                mobileDock={hideCommandBar ? null : (
                     <MobileCommandDock
                         generation={generation}
                         disabled={disabled}
