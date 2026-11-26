@@ -8,8 +8,8 @@ export interface SaveFolderAssetDetailsInput {
     description: string
     quantity?: number
     unconfirmedMessage?: string
-    /** When set, a failed save puts this description back unless another writer already replaced the optimistic text. */
-    restoreDescriptionOnFailure?: string
+    /** When the authority write itself fails, put back the description the store held just before this save. */
+    restoreOnFlushFailure?: boolean
 }
 
 export interface SaveFolderAssetDetailsDeps {
@@ -21,6 +21,17 @@ export interface SaveFolderAssetDetailsDeps {
 }
 
 const DEFAULT_UNCONFIRMED_MESSAGE = '저장을 확인하지 못했습니다. 입력한 내용은 이 창에 남아 있습니다.'
+
+/** The write reached the authority but its readback could not prove it; the store keeps the new text. */
+export class FolderAssetSaveUnconfirmedError extends Error {
+    readonly readbackError: unknown
+
+    constructor(message: string, readbackError?: unknown) {
+        super(message)
+        this.name = 'FolderAssetSaveUnconfirmedError'
+        this.readbackError = readbackError
+    }
+}
 
 function readLiveDescription(presetId: string, sceneId: string): string | undefined {
     const scene = useSceneStore.getState().presets
@@ -48,27 +59,36 @@ export async function saveFolderAssetDetails(
     const getDocument = deps?.getDocument ?? (presetId => getRuntimeSceneRepository().getDocument(presetId))
     const readDescription = deps?.readDescription ?? readLiveDescription
 
+    const previousDescription = input.restoreOnFlushFailure
+        ? readDescription(input.presetId, input.sceneId)
+        : undefined
     updateScenePrompts(input.presetId, input.sceneId, { additional: input.description })
     if (input.quantity !== undefined) {
         setSceneProductionCounts([{ presetId: input.presetId, sceneId: input.sceneId }], input.quantity)
     }
 
     try {
-        // The store is optimistic: only the existing authority's exact readback proves persistence.
         await flush()
-        const document = await getDocument(input.presetId)
-        const saved = document?.scenes.find(scene => scene.id === input.sceneId)
-        const descriptionMatches = saved?.prompts?.additional === input.description
-        const quantityMatches = input.quantity === undefined || saved?.productionCount === input.quantity
-        if (!descriptionMatches || !quantityMatches) {
-            throw new Error(input.unconfirmedMessage ?? DEFAULT_UNCONFIRMED_MESSAGE)
-        }
     } catch (cause) {
-        const restore = input.restoreDescriptionOnFailure
         // A revision conflict already re-applied the authority's text; only our own optimistic text is withdrawn.
-        if (restore !== undefined && readDescription(input.presetId, input.sceneId) === input.description) {
-            updateScenePrompts(input.presetId, input.sceneId, { additional: restore })
+        if (previousDescription !== undefined && readDescription(input.presetId, input.sceneId) === input.description) {
+            updateScenePrompts(input.presetId, input.sceneId, { additional: previousDescription })
         }
         throw cause
+    }
+
+    // After a successful flush the new text may already be on disk, so restoring here could overwrite it.
+    const unconfirmedMessage = input.unconfirmedMessage ?? DEFAULT_UNCONFIRMED_MESSAGE
+    let document: Awaited<ReturnType<typeof getDocument>>
+    try {
+        document = await getDocument(input.presetId)
+    } catch (cause) {
+        throw new FolderAssetSaveUnconfirmedError(unconfirmedMessage, cause)
+    }
+    const saved = document?.scenes.find(scene => scene.id === input.sceneId)
+    const descriptionMatches = saved?.prompts?.additional === input.description
+    const quantityMatches = input.quantity === undefined || saved?.productionCount === input.quantity
+    if (!descriptionMatches || !quantityMatches) {
+        throw new FolderAssetSaveUnconfirmedError(unconfirmedMessage)
     }
 }

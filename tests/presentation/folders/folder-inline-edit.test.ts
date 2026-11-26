@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import { inlineEditBlurIntent, inlineEditKeyIntent } from '@/presentation/folders/folder-inline-edit'
-import { saveFolderAssetDetails, type SaveFolderAssetDetailsDeps } from '@/presentation/folders/save-folder-asset-details'
+import {
+    inlineEditBlurIntent,
+    inlineEditKeyIntent,
+    inlineEditNeedsSave,
+    nextInlineEditPendingSave,
+} from '@/presentation/folders/folder-inline-edit'
+import {
+    FolderAssetSaveUnconfirmedError,
+    saveFolderAssetDetails,
+    type SaveFolderAssetDetailsDeps,
+} from '@/presentation/folders/save-folder-asset-details'
 
 const key = (overrides: Partial<Parameters<typeof inlineEditKeyIntent>[0]>) => ({
     key: 'a', ctrlKey: false, metaKey: false, isComposing: false, keyCode: 0, ...overrides,
@@ -40,6 +49,36 @@ describe('inline editor key intent', () => {
         expect(inlineEditKeyIntent(key({ key: 'Enter', ctrlKey: true, keyCode: 229 }))).toBe('defer-save')
         expect(inlineEditKeyIntent(key({ key: 'Escape', isComposing: true }))).toBe('swallow')
     })
+
+    it('recognises Enter and Escape by physical code when a Korean IME reports key "Process"', () => {
+        expect(inlineEditKeyIntent(key({ key: 'Process', code: 'Enter', ctrlKey: true, keyCode: 229 }))).toBe('defer-save')
+        expect(inlineEditKeyIntent(key({ key: 'Process', code: 'NumpadEnter', metaKey: true, isComposing: true }))).toBe('defer-save')
+        expect(inlineEditKeyIntent(key({ key: 'Process', code: 'Escape', keyCode: 229 }))).toBe('swallow')
+        expect(inlineEditKeyIntent(key({ key: 'Process', code: 'KeyA', ctrlKey: true, keyCode: 229 }))).toBeNull()
+    })
+})
+
+describe('inline editor deferred save', () => {
+    it('saves when the composition that received Ctrl+Enter ends, including its committing input', () => {
+        let step = nextInlineEditPendingSave(false, { type: 'keydown', intent: 'defer-save', key: 'Process' })
+        expect(step).toEqual({ pending: true, commit: false })
+        step = nextInlineEditPendingSave(step.pending, { type: 'keydown', intent: null, key: 'Control' })
+        expect(step.pending).toBe(true)
+        step = nextInlineEditPendingSave(step.pending, { type: 'input', composing: true })
+        expect(step.pending).toBe(true)
+        expect(nextInlineEditPendingSave(step.pending, { type: 'composition-end' })).toEqual({ pending: false, commit: true })
+    })
+
+    it('withdraws the deferred save when typing continues, the text changes outside composition, or the edit is cancelled', () => {
+        const pending = nextInlineEditPendingSave(false, { type: 'keydown', intent: 'defer-save', key: 'Process' }).pending
+        const afterKey = nextInlineEditPendingSave(pending, { type: 'keydown', intent: null, key: 'Process' })
+        expect(afterKey.pending).toBe(false)
+        // The next syllable ending must not save and close the editor.
+        expect(nextInlineEditPendingSave(afterKey.pending, { type: 'composition-end' }).commit).toBe(false)
+        expect(nextInlineEditPendingSave(pending, { type: 'input', composing: false }).pending).toBe(false)
+        expect(nextInlineEditPendingSave(pending, { type: 'cancel' }).pending).toBe(false)
+        expect(nextInlineEditPendingSave(false, { type: 'composition-end' }).commit).toBe(false)
+    })
 })
 
 describe('inline editor blur intent', () => {
@@ -58,7 +97,7 @@ describe('inline editor blur intent', () => {
 describe('inline description save failure', () => {
     it('withdraws the optimistic text on failure, stays dirty against the edit baseline, and succeeds on retry', async () => {
         const { state, deps } = fakeAuthority('original')
-        const input = { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreDescriptionOnFailure: 'original' }
+        const input = { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreOnFlushFailure: true }
 
         state.failNextFlush = true
         await expect(saveFolderAssetDetails(input, deps)).rejects.toThrow('flush failed')
@@ -76,28 +115,71 @@ describe('inline description save failure', () => {
         const { state, deps } = fakeAuthority('original')
         state.failNextFlush = true
         await expect(saveFolderAssetDetails(
-            { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreDescriptionOnFailure: 'original' },
+            { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreOnFlushFailure: true },
             deps,
         )).rejects.toThrow()
         expect(inlineEditKeyIntent(key({ key: 'Escape' }))).toBe('cancel')
         expect(state.live).toBe('original')
     })
 
-    it('restores after an unconfirmed readback as well', async () => {
-        const { state, deps } = fakeAuthority('original')
+    it('keeps the new text when the flush succeeded but the readback threw, so later flushes cannot undo the save', async () => {
+        const { state, deps } = fakeAuthority('A')
+        deps.getDocument = vi.fn(async () => { throw new Error('read failed') })
+        const save = saveFolderAssetDetails(
+            { presetId: 'preset-1', sceneId: 'scene-1', description: 'C', restoreOnFlushFailure: true, unconfirmedMessage: 'unconfirmed' },
+            deps,
+        )
+        await expect(save).rejects.toThrow('unconfirmed')
+        await expect(save).rejects.toBeInstanceOf(FolderAssetSaveUnconfirmedError)
+        expect(state.persisted).toBe('C')
+        expect(state.live).toBe('C')
+        // The next flush writes what the store holds; it must still be the saved text.
+        await deps.flush()
+        expect(state.persisted).toBe('C')
+    })
+
+    it('keeps the new text when the readback does not match', async () => {
+        const { state, deps } = fakeAuthority('A')
         deps.getDocument = vi.fn(async () => ({ scenes: [{ id: 'scene-1', prompts: { additional: 'stale' } }] as never }))
         await expect(saveFolderAssetDetails(
-            { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreDescriptionOnFailure: 'original', unconfirmedMessage: 'unconfirmed' },
+            { presetId: 'preset-1', sceneId: 'scene-1', description: 'C', restoreOnFlushFailure: true, unconfirmedMessage: 'unconfirmed' },
             deps,
-        )).rejects.toThrow('unconfirmed')
-        expect(state.live).toBe('original')
+        )).rejects.toBeInstanceOf(FolderAssetSaveUnconfirmedError)
+        expect(state.live).toBe('C')
+    })
+
+    it('restores the text the store held just before this save, not the text seen when the editor opened', async () => {
+        const { state, deps } = fakeAuthority('A')
+        // The editor opened on "A"; another path then saved "B".
+        state.live = 'B'
+        state.persisted = 'B'
+        state.failNextFlush = true
+        await expect(saveFolderAssetDetails(
+            { presetId: 'preset-1', sceneId: 'scene-1', description: 'C', restoreOnFlushFailure: true },
+            deps,
+        )).rejects.toThrow('flush failed')
+        expect(state.live).toBe('B')
+        expect(state.persisted).toBe('B')
+    })
+
+    it('treats unconfirmed text as unsaved: retrying re-confirms the same text and reverting the draft still saves', () => {
+        expect(inlineEditNeedsSave({ draft: 'C', baseline: 'A', unconfirmed: null })).toBe(true)
+        expect(inlineEditNeedsSave({ draft: 'A', baseline: 'A', unconfirmed: null })).toBe(false)
+        expect(inlineEditNeedsSave({ draft: 'C', baseline: 'A', unconfirmed: 'C' })).toBe(true)
+        expect(inlineEditNeedsSave({ draft: 'A', baseline: 'A', unconfirmed: 'C' })).toBe(true)
+        expect(inlineEditBlurIntent({ dirty: true, saving: false, cancelled: false, failed: true })).toBe('keep')
     })
 
     it('does not overwrite text another writer applied after a revision conflict', async () => {
         const { state, deps } = fakeAuthority('original')
-        deps.flush = vi.fn(async () => { state.live = 'agent edit'; state.persisted = 'agent edit' })
+        deps.flush = vi.fn(async () => {
+            // A revision conflict reloads the authority's text into the store, then fails the write.
+            state.live = 'agent edit'
+            state.persisted = 'agent edit'
+            throw new Error('revision conflict')
+        })
         await expect(saveFolderAssetDetails(
-            { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreDescriptionOnFailure: 'original' },
+            { presetId: 'preset-1', sceneId: 'scene-1', description: 'edited', restoreOnFlushFailure: true },
             deps,
         )).rejects.toThrow()
         expect(state.live).toBe('agent edit')

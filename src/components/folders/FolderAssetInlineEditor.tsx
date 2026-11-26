@@ -4,8 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/use-toast'
-import { inlineEditBlurIntent, inlineEditKeyIntent } from '@/presentation/folders/folder-inline-edit'
-import { saveFolderAssetDetails } from '@/presentation/folders/save-folder-asset-details'
+import {
+    inlineEditBlurIntent,
+    inlineEditKeyIntent,
+    inlineEditNeedsSave,
+    nextInlineEditPendingSave,
+    type InlineEditPendingSaveEvent,
+} from '@/presentation/folders/folder-inline-edit'
+import { FolderAssetSaveUnconfirmedError, saveFolderAssetDetails } from '@/presentation/folders/save-folder-asset-details'
 
 interface FolderAssetInlineEditorProps {
     presetId: string
@@ -40,6 +46,8 @@ export function FolderAssetInlineEditor({
     const cancelledRef = useRef(false)
     const failedRef = useRef(false)
     const pendingSaveRef = useRef(false)
+    // Text left in the store by a save whose readback failed; until a save confirms, the editor is not clean.
+    const unconfirmedRef = useRef<string | null>(null)
     const [value, setValue] = useState(initialDescription)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -59,11 +67,18 @@ export function FolderAssetInlineEditor({
     }, [saving, error])
 
     const readDraft = () => textareaRef.current?.value ?? value
+    const needsSave = (draft: string) => inlineEditNeedsSave({ draft, baseline, unconfirmed: unconfirmedRef.current })
+
+    const stepPendingSave = (event: InlineEditPendingSaveEvent): boolean => {
+        const step = nextInlineEditPendingSave(pendingSaveRef.current, event)
+        pendingSaveRef.current = step.pending
+        return step.commit
+    }
 
     const commit = async () => {
         if (savingRef.current || cancelledRef.current) return
         const draft = readDraft()
-        if (draft === baseline) {
+        if (!needsSave(draft)) {
             onCancel()
             return
         }
@@ -80,14 +95,17 @@ export function FolderAssetInlineEditor({
                 presetId,
                 sceneId,
                 description: draft,
-                restoreDescriptionOnFailure: baseline,
+                restoreOnFlushFailure: true,
                 unconfirmedMessage: t('folderWorkbench.design.saveUnconfirmed', '저장을 확인하지 못했어요. 입력한 내용은 이 창에 남아 있어요.'),
             })
             failedRef.current = false
+            unconfirmedRef.current = null
             toast({ title: t('folderWorkbench.design.descriptionSaved', '설명을 저장했어요.'), variant: 'success' })
             onSaved()
         } catch (cause) {
             failedRef.current = true
+            // A failed flush put the previous text back, so only a failed readback leaves this draft in the store.
+            if (cause instanceof FolderAssetSaveUnconfirmedError) unconfirmedRef.current = draft
             setError(cause instanceof Error ? cause.message : t('folderWorkbench.design.detailSaveFailed', '저장하지 못했어요. 입력한 내용을 확인하고 다시 시도해 주세요.'))
         } finally {
             savingRef.current = false
@@ -98,6 +116,7 @@ export function FolderAssetInlineEditor({
 
     const cancel = () => {
         if (savingRef.current) return
+        stepPendingSave({ type: 'cancel' })
         cancelledRef.current = true
         onCancel()
     }
@@ -105,17 +124,16 @@ export function FolderAssetInlineEditor({
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         const intent = inlineEditKeyIntent({
             key: event.key,
+            code: event.code,
             ctrlKey: event.ctrlKey,
             metaKey: event.metaKey,
             isComposing: event.nativeEvent.isComposing,
             keyCode: event.keyCode,
         })
+        stepPendingSave({ type: 'keydown', intent, key: event.key })
         if (intent === null) return
         event.stopPropagation()
-        if (intent === 'defer-save') {
-            pendingSaveRef.current = true
-            return
-        }
+        if (intent === 'defer-save') return
         if (intent === 'swallow') return
         event.preventDefault()
         if (intent === 'save') void commit()
@@ -123,16 +141,14 @@ export function FolderAssetInlineEditor({
     }
 
     const handleCompositionEnd = () => {
-        if (!pendingSaveRef.current) return
-        pendingSaveRef.current = false
-        void commit()
+        if (stepPendingSave({ type: 'composition-end' })) void commit()
     }
 
     const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
         const next = event.relatedTarget as Node | null
         if (next && event.currentTarget.contains(next)) return
         const intent = inlineEditBlurIntent({
-            dirty: readDraft() !== baseline,
+            dirty: needsSave(readDraft()),
             saving: savingRef.current,
             cancelled: cancelledRef.current,
             failed: failedRef.current,
@@ -150,7 +166,12 @@ export function FolderAssetInlineEditor({
                 ref={textareaRef}
                 id={fieldId}
                 value={value}
-                onChange={event => { setValue(event.target.value); setError(null); setBlocked(false) }}
+                onChange={event => {
+                    stepPendingSave({ type: 'input', composing: (event.nativeEvent as InputEvent).isComposing === true })
+                    setValue(event.target.value)
+                    setError(null)
+                    setBlocked(false)
+                }}
                 maxLength={20_000}
                 rows={4}
                 disabled={saving || !ready}
