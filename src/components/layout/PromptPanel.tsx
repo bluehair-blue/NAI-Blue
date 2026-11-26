@@ -9,8 +9,8 @@ import { CharacterPromptPanel } from '@/components/character/CharacterPromptPane
 import { GenerationFolderPicker } from '@/components/generation-folders/GenerationFolderPicker'
 import { PromptGeneratorDialog } from '@/components/prompt/PromptGeneratorDialog'
 import { PromptEditorSurface } from '@/components/prompt/PromptEditorSurface'
+import { PromptCoreParameters } from '@/components/prompt/PromptCoreParameters'
 import { PromptGenerationControls } from '@/components/prompt/PromptGenerationControls'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
@@ -31,14 +31,8 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { Tip } from '@/components/ui/tooltip'
-import { generateRandomSeed } from '@/lib/utils'
 import {
-    Dice5,
-    AlertTriangle,
-    Lock,
-    Unlock,
     SlidersHorizontal,
-    Cpu,
     Users,
 } from 'lucide-react'
 import { useGenerationDraftStore } from '@/stores/generation-draft-store'
@@ -46,14 +40,7 @@ import { useGenerationSessionStore } from '@/stores/generation-session-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { useLayoutStore } from '@/stores/layout-store'
 import { useSettingsStore } from '@/stores/settings-store'
-import { ResolutionSelector } from '@/components/ui/ResolutionSelector'
 import {
-    assessGenerationStepQuality,
-    LOW_STEP_CAUTION_THRESHOLD,
-    RECOMMENDED_GENERATION_STEPS,
-} from '@/services/generation/generation-quality'
-import {
-    NAI_IMAGE_MODELS,
     getNovelAiModelProfile,
     isNovelAiV5Model,
 } from '@/services/nai/model-catalog'
@@ -69,6 +56,7 @@ const SAMPLERS = [
 ]
 
 const SCHEDULERS = ['native', 'karras', 'exponential', 'polyexponential']
+
 export function PromptPanel() {
     const { t } = useTranslation()
     const location = useLocation()
@@ -76,12 +64,8 @@ export function PromptPanel() {
     const isSceneMode = location.pathname.startsWith('/scenes')
 
     const additionalPrompt = useGenerationDraftStore(state => state.additionalPrompt)
-    const seed = useGenerationDraftStore(state => state.seed)
-    const seedLocked = useGenerationDraftStore(state => state.seedLocked)
-    const selectedResolution = useGenerationDraftStore(state => state.selectedResolution)
     const isGenerating = useGenerationSessionStore(state => state.isGenerating)
     const model = useGenerationDraftStore(state => state.model)
-    const steps = useGenerationDraftStore(state => state.steps)
     const cfgScale = useGenerationDraftStore(state => state.cfgScale)
     const cfgRescale = useGenerationDraftStore(state => state.cfgRescale)
     const sampler = useGenerationDraftStore(state => state.sampler)
@@ -93,11 +77,6 @@ export function PromptPanel() {
 
     // Zustand 선택적 구독 - generationStore (액션)
     const setAdditionalPrompt = useGenerationDraftStore(state => state.setAdditionalPrompt)
-    const setSeed = useGenerationDraftStore(state => state.setSeed)
-    const setSeedLocked = useGenerationDraftStore(state => state.setSeedLocked)
-    const setSelectedResolution = useGenerationDraftStore(state => state.setSelectedResolution)
-    const setModel = useGenerationDraftStore(state => state.setModel)
-    const setSteps = useGenerationDraftStore(state => state.setSteps)
     const setCfgScale = useGenerationDraftStore(state => state.setCfgScale)
     const setCfgRescale = useGenerationDraftStore(state => state.setCfgRescale)
     const setSampler = useGenerationDraftStore(state => state.setSampler)
@@ -121,10 +100,8 @@ export function PromptPanel() {
     const [characterPanelOpen, setCharacterPanelOpen] = useState(false)
     const [imageRefDialogOpen, setImageRefDialogOpen] = useState(false)
     const [parameterDialogOpen, setParameterDialogOpen] = useState(false)
-    const stepQuality = assessGenerationStepQuality(steps)
     const guidedSurface = new URLSearchParams(location.search).get('guided')
     const modelProfile = getNovelAiModelProfile(model)
-    const selectedModel = NAI_IMAGE_MODELS.find(candidate => candidate.id === model)
     const isV5 = isNovelAiV5Model(model)
 
     useEffect(() => {
@@ -152,8 +129,7 @@ export function PromptPanel() {
         }
     }, [clearPendingPromptDialog, isGenerating, pendingPromptDialog])
 
-    // Focus the requested core control (model or steps) directly if inline, or
-    // open the parameter dialog as fallback when controls live inside the dialog.
+    // Focus the requested core control (model or steps) directly inside the rail.
     useEffect(() => {
         if (!pendingPromptFocus) return
         clearPendingPromptFocus()
@@ -167,7 +143,6 @@ export function PromptPanel() {
             return false
         }
         if (focusTarget()) return
-        setParameterDialogOpen(true)
         window.requestAnimationFrame(() => {
             window.requestAnimationFrame(() => {
                 focusTarget()
@@ -179,19 +154,13 @@ export function PromptPanel() {
         if (isGenerating) setFragmentDialogOpen(false)
     }, [isGenerating])
 
-    const handleRandomSeed = () => {
-        if (!seedLocked) {
-            setSeed(generateRandomSeed())
-        }
-    }
-
     return (
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-5">
             {/* Source Image Panel (I2I/Inpaint Mode) */}
             <SourceImagePanel />
 
-            {/* This is the only scrolling region in the prompt sheet, keeping the
-                three authoring helpers reachable on short Android viewports. */}
+            {/* This is the only scrolling region in the prompt rail/sheet, keeping
+                core parameters beside the prompt editor and helpers reachable on short viewports. */}
             <div className="relative mb-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-1">
                 {/* Character Prompt Panel (Accordion Style) - 프롬프트 영역 위에 오버레이 */}
                 <CharacterPromptPanel
@@ -205,6 +174,8 @@ export function PromptPanel() {
                     onOpenFragment={() => setFragmentDialogOpen(true)}
                     toolsDisabled={isGenerating}
                 />
+
+                <PromptCoreParameters />
             </div>
 
             {/* Prompt helpers share a quiet tonal rail; dialogs carry their own hierarchy once opened. */}
@@ -213,33 +184,44 @@ export function PromptPanel() {
                 <Tip content={t('prompt.character', '캐릭터')}>
                     <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         className={cn(
-                            "relative h-11 w-full min-w-0 rounded-none border-b-2 border-transparent px-0",
-                            characterPanelOpen && "border-primary bg-primary/[0.06] text-primary"
+                            'relative h-11 w-full min-w-0 gap-1.5 rounded-none border-b-2 border-transparent px-1.5 text-[12px] font-medium',
+                            characterPanelOpen && 'border-primary bg-primary/[0.06] text-primary',
                         )}
                         onClick={() => setCharacterPanelOpen(!characterPanelOpen)}
                         aria-label={t('prompt.character', '캐릭터')}
                     >
-                        <Users className="h-4 w-4 shrink-0" />
+                        <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{t('prompt.character', '캐릭터')}</span>
                         {characterCount > 0 && (
                             <div className={cn(
-                                "absolute right-1 top-0 flex h-4 min-w-4 items-center justify-center rounded-md px-1 py-0.5 text-[11px] font-bold leading-none",
+                                'absolute right-1 top-0 flex h-4 min-w-4 items-center justify-center rounded-md px-1 py-0.5 text-[11px] font-bold leading-none',
                                 characterPanelOpen
-                                    ? "bg-primary-foreground text-primary"
-                                    : "bg-primary text-primary-foreground"
+                                    ? 'bg-primary-foreground text-primary'
+                                    : 'bg-primary text-primary-foreground',
                             )}>
                                 {characterCount}
                             </div>
                         )}
                     </Button>
                 </Tip>
-                <CharacterSettingsDialog open={imageRefDialogOpen} onOpenChange={setImageRefDialogOpen} />
-                {/* Parameter Settings Dialog */}
+                <CharacterSettingsDialog
+                    open={imageRefDialogOpen}
+                    onOpenChange={setImageRefDialogOpen}
+                    triggerLabel={t('prompt.imageReference', '이미지 참조')}
+                />
+                {/* Detailed Parameter Settings Dialog */}
                 <Dialog open={parameterDialogOpen} onOpenChange={setParameterDialogOpen}>
                     <DialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-11 w-full min-w-0 rounded-none" aria-label={t('parameters.title')}>
-                            <SlidersHorizontal className="h-4 w-4" />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 w-full min-w-0 gap-1.5 rounded-none px-1.5 text-[12px] font-medium"
+                            aria-label={t('parameters.detailedTitle', '세부 설정')}
+                        >
+                            <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span className="truncate">{t('parameters.detailedTitle', '세부 설정')}</span>
                         </Button>
                     </DialogTrigger>
                     <DialogContent
@@ -247,135 +229,12 @@ export function PromptPanel() {
                         closeLabel={t('common.close')}
                     >
                         <DialogHeader>
-                            <DialogTitle>{t('parameters.title')}</DialogTitle>
+                            <DialogTitle>{t('parameters.detailedTitle', '세부 설정')}</DialogTitle>
                             <DialogDescription>
-                                {t('parameters.description')}
+                                {t('parameters.detailedDescription', 'CFG Scale, Sampler, Scheduler 등 세부 생성 옵션을 설정합니다.')}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-5 py-4">
-                            {/* Model Selection */}
-                            <div className="space-y-2">
-                                <Label className="flex items-center gap-2">
-                                    <Cpu className="h-4 w-4" />
-                                    {t('parameters.model')}
-                                </Label>
-                                <Select value={model} onValueChange={setModel}>
-                                    <SelectTrigger className="rounded-control" data-prompt-focus="model">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {NAI_IMAGE_MODELS.map((candidate) => (
-                                            <SelectItem key={candidate.id} value={candidate.id}>
-                                                {candidate.name}
-                                                {candidate.recommended
-                                                    ? ` — ${t('parameters.recommended', '추천')}`
-                                                    : candidate.deprecated
-                                                        ? ` — ${t('parameters.legacy', '호환용')}`
-                                                        : ''}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {selectedModel && (
-                                    <p className="text-xs leading-5 text-muted-foreground">
-                                        {t(
-                                            `parameters.modelDescriptions.${selectedModel.id}`,
-                                            selectedModel.description,
-                                        )}
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Resolution (Moved here) */}
-                            <div className="space-y-2">
-                                <Label className="text-sm font-medium">
-                                    {t('settings.resolution')}
-                                </Label>
-                                <ResolutionSelector
-                                    value={selectedResolution}
-                                    onChange={setSelectedResolution}
-                                    disabled={isGenerating}
-                                />
-                            </div>
-
-                            {/* Seed (Moved here) */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">{t('settings.seed')}</label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        type="number"
-                                        value={seed}
-                                        onChange={(e) => setSeed(Number(e.target.value))}
-                                        disabled={seedLocked}
-                                        className="h-11 flex-1 rounded-control text-xs"
-                                    />
-                                    <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className={cn("h-11 w-11 shrink-0 rounded-control", seedLocked && 'bg-primary/10 text-primary')}
-                                        onClick={() => setSeedLocked(!seedLocked)}
-                                        aria-label={seedLocked ? t('settings.unlockSeed', '시드 잠금 해제') : t('settings.lockSeed', '시드 잠금')}
-                                    >
-                                        {seedLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-11 w-11 shrink-0 rounded-control"
-                                        onClick={handleRandomSeed}
-                                        disabled={seedLocked}
-                                        aria-label={t('settings.randomSeed', '무작위 시드')}
-                                    >
-                                        <Dice5 className="h-3.5 w-3.5" />
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Steps */}
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <Label>{t('parameters.steps')}</Label>
-                                    <span className="text-sm text-muted-foreground">{steps}</span>
-                                </div>
-                                <Slider
-                                    value={[steps]}
-                                    onValueChange={([v]) => setSteps(v)}
-                                    min={1}
-                                    max={50}
-                                    step={1}
-                                    data-prompt-focus="steps"
-                                    className={cn("w-full", steps > 28 && "[&>.relative>.bg-primary]:bg-destructive")}
-                                />
-                                {stepQuality !== 'normal' && (
-                                    // The draft store supplies the live value and the command guard
-                                    // enforces the same threshold; this alert explains why a latent
-                                    // preview would look broken and offers a one-tap safe recovery.
-                                    <div className="flex flex-col gap-3 rounded-control border border-warning/40 bg-warning/10 p-3 text-left sm:flex-row sm:items-center" role="alert">
-                                        <div className="flex min-w-0 flex-1 gap-2">
-                                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
-                                            <div className="min-w-0">
-                                                <p className="text-xs font-semibold text-foreground">
-                                                    {t('generate.lowStepsTitle', '저품질 Steps 설정')}
-                                                </p>
-                                                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                    {t('generate.lowStepsDescription', '{{steps}} steps는 완성 전에 종료되어 흐린 결과가 나올 수 있습니다. 일반 생성은 28 steps를 권장합니다.', { steps })}
-                                                    {stepQuality === 'caution' && ` (${t('generate.lowStepsCautionRange', '{{threshold}} 미만은 실험용입니다.', { threshold: LOW_STEP_CAUTION_THRESHOLD })})`}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="shrink-0"
-                                            onClick={() => setSteps(RECOMMENDED_GENERATION_STEPS)}
-                                        >
-                                            {t('generate.restoreRecommendedSteps', '28 steps로 복원')}
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
-
                             {/* CFG Scale */}
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">

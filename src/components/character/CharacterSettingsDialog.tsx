@@ -451,7 +451,7 @@ export function CharacterSettingsDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             {!hideTrigger && (
                 <DialogTrigger asChild>
-                    <Button variant="ghost" size={triggerLabel ? 'sm' : 'icon'} className={cn('group relative h-11 w-full min-w-0 rounded-none border-b-2 border-transparent hover:border-primary', triggerLabel ? 'gap-1.5 px-2 text-xs' : 'px-0')} aria-label={t('prompt.imageReference')} title={t('prompt.imageReference')}>
+                    <Button variant="ghost" size={triggerLabel ? 'sm' : 'icon'} className={cn('group relative h-11 w-full min-w-0 rounded-none border-b-2 border-transparent hover:border-primary', triggerLabel ? 'gap-1.5 px-1.5 text-[12px] font-medium' : 'px-0')} aria-label={t('prompt.imageReference')} title={t('prompt.imageReference')}>
                         <ImageIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
                         {triggerLabel ? <span className="truncate">{triggerLabel}</span> : <span className="sr-only">{t('prompt.imageReference')}</span>}
                         {totalCount > 0 && (

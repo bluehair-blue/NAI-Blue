@@ -2763,6 +2763,9 @@
     },
     "parameters": {
         "title": "パラメータ設定",
+        "coreTitle": "基本設定",
+        "detailedTitle": "詳細設定",
+        "detailedDescription": "CFG Scale・Sampler・Schedulerなどの詳細オプションを設定します。",
         "description": "StepsやCFG Scaleなどの生成パラメータを設定します。",
         "model": "モデル",
         "modelDescriptions": {

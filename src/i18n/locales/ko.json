@@ -2844,6 +2844,9 @@
     },
     "parameters": {
         "title": "고급 설정",
+        "coreTitle": "핵심 설정",
+        "detailedTitle": "세부 설정",
+        "detailedDescription": "CFG Scale, Sampler, Scheduler 등 세부 생성 옵션을 설정합니다.",
         "description": "Steps, CFG Scale 등 생성 파라미터를 설정합니다.",
         "model": "모델",
         "modelDescriptions": {

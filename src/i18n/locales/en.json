@@ -2808,6 +2808,9 @@
     },
     "parameters": {
         "title": "Advanced Settings",
+        "coreTitle": "Core Settings",
+        "detailedTitle": "Detailed Settings",
+        "detailedDescription": "Configure detailed generation parameters such as CFG Scale, Sampler, and Scheduler.",
         "description": "Configure generation parameters like Steps and CFG Scale.",
         "model": "Model",
         "modelDescriptions": {

@@ -97,8 +97,9 @@ describe('Main composition UI contract', () => {
     })
 
     it('keeps prompt authoring free of duplicated composition diagnostics', async () => {
-        const [promptPanel, editor, slotTabs, controls, autocomplete] = await Promise.all([
+        const [promptPanel, coreParameters, editor, slotTabs, controls, autocomplete] = await Promise.all([
             source('src/components/layout/PromptPanel.tsx'),
+            source('src/components/prompt/PromptCoreParameters.tsx'),
             source('src/components/prompt/PromptEditorSurface.tsx'),
             source('src/components/prompt/PromptSlotTabs.tsx'),
             source('src/components/prompt/PromptGenerationControls.tsx'),
@@ -109,7 +110,8 @@ describe('Main composition UI contract', () => {
         expect(promptPanel).toContain('<PromptEditorSurface')
         expect(promptPanel).toContain("const isAdvancedMode = location.pathname === '/advanced'")
         expect(promptPanel).toContain('{!isAdvancedMode && <PromptGenerationControls isSceneMode={isSceneMode} />}')
-        expect(promptPanel).toContain("t('generate.restoreRecommendedSteps'")
+        expect(promptPanel).toContain('<PromptCoreParameters />')
+        expect(coreParameters).toContain("t('generate.restoreRecommendedSteps'")
         expect(promptPanel).toContain('if (!isGenerating) setFragmentDialogOpen')
         expect(promptPanel).toContain('if (isGenerating) setFragmentDialogOpen(false)')
         expect(promptPanel).toContain('onOpenFragment={() => setFragmentDialogOpen(true)}')
