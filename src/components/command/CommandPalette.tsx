@@ -32,14 +32,16 @@ interface CommandEntry {
     readonly shortcut?: string
     /** Navigation and panel commands place focus themselves, so closing must not pull it back. */
     readonly movesFocus?: boolean
-    readonly run: () => void
+    /** Returning false means the command did nothing that moves focus, so the opener gets it back. */
+    readonly run: () => boolean | void
 }
 
 export interface CommandPaletteProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     canOpenPrompt: boolean
-    onOpenPrompt: () => void
+    /** False when no prompt surface can open right now (compact layout while generating). */
+    onOpenPrompt: () => boolean
     onOpenHistory: () => void
     onOpenActivity: () => void
 }
@@ -79,6 +81,12 @@ export function CommandPalette({
     const generateShortcut = bindings['action:generate']?.label || undefined
 
     const commands = useMemo<CommandEntry[]>(() => {
+        // Staying on the same page mounts nothing new, so focus would otherwise fall to the body.
+        const navigateUnlessCurrent = (path: string) => {
+            if (path.split('?')[0] === location.pathname) return false
+            void navigate(path)
+            return true
+        }
         const navGroupLabels: Record<string, string> = {
             primary: t('commandPalette.groups.navigate', '화면 이동'),
             authoring: t('folderWorkbench.navigation.groups.authoring', '제작 보조'),
@@ -97,7 +105,7 @@ export function CommandPalette({
                 icon: item.icon,
                 shortcut: item.shortcutAction ? bindings[item.shortcutAction]?.label || undefined : undefined,
                 movesFocus: true,
-                run: () => navigate(item.path),
+                run: () => navigateUnlessCurrent(item.path),
             }
         })
 
@@ -176,7 +184,7 @@ export function CommandPalette({
                 keywords: 'shortcut keybinding keyboard 단축키 키 설정',
                 icon: Keyboard,
                 movesFocus: true,
-                run: () => navigate('/settings?section=shortcuts'),
+                run: () => navigateUnlessCurrent('/settings?section=shortcuts'),
             },
         )
 
@@ -214,9 +222,10 @@ export function CommandPalette({
     }, [safeIndex])
 
     const executeEntry = (entry: CommandEntry) => {
-        restoreFocusOnCloseRef.current = !entry.movesFocus
         onOpenChange(false)
-        entry.run()
+        // Radix restores focus after this handler returns, so the command's outcome can still decide it.
+        const ran = entry.run()
+        restoreFocusOnCloseRef.current = !entry.movesFocus || ran === false
     }
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {

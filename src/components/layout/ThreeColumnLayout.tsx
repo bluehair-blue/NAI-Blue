@@ -339,10 +339,13 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
 
     // "Open" never collapses a visible rail: it reveals the prompt surface and lands in the editor.
     const handleOpenPrompt = () => {
+        const reveal = resolvePromptSurfaceReveal({ isDocked: promptPanelIsDocked, isSceneRoute, isGenerating })
+        // The compact sheet would close again at once while generating, dropping focus to the body.
+        if (reveal === 'unavailable') return false
         rememberSupportFocus()
-        if (!promptPanelIsDocked) {
+        if (reveal === 'sheet') {
             openSupportSheet('prompt')
-            return
+            return true
         }
         setLeftSidebarVisible(true)
         let framesLeft = 10
@@ -353,6 +356,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         }
         // A collapsed rail mounts PromptPanel on the next render, so the editor may need a few frames.
         window.requestAnimationFrame(focusPromptEditor)
+        return true
     }
 
     const handleRightPanelToggle = () => {
