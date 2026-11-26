@@ -15,7 +15,7 @@
 .fb-workspace-header { padding-top: 16px; padding-bottom: 16px; }
 .fb-header-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; }
 .fb-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-.fb-title-row h1 { font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.fb-title-row h1 { font-size: 36px; line-height: 1.2; font-weight: 700; letter-spacing: -.035em; overflow-wrap: anywhere; }
 .fb-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fb-button { display: inline-flex; min-height: 44px; height: auto; gap: 8px; padding: 8px 14px; border-radius: 4px; font-size: 16px; white-space: normal; }
 .fb-button svg { width: 18px; height: 18px; flex-shrink: 0; }
@@ -177,7 +177,7 @@
   .fb-workspace-header, .fb-gallery-tools, .fb-gallery-region, .fb-empty-workspace { padding-inline: 16px; }
   .fb-workspace-header { padding-block: 10px 12px; }
   .fb-header-bar { gap: 8px 12px; }
-  .fb-title-row h1 { font-size: 24px; }
+  .fb-title-row h1 { font-size: 30px; }
   .fb-action-row { gap: 8px; }
   .fb-action-row:not(.is-empty) { width: 100%; }
   .fb-action-row > .fb-primary { flex: 1 0 140px; min-width: 140px; white-space: nowrap; }

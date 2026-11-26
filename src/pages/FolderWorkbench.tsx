@@ -248,8 +248,12 @@ export default function FolderWorkbench() {
         if (!concreteFolder) return false
         return addAssetsToFolder(concreteFolder, inputs, template)
     }
+    const savedOutputTarget = concreteFolder ?? folders[0]
+    const savedOutputTargetName = savedOutputTarget
+        ? folderRows.find(row => row.folder.id === savedOutputTarget.id)?.path ?? savedOutputTarget.name
+        : null
     const addAssetFromSavedOutput = async (input: { name: string; prompt: string }): Promise<boolean> => {
-        const targetFolder = concreteFolder ?? folders[0]
+        const targetFolder = savedOutputTarget
         if (!targetFolder) return false
         return addAssetsToFolder(targetFolder, [{ name: input.name, prompt: input.prompt, count: 1 }])
     }
@@ -296,7 +300,7 @@ export default function FolderWorkbench() {
     return (
         <div className="fb-workspace" data-testid="folder-workbench">
             <aside className="fb-sidebar">{folderPanel}</aside>
-            {savedDirectory !== null ? <SavedOutputGallery key={savedDirectory} directoryKey={savedDirectory} images={savedOutputs.images} onFolders={() => setFolderSheetOpen(true)} onAddAssetFromPrompt={addAssetFromSavedOutput} />
+            {savedDirectory !== null ? <SavedOutputGallery key={savedDirectory} directoryKey={savedDirectory} images={savedOutputs.images} onFolders={() => setFolderSheetOpen(true)} onAddAssetFromPrompt={addAssetFromSavedOutput} assetTargetName={savedOutputTargetName} />
                 : <section className="fb-main" aria-label={t('folderWorkbench.design.imageWorkspace', '이미지 작업 공간')}>
                 <div ref={contentRef} onScroll={event => {
                     const current = viewStateRef.current.views[scopeKey] ?? emptyFolderView()
