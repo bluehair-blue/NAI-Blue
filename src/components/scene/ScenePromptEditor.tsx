@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { Copy, Dice5, Lock, Unlock } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -60,6 +60,13 @@ interface ScenePromptEditorProps {
 export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePromptEditorProps) {
     const { t } = useTranslation()
     const [activeSlot, setActiveSlot] = useState<PromptSlot>('base')
+    const sectionRef = useRef<HTMLElement>(null)
+    const restoreFocusOnSlotChangeRef = useRef(false)
+    useLayoutEffect(() => {
+        if (!restoreFocusOnSlotChangeRef.current) return
+        restoreFocusOnSlotChangeRef.current = false
+        sectionRef.current?.querySelector('textarea')?.focus()
+    }, [activeSlot])
     const panelId = `scene-prompt-editor-${useId().replace(/:/g, '')}`
     const fontSize = useSettingsStore(state => state.promptFontSize)
     const prompts = resolveScenePrompts(scene)
@@ -134,6 +141,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
 
     return (
         <section
+            ref={sectionRef}
             className="@container shrink-0 border-y border-border/70 bg-transparent py-3"
             data-testid="scene-prompt-editor"
             onKeyDown={event => {
@@ -144,6 +152,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 if (!slot) return
                 event.preventDefault()
                 event.stopPropagation()
+                restoreFocusOnSlotChangeRef.current = true
                 setActiveSlot(slot.id)
             }}
         >

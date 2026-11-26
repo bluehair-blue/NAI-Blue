@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDownWideNarrow, ChevronDown, PackageOpen, Puzzle, Sparkles, Undo2 } from 'lucide-react'
 
@@ -67,6 +67,13 @@ export function PromptEditorSurface({
 } = {}) {
     const { t } = useTranslation()
     const [activePromptSlot, setActivePromptSlot] = useState<PromptSlot>('base')
+    const surfaceRef = useRef<HTMLDivElement>(null)
+    const restoreFocusOnSlotChangeRef = useRef(false)
+    useLayoutEffect(() => {
+        if (!restoreFocusOnSlotChangeRef.current) return
+        restoreFocusOnSlotChangeRef.current = false
+        surfaceRef.current?.querySelector('textarea')?.focus()
+    }, [activePromptSlot])
     const [contextSnapshot, setContextSnapshot] = useState<PromptContextSnapshot | null>(null)
     const [sortRequest, setSortRequest] = useState<PromptSortRequest | null>(null)
     const [sortUndoBySlot, setSortUndoBySlot] = useState<Partial<Record<PromptSlot, PromptSortUndo>>>({})
@@ -167,6 +174,7 @@ export function PromptEditorSurface({
 
     return (
         <div
+            ref={surfaceRef}
             className="@container flex flex-none flex-col border-y border-border/60 bg-transparent"
             // A dock-level test boundary keeps responsive smoke checks coupled to
             // this shared editor surface, not react-simple-code-editor internals.
@@ -179,6 +187,7 @@ export function PromptEditorSurface({
                 if (!slot) return
                 event.preventDefault()
                 event.stopPropagation()
+                restoreFocusOnSlotChangeRef.current = true
                 setActivePromptSlot(slot.id)
             }}
         >

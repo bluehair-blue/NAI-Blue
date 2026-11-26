@@ -372,6 +372,23 @@
         "name": "NAI Blue",
         "description": "NovelAI Integrated Studio"
     },
+    "commandPalette": {
+        "description": "Search and run navigation, panel, and action commands.",
+        "placeholder": "Type a screen or command name…",
+        "empty": "No matching commands.",
+        "groups": {
+            "navigate": "Navigate",
+            "settings": "Settings",
+            "actions": "Actions"
+        },
+        "actions": {
+            "openPrompt": "Open Prompt",
+            "openHistory": "Open History",
+            "openActivity": "Open My Work",
+            "runPrimary": "Run current screen action",
+            "openShortcuts": "Open shortcut settings"
+        }
+    },
     "counter": {
         "decrease": "Decrease image count",
         "increase": "Increase image count",

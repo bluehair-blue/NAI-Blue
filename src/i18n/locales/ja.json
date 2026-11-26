@@ -372,6 +372,23 @@
         "name": "NAI Blue",
         "description": "NovelAI 統合スタジオ"
     },
+    "commandPalette": {
+        "description": "画面移動・パネル・実行コマンドを検索してすぐ実行します。",
+        "placeholder": "画面やコマンド名を入力…",
+        "empty": "一致するコマンドがありません。",
+        "groups": {
+            "navigate": "画面移動",
+            "settings": "設定",
+            "actions": "操作"
+        },
+        "actions": {
+            "openPrompt": "プロンプトを開く",
+            "openHistory": "履歴を開く",
+            "openActivity": "自分の作業を開く",
+            "runPrimary": "現在の画面の生成を実行",
+            "openShortcuts": "ショートカット設定を開く"
+        }
+    },
     "counter": {
         "decrease": "画像枚数を減らす",
         "increase": "画像枚数を増やす",

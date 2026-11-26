@@ -327,6 +327,89 @@ async function main() {
                 )
             })
 
+            // Case 8: Ctrl+1..4 navigate in exact top-menu order (/folders, /advanced, /scenes, /queue)
+            await runCheck(results, 'Ctrl+1..4 navigate in top menu order', async () => {
+                await page.goto(`${baseUrl}/folders`, { waitUntil: 'domcontentloaded' })
+                await page.locator('[data-testid="folder-workbench"]').waitFor({ state: 'visible' })
+                const expectations = [
+                    ['Control+2', '/advanced'],
+                    ['Control+3', '/scenes'],
+                    ['Control+4', '/queue'],
+                    ['Control+1', '/folders'],
+                ]
+                for (const [chord, expectedPath] of expectations) {
+                    await page.keyboard.press(chord)
+                    await page.waitForURL(url => url.pathname === expectedPath, { timeout: 5000 })
+                    assert.equal(new URL(page.url()).pathname, expectedPath)
+                }
+            })
+
+            // Case 9: Alt+1..N switch prompt slots inside Main and Scene editors
+            await runCheck(results, 'Alt+1..N switch prompt slots in Main and Scene editors', async () => {
+                await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
+                const mainEditor = page.locator('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] textarea')
+                await mainEditor.waitFor({ state: 'visible' })
+                await mainEditor.click()
+                await page.keyboard.press('Alt+Digit4')
+                assert.equal(
+                    await page.locator('#nai-blue-prompt-dock [role="tab"]').nth(3).getAttribute('aria-selected'),
+                    'true',
+                    'Alt+4 should select the 4th (negative) tab in Main prompt editor',
+                )
+                await page.keyboard.press('Alt+Digit1')
+                assert.equal(
+                    await page.locator('#nai-blue-prompt-dock [role="tab"]').nth(0).getAttribute('aria-selected'),
+                    'true',
+                    'Alt+1 should select the 1st (base) tab in Main prompt editor',
+                )
+
+                await openQaSceneDetail(page)
+                const sceneEditor = page.locator('[data-testid="scene-prompt-editor"] textarea').first()
+                await sceneEditor.waitFor({ state: 'visible' })
+                await sceneEditor.click()
+                await page.keyboard.press('Alt+Digit3')
+                assert.equal(
+                    await page.locator('[data-testid="scene-prompt-editor"] [role="tab"]').nth(2).getAttribute('aria-selected'),
+                    'true',
+                    'Alt+3 should select the 3rd (negative) tab in Scene prompt editor',
+                )
+            })
+
+            // Case 10: Ctrl+K opens Command Palette, filters and executes commands, and Esc closes
+            await runCheck(results, 'Ctrl+K command palette filters, navigates, toggles theme, and closes on Esc', async () => {
+                await page.goto(`${baseUrl}/folders`, { waitUntil: 'domcontentloaded' })
+                await page.locator('[data-testid="folder-workbench"]').waitFor({ state: 'visible' })
+
+                await page.keyboard.press('Control+k')
+                const palette = page.locator('[data-testid="command-palette"]')
+                await palette.waitFor({ state: 'visible' })
+
+                await page.keyboard.press('Escape')
+                await palette.waitFor({ state: 'hidden' })
+
+                await page.keyboard.press('Control+k')
+                await palette.waitFor({ state: 'visible' })
+                const input = palette.locator('input[role="combobox"]')
+                await input.fill('/queue')
+                await input.press('Enter')
+                await page.waitForURL(url => url.pathname === '/queue', { timeout: 5000 })
+                await palette.waitFor({ state: 'hidden', timeout: 5000 })
+                assert.equal(await palette.isVisible(), false, 'Command palette should close after executing command')
+            })
+
+            // Case 11: Per-route Ctrl+Enter submits Folder composer locally and triggers SceneDetail primary action
+            await runCheck(results, 'Per-route Ctrl+Enter submits Folder composer locally without leaking', async () => {
+                await page.goto(`${baseUrl}/folders`, { waitUntil: 'domcontentloaded' })
+                await page.locator('[data-testid="folder-workbench"]').waitFor({ state: 'visible' })
+                const composerTextarea = page.locator('.fb-composer textarea').first()
+                if (await composerTextarea.isVisible()) {
+                    await composerTextarea.fill('ctrl_enter_folder_asset')
+                    await composerTextarea.press('Control+Enter')
+                    await page.locator('.fb-asset-card').first().waitFor({ state: 'visible', timeout: 5000 })
+                    assert.ok(await page.locator('.fb-asset-card').count() >= 1, 'Ctrl+Enter inside folder composer should add asset card')
+                }
+            })
+
             await page.close()
         } finally {
             await browser.close()

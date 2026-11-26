@@ -8,6 +8,7 @@ import { PromptPanel } from './PromptPanel'
 import { HistoryPanel } from './HistoryPanel'
 import { useMediaQuery, usePromptSurface } from './prompt-surface'
 import { isNavigationPathActive, NAVIGATION_ITEMS, type NavigationItem } from './navigation-items'
+import { CommandPalette } from '@/components/command/CommandPalette'
 import { LiveGenerationMonitor } from '@/components/queue/LiveGenerationMonitor'
 import '@/styles/folder-workbench.css'
 import '@/styles/workspace.css'
@@ -170,8 +171,15 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
 
     // Preset dialog state (for shortcut support)
     const [presetDialogOpen, setPresetDialogOpen] = useState(false)
+    const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 
     // Authoring dialog shortcuts only apply on /advanced and reveal the prompt surface first.
+    useEffect(() => {
+        const handleOpenPalette = () => setCommandPaletteOpen(true)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_COMMAND_PALETTE, handleOpenPalette)
+        return () => window.removeEventListener(SHORTCUT_EVENTS.OPEN_COMMAND_PALETTE, handleOpenPalette)
+    }, [])
+
     useEffect(() => {
         if (!promptSurfaceRoute) return
         const revealPromptSurface = () => {
@@ -537,6 +545,18 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                         </DropdownMenuGroup>
                         <DropdownMenuSeparator />
                         {toolsSettingsItems.map(renderToolsNavItem)}
+                        <DropdownMenuItem
+                            className="flex min-h-11 items-center rounded-[4px]"
+                            data-testid="open-command-palette"
+                            onSelect={() => setCommandPaletteOpen(true)}
+                        >
+                            <span className="min-w-0 truncate">{t('folderWorkbench.navigation.commandPalette', '명령 찾기')}</span>
+                            {shortcutBindings['open:commandPalette']?.label && (
+                                <kbd className="ml-auto pl-4 font-mono text-xs text-muted-foreground">
+                                    {shortcutBindings['open:commandPalette'].label}
+                                </kbd>
+                            )}
+                        </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
                 {historyActionRoute && <div className="workspace-editor-actions">
@@ -571,7 +591,15 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     {/* Dialog owners stay mounted after their menu trigger closes. */}
                     <div className="[&>button]:hidden">
                         <ProductGuidance returnFocusRef={workbenchToolsRef} />
-                        <DiagnosticDrawer />
+                        <CommandPalette
+                open={commandPaletteOpen}
+                onOpenChange={setCommandPaletteOpen}
+                canOpenPrompt={!isSceneRoute}
+                onOpenPrompt={handleLeftPanelToggle}
+                onOpenHistory={handleRightPanelToggle}
+                onOpenActivity={() => { rememberSupportFocus(); openSupportSheet('activity') }}
+            />
+            <DiagnosticDrawer />
                     </div>
 
                     {/* Page Content */}
