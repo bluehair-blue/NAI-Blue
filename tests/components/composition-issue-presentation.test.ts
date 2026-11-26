@@ -15,7 +15,8 @@ import {
     type ReadonlyCompositionIssue,
 } from '@/components/composition-workspace'
 
-const source = (path: string) => readFile(resolve(process.cwd(), path), 'utf8')
+// core.autocrlf checkouts expand sources to CRLF; snippets below are written with LF.
+const source = async (path: string) => (await readFile(resolve(process.cwd(), path), 'utf8')).replace(/\r\n/g, '\n')
 const i18n = createInstance()
 
 const issue = (input: Partial<ReadonlyCompositionIssue> = {}): ReadonlyCompositionIssue => ({

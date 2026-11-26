@@ -7,7 +7,8 @@ import ja from '@/i18n/locales/ja.json'
 import ko from '@/i18n/locales/ko.json'
 import { calculateFixedVirtualRange } from '@/lib/virtualization/fixed-range'
 
-const source = (path: string) => readFile(resolve(process.cwd(), path), 'utf8')
+// core.autocrlf checkouts expand sources to CRLF; snippets below are written with LF.
+const source = async (path: string) => (await readFile(resolve(process.cwd(), path), 'utf8')).replace(/\r\n/g, '\n')
 
 describe('Queue Center 10,000-job UI contract', () => {
     it('keeps the mounted row window bounded at the top, middle, and end', () => {

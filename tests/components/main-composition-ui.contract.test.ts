@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const source = (path: string) => readFile(resolve(process.cwd(), path), 'utf8')
+// core.autocrlf checkouts expand sources to CRLF; snippets below are written with LF.
+const source = async (path: string) => (await readFile(resolve(process.cwd(), path), 'utf8')).replace(/\r\n/g, '\n')
 
 describe('Main composition UI contract', () => {
     it('uses the shared three-zone composition workspace while preserving the result canvas', async () => {
