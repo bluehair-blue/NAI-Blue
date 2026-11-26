@@ -504,24 +504,32 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                             ref={workbenchToolsRef}
                             data-active={activeToolsItem ? '' : undefined}
                             type="button"
-                            // The active route name sits in a track that may collapse to zero and min-content stops the button there, so the name
-                            // shortens first. The shrink factor is huge on purpose: a 100:1 split still took a fraction of a pixel from the links,
-                            // and any shortfall turns their labels into ellipses.
+                            // Off the Tools routes the button is the plain flex button it always was. On them the active route name sits in a
+                            // grid track that may collapse to zero while min-content floors the button, so the name is the first header text
+                            // to shorten. The shrink factor is huge on purpose: at 100:1 the links still lost a fraction of a pixel, and any
+                            // shortfall turns their labels into ellipses. The grid is an inner span because the button was never a grid container.
                             className={cn(
-                                'fb-app-tools inline-grid min-h-11 min-w-min shrink-[1000000] items-center gap-x-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-x-1.5 lg:px-3',
-                                activeToolsItem ? 'grid-cols-[max-content_minmax(0,auto)_max-content]' : 'grid-cols-[max-content_max-content]',
+                                'fb-app-tools inline-flex min-h-11 items-center rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3',
+                                activeToolsItem ? 'min-w-min shrink-[1000000]' : 'min-w-11 shrink-0 gap-1 sm:gap-1.5',
                             )}
                         >
-                            <span>{t('folderWorkbench.navigation.tools', '도구')}</span>
-                            {activeToolsItem && (
-                                <span className="max-w-[7rem] truncate sm:max-w-[8.5rem]">
-                                    <span className="hidden min-[440px]:inline">
-                                        {'· '}
-                                        {t(activeToolsItem.labelKey, activeToolsItem.fallbackLabel)}
+                            {activeToolsItem ? (
+                                <span className="grid min-w-0 grid-cols-[max-content_minmax(0,auto)_max-content] items-center">
+                                    <span>{t('folderWorkbench.navigation.tools', '도구')}</span>
+                                    <span className="max-w-[7rem] truncate sm:max-w-[8.5rem]">
+                                        <span className="hidden pl-1 min-[440px]:inline">
+                                            {'· '}
+                                            {t(activeToolsItem.labelKey, activeToolsItem.fallbackLabel)}
+                                        </span>
                                     </span>
+                                    <ChevronDown className="ml-1 h-4 w-4 shrink-0 sm:ml-1.5" aria-hidden="true" />
                                 </span>
+                            ) : (
+                                <>
+                                    <span className="max-w-[9.5rem] truncate sm:max-w-[11rem]">{t('folderWorkbench.navigation.tools', '도구')}</span>
+                                    <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                </>
                             )}
-                            <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
                         </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent

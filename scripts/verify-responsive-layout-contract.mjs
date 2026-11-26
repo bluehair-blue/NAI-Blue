@@ -846,44 +846,68 @@ async function assertWideCompositionCoreLoop(page, route, viewport) {
     await promptEditor.fill(initialValue)
 }
 
+// Hosted Linux runners fall back to a wider sans than Windows or macOS; RESPONSIVE_CONTRACT_FONT=Verdana approximates it locally.
+async function applyFontOverride(page) {
+    if (!process.env.RESPONSIVE_CONTRACT_FONT) return
+    await page.addInitScript(font => {
+        document.addEventListener('DOMContentLoaded', () => {
+            const style = document.createElement('style')
+            style.textContent = `*, *::before, *::after { font-family: ${font}, sans-serif !important; }`
+            document.head.appendChild(style)
+        })
+    }, process.env.RESPONSIVE_CONTRACT_FONT)
+}
+
 // One run sees one language (hosted runners report en-US, a developer machine its own), yet the header's
 // width budget depends on the labels: this sweep keeps every shipped locale inside the gate at the tight widths.
+// /advanced carries the Prompt and History buttons; /library appends its name to Tools, the text that must shorten first.
 const HEADER_FIT_LOCALES = ['en-US', 'ja-JP', 'ko-KR']
 const HEADER_FIT_WIDTHS = [640, 767, 768, 1024]
+const HEADER_FIT_ROUTES = ['/advanced', '/library']
 
 async function assertHeaderFitsEveryLocale(browser) {
+    const firstLabels = new Set()
     for (const locale of HEADER_FIT_LOCALES) {
-        for (const width of HEADER_FIT_WIDTHS) {
-            console.log(`Checking header fit in ${locale} at ${width}px`)
-            const page = await browser.newPage({ locale, viewport: { width, height: 800 } })
-            try {
-                page.setDefaultTimeout(20_000)
-                await page.route('**/*', route => {
-                    const requestUrl = route.request().url()
-                    return requestUrl.startsWith(baseUrl) || !/^https?:/i.test(requestUrl) ? route.continue() : route.abort()
-                })
-                await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
-                await page.waitForSelector('.fb-app-header .fb-app-navigation a')
-                await page.evaluate(async () => {
-                    await Promise.race([
-                        document.fonts?.ready ?? Promise.resolve(),
-                        new Promise(resolve => setTimeout(resolve, 750)),
-                    ])
-                    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-                })
-                const context = `header in ${locale} @ ${width}px`
-                assertVisibleCtaLayout(await collectVisibleCtaReport(page, '.fb-app-header'), context)
-                assert.equal(await page.locator('.fb-app-navigation a').count(), 4, `${context} must show four primary links`)
-                assert.equal(
-                    await page.locator('.fb-app-header .workspace-editor-actions').isVisible(),
-                    width >= 768,
-                    `${context}: Prompt and History header buttons appear from 768px`,
-                )
-            } finally {
-                await page.close()
+        // One page per locale: only its first load is uncached, and that one gets the longer wait.
+        const page = await browser.newPage({ locale, viewport: { width: HEADER_FIT_WIDTHS[0], height: 800 } })
+        try {
+            page.setDefaultTimeout(20_000)
+            await applyFontOverride(page)
+            await page.route('**/*', route => {
+                const requestUrl = route.request().url()
+                return requestUrl.startsWith(baseUrl) || !/^https?:/i.test(requestUrl) ? route.continue() : route.abort()
+            })
+            for (const route of HEADER_FIT_ROUTES) {
+                for (const width of HEADER_FIT_WIDTHS) {
+                    console.log(`Checking header fit in ${locale} on ${route} at ${width}px`)
+                    await page.setViewportSize({ width, height: 800 })
+                    await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+                    await page.waitForSelector('.fb-app-header .fb-app-navigation a', { timeout: 60_000 })
+                    await page.evaluate(async () => {
+                        await Promise.race([
+                            document.fonts?.ready ?? Promise.resolve(),
+                            new Promise(resolve => setTimeout(resolve, 750)),
+                        ])
+                        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+                    })
+                    const context = `header in ${locale} on ${route} @ ${width}px`
+                    assertVisibleCtaLayout(await collectVisibleCtaReport(page, '.fb-app-header'), context)
+                    assert.equal(await page.locator('.fb-app-navigation a').count(), 4, `${context} must show four primary links`)
+                    if (route === '/advanced') {
+                        assert.equal(
+                            await page.locator('.fb-app-header .workspace-editor-actions').isVisible(),
+                            width >= 768,
+                            `${context}: Prompt and History header buttons appear from 768px`,
+                        )
+                    }
+                }
             }
+            firstLabels.add(await page.locator('.fb-app-navigation a').first().getAttribute('aria-label'))
+        } finally {
+            await page.close()
         }
     }
+    assert.equal(firstLabels.size, HEADER_FIT_LOCALES.length, 'Each header locale must render its own labels')
 }
 
 async function waitForReady(child) {
@@ -955,6 +979,7 @@ async function main() {
                     isMobile: Boolean(viewport.mobile),
                 })
                 page.setDefaultTimeout(20_000)
+                await applyFontOverride(page)
                 await page.route('**/*', route => {
                     const requestUrl = route.request().url()
                     if (requestUrl.startsWith(baseUrl) || !/^https?:/i.test(requestUrl)) {
