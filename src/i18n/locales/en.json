@@ -325,7 +325,6 @@
             "connectionNeeded": "Check the connection first.",
             "uploadSettings": "Online sharing settings",
             "includeChildren": "Show images in folders inside this one",
-            "changeFolderSettings": "Change save location and description",
             "addToFolder": "Add to the {{name}} folder.",
             "collapseFolder": "Collapse {{name}}",
             "expandFolder": "Expand {{name}}",

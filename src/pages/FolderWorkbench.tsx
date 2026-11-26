@@ -14,12 +14,10 @@ import { FolderAssetDetailDialog } from '@/components/folders/FolderAssetDetailD
 import { FolderAssetInlineEditor } from '@/components/folders/FolderAssetInlineEditor'
 import { FolderProductionRequests } from '@/components/folders/FolderProductionRequests'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { GenerationFolderForm } from '@/components/generation-folders/GenerationFolderForm'
 import { GenerationFolderManagerDialog } from '@/components/generation-folders/GenerationFolderManagerDialog'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
-import { DEFAULT_R2_PROFILE_ID } from '@/domain/r2/types'
-import { useDefaultR2Readiness } from '@/hooks/useDefaultR2Readiness'
-import { resolveGenerationFolderAuthority } from '@/lib/generation-folder-authority-runtime'
 import { flushSceneAuthorityRuntime } from '@/lib/scene-authority-runtime'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
 import { collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, folderAssetProductionCount, type FolderAssetInput, UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
@@ -40,11 +38,8 @@ export default function FolderWorkbench() {
     const savedOutputs = useSavedOutputCatalog()
     const [savedDirectory, setSavedDirectory] = useState<string | null>(null)
     const folders = useSettingsStore(state => state.generationFolders)
-    const folderDocument = useSettingsStore(state => state.generationFolderDocument)
     const activeFolderId = useSettingsStore(state => state.activeGenerationFolderId)
     const setActiveFolder = useSettingsStore(state => state.setActiveGenerationFolder)
-    const savePath = useSettingsStore(state => state.savePath)
-    const useAbsolutePath = useSettingsStore(state => state.useAbsolutePath)
     // Archived presets are out of the working set: their Scenes are neither listed, counted nor runnable here.
     const presets = useSceneStore(state => visibleScenePresets(state.presets))
     const sceneAuthorityReady = useSceneStore(state => state.sceneAuthorityInitialized)
@@ -166,16 +161,6 @@ export default function FolderWorkbench() {
     }, [scopeKey, view.view, view.page, view.query, view.filter, view.includeChildren, sceneAuthorityReady, rows.length])
     const templates = presets.flatMap(preset => preset.defaultTemplate
         ? [{ id: preset.id, name: preset.name, template: preset.defaultTemplate }] : [])
-    const preliminary = concreteFolder ? resolveGenerationFolderAuthority(folderDocument, folders, concreteFolder.id, {
-        directory: savePath, useAbsolutePath, r2ProfileId: DEFAULT_R2_PROFILE_ID,
-    }) : null
-    const profileId = preliminary?.r2.profileId ?? null
-    const r2 = useDefaultR2Readiness(profileId, profileId !== null)
-    const profile = r2.profile?.id === profileId ? r2.profile : null
-    const resolved = concreteFolder ? resolveGenerationFolderAuthority(folderDocument, folders, concreteFolder.id, {
-        directory: savePath, useAbsolutePath, r2ProfileId: profileId,
-        r2Bucket: profile?.bucket, r2Prefix: profile?.prefix,
-    }) : null
 
     const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : t('folderWorkbench.actionFailed', '작업을 완료하지 못했습니다.'))
     const lock = () => { busyRef.current = true; setBusy(true); setError(null) }
@@ -405,17 +390,28 @@ export default function FolderWorkbench() {
             <Sheet open={folderSheetOpen} onOpenChange={setFolderSheetOpen}><SheetContent side="left" closeLabel={t('folderWorkbench.design.close', '닫기')} className="folder-workbench-surface fb-folder-sheet"><SheetHeader className="sr-only"><SheetTitle>{t('folderWorkbench.design.folders', '폴더')}</SheetTitle><SheetDescription>{t('folderWorkbench.design.chooseFolder', '이미지를 담을 폴더를 골라 주세요.')}</SheetDescription></SheetHeader>{folderPanel}</SheetContent></Sheet>
             <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="right" closeLabel={t('folderWorkbench.design.close', '닫기')} className="folder-workbench-surface fb-settings-sheet">
                 <SheetHeader className="fb-settings-heading"><SheetTitle>{t('folderWorkbench.design.folderSettings', '폴더 설정')}</SheetTitle><SheetDescription>{scopeName}</SheetDescription></SheetHeader>
-                <div className="fb-settings-sections">
-                    <section><h3>{t('folderWorkbench.design.saveWhere', '어디에 저장할까요?')}</h3><p className="fb-setting-label">{t('folderWorkbench.design.onComputer', '내 컴퓨터')}</p><p className="fb-path">{resolved?.directory ?? t('folderWorkbench.design.variesByImage', '이미지마다 정한 위치에 저장해요.')}</p><p className="fb-settings-note">{t('folderWorkbench.design.pathHint', '정확한 파일 이름과 위치는 만들기 전에 확인할 수 있어요.')}</p></section>
-                    <section><h3>{t('folderWorkbench.design.sharedDescription', '모든 이미지에 넣을 설명')}</h3><p className="fb-shared-description">{resolved?.commonPrompt || t('folderWorkbench.design.noSharedDescription', '따로 넣은 설명이 없어요.')}</p></section>
-                    <section><h3>{t('folderWorkbench.design.uploadInternet', '인터넷에 올리기')}</h3><p>{resolved?.r2.autoUpload ? t('folderWorkbench.design.uploadOn', '만든 뒤 자동으로 올려요.') : t('folderWorkbench.design.uploadOff', '지금은 컴퓨터에만 저장해요.')}</p>
-                        {resolved?.r2.autoUpload && <p className="fb-settings-note">{r2.status === 'ready' && profile ? t('folderWorkbench.design.connectionReady', '저장된 연결을 사용해요.') : t('folderWorkbench.design.connectionNeeded', '먼저 연결을 확인해 주세요.')}</p>}
-                        <Button asChild variant="outline" className="fb-button fb-secondary"><Link to="/r2">{t('folderWorkbench.design.uploadSettings', '올리기 설정')}</Link></Button>
-                        {profile?.publicBaseUrl && <p className="fb-path">{profile.publicBaseUrl}</p>}
-                    </section>
-                    {concreteFolder && folders.some(folder => folder.parentId === concreteFolder.id) && <label className="fb-check-label"><input className="choice-checkbox" type="checkbox" checked={view.includeChildren} onChange={event => updateView({ includeChildren: event.target.checked, page: 0 })} />{t('folderWorkbench.design.includeChildren', '안쪽 폴더 이미지도 보기')}</label>}
-                    <Button variant="outline" className="fb-button fb-secondary" onClick={() => { setSettingsOpen(false); setManagerOpen(true) }}>{t('folderWorkbench.design.changeFolderSettings', '저장 위치와 설명 바꾸기')}</Button>
-                </div>
+                {concreteFolder ? (
+                    <GenerationFolderForm
+                        folder={concreteFolder}
+                        open={settingsOpen}
+                        mode="stacked"
+                        onSaved={() => setSettingsOpen(false)}
+                        extraContent={folders.some(folder => folder.parentId === concreteFolder.id) ? (
+                            <label className="fb-check-label">
+                                <input className="choice-checkbox" type="checkbox" checked={view.includeChildren} onChange={event => updateView({ includeChildren: event.target.checked, page: 0 })} />
+                                {t('folderWorkbench.design.includeChildren', '안쪽 폴더 이미지도 보기')}
+                            </label>
+                        ) : undefined}
+                    />
+                ) : (
+                    <div className="fb-settings-sections">
+                        <section><h3>{t('folderWorkbench.design.saveWhere', '어디에 저장할까요?')}</h3><p className="fb-setting-label">{t('folderWorkbench.design.onComputer', '내 컴퓨터')}</p><p className="fb-path">{t('folderWorkbench.design.variesByImage', '이미지마다 정한 위치에 저장해요.')}</p><p className="fb-settings-note">{t('folderWorkbench.design.pathHint', '정확한 파일 이름과 위치는 만들기 전에 확인할 수 있어요.')}</p></section>
+                        <section><h3>{t('folderWorkbench.design.sharedDescription', '모든 이미지에 넣을 설명')}</h3><p className="fb-shared-description">{t('folderWorkbench.design.noSharedDescription', '따로 넣은 설명이 없어요.')}</p></section>
+                        <section><h3>{t('folderWorkbench.design.uploadInternet', '인터넷에 올리기')}</h3><p>{t('folderWorkbench.design.uploadOff', '지금은 컴퓨터에만 저장해요.')}</p>
+                            <Button asChild variant="outline" className="fb-button fb-secondary"><Link to="/r2">{t('folderWorkbench.design.uploadSettings', '올리기 설정')}</Link></Button>
+                        </section>
+                    </div>
+                )}
             </SheetContent></Sheet>
             <GenerationFolderManagerDialog open={managerOpen} onOpenChange={setManagerOpen} initialFolderId={concreteFolder?.id} onSaved={selectFolder} />
             <Dialog open={composerOpen} onOpenChange={open => { if (!busyRef.current) setComposerOpen(open) }}><DialogContent closeLabel={t('folderWorkbench.design.close', '닫기')} className="folder-workbench-surface fb-composer-dialog">

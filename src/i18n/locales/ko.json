@@ -325,7 +325,6 @@
             "connectionNeeded": "먼저 연결을 확인해 주세요.",
             "uploadSettings": "올리기 설정",
             "includeChildren": "안쪽 폴더 이미지도 보기",
-            "changeFolderSettings": "저장 위치와 설명 바꾸기",
             "addToFolder": "{{name}} 폴더에 담아요.",
             "collapseFolder": "{{name}} 접기",
             "expandFolder": "{{name}} 펼치기",

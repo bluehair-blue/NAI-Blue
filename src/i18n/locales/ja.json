@@ -325,7 +325,6 @@
             "connectionNeeded": "先に接続を確認してください。",
             "uploadSettings": "画像を送る設定",
             "includeChildren": "中のフォルダーの画像も見る",
-            "changeFolderSettings": "保存先と説明を変える",
             "addToFolder": "{{name}}フォルダーに入れます。",
             "collapseFolder": "{{name}}を折りたたむ",
             "expandFolder": "{{name}}を開く",

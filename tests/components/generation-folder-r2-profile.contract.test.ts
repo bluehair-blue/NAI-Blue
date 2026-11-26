@@ -21,7 +21,7 @@ describe('generation folder R2 profile UI contract', () => {
     })
 
     it('derives manager readiness from its selected folder and preserves the saved upload preference', () => {
-        const source = readFileSync('src/components/generation-folders/GenerationFolderManagerDialog.tsx', 'utf8')
+        const source = readFileSync('src/components/generation-folders/GenerationFolderForm.tsx', 'utf8')
 
         expect(source).toContain('selectedPreliminary')
         expect(source).toContain('selectedProfileId')
