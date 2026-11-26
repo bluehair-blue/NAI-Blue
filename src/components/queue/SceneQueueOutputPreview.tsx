@@ -21,7 +21,7 @@ export function SceneQueueOutputPreview({ outputs }: { outputs: readonly SceneQu
     }
     return (
         <details className="border-y border-border py-3" data-testid="scene-output-preview">
-            <summary className="min-h-11 cursor-pointer text-sm font-semibold">
+            <summary className="min-h-11 cursor-pointer py-2.5 text-sm font-semibold">
                 {t('folderWorkbench.outputPreview', '파일명·프롬프트·경로 전체 확인 ({{count}}장)', { count: outputs.length })}
             </summary>
             <p className="mb-3 text-sm text-muted-foreground">
@@ -40,7 +40,7 @@ export function SceneQueueOutputPreview({ outputs }: { outputs: readonly SceneQu
                             {output.r2Key !== null && <div><dt className="text-muted-foreground">{t('folderWorkbench.r2Key', 'R2 객체 키')}</dt><dd className="break-all">{output.r2Bucket}/{output.r2Key}</dd></div>}
                             {output.publicUrl !== null && <div><dt className="text-muted-foreground">{t('folderWorkbench.plannedUrl', '예정 공개 URL')}</dt><dd className="select-all break-all">{output.publicUrl}</dd></div>}
                         </dl>
-                        <details className="mt-2"><summary className="min-h-11 cursor-pointer">{t('folderWorkbench.finalPrompt', '최종 프롬프트')} · {output.sceneName}</summary><p className="whitespace-pre-wrap break-words py-2 text-muted-foreground">{output.prompt}</p></details>
+                        <details className="mt-2"><summary className="min-h-11 cursor-pointer py-2.5">{t('folderWorkbench.finalPrompt', '최종 프롬프트')} · {output.sceneName}</summary><p className="whitespace-pre-wrap break-words py-2 text-muted-foreground">{output.prompt}</p></details>
                     </li>
                 ))}
             </ol>

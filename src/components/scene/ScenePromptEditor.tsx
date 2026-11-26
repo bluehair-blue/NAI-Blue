@@ -212,11 +212,11 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 <label className="space-y-1">
                     <span className="text-xs font-medium text-muted-foreground">{t('settings.seed', '시드')}</span>
                     <div className="flex gap-1">
-                        <Input type="number" value={generation.seed} onChange={event => setNumeric('seed', event.target.value, 0, 4294967295)} disabled={disabled || !generation.seedLocked} className="h-10 rounded-control font-mono" />
-                        <Button type="button" variant={generation.seedLocked ? 'secondary' : 'outline'} size="icon" className="h-10 w-10 shrink-0" onClick={() => patchGeneration('seedLocked', !generation.seedLocked)} disabled={disabled} aria-label={generation.seedLocked ? t('settings.unlockSeed', '시드 잠금 해제') : t('settings.lockSeed', '시드 잠금')}>
+                        <Input type="number" value={generation.seed} onChange={event => setNumeric('seed', event.target.value, 0, 4294967295)} disabled={disabled || !generation.seedLocked} className="h-11 rounded-control font-mono" />
+                        <Button type="button" variant={generation.seedLocked ? 'secondary' : 'outline'} size="icon" className="h-11 w-11 shrink-0" onClick={() => patchGeneration('seedLocked', !generation.seedLocked)} disabled={disabled} aria-label={generation.seedLocked ? t('settings.unlockSeed', '시드 잠금 해제') : t('settings.lockSeed', '시드 잠금')}>
                             {generation.seedLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                         </Button>
-                        <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={() => patchGeneration('seed', generateRandomSeed())} disabled={disabled || generation.seedLocked} aria-label={t('settings.randomSeed', '무작위 시드')}>
+                        <Button type="button" variant="outline" size="icon" className="h-11 w-11 shrink-0" onClick={() => patchGeneration('seed', generateRandomSeed())} disabled={disabled || generation.seedLocked} aria-label={t('settings.randomSeed', '무작위 시드')}>
                             <Dice5 className="h-4 w-4" />
                         </Button>
                     </div>
@@ -231,7 +231,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 </label>
             </div>
 
-            <details className="mt-2 border-y border-border/60 px-3 py-2">
+            <details className="workspace-disclosure mt-2 px-3">
                 <summary className="cursor-pointer text-xs font-medium">{t('scene.moreGenerationSettings', '세부 생성 설정')}</summary>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <label className="space-y-1">

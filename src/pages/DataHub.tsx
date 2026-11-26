@@ -702,7 +702,7 @@ export function DeviceConnectionPanel({ onOpenBackup }: { onOpenBackup?: () => v
                                 </div>
                             </div>
                             <details className="mt-4 border-t pt-3 text-xs text-muted-foreground">
-                                <summary className="cursor-pointer font-medium text-foreground">{t('dataHub.sync.manualNetwork', '네트워크를 직접 지정해야 하나요?')}</summary>
+                                <summary className="min-h-11 cursor-pointer py-2.5 font-medium text-foreground">{t('dataHub.sync.manualNetwork', '네트워크를 직접 지정해야 하나요?')}</summary>
                                 <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_7rem_auto]">
                                     <Input value={manualBindIp} onChange={event => setManualBindIp(event.target.value)} placeholder="192.168.0.10" aria-label="Bind IP" />
                                     <Input value={manualCidr} onChange={event => setManualCidr(event.target.value)} placeholder="192.168.0.0/24" aria-label="Allowed CIDR" />
@@ -759,7 +759,7 @@ export function DeviceConnectionPanel({ onOpenBackup }: { onOpenBackup?: () => v
                                 {t('dataHub.sync.scanQr', 'QR 촬영 또는 사진 선택')}
                             </Button>
                             <details>
-                                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{t('dataHub.sync.pasteInvitation', '연결 정보를 직접 붙여넣기')}</summary>
+                                <summary className="min-h-11 cursor-pointer py-2.5 text-xs font-medium text-muted-foreground">{t('dataHub.sync.pasteInvitation', '연결 정보를 직접 붙여넣기')}</summary>
                                 <Textarea className="mt-2 min-h-24 font-mono text-[11px]" value={invitation} onChange={event => setInvitation(event.target.value)} placeholder="{ … }" />
                             </details>
                             {invitation && (
@@ -855,7 +855,7 @@ export function DeviceConnectionPanel({ onOpenBackup }: { onOpenBackup?: () => v
 
                     {!capability.supported && capability.reason && (
                         <details className="rounded-panel border px-4 py-3 text-xs text-muted-foreground">
-                            <summary className="cursor-pointer font-medium text-foreground">{t('dataHub.sync.technicalStatus', '기술 상태 보기')}</summary>
+                            <summary className="min-h-11 cursor-pointer py-2.5 font-medium text-foreground">{t('dataHub.sync.technicalStatus', '기술 상태 보기')}</summary>
                             <p className="mt-2 leading-5">{capability.reason} {capability.alternative}</p>
                         </details>
                     )}

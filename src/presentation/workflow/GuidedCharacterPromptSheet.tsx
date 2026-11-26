@@ -315,7 +315,7 @@ export function GuidedCharacterPromptSheet({
                                         )}
 
                                         <details className="mt-4 border-t border-border/55 pt-3">
-                                            <summary className="cursor-pointer text-sm font-medium">
+                                            <summary className="min-h-11 cursor-pointer py-2.5 text-sm font-medium">
                                                 {t('guided.characters.negative', '제외할 요소 · 선택')}
                                             </summary>
                                             <Textarea
@@ -328,7 +328,7 @@ export function GuidedCharacterPromptSheet({
                                         </details>
 
                                         <details className="mt-4 border-t border-border/55 pt-3">
-                                            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
+                                            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
                                                 <span className="flex items-center gap-2">
                                                     <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
                                                     {t('guided.characters.position', '화면 위치')}

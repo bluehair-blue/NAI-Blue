@@ -83,6 +83,7 @@ export function GuidedShell({ children }: GuidedShellProps) {
                         <Button
                             variant="ghost"
                             size="sm"
+                            className="min-h-11 min-w-11"
                             onClick={() => openSupportSheet('activity')}
                             aria-label={t('guided.activity.title', '내 작업')}
                             aria-expanded={activityOpen}
@@ -92,7 +93,7 @@ export function GuidedShell({ children }: GuidedShellProps) {
                             <span className="hidden min-[440px]:inline">{t('guided.activity.title', '내 작업')}</span>
                         </Button>
                     )}
-                    <Button asChild variant="ghost" size="sm">
+                    <Button asChild variant="ghost" size="sm" className="min-h-11 min-w-11">
                         <Link
                             to="/advanced"
                             aria-label={t('guided.advanced', '고급 생성 모드')}

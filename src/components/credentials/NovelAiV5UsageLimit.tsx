@@ -149,7 +149,7 @@ export function NovelAiV5UsageLimit({
             className={cn('rounded-panel border border-amber-300/40 bg-amber-50/70 p-3 text-sm text-amber-950 dark:border-amber-200/20 dark:bg-amber-950/25 dark:text-amber-50', className)}
             open={open}
         >
-            <summary className="cursor-pointer select-none font-medium">
+            <summary className="min-h-11 cursor-pointer select-none py-2.5 font-medium">
                 {t('credentials.v5UsageLimit.title', 'Opus V5 usage limit')}
             </summary>
             <div className="mt-3 space-y-3">

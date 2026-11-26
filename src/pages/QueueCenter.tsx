@@ -811,7 +811,7 @@ export default function QueueCenter() {
                             && !fulfillmentLoading) void loadFulfillment()
                     }}
                 >
-                    <summary className="cursor-pointer px-3 py-3 text-sm font-medium sm:px-5">
+                    <summary className="min-h-11 cursor-pointer px-3 py-2.5 text-sm font-medium sm:px-5">
                         {t('queue.fulfillment.title', 'Fulfillment stages')}
                         {fulfillment !== null && (
                             <span className="ml-2 text-xs text-muted-foreground">
@@ -853,7 +853,7 @@ export default function QueueCenter() {
                                 </div>}
                                 {fulfillment.jobs.some(job => (job.release.jobIds?.length ?? 0) > 0) && (
                                     <details className="text-xs text-muted-foreground">
-                                        <summary>{t('queue.fulfillment.deliveryJobs', 'R2 delivery jobs')}</summary>
+                                        <summary className="min-h-11 cursor-pointer py-2.5">{t('queue.fulfillment.deliveryJobs', 'R2 delivery jobs')}</summary>
                                         <ul className="mt-1 break-all">
                                             {fulfillment.jobs.flatMap(job => job.release.jobIds ?? []).map(id => <li key={id}>{id}</li>)}
                                         </ul>

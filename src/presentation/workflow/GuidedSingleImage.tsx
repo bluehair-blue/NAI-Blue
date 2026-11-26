@@ -1194,7 +1194,7 @@ function ResultStep({
             </section>
 
             <details className="border-y border-border/70 py-4">
-                <summary className="cursor-pointer text-sm font-semibold">
+                <summary className="min-h-11 cursor-pointer py-2.5 text-sm font-semibold">
                     {t('guided.single.result.technicalDetails', '기술 정보')}
                 </summary>
                 <p className="mt-3 font-mono text-xs text-muted-foreground">Seed {result.seed}</p>

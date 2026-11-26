@@ -120,7 +120,7 @@ describe('Main composition UI contract', () => {
         expect(slotTabs).toContain('aria-controls={panelId}')
         expect(slotTabs).toContain("event.key === 'ArrowRight'")
         expect(slotTabs).toContain('tabIndex={active ? 0 : -1}')
-        expect(slotTabs).toContain('grid grid-cols-4')
+        expect(slotTabs).toContain('grid grid-flow-col auto-cols-fr')
         expect(slotTabs).toContain('truncate whitespace-nowrap')
         expect(editor).toContain("'h-40 min-h-40 resize-none rounded-none")
         expect(editor).not.toContain("'h-full min-h-28")

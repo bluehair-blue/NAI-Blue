@@ -122,7 +122,7 @@ export function CompositionInspector({
                                 <span className="mt-1 block break-words text-xs text-muted-foreground">{conflict.message}</span>
                                 {conflict.revision && (
                                     <details className="mt-2">
-                                        <summary className="cursor-pointer text-xs text-muted-foreground">{labels.technical}</summary>
+                                        <summary className="min-h-11 cursor-pointer py-2.5 text-xs text-muted-foreground">{labels.technical}</summary>
                                         <span className="mt-1 block break-all font-mono text-[11px]">{conflict.revision}</span>
                                     </details>
                                 )}
@@ -148,7 +148,7 @@ export function CompositionInspector({
                                     )}
                                 </dl>
                                 <details className="mt-3 border-t border-border pt-2">
-                                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{labels.technical}</summary>
+                                    <summary className="min-h-11 cursor-pointer py-2.5 text-xs font-medium text-muted-foreground">{labels.technical}</summary>
                                     <dl className="mt-2 grid grid-cols-[minmax(5rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
                                         <dt className="text-muted-foreground">{labels.kind}</dt>
                                         <dd className="min-w-0 break-words font-mono">{module.kind}</dd>

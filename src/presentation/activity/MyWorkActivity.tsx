@@ -303,7 +303,7 @@ function DraftActivityRows({ drafts }: { drafts: readonly ActivityDraft[] }) {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                                className="h-11 w-11 shrink-0 text-muted-foreground hover:text-destructive"
                                 onClick={() => setPendingDelete(draft)}
                                 aria-label={t('guided.activity.deleteDraftNamed', '{{name}} 초안 삭제', { name: title })}
                             >
@@ -313,7 +313,7 @@ function DraftActivityRows({ drafts }: { drafts: readonly ActivityDraft[] }) {
                     )
                 })}
             </div>
-            <Button asChild variant="ghost" size="sm" className="mt-2 w-full justify-start px-2">
+            <Button asChild variant="ghost" size="sm" className="mt-2 min-h-11 w-full justify-start px-2">
                 <Link to="/guided-preview" onClick={closeSupportSheet}>
                     <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
                     {t('guided.activity.startAnother', '다른 작업 시작')}

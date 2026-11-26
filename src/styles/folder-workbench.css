@@ -72,7 +72,7 @@
 .fb-view-switch svg { width: 18px; height: 18px; }
 .fb-selection-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 52px; padding-block: 6px; font-size: 14px; }
 .fb-check-label { display: inline-flex; align-items: center; min-height: 44px; gap: 12px; cursor: pointer; }
-.fb-check-label input, .fb-card-select input { width: 20px; height: 20px; flex-shrink: 0; accent-color: oklch(var(--primary)); cursor: pointer; }
+.fb-check-label input, .fb-card-select input { flex-shrink: 0; accent-color: oklch(var(--primary)); cursor: pointer; }
 .fb-result-count { margin-left: auto; color: oklch(var(--muted-foreground)); }
 .fb-bulk-count summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px; cursor: pointer; list-style: none; color: oklch(var(--muted-foreground)); }
 .fb-bulk-count summary::-webkit-details-marker { display: none; }

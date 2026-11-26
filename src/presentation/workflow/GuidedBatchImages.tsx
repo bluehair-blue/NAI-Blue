@@ -563,7 +563,7 @@ function PromptStep({
                 onChange={onCharacterPrompts}
             />
             <details className="border-y border-border/70 py-3">
-                <summary className="cursor-pointer text-sm font-medium">{t('guided.batch.prompt.negativeTitle', '공통으로 피할 내용 · 선택')}</summary>
+                <summary className="min-h-11 cursor-pointer py-2.5 text-sm font-medium">{t('guided.batch.prompt.negativeTitle', '공통으로 피할 내용 · 선택')}</summary>
                 <div className="mt-3 flex justify-end">
                     <PromptModulePicker disabled={disabled} showManageAction={false} allowInlineManage createSourceText={negative} triggerLabel={t('guided.batch.prompt.negativeModule', '제외 모듈 불러오기')} onSelectLine={line => onNegative(appendPromptModuleLine(negative, line))} />
                 </div>

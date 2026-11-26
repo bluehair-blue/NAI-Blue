@@ -867,7 +867,7 @@ export default function SceneDetail() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-11 w-11 shrink-0 rounded-control lg:h-9 lg:w-9"
+                            className="h-11 w-11 shrink-0 rounded-control"
                             aria-label={t('actions.back', '씬 목록으로 돌아가기')}
                             onClick={handleBack}
                         >
@@ -878,7 +878,7 @@ export default function SceneDetail() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-11 w-11 shrink-0 rounded-control lg:h-9 lg:w-9"
+                            className="h-11 w-11 shrink-0 rounded-control"
                             aria-label={t('actions.openFolder', '생성된 이미지 폴더 열기')}
                             onClick={handleOpenFolder}
                         >
@@ -899,7 +899,7 @@ export default function SceneDetail() {
                             <Input
                                 value={editName}
                                 onChange={(e) => setEditName(e.target.value)}
-                                className="h-11 min-w-0 flex-1 rounded-control text-lg font-semibold lg:h-9"
+                                className="h-11 min-w-0 flex-1 rounded-control text-lg font-semibold"
                                 aria-label={t('scene.sceneName', '씬 이름')}
                                 autoFocus
                                 onKeyDown={(e) => {
@@ -914,7 +914,7 @@ export default function SceneDetail() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-11 w-11 shrink-0 rounded-control lg:h-9 lg:w-9"
+                                className="h-11 w-11 shrink-0 rounded-control"
                                 aria-label={t('common.save', '저장')}
                                 onClick={handleSaveName}
                             >
@@ -923,7 +923,7 @@ export default function SceneDetail() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-11 w-11 shrink-0 rounded-control lg:h-9 lg:w-9"
+                                className="h-11 w-11 shrink-0 rounded-control"
                                 aria-label={t('common.cancel', '취소')}
                                 onClick={handleCancelNameEdit}
                             >
@@ -939,7 +939,7 @@ export default function SceneDetail() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-11 w-11 shrink-0 rounded-control lg:h-9 lg:w-9"
+                                className="h-11 w-11 shrink-0 rounded-control"
                                 aria-label={t('scene.rename', '이름 변경')}
                                 onClick={() => setIsEditingName(true)}
                             >
@@ -958,7 +958,7 @@ export default function SceneDetail() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-11 w-11 rounded-control lg:h-9 lg:w-9"
+                                className="h-11 w-11 rounded-control"
                                 aria-label={t('scene.decrementQueue', '대기열 감소')}
                                 onClick={() => decrementQueue(activePresetId, scene.id)}
                                 disabled={scene.queueCount === 0}
@@ -971,7 +971,7 @@ export default function SceneDetail() {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-11 w-11 rounded-control lg:h-9 lg:w-9"
+                                className="h-11 w-11 rounded-control"
                                 aria-label={t('scene.incrementQueue', '대기열 증가')}
                                 onClick={() => incrementQueue(activePresetId, scene.id)}
                             >
@@ -1092,7 +1092,7 @@ export default function SceneDetail() {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-11 rounded-control px-3 lg:h-9"
+                                    className="h-11 rounded-control px-3"
                                     onClick={() => {
                                         if (selectedImageIds.size === scene.images.length) {
                                             setSelectedImageIds(new Set())
@@ -1112,7 +1112,7 @@ export default function SceneDetail() {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-11 rounded-control px-3 text-destructive hover:bg-destructive/10 hover:text-destructive lg:h-9"
+                                    className="h-11 rounded-control px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                     onClick={() => requestTrashImages(scene.images.filter(image => selectedImageIds.has(image.id)))}
                                     disabled={selectedImageIds.size === 0}
                                 >
@@ -1123,7 +1123,7 @@ export default function SceneDetail() {
                                 <Button
                                     variant="default"
                                     size="sm"
-                                    className="h-11 rounded-control px-3 lg:h-9"
+                                    className="h-11 rounded-control px-3"
                                     onClick={() => {
                                         setIsEditMode(false)
                                         setSelectedImageIds(new Set())
@@ -1139,7 +1139,7 @@ export default function SceneDetail() {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-11 rounded-control px-3 lg:h-9"
+                                    className="h-11 rounded-control px-3"
                                     onClick={() => setIsEditMode(true)}
                                 >
                                     <Pencil className="h-4 w-4" />
@@ -1148,7 +1148,7 @@ export default function SceneDetail() {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="h-11 rounded-control px-3 text-destructive hover:bg-destructive/10 hover:text-destructive lg:h-9"
+                                    className="h-11 rounded-control px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                     onClick={() => requestTrashImages(scene.images.filter(image => !image.isFavorite))}
                                     disabled={scene.images.filter(img => !img.isFavorite).length === 0}
                                 >
@@ -1158,7 +1158,7 @@ export default function SceneDetail() {
                                 <Button
                                     variant={showFavoritesOnly ? "default" : "outline"}
                                     size="sm"
-                                    className="h-11 rounded-control px-3 lg:h-9"
+                                    className="h-11 rounded-control px-3"
                                     onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
                                 >
                                     <Star className={`h-4 w-4 ${showFavoritesOnly ? 'fill-current' : ''}`} />
@@ -1510,7 +1510,7 @@ function SceneImageCard({
                         variant="ghost"
                         size="icon"
                         className={cn(
-                            "absolute right-2 top-2 h-11 w-11 rounded-control border border-border bg-card/90 text-foreground shadow-sm transition-opacity hover:bg-accent lg:h-9 lg:w-9",
+                            "absolute right-2 top-2 h-11 w-11 rounded-control border border-border bg-card/90 text-foreground shadow-sm transition-opacity hover:bg-accent",
                             !image.isFavorite && "lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
                         )}
                         aria-label={image.isFavorite

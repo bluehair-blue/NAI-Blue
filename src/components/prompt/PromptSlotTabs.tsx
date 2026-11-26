@@ -36,7 +36,7 @@ export function PromptSlotTabs({ tabs, activeId, panelId, label, onChange }: Pro
 
     return (
         <div
-            className="grid grid-cols-4 border-b border-border/60"
+            className="grid grid-flow-col auto-cols-fr border-b border-border/60"
             role="tablist"
             aria-label={label}
         >

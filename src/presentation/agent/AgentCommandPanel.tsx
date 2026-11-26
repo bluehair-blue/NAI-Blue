@@ -54,7 +54,7 @@ function generationSettingsRows(value: JsonValue): { label: string; value: strin
 
 function renderGenerationPreview(item: AgentGenerationExecutionReview) {
     return <details className="rounded-control border px-3 py-2">
-        <summary className="cursor-pointer font-medium">프롬프트와 생성 설정 확인 · {item.previewJobs.length}장</summary>
+        <summary className="min-h-11 cursor-pointer py-2.5 font-medium">프롬프트와 생성 설정 확인 · {item.previewJobs.length}장</summary>
         <div className="mt-3 max-h-[32rem] space-y-3 overflow-y-auto pr-1">
             {item.previewJobs.map(job => {
                 const parameters = isJsonObject(job.generationParameters) ? job.generationParameters : {}
@@ -240,7 +240,7 @@ export function AgentCommandPanel({ runtime = runtimeAgentCommands }: { runtime?
                         {typeof item.input.presetArchived === 'boolean' && alsoChangedPresets(item.resourceId, item.input.presetArchived) > 0 && <p>{item.input.presetArchived
                             ? t('agentInbox.presetArchiveBranch', '하위 폴더 {{count}}개도 함께 보관함으로 옮깁니다.', { count: alsoChangedPresets(item.resourceId, true) })
                             : t('agentInbox.presetRestoreBranch', '함께 보관한 하위 폴더와 보관된 상위 폴더 {{count}}개도 복원합니다.', { count: alsoChangedPresets(item.resourceId, false) })}</p>}
-                        <details><summary className="cursor-pointer font-medium">{t('agentInbox.authoringChanges', '바뀌는 내용')}</summary>
+                        <details><summary className="min-h-11 cursor-pointer py-2.5 font-medium">{t('agentInbox.authoringChanges', '바뀌는 내용')}</summary>
                             <div className="mt-2 max-h-96 space-y-2 overflow-y-auto">{authoringRows(item.input).map((row, index) => <label key={index} className="block space-y-1">
                                 <span>{row.label}</span><textarea readOnly className="w-full resize-y rounded border bg-background p-2" value={row.value} rows={Math.min(6, Math.max(1, row.value.split('\n').length))} />
                             </label>)}</div>

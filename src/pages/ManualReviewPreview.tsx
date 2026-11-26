@@ -359,7 +359,7 @@ export default function ManualReviewPreview() {
 
                 <section aria-label="파일 기반 에이전트 생성 연결" className="rounded-panel border bg-card px-4 py-3 sm:px-5">
                     <details data-testid="manual-review-agent-connection">
-                        <summary className="cursor-pointer font-medium">파일 에이전트 요청과 생성 설정 검토</summary>
+                        <summary className="min-h-11 cursor-pointer py-2.5 font-medium">파일 에이전트 요청과 생성 설정 검토</summary>
                         <p className="mt-2 text-sm text-muted-foreground">
                             파일 요청에서 만들어진 동일한 생성 계획을 확인하고 승인하면 Main Queue가 실행합니다. 승인된 배치와 결과 프리뷰는 큐 센터에서 확인할 수 있습니다.
                         </p>

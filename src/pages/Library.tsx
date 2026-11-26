@@ -539,7 +539,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                     /* Edit Mode Header */
                     <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-center gap-2">
-                            <Button variant="ghost" size="sm" className="h-11 shrink-0 hover:bg-accent lg:h-9" onClick={() => setEditMode(false)}>
+                            <Button variant="ghost" size="sm" className="h-11 shrink-0 hover:bg-accent" onClick={() => setEditMode(false)}>
                                 <X className="h-4 w-4 mr-2" /> {t('actions.cancel', '취소')}
                             </Button>
                             <span className="min-w-0 truncate text-sm text-muted-foreground">
@@ -550,7 +550,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-11 min-w-0 flex-1 px-2 hover:bg-accent sm:flex-none sm:px-3 lg:h-9"
+                                className="h-11 min-w-0 flex-1 px-2 hover:bg-accent sm:flex-none sm:px-3"
                                 onClick={() => selectItems(viewItems.filter(item => !item.isStack).map(item => item.id))}
                             >
                                 <CheckSquare className="mr-1.5 h-4 w-4 shrink-0" />
@@ -558,7 +558,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                             </Button>
                             <Button
                                 size="sm"
-                                className="h-11 min-w-0 flex-[1.4] px-3 sm:flex-none lg:h-9"
+                                className="h-11 min-w-0 flex-[1.4] px-3 sm:flex-none"
                                 onClick={() => openWorkflowForItems(viewItems.filter(item => selectedItemIds.includes(item.id)))}
                                 disabled={selectedItemIds.length === 0}
                             >
@@ -568,7 +568,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-11 min-w-0 flex-1 px-2 hover:bg-accent sm:flex-none sm:px-3 lg:h-9"
+                                className="h-11 min-w-0 flex-1 px-2 hover:bg-accent sm:flex-none sm:px-3"
                                 onClick={openBatchRename}
                                 disabled={selectedItemIds.length === 0}
                             >
@@ -580,7 +580,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-11 min-w-0 flex-1 px-2 hover:bg-accent sm:flex-none sm:px-3 lg:h-9"
+                                        className="h-11 min-w-0 flex-1 px-2 hover:bg-accent sm:flex-none sm:px-3"
                                         onClick={createStackFromSelected}
                                         disabled={selectedItemIds.length < 2}
                                     >
@@ -592,7 +592,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-11 min-w-0 flex-1 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive sm:flex-none sm:px-3 lg:h-9"
+                                className="h-11 min-w-0 flex-1 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive sm:flex-none sm:px-3"
                                 onClick={() => setConfirmDeleteSelectedOpen(true)}
                                 disabled={selectedItemIds.length === 0}
                             >
@@ -610,7 +610,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-11 w-11 shrink-0 px-0 hover:bg-accent sm:w-auto sm:px-3 lg:h-9"
+                                        className="h-11 w-11 shrink-0 px-0 hover:bg-accent sm:w-auto sm:px-3"
                                         onClick={() => setCurrentStackId(null)}
                                         aria-label={t('actions.back', '뒤로')}
                                     >
@@ -648,7 +648,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                             />
                             <Button
                                 size="sm"
-                                className="h-11 shrink-0 px-3 lg:h-9"
+                                className="h-11 shrink-0 px-3"
                                 onClick={handleImportClick}
                             >
                                 <Upload className="mr-1.5 h-4 w-4" />
@@ -659,7 +659,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-11 w-11 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground lg:h-9 lg:w-9"
+                                    className="h-11 w-11 shrink-0 text-muted-foreground hover:bg-accent hover:text-foreground"
                                     onClick={() => setEditMode(true)} 
                                     disabled={viewItems.length === 0}
                                     aria-label={t('library.editModeDesc', '여러 이미지를 선택하여 일괄 편집')}
@@ -672,7 +672,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-11 w-11 shrink-0 px-0 hover:bg-accent sm:w-auto sm:px-3 lg:h-9"
+                                        className="h-11 w-11 shrink-0 px-0 hover:bg-accent sm:w-auto sm:px-3"
                                         onClick={() => unstack(currentStackId)}
                                         aria-label={t('library.unstack', '스택 해제')}
                                     >
@@ -685,7 +685,7 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-11 shrink-0 px-2 text-muted-foreground hover:bg-accent hover:text-foreground lg:h-9"
+                                    className="h-11 shrink-0 px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
                                     onClick={handleToggleGrid}
                                     aria-label={t('library.gridColumnsDesc', '그리드 열 개수 변경')}
                                 >
