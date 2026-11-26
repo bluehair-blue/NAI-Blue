@@ -967,7 +967,7 @@ export default function SceneDetail() {
                 </div>
 
                 <div className="flex min-w-0 items-center gap-2">
-                    <div className="flex min-w-0 items-center justify-between rounded-control border border-border bg-card px-1 lg:gap-1">
+                    <div className="flex min-w-0 items-center justify-between rounded-control bg-card px-1 lg:gap-1">
                         <span className="px-2 text-xs font-medium text-muted-foreground lg:sr-only">
                             {t('scene.queue', '대기열')}
                         </span>
@@ -1044,7 +1044,7 @@ export default function SceneDetail() {
             />
 
             {/* Two late-stage output decisions stay together and remain compact. */}
-            <section className="space-y-4 rounded-panel border border-border bg-card px-4 py-4" aria-label={t('scene.output.title', '씬 출력 설정')}>
+            <section className="space-y-4 rounded-panel bg-card px-4 py-4" aria-label={t('scene.output.title', '씬 출력 설정')}>
                 <div>
                     <p className="text-sm font-semibold">{t('scene.output.folder', '이미지 생성 폴더')}</p>
                     <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
@@ -1090,7 +1090,7 @@ export default function SceneDetail() {
                 </div>
             </section>
 
-            <Card className="mt-1 flex min-h-[20rem] min-w-0 flex-1 flex-col overflow-hidden rounded-panel border-border bg-card shadow-none">
+            <Card className="mt-1 flex min-h-[20rem] min-w-0 flex-1 flex-col overflow-hidden rounded-panel border-0 bg-card shadow-none">
                 <CardHeader className="min-w-0 shrink-0 gap-2 border-b border-border p-3 sm:p-4">
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                         <CardTitle className="min-w-0 truncate text-sm">{t('scene.generatedImages')}</CardTitle>
@@ -1107,7 +1107,7 @@ export default function SceneDetail() {
                             <>
                                 {/* Select All / Deselect All */}
                                 <Button
-                                    variant="outline"
+                                    variant="ghost"
                                     size="sm"
                                     className="h-11 rounded-control px-3"
                                     onClick={() => {
@@ -1127,7 +1127,7 @@ export default function SceneDetail() {
                                 </Button>
                                 {/* Delete Selected */}
                                 <Button
-                                    variant="outline"
+                                    variant="ghost"
                                     size="sm"
                                     className="h-11 rounded-control px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                     onClick={() => requestTrashImages(scene.images.filter(image => selectedImageIds.has(image.id)))}
@@ -1154,7 +1154,7 @@ export default function SceneDetail() {
                             <>
                                 {/* Edit Mode Button */}
                                 <Button
-                                    variant="outline"
+                                    variant="ghost"
                                     size="sm"
                                     className="h-11 rounded-control px-3"
                                     onClick={() => setIsEditMode(true)}
@@ -1163,7 +1163,7 @@ export default function SceneDetail() {
                                     {t('scene.editMode', '편집 모드')}
                                 </Button>
                                 <Button
-                                    variant="outline"
+                                    variant="ghost"
                                     size="sm"
                                     className="h-11 rounded-control px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                     onClick={() => requestTrashImages(scene.images.filter(image => !image.isFavorite))}
@@ -1173,7 +1173,7 @@ export default function SceneDetail() {
                                     {t('scene.deleteNonFavorites', '즐겨찾기 제외 삭제')}
                                 </Button>
                                 <Button
-                                    variant={showFavoritesOnly ? "default" : "outline"}
+                                    variant={showFavoritesOnly ? "default" : "ghost"}
                                     size="sm"
                                     className="h-11 rounded-control px-3"
                                     onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
@@ -1406,7 +1406,7 @@ export default function SceneDetail() {
                         variant="ghost"
                         size="icon"
                         data-viewer-close
-                        className="absolute h-11 w-11 rounded-control border border-border bg-card text-foreground hover:bg-accent"
+                        className="absolute h-11 w-11 rounded-control bg-card/90 text-foreground hover:bg-accent"
                         style={{
                             top: 'max(0.75rem, env(safe-area-inset-top))',
                             right: 'max(0.75rem, env(safe-area-inset-right))',
@@ -1475,12 +1475,12 @@ function SceneImageCard({
         >
             <div
                 className={cn(
-                    "group relative cursor-pointer overflow-hidden rounded-panel border bg-canvas outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    "group relative cursor-pointer overflow-hidden rounded-panel bg-canvas outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                     isEditMode && isSelected
-                        ? "border-primary ring-2 ring-primary/30"
+                        ? "ring-2 ring-primary"
                         : image.isFavorite
-                            ? "border-warning ring-1 ring-warning/40"
-                            : "border-border hover:border-primary/60"
+                            ? "ring-1 ring-warning/60"
+                            : "hover:ring-1 hover:ring-primary/50"
                 )}
                 style={{ aspectRatio }}
                 data-scene-preview-resolution={resolutionLabel}
@@ -1527,7 +1527,7 @@ function SceneImageCard({
                         variant="ghost"
                         size="icon"
                         className={cn(
-                            "absolute right-2 top-2 h-11 w-11 rounded-control border border-border bg-card/90 text-foreground shadow-sm transition-opacity hover:bg-accent",
+                            "absolute right-2 top-2 h-11 w-11 rounded-control bg-card/90 text-foreground transition-opacity hover:bg-accent",
                             !image.isFavorite && "lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
                         )}
                         aria-label={image.isFavorite

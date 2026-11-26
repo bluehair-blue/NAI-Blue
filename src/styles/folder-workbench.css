@@ -82,8 +82,8 @@
 .fb-bulk-popover input { width: 80px; min-height: 44px; }
 .fb-gallery-region { padding-block: 20px 32px; background: oklch(var(--canvas)); }
 .fb-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
-.fb-asset-card { min-width: 0; overflow: hidden; background: oklch(var(--card)); border: 1px solid oklch(var(--border) / .65); border-radius: 4px; }
-.fb-asset-card.is-selected { border-color: oklch(var(--primary)); box-shadow: 0 0 0 1px oklch(var(--primary)); }
+.fb-asset-card { min-width: 0; overflow: hidden; background: oklch(var(--card)); border-radius: 4px; }
+.fb-asset-card.is-selected { box-shadow: 0 0 0 2px oklch(var(--primary)); }
 .fb-card-media { position: relative; aspect-ratio: 4 / 5; min-width: 0; background: oklch(var(--canvas)); }
 .fb-card-select { position: absolute; z-index: 1; top: 8px; left: 8px; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 4px; background: oklch(var(--card) / .94); cursor: pointer; }
 .fb-open-preview { display: block; width: 100%; height: 100%; text-align: left; }

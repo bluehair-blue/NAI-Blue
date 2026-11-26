@@ -27,7 +27,7 @@ export function SavedOutputGallery({ directoryKey, images, onFolders }: {
                 </header>
                 <div className="grid grid-cols-2 gap-4 p-4 md:grid-cols-3 xl:grid-cols-4">
                     {rows.slice(currentPage * 60, (currentPage + 1) * 60).map(image => (
-                        <button key={image.path} type="button" className="min-w-0 rounded-control border border-border p-2 text-left focus-ring" onClick={() => setSelected(image)}>
+                        <button key={image.path} type="button" className="min-w-0 rounded-control bg-card p-2 text-left transition-colors hover:bg-accent/35 focus-ring" onClick={() => setSelected(image)}>
                             <img src={toNativeAssetUrl(image.path)} alt={image.name} loading="lazy" decoding="async" className="aspect-square w-full rounded object-contain" />
                             <span className="mt-2 block truncate text-sm" title={image.name}>{image.name}</span>
                         </button>

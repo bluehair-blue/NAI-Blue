@@ -142,7 +142,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
     return (
         <section
             ref={sectionRef}
-            className="@container shrink-0 border-y border-border/70 bg-transparent py-3"
+            className="@container shrink-0 rounded-panel bg-card px-2 py-3"
             data-testid="scene-prompt-editor"
             onKeyDown={event => {
                 if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
@@ -161,7 +161,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                     <h2 className="text-sm font-semibold">{t('scene.promptComposition', '씬 프롬프트 구성')}</h2>
                     <p className="text-xs text-muted-foreground">{t('scene.promptCompositionHelp', '이 씬에서만 사용할 프롬프트와 생성 설정입니다.')}</p>
                 </div>
-                <Button type="button" variant="ghost" size="sm" className="rounded-none border-b border-border/70 px-1" onClick={copyMainPrompts} disabled={disabled}>
+                <Button type="button" variant="ghost" size="sm" className="rounded-control px-2" onClick={copyMainPrompts} disabled={disabled}>
                     <Copy className="h-4 w-4" />
                     {t('scene.copyMainPrompts', '메인 프롬프트 가져오기')}
                 </Button>
@@ -289,12 +289,12 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                         <Input type="number" value={generation.ucPreset} min={0} max={4} onChange={event => setNumeric('ucPreset', event.target.value, 0, 4)} disabled={disabled} />
                     </label>
                     {!isV5 && (
-                        <div className="flex min-h-10 items-center justify-between rounded-control border border-border px-3">
+                        <div className="flex min-h-10 items-center justify-between rounded-control bg-canvas px-3">
                             <Label>{t('parameters.variety', 'Variety+')}</Label>
                             <Switch checked={generation.variety} onChange={event => patchGeneration('variety', event.target.checked)} disabled={disabled} />
                         </div>
                     )}
-                    <div className="flex min-h-10 items-center justify-between rounded-control border border-border px-3">
+                    <div className="flex min-h-10 items-center justify-between rounded-control bg-canvas px-3">
                         <Label>{t('parameters.qualityToggle', '품질 태그')}</Label>
                         <Switch checked={generation.qualityToggle} onChange={event => patchGeneration('qualityToggle', event.target.checked)} disabled={disabled} />
                     </div>

@@ -97,7 +97,7 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, promptHel
                 {mode === 'form' ? <>
                     {draft.map((row, index) => {
                         const helpId = index === 0 && promptHelp ? `${formId}-${row.id}-prompt-help` : undefined
-                        return <div key={row.id} className="min-w-0 space-y-3 rounded-[4px] border border-border/70 bg-card p-3 sm:p-4">
+                        return <div key={row.id} className="min-w-0 space-y-3 rounded-[4px] bg-card p-3 sm:p-4">
                             {draft.length > 1 && <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-medium">{t('folderWorkbench.composer.asset', { number: index + 1 })}</span>
                                 {draft.length > 1 && <Button type="button" variant="ghost" size="icon" className={control}
@@ -158,7 +158,7 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, promptHel
                                 {t('folderWorkbench.errorLine', { line: issue.line })}: {t(`folderWorkbench.pasteError.${issue.code}`)}
                             </p>)}
                         </div>}
-                        {parsed.rows.length > 0 && <div className="space-y-2 rounded-[4px] border border-border/70 p-3">
+                        {parsed.rows.length > 0 && <div className="space-y-2 rounded-[4px] bg-card p-3">
                             <p className="font-medium">{t('folderWorkbench.composer.preview')}</p>
                             {parsed.rows.slice(0, 3).map((row, index) => <div key={index} className="min-w-0">
                                 <p className="break-words font-medium">{row.name} · {t('folderWorkbench.composer.images', { count: row.count })}</p>
@@ -177,7 +177,7 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, promptHel
                         {t(mode === 'form' ? 'folderWorkbench.composer.tableMode' : 'folderWorkbench.composer.formMode')}
                     </Button>
                 </div>
-                {(templates.length > 0 || templateId) && <details className="group rounded-[4px] border border-border/70 px-3">
+                {(templates.length > 0 || templateId) && <details className="group rounded-[4px] bg-card px-3">
                     <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
                         {t('folderWorkbench.composer.settings')}
                         <ChevronDown className="h-4 w-4 group-open:rotate-180" aria-hidden="true" />
