@@ -203,7 +203,9 @@ export function CompositionCommandBar({
             <header
                 className={cn(
                     'grid min-w-0 items-center gap-2 border-y border-border/60 bg-card/80 p-2',
-                    omitExecutionControls ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_auto_auto_minmax(10rem,12rem)]',
+                    omitExecutionControls
+                        ? 'grid-cols-1'
+                        : 'grid-cols-[minmax(0,1fr)_auto_auto_minmax(10rem,12rem)] xl:grid-cols-[minmax(0,1fr)_auto_auto_minmax(10rem,16rem)]',
                     className,
                 )}
                 aria-label={labels.commands}

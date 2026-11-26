@@ -119,7 +119,7 @@ describe('Scene composition workspace information architecture', () => {
         expect(detail).toContain('overflow-y-auto overscroll-contain')
         expect(detail).toContain('min-h-[20rem]')
         expect(detail).toContain('data-testid="scene-resolved-action"')
-        expect(detail).toContain('SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG')
+        expect(detail).toContain('<FragmentPromptDialog')
     })
 
     it('routes Scene detail durable generation through explicit review and keeps legacy cancellation', async () => {

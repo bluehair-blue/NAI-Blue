@@ -23,7 +23,7 @@ describe('External review regression fixes', () => {
         expect(commandBar).not.toContain('flex-wrap')
         expect(commandBar).not.toContain('rounded-panel')
         expect(promptEditor).not.toContain('flex-wrap')
-        expect(promptTabs).toContain('grid grid-cols-4')
+        expect(promptTabs).toContain('grid grid-flow-col auto-cols-fr')
         expect(promptTabs).toContain('truncate whitespace-nowrap')
         for (const panel of panels) expect(panel).not.toContain('rounded-panel')
     })

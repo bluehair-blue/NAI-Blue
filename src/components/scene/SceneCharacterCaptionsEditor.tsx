@@ -133,12 +133,12 @@ function AvailableCharacterCard({
         <div
             ref={setNodeRef}
             style={style}
-            className="flex items-center gap-2 border border-border/70 bg-background/55 px-2 py-2"
+            className="flex items-center gap-2 rounded-control bg-card px-2 py-2"
             data-testid="scene-available-character"
         >
             <button
                 type="button"
-                className="shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+                className="flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
                 disabled={disabled}
                 aria-label={t('scene.dragCharacterToScene', '{{name}} 드래그하여 씬에 추가', { name })}
                 {...attributes}
@@ -156,7 +156,7 @@ function AvailableCharacterCard({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 shrink-0"
+                className="h-11 w-11 shrink-0"
                 onClick={onAdd}
                 disabled={disabled}
                 aria-label={t('scene.addNamedCharacter', '{{name}} 포함', { name })}
@@ -191,8 +191,8 @@ function CaptionDropZone({
         <section
             ref={setNodeRef}
             className={cn(
-                'min-h-28 border border-dashed border-border/80 bg-muted/10 p-2 transition-colors',
-                isOver && 'border-primary bg-primary/10 ring-1 ring-primary/30',
+                'min-h-28 rounded-control bg-canvas/70 p-2 transition-colors',
+                isOver && 'bg-primary/10 ring-1 ring-primary/40',
             )}
             data-testid={testId}
         >
@@ -253,13 +253,13 @@ function SortableCaptionCard({
             <article
                 ref={setNodeRef}
                 style={style}
-                className="flex items-center gap-2 border border-border/60 bg-background/35 px-2 py-2"
+                className="flex items-center gap-2 rounded-control bg-card px-2 py-2"
                 data-testid="scene-character-caption"
                 data-caption-state="excluded"
             >
                 <button
                     type="button"
-                    className="shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+                    className="flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
                     disabled={disabled}
                     aria-label={t('scene.reorderCharacter', '{{name}} 순서 이동', { name })}
                     {...attributes}
@@ -273,7 +273,7 @@ function SortableCaptionCard({
                         {caption.prompt || caption.negative || t('scene.emptyCharacterPrompt', '빈 프롬프트')}
                     </div>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => onEnabledChange(true)} disabled={disabled}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => onEnabledChange(true)} disabled={disabled}>
                     <UserPlus className="h-3.5 w-3.5" />
                     {t('scene.includeCharacter', '포함')}
                 </Button>
@@ -281,7 +281,7 @@ function SortableCaptionCard({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="h-11 w-11 shrink-0"
                     onClick={onRemove}
                     disabled={disabled}
                     aria-label={t('scene.removeCharacterCaption', '캐릭터 캡션 삭제')}
@@ -296,14 +296,14 @@ function SortableCaptionCard({
         <article
             ref={setNodeRef}
             style={style}
-            className="border border-border/70 bg-background/40 p-3"
+            className="rounded-control bg-card p-3"
             data-testid="scene-character-caption"
             data-caption-state="included"
         >
             <div className="flex flex-wrap items-center gap-2">
                 <button
                     type="button"
-                    className="flex h-7 w-7 shrink-0 cursor-grab touch-none items-center justify-center bg-muted text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+                    className="flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-control bg-muted text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
                     disabled={disabled}
                     aria-label={t('scene.reorderCharacter', '{{name}} 순서 이동', { name })}
                     {...attributes}
@@ -311,7 +311,7 @@ function SortableCaptionCard({
                 >
                     <GripVertical className="h-4 w-4" />
                 </button>
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-muted text-xs font-semibold">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-muted text-xs font-semibold">
                     {index + 1}
                 </span>
                 <Input
@@ -320,9 +320,9 @@ function SortableCaptionCard({
                     placeholder={t('scene.characterName', '캐릭터 이름')}
                     aria-label={t('scene.characterName', '캐릭터 이름')}
                     disabled={disabled}
-                    className="h-9 min-w-40 flex-1"
+                    className="h-10 min-w-40 flex-1"
                 />
-                <Button type="button" variant="outline" size="sm" onClick={() => onEnabledChange(false)} disabled={disabled}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => onEnabledChange(false)} disabled={disabled}>
                     <UserMinus className="h-3.5 w-3.5" />
                     {t('scene.excludeCharacter', '제외')}
                 </Button>
@@ -520,7 +520,7 @@ export function SceneCharacterCaptionsEditor({
                         onChange={event => commit(captions, event.target.checked)}
                         disabled={disabled}
                     />
-                    <Button type="button" variant="outline" size="sm" onClick={addCaption} disabled={disabled}>
+                    <Button type="button" variant="secondary" size="sm" onClick={addCaption} disabled={disabled}>
                         <Plus className="h-4 w-4" />
                         {t('scene.addCharacterCaption', '직접 추가')}
                     </Button>
@@ -529,7 +529,7 @@ export function SceneCharacterCaptionsEditor({
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <div className="mt-3 grid gap-3 px-2 lg:grid-cols-[minmax(12rem,0.65fr)_minmax(0,2fr)]">
-                    <section className="border border-border/70 bg-muted/10 p-2" data-testid="scene-available-characters">
+                    <section className="rounded-control bg-canvas/70 p-2" data-testid="scene-available-characters">
                         <div className="mb-2">
                             <h4 className="text-xs font-semibold">{t('scene.availableMainCharacters', '메인 캐릭터')}</h4>
                             <p className="text-[11px] text-muted-foreground">

@@ -1180,7 +1180,7 @@ export default function SceneMode() {
                     />
                     <Button
                         variant="outline"
-                        className="h-11 shrink-0 px-3"
+                        className="h-11 w-11 shrink-0 px-0 sm:w-auto sm:px-3"
                         aria-label={t('scene.folderManager.title', '씬 폴더 관리')}
                         onClick={() => setShowFolderManager(true)}
                         disabled={isGenerating || rotationActive}
