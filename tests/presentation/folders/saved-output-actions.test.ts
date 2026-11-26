@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     mainPromptHasText,
+    openInSingleNeedsConfirmation,
     runSavedOutputStage,
     SavedOutputActionError,
     savedOutputActionMessage,
@@ -18,6 +19,13 @@ describe('saved output open-in-single confirmation', () => {
         expect(mainPromptHasText({ ...empty, additionalPrompt: 'cafe' })).toBe(true)
         expect(mainPromptHasText({ ...empty, detailPrompt: 'soft light' })).toBe(true)
         expect(mainPromptHasText({ ...empty, negativePrompt: 'lowres' })).toBe(true)
+    })
+
+    it('also asks when only character prompts exist, because opening adds this image\'s characters to them', () => {
+        const empty = { basePrompt: '', additionalPrompt: '', detailPrompt: '', negativePrompt: '' }
+        expect(openInSingleNeedsConfirmation({ generation: empty, characterIds: [] })).toBe(false)
+        expect(openInSingleNeedsConfirmation({ generation: empty, characterIds: ['char-1'] })).toBe(true)
+        expect(openInSingleNeedsConfirmation({ generation: { ...empty, basePrompt: '1girl' }, characterIds: [] })).toBe(true)
     })
 })
 

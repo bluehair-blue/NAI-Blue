@@ -379,7 +379,7 @@
         "characterConflict": "This image's character prompts are already loaded, so it couldn't be opened. Clear the character prompts and try again.",
         "applyFailedReason": "Couldn't load the prompt. ({{reason}})",
         "applyFailed": "Couldn't load the prompt.",
-        "overwriteNotice": "Your current prompt and character prompts will be replaced with this image's and saved to the current preset.",
+        "overwriteNotice": "Your current prompt will be replaced with this image's, and its character prompts will be added to yours. This is saved to the current preset.",
         "overwriteAndOpen": "Overwrite and open",
         "cancelOverwrite": "Cancel",
         "addTarget": "The asset will be added to {{name}}.",

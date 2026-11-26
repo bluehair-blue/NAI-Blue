@@ -12,7 +12,7 @@ import { guidedPromptImportFromMetadata } from '@/presentation/workflow/guided-p
 import type { SavedOutputImage } from '@/services/organizer/saved-output-catalog'
 import { applyMetadataPreview, captureMetadataApplyCurrentState, createMetadataApplyPreview } from '@/services/output/metadata-apply'
 import {
-    mainPromptHasText,
+    openInSingleNeedsConfirmation,
     SavedOutputActionError,
     runSavedOutputStage,
     savedOutputActionMessage,
@@ -111,7 +111,7 @@ export function SavedOutputGallery({ directoryKey, images, onFolders, onAddAsset
     const requestOpenInSingle = () => {
         if (!selected || busyAction !== null) return
         const presetId = usePresetStore.getState().activePresetId
-        if (!confirmingSingle && mainPromptHasText(captureMetadataApplyCurrentState(presetId).generation)) {
+        if (!confirmingSingle && openInSingleNeedsConfirmation(captureMetadataApplyCurrentState(presetId))) {
             setActionError(null)
             setConfirmingSingle(true)
             return
@@ -191,7 +191,7 @@ export function SavedOutputGallery({ directoryKey, images, onFolders, onAddAsset
                     {confirmingSingle ? (
                         <div className="grid gap-2 pt-2" role="group" aria-labelledby="saved-output-overwrite-notice">
                             <p id="saved-output-overwrite-notice" className="text-sm">
-                                {t('savedOutputs.overwriteNotice', '지금 프롬프트와 캐릭터 프롬프트가 이 이미지의 것으로 바뀌고, 지금 프리셋에 저장돼요.')}
+                                {t('savedOutputs.overwriteNotice', '지금 프롬프트가 이 이미지의 것으로 바뀌고 캐릭터 프롬프트가 더해져요. 지금 프리셋에 저장돼요.')}
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
                                 <Button

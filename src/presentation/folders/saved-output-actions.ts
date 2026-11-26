@@ -42,6 +42,17 @@ export function mainPromptHasText(slots: MainPromptSlots): boolean {
         .some(text => typeof text === 'string' && text.trim().length > 0)
 }
 
+export interface SingleOpenTarget {
+    generation: MainPromptSlots
+    /** IDs in the character prompt list; opening appends this image's characters to them. */
+    characterIds: readonly string[]
+}
+
+/** Opening replaces the four slots and adds character prompts, so either kind of existing work needs a confirmation. */
+export function openInSingleNeedsConfirmation(target: SingleOpenTarget): boolean {
+    return mainPromptHasText(target.generation) || target.characterIds.length > 0
+}
+
 type Translate = (key: string, fallback: string, options?: Record<string, unknown>) => string
 
 export function savedOutputActionMessage(error: unknown, t: Translate): string {
