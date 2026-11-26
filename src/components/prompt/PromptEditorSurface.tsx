@@ -187,6 +187,7 @@ export function PromptEditorSurface({
                 if (!slot) return
                 event.preventDefault()
                 event.stopPropagation()
+                if (slot.id === activePrompt.id) return
                 restoreFocusOnSlotChangeRef.current = true
                 setActivePromptSlot(slot.id)
             }}

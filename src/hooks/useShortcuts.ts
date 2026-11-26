@@ -95,39 +95,30 @@ export function useShortcuts() {
                         return
                     }
 
-                    if (action === 'open:promptGenerator') {
+                    if (
+                        action === 'open:promptGenerator'
+                        || action === 'open:fragmentDialog'
+                        || action === 'open:parameterSettings'
+                        || action === 'open:imageReference'
+                        || action === 'open:characterPrompt'
+                        || action === 'open:presetDialog'
+                    ) {
+                        // Authoring dialog listeners mount only on /advanced; let browser/OS
+                        // defaults (e.g. Ctrl+F, Ctrl+P) work normally on other routes.
+                        if (location.pathname !== '/advanced') return
                         e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR))
-                        return
-                    }
-
-                    if (action === 'open:fragmentDialog') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG))
-                        return
-                    }
-
-                    if (action === 'open:parameterSettings') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS))
-                        return
-                    }
-
-                    if (action === 'open:imageReference') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE))
-                        return
-                    }
-
-                    if (action === 'open:characterPrompt') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT))
-                        return
-                    }
-
-                    if (action === 'open:presetDialog') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_PRESET_DIALOG))
+                        const eventName = action === 'open:promptGenerator'
+                            ? SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR
+                            : action === 'open:fragmentDialog'
+                                ? SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG
+                                : action === 'open:parameterSettings'
+                                    ? SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS
+                                    : action === 'open:imageReference'
+                                        ? SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE
+                                        : action === 'open:characterPrompt'
+                                            ? SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT
+                                            : SHORTCUT_EVENTS.OPEN_PRESET_DIALOG
+                        window.dispatchEvent(new CustomEvent(eventName))
                         return
                     }
 

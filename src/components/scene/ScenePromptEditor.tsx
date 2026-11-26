@@ -152,6 +152,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 if (!slot) return
                 event.preventDefault()
                 event.stopPropagation()
+                if (slot.id === active.id) return
                 restoreFocusOnSlotChangeRef.current = true
                 setActiveSlot(slot.id)
             }}

@@ -130,7 +130,7 @@ export function FolderAssetInlineEditor({
                 <Button type="button" size="sm" className="min-h-11 px-3" disabled={saving || !ready} onClick={() => void commit()}>
                     {saving ? t('folderWorkbench.design.saving', '저장하고 있어요…') : t('folderWorkbench.design.saveDescription', '저장')}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="min-h-11 px-3" disabled={saving} onClick={cancel}>
+                <Button type="button" variant="ghost" size="sm" className="min-h-11 px-3" disabled={saving} onMouseDown={event => event.preventDefault()} onClick={cancel}>
                     {t('folderWorkbench.design.cancelEdit', '취소')}
                 </Button>
             </div>

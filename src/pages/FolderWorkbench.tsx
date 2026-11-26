@@ -416,8 +416,8 @@ export default function FolderWorkbench() {
                                                     ready={sceneAuthorityReady}
                                                     onAcquireLock={tryLock}
                                                     onReleaseLock={unlock}
-                                                    onSaved={() => setEditingKey(null)}
-                                                    onCancel={() => setEditingKey(null)}
+                                                    onSaved={() => setEditingKey(current => (current === row.key ? null : current))}
+                                                    onCancel={() => setEditingKey(current => (current === row.key ? null : current))}
                                                 /> : (view.view === 'list' && <button type="button" className="fb-list-description text-left hover:text-foreground" onClick={() => setEditingKey(row.key)}>{prompt || t('folderWorkbench.design.addDescription', '그림 설명을 적어 주세요.')}</button>)}
                                                 <div className="fb-card-actions"><label>{t('folderWorkbench.design.quantity', '장수')}<Input type="number" min={1} max={999} value={folderAssetProductionCount(row.scene)} disabled={busy}
                                                     aria-label={t('folderWorkbench.assetCount', '{{name}} 생성 수량', { name: row.scene.name })}

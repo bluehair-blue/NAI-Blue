@@ -137,10 +137,11 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   Prompt docks only for Main at desktop widths; Scene and utility categories do not mount
   unrelated Main authoring rails. The header spans the whole viewport.
 - **Category rhythm:** title, one short next-step description, then the task.
-  The asset workbench (`/folders`) places the title and primary actions on one
-  compact header row above the input or gallery, omits redundant breadcrumb/step
-  chrome above 1024px where the folder rail already shows location, and hides
-  0-item secondary disclosures across workspace surfaces. Use 32px horizontal
+  The asset workbench (`/folders`) places a compact title (`32px` desktop, `24px`
+  mobile) and primary actions on one header row above the input or gallery, omits
+  redundant breadcrumb/step chrome across viewports (the folder rail or labelled
+  Folders button conveys scope), and hides 0-item secondary disclosures across
+  workspace surfaces. Use 32px horizontal
   insets (16px mobile), 24px heading separation, and flat canvas/card tones.
   `workspace.css` owns this shared geometry; page classes are explicit so image
   canvases and user-sized prompt editors stay independent.
@@ -174,8 +175,9 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
 - **Panels:** page, panel, section, and repeated settings-group radius is `0`.
   Popovers and dialogs may use up to `8px`; repeated rows use dividers or tonal
   fills, not cards inside cards.
-- **Sheets:** full viewport width below `640px`, bounded to `420px` for Prompt and
-  `400px` for History above it. Close target is 44px, title/header reserves its
+- **Sheets:** full viewport width below `640px`, defaulting to `420px` (resizable
+  up to `min(70vw, 720px)`) for Prompt and `400px` for History above it. Close
+  target is 44px, title/header reserves its
   space, and content respects top/bottom safe areas.
 - **MainMode:** current result/canvas owns the view. Prompt, model, resolution,
   steps, seed, and token state stay in the authoring surface. When the desktop

@@ -260,6 +260,7 @@ const webView = read('src/pages/WebView.tsx')
 const mainMode = read('src/pages/MainMode.tsx')
 const historyPanel = read('src/components/layout/HistoryPanel.tsx')
 const threeColumnLayout = read('src/components/layout/ThreeColumnLayout.tsx')
+const navigationItems = read('src/components/layout/navigation-items.ts')
 const sheet = read('src/components/ui/sheet.tsx')
 const localTagger = read('src/services/local-tagger-server.ts')
 const shortcuts = read('src/hooks/useShortcuts.ts')
@@ -321,10 +322,13 @@ assert.ok(
 )
 assert.ok(
     threeColumnLayout.includes('fb-app-navigation') &&
-        threeColumnLayout.includes('to="/folders"') &&
-        threeColumnLayout.includes('to="/queue"') &&
-        threeColumnLayout.includes('navItems.filter') &&
-        threeColumnLayout.includes('min-h-11'),
+        threeColumnLayout.includes('primaryNavItems') &&
+        threeColumnLayout.includes('mobilePrimaryOverflow') &&
+        threeColumnLayout.includes('item.primaryOnMobile') &&
+        threeColumnLayout.includes('min-h-11') &&
+        navigationItems.includes("path: '/folders'") &&
+        navigationItems.includes("path: '/queue'") &&
+        navigationItems.includes('primaryOnMobile: true'),
     'mobile navigation must expose two labelled primary routes, Tools, and stable touch targets',
 )
 for (const symbol of [

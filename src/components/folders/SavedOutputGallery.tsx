@@ -79,6 +79,8 @@ export function SavedOutputGallery({ directoryKey, images, onFolders, onAddAsset
                     title: t('savedOutputs.addedAsAsset', '프롬프트로 에셋을 추가했어요.'),
                     variant: 'success',
                 })
+            } else {
+                setActionError(t('folderWorkbench.design.addFailed', '에셋을 추가하지 못했어요. 작업 폴더와 저장 상태를 확인해 주세요.'))
             }
         } catch {
             setActionError(t('metadata.globalNoPrompt', '이 이미지에서 불러올 프롬프트 메타데이터를 찾지 못했어요.'))

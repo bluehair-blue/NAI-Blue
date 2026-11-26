@@ -342,9 +342,9 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const renderPromptPanelContent = (docked: boolean) => (
         <>
             <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-5">
-                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <div className="flex min-w-0 max-w-full items-center gap-1.5">
                     <h2
-                        className="min-w-0 max-w-56 truncate text-base font-semibold 2xl:max-w-72"
+                        className="min-w-0 max-w-36 truncate text-base font-semibold 2xl:max-w-52"
                         title={activePreset?.name || t('preset.default', '기본')}
                     >
                         {activePreset?.name || t('preset.default', '기본')}

@@ -208,6 +208,7 @@ export function CommandPalette({
     }
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return
         if (event.key === 'ArrowDown') {
             event.preventDefault()
             if (filtered.length > 0) setActiveIndex(prev => (prev + 1) % filtered.length)

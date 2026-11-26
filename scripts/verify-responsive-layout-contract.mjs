@@ -309,7 +309,7 @@ async function collectCompositionShellReport(page, route) {
         }
         const actionSelector = currentRoute === '/advanced'
             ? '[data-testid="main-generate-action"]'
-            : '[data-testid="scene-generate-action"], [data-testid="scene-cancel-action"]'
+            : '[data-testid="scene-generate-action"], [data-testid="scene-cancel-action"], [data-testid="scene-empty-create"]'
         const shellActions = new Set(document.querySelectorAll([
             '[data-testid="composition-command-bar"] button',
             '[data-testid="composition-mobile-command-dock"] button',
@@ -348,6 +348,7 @@ async function collectCompositionShellReport(page, route) {
         }).length
 
         return {
+            isEmptyScene: currentRoute === '/scenes' && Boolean(visibleRect('[data-testid="scene-empty-create"]')),
             layout: visibleRect('[data-testid="composition-workspace-layout"]'),
             promptDock: visibleRect('#nai-blue-prompt-dock'),
             dock: visibleRect('[data-testid="composition-mobile-command-dock"], [data-testid="main-command-dock"]', 'fixed'),
@@ -383,6 +384,14 @@ function assertCompositionShell(report, route, viewport) {
     assert.deepEqual(report.shortActions, [], `${context} has Composition actions below 44px: ${JSON.stringify(report.shortActions)}`)
     assert.equal(report.visiblePromptGenerateActions, route === '/advanced' ? 0 : report.visiblePromptGenerateActions, `${context} duplicates the Advanced generation CTA inside Prompt`)
     assert.equal(report.visiblePrimaryActions, 1, `${context} must expose exactly one visible Generate/Cancel button, found ${report.visiblePrimaryActions}`)
+
+    if (report.isEmptyScene) {
+        assert.equal(report.dock, null, `${context} must hide the mobile command dock when 0 scenes exist`)
+        assert.equal(report.commandBar, null, `${context} must hide the composition command bar when 0 scenes exist`)
+        assert.equal(report.promptDock, null, `${context} must not mount the Main Prompt rail on /scenes`)
+        assert.ok(report.canvas, `${context} must show the center scene grid`)
+        return
+    }
 
     if (viewport.mobile) {
         assert.ok(report.dock, `${context} must show the mobile command dock`)
@@ -1117,7 +1126,7 @@ async function main() {
                     if (route === '/advanced' || route === '/scenes') {
                         const compositionActionSelector = route === '/advanced'
                             ? '[data-testid="main-generate-action"]'
-                            : '[data-testid="scene-generate-action"], [data-testid="scene-cancel-action"]'
+                            : '[data-testid="scene-generate-action"], [data-testid="scene-cancel-action"], [data-testid="scene-empty-create"]'
                         await page.waitForFunction(selector => Array.from(document.querySelectorAll(selector)).some(element => {
                             const rect = element.getBoundingClientRect()
                             const style = getComputedStyle(element)
