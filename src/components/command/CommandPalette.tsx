@@ -29,6 +29,8 @@ interface CommandEntry {
     readonly keywords: string
     readonly icon: LucideIcon
     readonly shortcut?: string
+    /** Navigation and panel commands place focus themselves, so closing must not pull it back. */
+    readonly movesFocus?: boolean
     readonly run: () => void
 }
 
@@ -55,6 +57,9 @@ export function CommandPalette({
     const location = useLocation()
     const listboxId = useId()
     const inputRef = useRef<HTMLInputElement>(null)
+    // No Radix Trigger owns this dialog, so it remembers where focus was when it opened.
+    const returnFocusRef = useRef<HTMLElement | null>(null)
+    const restoreFocusOnCloseRef = useRef(true)
     const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
     const bindings = useShortcutStore(state => state.bindings)
     const theme = useThemeStore(state => state.theme)
@@ -90,6 +95,7 @@ export function CommandPalette({
                 keywords: `${label} ${item.fallbackLabel} ${item.path}`,
                 icon: item.icon,
                 shortcut: item.shortcutAction ? bindings[item.shortcutAction]?.label || undefined : undefined,
+                movesFocus: true,
                 run: () => navigate(item.path),
             }
         })
@@ -102,6 +108,7 @@ export function CommandPalette({
                 group: panelsGroup,
                 keywords: 'prompt 프롬프트 패널',
                 icon: PanelLeft,
+                movesFocus: true,
                 run: onOpenPrompt,
             })
         }
@@ -112,6 +119,7 @@ export function CommandPalette({
                 group: panelsGroup,
                 keywords: 'history 기록 최근 생성',
                 icon: PanelRight,
+                movesFocus: true,
                 run: onOpenHistory,
             },
             {
@@ -120,6 +128,7 @@ export function CommandPalette({
                 group: panelsGroup,
                 keywords: 'activity my work 내 작업 진행',
                 icon: BriefcaseBusiness,
+                movesFocus: true,
                 run: onOpenActivity,
             },
         )
@@ -165,6 +174,7 @@ export function CommandPalette({
                 group: t('commandPalette.groups.settings', '설정'),
                 keywords: 'shortcut keybinding keyboard 단축키 키 설정',
                 icon: Keyboard,
+                movesFocus: true,
                 run: () => navigate('/settings?section=shortcuts'),
             },
         )
@@ -203,6 +213,7 @@ export function CommandPalette({
     }, [safeIndex])
 
     const executeEntry = (entry: CommandEntry) => {
+        restoreFocusOnCloseRef.current = !entry.movesFocus
         onOpenChange(false)
         entry.run()
     }
@@ -235,8 +246,22 @@ export function CommandPalette({
                 data-testid="command-palette"
                 className="max-w-xl gap-0 overflow-hidden p-0"
                 onOpenAutoFocus={event => {
+                    // Radix fires this before moving focus, so activeElement is still the opener.
+                    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+                    restoreFocusOnCloseRef.current = true
                     event.preventDefault()
                     inputRef.current?.focus()
+                }}
+                onCloseAutoFocus={event => {
+                    event.preventDefault()
+                    const target = returnFocusRef.current
+                    returnFocusRef.current = null
+                    if (!restoreFocusOnCloseRef.current || !target?.isConnected) return
+                    // A command may already have focused a sheet or dialog it opened; keep that.
+                    const current = document.activeElement
+                    const focusMovedElsewhere = current instanceof HTMLElement && current !== document.body
+                        && !(event.currentTarget as Node | null)?.contains(current)
+                    if (!focusMovedElsewhere) target.focus()
                 }}
             >
                 <DialogHeader className="sr-only">

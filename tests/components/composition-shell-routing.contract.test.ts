@@ -39,6 +39,20 @@ describe('Composition workspace shell routing', () => {
         expect(layout).toContain('<MyWorkActivity headingIsDecorative />')
     })
 
+    it('keeps the non-modal prompt sheet open when menus and dialogs return focus outside it', async () => {
+        const [layout, palette] = await Promise.all([
+            source('src/components/layout/ThreeColumnLayout.tsx'),
+            source('src/components/command/CommandPalette.tsx'),
+        ])
+
+        expect(layout).toMatch(/id="nai-blue-prompt-sheet"[\s\S]*?onFocusOutside=\{\(event\) => event\.preventDefault\(\)\}/)
+        expect(layout).toContain('onOpenPrompt={handleOpenPrompt}')
+        expect(layout).toContain('resolvePromptSurfaceReveal(')
+        expect(layout).toContain('dismissPromptSheet()')
+        expect(palette).toContain('onCloseAutoFocus=')
+        expect(palette).toContain('returnFocusRef.current = document.activeElement')
+    })
+
     it('keeps core listeners app-scoped while Scene and R2 runtimes stay lazy', async () => {
         const [app, runtimeProviders, coreRuntime, featureRuntime, sceneRuntime, r2Runtime] = await Promise.all([
             source('src/App.tsx'),

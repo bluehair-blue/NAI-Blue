@@ -110,11 +110,14 @@ try {
         await page.getByRole('button', { name: '이미지 열기', exact: true }).waitFor()
     })
     await check('Prompt and History menu sheets restore focus', async () => {
-        await visit('advanced')
-        for (const surface of ['prompt', 'history']) {
+        for (const route of ['advanced', 'folders']) for (const surface of ['prompt', 'history']) {
+            await visit(route)
             await page.locator('.fb-app-tools').click()
             await page.locator(`[role="menuitem"][aria-controls="nai-blue-${surface}-sheet"]`).click()
             await page.locator(`#nai-blue-${surface}-sheet`).waitFor()
+            // The menu returns focus after its exit animation; a sheet that only flashes open must fail.
+            await page.waitForTimeout(1000)
+            assert.equal(await page.locator(`#nai-blue-${surface}-sheet`).isVisible(), true, `${surface} sheet closed within 1s of opening from Tools`)
             await page.keyboard.press('Escape')
             await page.locator(`#nai-blue-${surface}-sheet`).waitFor({ state: 'hidden' })
             await page.waitForFunction(() => document.activeElement?.matches('.fb-app-tools'))

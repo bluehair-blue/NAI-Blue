@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { PromptPanel } from './PromptPanel'
 import { HistoryPanel } from './HistoryPanel'
-import { useMediaQuery, usePromptSurface } from './prompt-surface'
+import { resolvePromptSurfaceReveal, useMediaQuery, usePromptSurface } from './prompt-surface'
 import { isNavigationPathActive, NAVIGATION_ITEMS, type NavigationItem } from './navigation-items'
 import { CommandPalette } from '@/components/command/CommandPalette'
 import { LiveGenerationMonitor } from '@/components/queue/LiveGenerationMonitor'
@@ -106,6 +106,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         setLeftSidebarVisible,
         openSupportSheet,
         closeSupportSheet,
+        dismissPromptSheet,
         requestPromptDialog,
     } = useLayoutStore()
     const isAtLeast640 = useMediaQuery('(min-width: 640px)')
@@ -134,6 +135,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const activitySheetOpen = supportSheet === 'activity'
     const mainIsGenerating = useGenerationStore(state => state.isGenerating)
     const sceneIsGenerating = useSceneStore(state => state.isGenerating)
+    const isGenerating = mainIsGenerating || sceneIsGenerating
 
     // Measure the live workspace body offset so the tablet non-modal sheet stays below the
     // header regardless of Windows CustomTitleBar presence or 200% text scaling.
@@ -182,33 +184,31 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
 
     useEffect(() => {
         if (!promptSurfaceRoute) return
+        // Returns false when no prompt surface can mount, so the caller queues nothing that
+        // would fire later on an unrelated sheet open.
         const revealPromptSurface = () => {
-            if (promptPanelIsDocked) setLeftSidebarVisible(true)
-            else openSupportSheet('prompt')
+            const reveal = resolvePromptSurfaceReveal({ isDocked: promptPanelIsDocked, isSceneRoute, isGenerating })
+            if (reveal === 'rail') setLeftSidebarVisible(true)
+            else if (reveal === 'sheet') openSupportSheet('prompt')
+            return reveal !== 'unavailable'
         }
         const handleOpenPreset = () => {
-            revealPromptSurface()
-            setPresetDialogOpen(true)
+            if (revealPromptSurface()) setPresetDialogOpen(true)
         }
         const handleOpenPromptGen = () => {
-            revealPromptSurface()
-            requestPromptDialog('promptGenerator')
+            if (revealPromptSurface()) requestPromptDialog('promptGenerator')
         }
         const handleOpenFragment = () => {
-            revealPromptSurface()
-            requestPromptDialog('fragment')
+            if (revealPromptSurface()) requestPromptDialog('fragment')
         }
         const handleOpenParameters = () => {
-            revealPromptSurface()
-            requestPromptDialog('parameterSettings')
+            if (revealPromptSurface()) requestPromptDialog('parameterSettings')
         }
         const handleOpenCharacterPrompt = () => {
-            revealPromptSurface()
-            requestPromptDialog('characterPrompt')
+            if (revealPromptSurface()) requestPromptDialog('characterPrompt')
         }
         const handleOpenImageReference = () => {
-            revealPromptSurface()
-            requestPromptDialog('imageReference')
+            if (revealPromptSurface()) requestPromptDialog('imageReference')
         }
 
         window.addEventListener(SHORTCUT_EVENTS.OPEN_PRESET_DIALOG, handleOpenPreset)
@@ -225,19 +225,22 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             window.removeEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
             window.removeEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
         }
-    }, [openSupportSheet, promptPanelIsDocked, promptSurfaceRoute, requestPromptDialog, setLeftSidebarVisible])
+    }, [isGenerating, isSceneRoute, openSupportSheet, promptPanelIsDocked, promptSurfaceRoute, requestPromptDialog, setLeftSidebarVisible])
 
     useEffect(() => {
-        if (!promptPanelIsDocked && leftSheetOpen && (mainIsGenerating || sceneIsGenerating)) {
-            closeSupportSheet()
+        if (!promptPanelIsDocked && leftSheetOpen && isGenerating) {
+            dismissPromptSheet()
+            setPresetDialogOpen(false)
         }
-    }, [closeSupportSheet, promptPanelIsDocked, leftSheetOpen, mainIsGenerating, sceneIsGenerating])
+    }, [dismissPromptSheet, promptPanelIsDocked, leftSheetOpen, isGenerating])
 
+    // Clear a stale sheet only when entering a Scene route: a metadata drop on a Scene view
+    // requests the sheet before its /advanced navigation commits, and must not be wiped here.
     useEffect(() => {
-        if (isSceneRoute && supportSheet === 'prompt') {
+        if (isSceneRoute && useLayoutStore.getState().supportSheet === 'prompt') {
             closeSupportSheet()
         }
-    }, [closeSupportSheet, isSceneRoute, supportSheet])
+    }, [closeSupportSheet, isSceneRoute])
 
     useEffect(() => {
         if (!promptPanelIsDocked || supportSheet !== 'prompt') return
@@ -332,6 +335,24 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         } else {
             openSupportSheet('prompt')
         }
+    }
+
+    // "Open" never collapses a visible rail: it reveals the prompt surface and lands in the editor.
+    const handleOpenPrompt = () => {
+        rememberSupportFocus()
+        if (!promptPanelIsDocked) {
+            openSupportSheet('prompt')
+            return
+        }
+        setLeftSidebarVisible(true)
+        let framesLeft = 10
+        const focusPromptEditor = () => {
+            const editor = document.querySelector<HTMLElement>('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] textarea')
+            if (editor) editor.focus()
+            else if (--framesLeft > 0) window.requestAnimationFrame(focusPromptEditor)
+        }
+        // A collapsed rail mounts PromptPanel on the next render, so the editor may need a few frames.
+        window.requestAnimationFrame(focusPromptEditor)
     }
 
     const handleRightPanelToggle = () => {
@@ -491,7 +512,19 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                             <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-64 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]">
+                    <DropdownMenuContent
+                        align="end"
+                        className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-64 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]"
+                        onCloseAutoFocus={(event) => {
+                            // An item that opened a sheet or dialog already moved focus into it; returning
+                            // focus to Tools would pull it back out and dismiss the non-modal prompt sheet.
+                            const current = document.activeElement
+                            if (current instanceof HTMLElement && current !== document.body
+                                && !(event.currentTarget as Node | null)?.contains(current)) {
+                                event.preventDefault()
+                            }
+                        }}
+                    >
                         {mobilePrimaryOverflow.length > 0 && (
                             <>
                                 <DropdownMenuGroup>
@@ -564,13 +597,13 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                 </DropdownMenu>
                 {historyActionRoute && <div className="workspace-editor-actions">
                     {promptSurfaceRoute && (
-                        <button type="button" onClick={handleLeftPanelToggle} aria-label={t('prompt.title', '프롬프트')}
+                        <button type="button" className="min-w-11 justify-center" onClick={handleLeftPanelToggle} aria-label={t('prompt.title', '프롬프트')}
                             aria-expanded={promptPanelIsDocked ? leftSidebarVisible : leftSheetOpen}
                             aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'}>
                             <PanelLeft aria-hidden="true" /><span>{t('prompt.title', '프롬프트')}</span>
                         </button>
                     )}
-                    <button type="button" onClick={handleRightPanelToggle} aria-label={t('history.title', '기록')}
+                    <button type="button" className="min-w-11 justify-center" onClick={handleRightPanelToggle} aria-label={t('history.title', '기록')}
                         aria-expanded={rightSheetOpen} aria-controls="nai-blue-history-sheet">
                         <PanelRight aria-hidden="true" /><span>{t('history.title', '기록')}</span>
                     </button>
@@ -598,7 +631,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                 open={commandPaletteOpen}
                 onOpenChange={setCommandPaletteOpen}
                 canOpenPrompt={!isSceneRoute}
-                onOpenPrompt={handleLeftPanelToggle}
+                onOpenPrompt={handleOpenPrompt}
                 onOpenHistory={handleRightPanelToggle}
                 onOpenActivity={() => { rememberSupportFocus(); openSupportSheet('activity') }}
             />
@@ -626,6 +659,9 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     id="nai-blue-prompt-sheet"
                     data-shortcut-scope="workspace"
                     onCloseAutoFocus={restoreSupportFocus}
+                    // Closing menus and dialogs hand focus back to controls outside this non-modal sheet;
+                    // only Esc, the close button or a pointer press outside should dismiss it.
+                    onFocusOutside={(event) => event.preventDefault()}
                     side="left"
                     showOverlay={false}
                     closeLabel={t('common.close', '닫기')}

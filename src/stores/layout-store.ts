@@ -30,6 +30,8 @@ interface LayoutState {
     setAlwaysShowV5UsageLimit: (visible: boolean) => void
     openSupportSheet: (sheet: Exclude<LayoutState['supportSheet'], null>) => void
     closeSupportSheet: () => void
+    /** Closes the compact prompt sheet and drops the dialog/focus requests only that surface consumes. */
+    dismissPromptSheet: () => void
     requestPromptDialog: (dialog: PromptDialogRequest) => void
     clearPendingPromptDialog: () => void
     requestPromptFocus: (target: PromptFocusTarget) => void
@@ -54,6 +56,7 @@ export const useLayoutStore = create<LayoutState>()(
             setAlwaysShowV5UsageLimit: (visible) => set({ alwaysShowV5UsageLimit: visible }),
             openSupportSheet: (supportSheet) => set({ supportSheet }),
             closeSupportSheet: () => set({ supportSheet: null }),
+            dismissPromptSheet: () => set({ supportSheet: null, pendingPromptDialog: null, pendingPromptFocus: null }),
             requestPromptDialog: (pendingPromptDialog) => set({ pendingPromptDialog }),
             clearPendingPromptDialog: () => set({ pendingPromptDialog: null }),
             requestPromptFocus: (pendingPromptFocus) => set({ pendingPromptFocus }),

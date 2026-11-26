@@ -25,6 +25,22 @@ export function useMediaQuery(query: string): boolean {
     return matches
 }
 
+export type PromptSurfaceReveal = 'rail' | 'sheet' | 'unavailable'
+
+/**
+ * Where a "show the prompt" request can land. The compact sheet is closed while
+ * generating, so callers must not queue dialog or focus requests for it then.
+ */
+export function resolvePromptSurfaceReveal({ isDocked, isSceneRoute, isGenerating }: {
+    isDocked: boolean
+    isSceneRoute: boolean
+    isGenerating: boolean
+}): PromptSurfaceReveal {
+    if (isSceneRoute) return 'unavailable'
+    if (isDocked) return 'rail'
+    return isGenerating ? 'unavailable' : 'sheet'
+}
+
 export interface PromptSurfaceState {
     isAdvancedRoute: boolean
     isSceneRoute: boolean
