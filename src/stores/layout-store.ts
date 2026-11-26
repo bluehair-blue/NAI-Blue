@@ -2,12 +2,25 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 
+export type PromptDialogRequest =
+    | 'promptGenerator'
+    | 'fragment'
+    | 'parameterSettings'
+    | 'imageReference'
+    | 'characterPrompt'
+
+export type PromptFocusTarget = 'model' | 'steps'
+
 interface LayoutState {
     leftSidebarVisible: boolean
     rightSidebarVisible: boolean
     alwaysShowV5UsageLimit: boolean
     /** Transient compact-shell surface; a single value prevents overlapping sheets. */
     supportSheet: 'prompt' | 'history' | 'activity' | null
+    /** Transient request queued by shell shortcuts when PromptPanel mounts on demand. */
+    pendingPromptDialog: PromptDialogRequest | null
+    /** Transient focus handoff from MainMode summary or low-steps feedback. */
+    pendingPromptFocus: PromptFocusTarget | null
     toggleLeftSidebar: () => void
     toggleRightSidebar: () => void
     setLeftSidebarVisible: (visible: boolean) => void
@@ -15,6 +28,10 @@ interface LayoutState {
     setAlwaysShowV5UsageLimit: (visible: boolean) => void
     openSupportSheet: (sheet: Exclude<LayoutState['supportSheet'], null>) => void
     closeSupportSheet: () => void
+    requestPromptDialog: (dialog: PromptDialogRequest) => void
+    clearPendingPromptDialog: () => void
+    requestPromptFocus: (target: PromptFocusTarget) => void
+    clearPendingPromptFocus: () => void
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -24,6 +41,8 @@ export const useLayoutStore = create<LayoutState>()(
             rightSidebarVisible: true,
             alwaysShowV5UsageLimit: true,
             supportSheet: null,
+            pendingPromptDialog: null,
+            pendingPromptFocus: null,
             toggleLeftSidebar: () => set((state) => ({ leftSidebarVisible: !state.leftSidebarVisible })),
             toggleRightSidebar: () => set((state) => ({ rightSidebarVisible: !state.rightSidebarVisible })),
             setLeftSidebarVisible: (visible) => set({ leftSidebarVisible: visible }),
@@ -31,6 +50,10 @@ export const useLayoutStore = create<LayoutState>()(
             setAlwaysShowV5UsageLimit: (visible) => set({ alwaysShowV5UsageLimit: visible }),
             openSupportSheet: (supportSheet) => set({ supportSheet }),
             closeSupportSheet: () => set({ supportSheet: null }),
+            requestPromptDialog: (pendingPromptDialog) => set({ pendingPromptDialog }),
+            clearPendingPromptDialog: () => set({ pendingPromptDialog: null }),
+            requestPromptFocus: (pendingPromptFocus) => set({ pendingPromptFocus }),
+            clearPendingPromptFocus: () => set({ pendingPromptFocus: null }),
         }),
         {
             name: 'nai-blue-layout',

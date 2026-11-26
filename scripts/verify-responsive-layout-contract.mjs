@@ -9,9 +9,10 @@ const VIEWPORTS = [
     { width: 390, height: 844, minCenterWidth: 330, sidebars: 'hidden', mobile: true },
     { width: 412, height: 915, minCenterWidth: 352, sidebars: 'hidden', mobile: true },
     { width: 768, height: 1024, minCenterWidth: 680, sidebars: 'hidden' },
-    { width: 1280, height: 800, minCenterWidth: 1100, sidebars: 'hidden' },
-    // Wide desktop restores both command sidebars, leaving the authoring/main
-    // center intentionally narrower than the viewport.
+    { width: 1199, height: 800, minCenterWidth: 1000, sidebars: 'hidden', routesOnly: ['/advanced'] },
+    // Main docks its 360px prompt rail from 1200px, leaving >= 880px center at 1280px.
+    { width: 1280, height: 800, minCenterWidth: 880, sidebars: 'prompt-on-advanced' },
+    // Wide desktop expands the docked rail to 420px.
     { width: 1536, height: 960, minCenterWidth: 680 },
     // The fully labelled primary navigation activates only on spacious desktops.
     { width: 1920, height: 1080, minCenterWidth: 980 },
@@ -397,7 +398,7 @@ function assertCompositionShell(report, route, viewport) {
     assert.equal(report.commandBarRadius, '0px', `${context} command rail must not regain panel radius`)
     assert.ok(report.commandLabels.every(value => value === 'nowrap'), `${context} command labels must stay on one line: ${JSON.stringify(report.commandLabels)}`)
 
-    if (viewport.width >= 1536) {
+    if (viewport.width >= 1200) {
         if (route === '/advanced') {
             assert.ok(report.promptDock, `${context} must keep the Prompt rail visible`)
             assert.equal(report.moduleStack, null, `${context} keeps Module Stack behind its explicit action to preserve canvas width`)
@@ -903,9 +904,11 @@ async function main() {
                     }
                     return route.abort()
                 })
-                const viewportRoutes = viewport.width === 1536
-                    ? WIDE_COMPOSITION_ROUTES.filter(route => routes.includes(route))
-                    : routes
+                const viewportRoutes = viewport.routesOnly
+                    ? viewport.routesOnly.filter(route => routes.includes(route))
+                    : viewport.width === 1536
+                        ? WIDE_COMPOSITION_ROUTES.filter(route => routes.includes(route))
+                        : routes
                 for (const route of viewportRoutes) {
                     console.log(`Checking ${route} at ${viewport.width}x${viewport.height}`)
                     await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' })
@@ -1084,6 +1087,12 @@ async function main() {
                             report.visibleSidebarCount,
                             0,
                             `${route} @ ${viewport.width}px should keep sidebars out of the primary frame`,
+                        )
+                    } else if (viewport.sidebars === 'prompt-on-advanced') {
+                        assert.equal(
+                            report.visibleSidebarCount,
+                            route === '/advanced' ? 1 : 0,
+                            `${route} @ ${viewport.width}px should dock only the Main prompt rail`,
                         )
                     }
 

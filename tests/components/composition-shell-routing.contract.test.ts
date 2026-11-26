@@ -6,17 +6,21 @@ const source = (path: string) => readFile(resolve(process.cwd(), path), 'utf8')
 
 describe('Composition workspace shell routing', () => {
     it('gives Main and Scene the desktop rails while preserving store-owned Prompt and History sheets', async () => {
-        const [layout, layoutStore] = await Promise.all([
+        const [layout, promptSurface, layoutStore] = await Promise.all([
             source('src/components/layout/ThreeColumnLayout.tsx'),
+            source('src/components/layout/prompt-surface.ts'),
             source('src/stores/layout-store.ts'),
         ])
 
-        expect(layout).toContain("location.pathname === '/advanced'")
-        expect(layout).toContain("location.pathname === '/scenes'")
-        expect(layout).toContain("location.pathname.startsWith('/scenes/')")
-        expect(layout).toContain('const promptSurfaceRoute = location.pathname === \'/advanced\'')
-        expect(layout).toContain('const promptPanelIsDocked = isDesktopShell && promptSurfaceRoute')
-        expect(layout).toContain("const leftSheetOpen = supportSheet === 'prompt' && !promptPanelIsDocked && !isSceneRoute")
+        expect(promptSurface).toContain("PROMPT_RAIL_MEDIA_QUERY = '(min-width: 1200px)'")
+        expect(promptSurface).toContain("location.pathname === '/advanced'")
+        expect(promptSurface).toContain("location.pathname === '/scenes'")
+        expect(promptSurface).toContain("location.pathname.startsWith('/scenes/')")
+        expect(promptSurface).toContain("supportSheet === 'prompt' && !isDocked && !isSceneRoute")
+        expect(layout).toContain('const promptSurface = usePromptSurface()')
+        expect(layout).toContain('const promptPanelIsDocked = promptSurface.isDocked')
+        expect(layout).toContain('const leftSheetOpen = promptSurface.isSheetOpen')
+        expect(layout).toContain('min-[1200px]:flex')
         expect(layout).not.toContain('id="nai-blue-history-dock"')
         expect(layout).toContain("id=\"nai-blue-prompt-sheet\"")
         expect(layout).toContain("id=\"nai-blue-history-sheet\"")

@@ -45,6 +45,7 @@ import { useToolsStore } from '@/stores/tools-store'
 import { Wand2 } from 'lucide-react'
 import { InpaintingDialog } from '@/components/tools/InpaintingDialog'
 import { useLayoutStore } from '@/stores/layout-store'
+import { usePromptSurface } from '@/components/layout/prompt-surface'
 import { publishGeneratedArtifact } from '@/stores/artifact-lifecycle-store'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
@@ -801,9 +802,14 @@ export default function MainMode() {
         }
     }
 
-    const openSupportSheet = useLayoutStore(state => state.openSupportSheet)
-    // layout-store is the single sheet authority shared by shell and compact command dock.
-    const handleOpenPromptSheet = () => openSupportSheet('prompt')
+    const requestPromptFocus = useLayoutStore(state => state.requestPromptFocus)
+    const promptSurface = usePromptSurface()
+    // layout-store + prompt-surface are the single authority shared by shell and compact command dock.
+    const handleOpenPromptSheet = () => promptSurface.ensureVisible()
+    const handleOpenSummaryFocus = () => {
+        promptSurface.ensureVisible()
+        requestPromptFocus('model')
+    }
 
     const handlePrimaryGeneration = () => {
         if (isGenerating && generatingMode === 'main') {
@@ -814,7 +820,8 @@ export default function MainMode() {
             void startMainGenerationCommand()
                 .then(outcome => {
                     if (outcome !== 'low-quality-steps') return
-                    openSupportSheet('prompt')
+                    promptSurface.ensureVisible()
+                    requestPromptFocus('steps')
                     toast({
                         title: t('generate.lowStepsBlockedTitle', 'Steps를 먼저 확인하세요'),
                         description: t('generate.lowStepsDescription', '{{steps}} steps는 완성 전에 종료되어 흐린 결과가 나올 수 있습니다. 일반 생성은 28 steps를 권장합니다.', { steps }),
@@ -1103,7 +1110,7 @@ export default function MainMode() {
         <div data-testid="main-command-dock">
             <CompositionCommandBar
                 summary={generationSummary}
-                onOpenSummary={handleOpenPromptSheet}
+                onOpenSummary={handleOpenSummaryFocus}
                 storage={{
                     folder: generationFolderPath,
                     format: outputFormat,
@@ -1281,12 +1288,16 @@ export default function MainMode() {
                         </div>
                         <h1 className="text-lg font-semibold text-foreground">{t('generate.emptyState')}</h1>
                         <p className="mt-1 max-w-[17rem] text-sm leading-6 text-muted-foreground sm:max-w-sm">
-                            {t('generate.emptyDescription')}
+                            {promptSurface.isVisible
+                                ? t('generate.emptyDescriptionRail', '왼쪽 프롬프트 패널에 설명을 입력하고 생성을 눌러 보세요.')
+                                : t('generate.emptyDescription')}
                         </p>
-                        <Button variant="outline" className="mt-4" onClick={handleOpenPromptSheet}>
-                            <SlidersHorizontal className="h-4 w-4" />
-                            {t('generate.openPrompt', '프롬프트 열기')}
-                        </Button>
+                        {!promptSurface.isVisible && (
+                            <Button variant="outline" className="mt-4" onClick={handleOpenPromptSheet}>
+                                <SlidersHorizontal className="h-4 w-4" />
+                                {t('generate.openPrompt', '프롬프트 열기')}
+                            </Button>
+                        )}
                         <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                             {t('metadata.dropHint', '이미지를 드래그하여 메타데이터를 불러올 수 있습니다')}
                         </p>

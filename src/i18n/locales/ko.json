@@ -2800,6 +2800,7 @@
         "preview": "미리보기",
         "emptyState": "이미지를 생성하세요",
         "emptyDescription": "프롬프트를 열어 내용을 입력한 뒤 생성 버튼을 누르세요",
+        "emptyDescriptionRail": "왼쪽 프롬프트 패널에 설명을 입력하고 생성을 눌러 보세요.",
         "openPrompt": "프롬프트 열기",
         "loadingTitle": "이미지 생성 중...",
         "loadingDescription": "잠시만 기다려주세요",

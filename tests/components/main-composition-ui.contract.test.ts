@@ -67,7 +67,7 @@ describe('Main composition UI contract', () => {
     it('keeps raw prompt authoring behind the existing Prompt sheet compatibility entry', async () => {
         const mainMode = await source('src/pages/MainMode.tsx')
 
-        expect(mainMode).toContain("const handleOpenPromptSheet = () => openSupportSheet('prompt')")
+        expect(mainMode).toContain('const handleOpenPromptSheet = () => promptSurface.ensureVisible()')
         expect(mainMode).not.toContain('LAYOUT_SHEET_EVENTS')
         expect(mainMode).toContain("t('composition.compatibility.rawPrompt', '직접 프롬프트 편집')")
         expect(mainMode).not.toContain('<AutocompleteTextarea')
@@ -205,7 +205,7 @@ describe('Main composition UI contract', () => {
         expect(mainMode).toContain('const hasModuleSheetContent = hasRecipeControls || hasModuleTools')
         expect(mainMode).toContain('const hasResolvedContent = resolvedPlan !== null')
         expect(commandBar).toContain('summary={generationSummary}')
-        expect(commandBar).toContain('onOpenSummary={handleOpenPromptSheet}')
+        expect(commandBar).toContain('onOpenSummary={handleOpenSummaryFocus}')
         expect(commandBar).toContain('count={batchCounter}')
         expect(commandBar).toContain('cost={estimatedCost !== null ? {')
         expect(commandBar).toContain('resolved={hasResolvedContent ? {')

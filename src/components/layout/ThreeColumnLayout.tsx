@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { PromptPanel } from './PromptPanel'
 import { HistoryPanel } from './HistoryPanel'
+import { useMediaQuery, usePromptSurface } from './prompt-surface'
 import { LiveGenerationMonitor } from '@/components/queue/LiveGenerationMonitor'
 import '@/styles/folder-workbench.css'
 import '@/styles/workspace.css'
@@ -75,21 +76,6 @@ import { isAndroidRuntime, isMobileRuntime } from '@/platform/runtime'
 const isMac = navigator.platform.toUpperCase().includes('MAC') ||
     navigator.userAgent.toUpperCase().includes('MAC')
 
-function useMediaQuery(query: string) {
-    const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
-
-    useEffect(() => {
-        const mediaQuery = window.matchMedia(query)
-        const syncMatches = () => setMatches(mediaQuery.matches)
-
-        syncMatches()
-        mediaQuery.addEventListener('change', syncMatches)
-        return () => mediaQuery.removeEventListener('change', syncMatches)
-    }, [query])
-
-    return matches
-}
-
 function WorkbenchThemeToggle() {
     const { t } = useTranslation()
     const theme = useThemeStore(state => state.theme)
@@ -127,10 +113,14 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         setLeftSidebarVisible,
         openSupportSheet,
         closeSupportSheet,
+        requestPromptDialog,
     } = useLayoutStore()
-    const isDesktopShell = useMediaQuery('(min-width: 1536px)')
+    const isAtLeast640 = useMediaQuery('(min-width: 640px)')
+    const promptSurface = usePromptSurface()
     const folderWorkbenchOpen = location.pathname === '/folders'
     const workbenchToolsRef = useRef<HTMLButtonElement>(null)
+    const workspaceBodyRef = useRef<HTMLDivElement>(null)
+    const [workspaceBodyTop, setWorkspaceBodyTop] = useState(0)
     const supportReturnFocusRef = useRef<HTMLElement | null>(null)
     // Menu items unmount before their sheet closes; return to Tools if the
     // original control no longer exists, while direct editor buttons retain focus.
@@ -142,15 +132,34 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         const target = supportReturnFocusRef.current
         ;(target?.isConnected ? target : workbenchToolsRef.current)?.focus()
     }
-    const isSceneRoute = location.pathname === '/scenes' || location.pathname.startsWith('/scenes/')
-    const promptSurfaceRoute = location.pathname === '/advanced'
+    const isSceneRoute = promptSurface.isSceneRoute
+    const promptSurfaceRoute = promptSurface.isAdvancedRoute
     const historyActionRoute = promptSurfaceRoute || isSceneRoute
-    const promptPanelIsDocked = isDesktopShell && promptSurfaceRoute
-    const leftSheetOpen = supportSheet === 'prompt' && !promptPanelIsDocked && !isSceneRoute
+    const promptPanelIsDocked = promptSurface.isDocked
+    const leftSheetOpen = promptSurface.isSheetOpen
     const rightSheetOpen = supportSheet === 'history'
     const activitySheetOpen = supportSheet === 'activity'
     const mainIsGenerating = useGenerationStore(state => state.isGenerating)
     const sceneIsGenerating = useSceneStore(state => state.isGenerating)
+
+    // Measure the live workspace body offset so the tablet non-modal sheet stays below the
+    // header regardless of Windows CustomTitleBar presence or 200% text scaling.
+    useEffect(() => {
+        const body = workspaceBodyRef.current
+        if (!body) return
+        const syncTop = () => {
+            const top = Math.max(0, Math.round(body.getBoundingClientRect().top))
+            setWorkspaceBodyTop(top)
+        }
+        syncTop()
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncTop)
+        observer?.observe(body)
+        window.addEventListener('resize', syncTop)
+        return () => {
+            observer?.disconnect()
+            window.removeEventListener('resize', syncTop)
+        }
+    }, [])
 
     // Get active preset for header display
     const { presets, activePresetId } = usePresetStore(useShallow(state => ({ presets: state.presets, activePresetId: state.activePresetId })))
@@ -170,15 +179,53 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     // Preset dialog state (for shortcut support)
     const [presetDialogOpen, setPresetDialogOpen] = useState(false)
 
-    // 프리셋 다이얼로그 단축키 이벤트 수신
+    // Authoring dialog shortcuts only apply on /advanced and reveal the prompt surface first.
     useEffect(() => {
-        const handleOpenPreset = () => setPresetDialogOpen(prev => !prev)
+        if (!promptSurfaceRoute) return
+        const revealPromptSurface = () => {
+            if (promptPanelIsDocked) setLeftSidebarVisible(true)
+            else openSupportSheet('prompt')
+        }
+        const handleOpenPreset = () => {
+            revealPromptSurface()
+            setPresetDialogOpen(true)
+        }
+        const handleOpenPromptGen = () => {
+            revealPromptSurface()
+            requestPromptDialog('promptGenerator')
+        }
+        const handleOpenFragment = () => {
+            revealPromptSurface()
+            requestPromptDialog('fragment')
+        }
+        const handleOpenParameters = () => {
+            revealPromptSurface()
+            requestPromptDialog('parameterSettings')
+        }
+        const handleOpenCharacterPrompt = () => {
+            revealPromptSurface()
+            requestPromptDialog('characterPrompt')
+        }
+        const handleOpenImageReference = () => {
+            revealPromptSurface()
+            requestPromptDialog('imageReference')
+        }
 
         window.addEventListener(SHORTCUT_EVENTS.OPEN_PRESET_DIALOG, handleOpenPreset)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, handleOpenFragment)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS, handleOpenParameters)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
         return () => {
             window.removeEventListener(SHORTCUT_EVENTS.OPEN_PRESET_DIALOG, handleOpenPreset)
+            window.removeEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
+            window.removeEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, handleOpenFragment)
+            window.removeEventListener(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS, handleOpenParameters)
+            window.removeEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
+            window.removeEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
         }
-    }, [])
+    }, [openSupportSheet, promptPanelIsDocked, promptSurfaceRoute, requestPromptDialog, setLeftSidebarVisible])
 
     useEffect(() => {
         if (!promptPanelIsDocked && leftSheetOpen && (mainIsGenerating || sceneIsGenerating)) {
@@ -457,12 +504,12 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             </header>
 
             {/* Three opaque surface tones carry the workspace hierarchy; only form controls draw edges. */}
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div ref={workspaceBodyRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <aside
                     id="nai-blue-prompt-dock"
                     className={cn(
-                        "hidden min-h-0 w-[420px] flex-shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background 2xl:flex min-[1800px]:w-[500px]",
-                        (!leftSidebarVisible || !promptPanelIsDocked) && "2xl:hidden"
+                        "hidden min-h-0 w-[360px] flex-shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background min-[1200px]:flex 2xl:w-[420px] min-[1800px]:w-[500px]",
+                        (!leftSidebarVisible || !promptPanelIsDocked) && "min-[1200px]:hidden"
                     )}
                 >
                     {promptPanelIsDocked && leftSidebarVisible && promptPanelContent}
@@ -499,12 +546,14 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     side="left"
                     showOverlay={false}
                     closeLabel={t('common.close', '닫기')}
-                    className="flex !w-full !max-w-none flex-col gap-0 border-r border-border sm:!w-[420px] sm:!max-w-[min(70vw,720px)] sm:!min-w-[360px] sm:resize-x sm:overflow-auto"
+                    className="flex !w-full !max-w-none flex-col gap-0 border-r border-border sm:!h-auto sm:!w-[420px] sm:!max-w-[min(70vw,720px)] sm:!min-w-[360px] sm:resize-x sm:overflow-auto"
                     style={isMobileRuntime ? {
                         paddingTop: 'max(1rem, env(safe-area-inset-top))',
                         paddingRight: 'max(1rem, env(safe-area-inset-right))',
                         paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
                         paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+                    } : isAtLeast640 && workspaceBodyTop > 0 ? {
+                        top: `${workspaceBodyTop}px`,
                     } : undefined}
                 >
                     <SheetHeader className="sr-only">

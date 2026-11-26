@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
-import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import {
     Select,
     SelectContent,
@@ -45,6 +44,7 @@ import {
 import { useGenerationDraftStore } from '@/stores/generation-draft-store'
 import { useGenerationSessionStore } from '@/stores/generation-session-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
+import { useLayoutStore } from '@/stores/layout-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { ResolutionSelector } from '@/components/ui/ResolutionSelector'
 import {
@@ -111,6 +111,10 @@ export function PromptPanel() {
     const characterCount = useCharacterPromptStore(state => state.characters.filter(c => c.enabled).length)
     const activeGenerationFolderId = useSettingsStore(state => state.activeGenerationFolderId)
     const setActiveGenerationFolder = useSettingsStore(state => state.setActiveGenerationFolder)
+    const pendingPromptDialog = useLayoutStore(state => state.pendingPromptDialog)
+    const clearPendingPromptDialog = useLayoutStore(state => state.clearPendingPromptDialog)
+    const pendingPromptFocus = useLayoutStore(state => state.pendingPromptFocus)
+    const clearPendingPromptFocus = useLayoutStore(state => state.clearPendingPromptFocus)
 
     const [promptGenOpen, setPromptGenOpen] = useState(false)
     const [fragmentDialogOpen, setFragmentDialogOpen] = useState(false)
@@ -128,32 +132,48 @@ export function PromptPanel() {
         if (guidedSurface === 'fragments') setFragmentDialogOpen(true)
     }, [guidedSurface, isGenerating])
 
-    // 전역 단축키 이벤트 수신
+    // Consume shortcut-driven dialog requests queued by ThreeColumnLayout so
+    // shortcuts work even when PromptPanel was previously closed or unmounted.
     useEffect(() => {
-        const handleOpenPromptGen = () => setPromptGenOpen(true)
-        // Sequential proposals hold a runtime lease while the provider runs;
-        // keep the editor closed so UI mutations cannot invalidate paid work.
-        const handleOpenFragment = () => {
+        if (!pendingPromptDialog) return
+        clearPendingPromptDialog()
+        if (pendingPromptDialog === 'promptGenerator') {
+            setPromptGenOpen(true)
+        } else if (pendingPromptDialog === 'fragment') {
+            // Sequential proposals hold a runtime lease while the provider runs;
+            // keep the editor closed so UI mutations cannot invalidate paid work.
             if (!isGenerating) setFragmentDialogOpen(true)
+        } else if (pendingPromptDialog === 'parameterSettings') {
+            setParameterDialogOpen(true)
+        } else if (pendingPromptDialog === 'characterPrompt') {
+            setCharacterPanelOpen(prev => !prev)
+        } else if (pendingPromptDialog === 'imageReference') {
+            setImageRefDialogOpen(true)
         }
-        const handleOpenParameters = () => setParameterDialogOpen(true)
-        const handleOpenCharacterPrompt = () => setCharacterPanelOpen(prev => !prev)
-        const handleOpenImageReference = () => setImageRefDialogOpen(true)
+    }, [clearPendingPromptDialog, isGenerating, pendingPromptDialog])
 
-        window.addEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
-        window.addEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, handleOpenFragment)
-        window.addEventListener(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS, handleOpenParameters)
-        window.addEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
-        window.addEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
-
-        return () => {
-            window.removeEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
-            window.removeEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, handleOpenFragment)
-            window.removeEventListener(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS, handleOpenParameters)
-            window.removeEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
-            window.removeEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
+    // Focus the requested core control (model or steps) directly if inline, or
+    // open the parameter dialog as fallback when controls live inside the dialog.
+    useEffect(() => {
+        if (!pendingPromptFocus) return
+        clearPendingPromptFocus()
+        const selector = `[data-prompt-focus="${pendingPromptFocus}"]`
+        const focusTarget = () => {
+            const element = document.querySelector<HTMLElement>(selector)
+            if (element) {
+                element.focus()
+                return true
+            }
+            return false
         }
-    }, [isGenerating])
+        if (focusTarget()) return
+        setParameterDialogOpen(true)
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                focusTarget()
+            })
+        })
+    }, [clearPendingPromptFocus, pendingPromptFocus])
 
     useEffect(() => {
         if (isGenerating) setFragmentDialogOpen(false)
@@ -240,7 +260,7 @@ export function PromptPanel() {
                                     {t('parameters.model')}
                                 </Label>
                                 <Select value={model} onValueChange={setModel}>
-                                    <SelectTrigger className="rounded-control">
+                                    <SelectTrigger className="rounded-control" data-prompt-focus="model">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -323,6 +343,7 @@ export function PromptPanel() {
                                     min={1}
                                     max={50}
                                     step={1}
+                                    data-prompt-focus="steps"
                                     className={cn("w-full", steps > 28 && "[&>.relative>.bg-primary]:bg-destructive")}
                                 />
                                 {stepQuality !== 'normal' && (

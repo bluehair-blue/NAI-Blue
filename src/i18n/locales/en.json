@@ -2764,6 +2764,7 @@
         "preview": "Preview",
         "emptyState": "Generate an Image",
         "emptyDescription": "Open the prompt, enter your idea, then choose Generate",
+        "emptyDescriptionRail": "Enter a prompt in the left panel and click Generate.",
         "openPrompt": "Open prompt",
         "loadingTitle": "Generating Image...",
         "loadingDescription": "Please wait a moment",

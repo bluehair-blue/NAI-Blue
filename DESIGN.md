@@ -113,9 +113,9 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   or `12px` internal gaps.
 - Below `640px`: two primary destinations, labelled Tools menu and theme toggle.
   Prompt and History remain named menu actions. No horizontal navigation scroll.
-- `640–1535px`: center workspace remains primary; Prompt opens as a non-modal,
-  horizontally resizable panel without a scrim, while History remains a sheet.
-- `1536px+`: Prompt is a persistent left rail on Main (`/advanced`). Scene views own their own prompt editor and inherited reference settings without mounting the Main prompt rail or sheet. History opens on demand in a sheet.
+- `640–1199px`: center workspace remains primary; Prompt opens as a non-modal,
+  horizontally resizable panel anchored below the header without a scrim, while History remains a sheet.
+- `1200px+`: Prompt is a persistent left rail on Main (`/advanced`) at `360px` (`1200–1535px`), `420px` (`1536–1799px`), and `500px` (`1800px+`). Scene views own their own prompt editor and inherited reference settings without mounting the Main prompt rail or sheet. History opens on demand in a sheet.
 - Scene grids render one column below `640px`, at most two below `1024px`, and
   honor the stored column preference on desktop.
 - Fixed overlays never cover system bars. Text, toolbars, and pages must not

@@ -2719,6 +2719,7 @@
         "preview": "プレビュー",
         "emptyState": "画像を生成してください",
         "emptyDescription": "プロンプトを開いて入力し、生成ボタンを押してください",
+        "emptyDescriptionRail": "左のプロンプトパネルに内容を入力して生成を押してください。",
         "openPrompt": "プロンプトを開く",
         "loadingTitle": "画像生成中...",
         "loadingDescription": "しばらくお待ちください",
