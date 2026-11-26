@@ -112,10 +112,13 @@ function runPayloadFixtureChecks() {
     '@/services/nai/text-assembly': textAssemblyModule,
   })
   const modelDefaultModule = loadTsCommonJs('src/domain/generation/model-default.ts')
+  const preciseReferenceModule = loadTsCommonJs('src/domain/generation/precise-reference.ts')
   const modelCatalogModule = loadTsCommonJs('src/services/nai/model-catalog.ts', {
     '@/domain/generation/model-default': modelDefaultModule,
+    '@/domain/generation/precise-reference': preciseReferenceModule,
   })
   const payloadModule = loadTsCommonJs('src/services/nai/payload.ts', {
+    '@/domain/generation/precise-reference': preciseReferenceModule,
     '@/services/nai/model-catalog': modelCatalogModule,
     '@/services/nai/presets': presetsModule,
     '@/services/nai/text-assembly': textAssemblyModule,
