@@ -112,6 +112,13 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, promptHel
                                     aria-describedby={helpId}
                                     className={`${control} resize-y`} value={row.prompt}
                                     placeholder={t('folderWorkbench.composer.promptPlaceholder')}
+                                    onKeyDown={event => {
+                                        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                                            event.preventDefault()
+                                            event.stopPropagation()
+                                            event.currentTarget.form?.requestSubmit()
+                                        }
+                                    }}
                                     onChange={event => updateRow(row.id, { prompt: event.target.value })} />
                                 {helpId && <p id={helpId} className="text-sm leading-relaxed text-muted-foreground">{promptHelp}</p>}
                             </div>
@@ -135,6 +142,13 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, promptHel
                     <p id={`${formId}-table-help`} className="text-sm leading-relaxed text-muted-foreground">{t('folderWorkbench.composer.tableHelp')}</p>
                     <Textarea id={`${formId}-table`} rows={7} className={`${control} resize-y`} value={table}
                         aria-describedby={`${formId}-table-help`} placeholder={t('folderWorkbench.composer.tablePlaceholder')}
+                        onKeyDown={event => {
+                            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                event.currentTarget.form?.requestSubmit()
+                            }
+                        }}
                         onChange={event => { setTable(event.target.value); setValidationError(null) }} />
                     {table.trim() && <div className="space-y-2 text-sm" aria-live="polite">
                         <p>{t('folderWorkbench.pasteSummary', { items: parsed.rows.length, images: parsed.rows.reduce((sum, row) => sum + row.count, 0) })}</p>

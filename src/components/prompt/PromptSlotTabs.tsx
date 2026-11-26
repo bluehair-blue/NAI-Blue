@@ -7,6 +7,7 @@ export interface PromptSlotTab {
     label: string
     filled: boolean
     negative?: boolean
+    shortcut?: string
 }
 
 interface PromptSlotTabsProps {
@@ -51,6 +52,7 @@ export function PromptSlotTabs({ tabs, activeId, panelId, label, onChange }: Pro
                         id={`${panelId}-${tab.id}-tab`}
                         aria-selected={active}
                         aria-controls={panelId}
+                        aria-keyshortcuts={tab.shortcut}
                         tabIndex={active ? 0 : -1}
                         onClick={() => onChange(tab.id)}
                         onKeyDown={event => selectFromKeyboard(event, index)}

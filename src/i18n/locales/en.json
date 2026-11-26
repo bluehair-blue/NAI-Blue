@@ -3219,6 +3219,7 @@
             "dialogs": "Dialogs",
             "actions": "Actions",
             "pressKey": "Press key...",
+            "unassigned": "Unassigned",
             "reset": "Reset",
             "conflict": "Already in use:",
             "override": "Override"
@@ -3281,14 +3282,17 @@
     },
     "shortcuts": {
         "actions": {
-            "navigateMain": "Main Mode",
-            "navigateScenes": "Scene Mode",
+            "navigateFolders": "Make images",
+            "navigateMain": "Single",
+            "navigateScenes": "Scenes",
+            "navigateQueue": "Work history",
             "navigateTools": "Smart Tools",
             "navigateWeb": "Web",
             "navigateLibrary": "Library",
             "navigateSettings": "Settings",
             "navigateNext": "Next Menu",
             "navigatePrev": "Previous Menu",
+            "commandPalette": "Find command",
             "promptGenerator": "Prompt Generator",
             "fragmentDialog": "Fragment Prompt",
             "parameterSettings": "Parameter Settings",

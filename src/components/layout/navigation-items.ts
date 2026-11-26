@@ -40,6 +40,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
         compactLabelKey: 'folderWorkbench.design.navCreateCompact',
         compactFallbackLabel: '만들기',
         group: 'primary',
+        shortcutAction: 'navigate:folders',
         primaryOnMobile: true,
     },
     {
@@ -66,6 +67,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
         compactLabelKey: 'folderWorkbench.design.navHistoryCompact',
         compactFallbackLabel: '기록',
         group: 'primary',
+        shortcutAction: 'navigate:queue',
         primaryOnMobile: true,
     },
     {

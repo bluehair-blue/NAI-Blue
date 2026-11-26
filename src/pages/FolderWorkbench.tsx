@@ -27,6 +27,8 @@ import { enqueueReviewedSceneQueue, prepareSceneQueueReview, type PreparedSceneQ
 import { resolveScenePrompts, type SceneFolderTemplate, useSceneStore, visibleScenePresets } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useQueueStore } from '@/stores/queue-store'
+import { useShortcutStore } from '@/stores/shortcut-store'
+import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { toNativeAssetUrl } from '@/platform/asset-url'
 
@@ -239,6 +241,21 @@ export default function FolderWorkbench() {
         error={error} promptHelp={t('folderWorkbench.design.descriptionHint', '이미지마다 설명을 하나씩 적어 주세요. 이름은 나중에 정해도 돼요.')} templates={templates} onSubmit={addAssets} />
     const canReview = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overImageLimit && !executionUnavailable
     const canSaveProduction = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overProductionLimit
+    const generateShortcutLabel = useShortcutStore(state => state.bindings['action:generate']?.label || '')
+    const primaryActionRef = useRef<() => void>(() => {})
+    primaryActionRef.current = () => {
+        if (savedDirectory !== null || rows.length === 0) return
+        if (overImageLimit) {
+            if (canSaveProduction) openProduction()
+        } else if (canReview) {
+            void reviewSelection()
+        }
+    }
+    useEffect(() => {
+        const handleShortcutGenerate = () => primaryActionRef.current()
+        window.addEventListener(SHORTCUT_EVENTS.GENERATE, handleShortcutGenerate)
+        return () => window.removeEventListener(SHORTCUT_EVENTS.GENERATE, handleShortcutGenerate)
+    }, [])
     // Snapshot the explicit filtered selection at dialog entry, independent of later workbench draft changes.
     const openProduction = () => setProductionTargets(selected.map(row => ({
         presetId: row.presetId, sceneId: row.scene.id, count: folderAssetProductionCount(row.scene),
@@ -266,7 +283,13 @@ export default function FolderWorkbench() {
                             <div className={`fb-action-row ${rows.length === 0 ? 'is-empty' : ''}`}>
                                 {rows.length > 0 && <>
                                     <Button className="fb-button fb-primary" disabled={overImageLimit ? !canSaveProduction : !canReview} onClick={() => { if (overImageLimit) openProduction(); else void reviewSelection() }}>
-                                        {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : overImageLimit ? t('productionRequests.save') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}<ArrowRight aria-hidden="true" />
+                                        {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : overImageLimit ? t('productionRequests.save') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}
+                                        <ArrowRight aria-hidden="true" />
+                                        {!busy && generateShortcutLabel && (
+                                            <kbd className="hidden rounded bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[11px] font-medium xl:inline">
+                                                {generateShortcutLabel}
+                                            </kbd>
+                                        )}
                                     </Button>
                                     {!overImageLimit && selected.length > 0 && <Button variant="outline" className="fb-button fb-secondary" disabled={!canSaveProduction} onClick={openProduction}>{t('productionRequests.save')}</Button>}
                                     {concreteFolder && <Button variant="outline" className="fb-button fb-secondary" disabled={busy || !sceneAuthorityReady} onClick={() => { setError(null); setComposerOpen(true) }}><Plus aria-hidden="true" />{t('folderWorkbench.design.addImages', '이미지 추가')}</Button>}

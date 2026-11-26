@@ -78,6 +78,8 @@ import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calcul
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
 import { hasBlockingLayer, isEditableTarget } from '@/lib/keyboard/shortcut-scope'
 import { useRotationStore } from '@/stores/character-rotation-store'
+import { useShortcutStore } from '@/stores/shortcut-store'
+import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useQueueStore } from '@/stores/queue-store'
 import {
@@ -188,6 +190,16 @@ export default function SceneDetail() {
     const queueExecutionAuthority = useQueueStore(state => state.executionAuthority)
     const selectDurableBatch = useQueueStore(state => state.setSelectedBatchId)
     const addToTrash = useTrashStore(state => state.add)
+    const generateShortcutLabel = useShortcutStore(state => state.bindings['action:generate']?.label || '')
+    const handleGenerateRef = useRef<() => void>(() => {})
+    const generateShortcutDisabledRef = useRef(true)
+    useEffect(() => {
+        const onShortcutGenerate = () => {
+            if (!generateShortcutDisabledRef.current) handleGenerateRef.current()
+        }
+        window.addEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
+        return () => window.removeEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
+    }, [])
 
     // Scene dimensions are shared by the request builder and gallery frames so
     // the saved scene snapshot has one visible resolution authority.
@@ -538,6 +550,8 @@ export default function SceneDetail() {
         void startDurableSceneGeneration('scene')
     }
 
+    handleGenerateRef.current = handleGenerate
+
     const handleOpenFolder = async () => {
         try {
             if (!scene) return
@@ -755,6 +769,8 @@ export default function SceneDetail() {
         })
     }
 
+    generateShortcutDisabledRef.current = (effectiveSceneCancelling && !rotationActive) || (!effectiveSceneGenerating && !rotationActive && generationConflict)
+
     return (
         <SceneCompositionWorkspace
             simplified
@@ -787,6 +803,7 @@ export default function SceneDetail() {
                         : undefined,
                 generateLabel: t('generate.button', 'Generate'),
                 cancelLabel: t('generate.cancel', 'Cancel'),
+                shortcutLabel: generateShortcutLabel,
                 actionTestId: 'scene-detail-generate-action',
                 cancelTestId: 'scene-detail-cancel-action',
                 onGenerate: handleGenerate,

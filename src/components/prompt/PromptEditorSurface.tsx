@@ -171,13 +171,24 @@ export function PromptEditorSurface({
             // A dock-level test boundary keeps responsive smoke checks coupled to
             // this shared editor surface, not react-simple-code-editor internals.
             data-testid="prompt-editor-surface"
+            onKeyDown={event => {
+                if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+                const match = /^Digit([1-4])$/.exec(event.code)
+                if (!match) return
+                const slot = promptSlots[Number(match[1]) - 1]
+                if (!slot) return
+                event.preventDefault()
+                event.stopPropagation()
+                setActivePromptSlot(slot.id)
+            }}
         >
             <PromptSlotTabs
-                tabs={promptSlots.map(slot => ({
+                tabs={promptSlots.map((slot, index) => ({
                     id: slot.id,
                     label: slot.label,
                     filled: slot.value.trim().length > 0,
                     negative: slot.id === 'negative',
+                    shortcut: `Alt+${index + 1}`,
                 }))}
                 activeId={activePrompt.id}
                 panelId={editorPanelId}

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router'
-import { useShortcutStore, matchesBinding, ShortcutAction } from '@/stores/shortcut-store'
+import { useShortcutStore, matchesBinding, SHORTCUT_ACTIONS } from '@/stores/shortcut-store'
 import { useFragmentStore } from '@/stores/fragment-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { supportsKeyboardShortcuts } from '@/platform/runtime'
@@ -8,19 +8,32 @@ import { executePromptGenerationCommand } from '@/services/generation/prompt-gen
 import { hasBlockingLayer, shouldSkipGlobalShortcut } from '@/lib/keyboard/shortcut-scope'
 import { NAVIGATION_ROUTE_ORDER } from '@/components/layout/navigation-items'
 
-// 커스텀 이벤트 (다이얼로그 열기용)
+// 커스텀 이벤트 (다이얼로그 및 화면별 주 동작용)
 export const SHORTCUT_EVENTS = {
+    OPEN_COMMAND_PALETTE: 'shortcut:openCommandPalette',
     OPEN_PROMPT_GENERATOR: 'shortcut:openPromptGenerator',
     OPEN_FRAGMENT_DIALOG: 'shortcut:openFragmentDialog',
     OPEN_PARAMETER_SETTINGS: 'shortcut:openParameterSettings',
     OPEN_IMAGE_REFERENCE: 'shortcut:openImageReference',
     OPEN_CHARACTER_PROMPT: 'shortcut:openCharacterPrompt',
     OPEN_PRESET_DIALOG: 'shortcut:openPresetDialog',
+    GENERATE: 'shortcut:generate',
     RESET_FRAGMENT_COUNTERS: 'shortcut:resetFragmentCounters',
 }
 
 // 메뉴 순서 정의는 navigation-items.ts의 단일 원본을 따른다.
 const MENU_ROUTES = NAVIGATION_ROUTE_ORDER
+
+const DIRECT_NAVIGATION_ROUTES: Record<string, string> = {
+    'navigate:folders': '/folders',
+    'navigate:main': '/advanced',
+    'navigate:scenes': '/scenes',
+    'navigate:queue': '/queue',
+    'navigate:tools': '/tools',
+    'navigate:library': '/library',
+    'navigate:web': '/web',
+    'navigate:settings': '/settings',
+}
 
 /**
  * Depends on the browser's native focus model and runs before persisted app
@@ -43,66 +56,45 @@ export function useShortcuts() {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (shouldPreserveNativeTabNavigation(e)) return
 
-            // 각 바인딩 체크
-            const actions: ShortcutAction[] = [
-                'navigate:main',
-                'navigate:scenes',
-                'navigate:tools',
-                'navigate:web',
-                'navigate:library',
-                'navigate:settings',
-                'navigate:next',
-                'navigate:prev',
-                'open:promptGenerator',
-                'open:fragmentDialog',
-                'open:parameterSettings',
-                'open:imageReference',
-                'open:characterPrompt',
-                'open:presetDialog',
-                'action:generate',
-                'action:resetFragmentCounters',
-            ]
-
-            for (const action of actions) {
+            for (const { action } of SHORTCUT_ACTIONS) {
                 const binding = bindings[action]
                 if (!binding) continue
 
                 if (matchesBinding(e, binding)) {
                     if (shouldSkipGlobalShortcut(e, hasBlockingLayer(document))) return
-                    // Modifier-based navigation remains available in inputs;
-                    // unmodified Tab was already reserved above for focus traversal.
+
                     if (action.startsWith('navigate:')) {
                         e.preventDefault()
 
-                        // 다음/이전 메뉴 이동
                         if (action === 'navigate:next' || action === 'navigate:prev') {
-                            const currentPath = location.pathname.startsWith('/scenes/') ? '/scenes' : location.pathname
+                            const currentPath = location.pathname.startsWith('/scenes/')
+                                ? '/scenes'
+                                : location.pathname === '/'
+                                    ? '/folders'
+                                    : location.pathname
                             const currentIndex = MENU_ROUTES.indexOf(currentPath)
                             if (currentIndex === -1) return
-                            
-                            let nextIndex: number
-                            if (action === 'navigate:next') {
-                                nextIndex = (currentIndex + 1) % MENU_ROUTES.length
-                            } else {
-                                nextIndex = (currentIndex - 1 + MENU_ROUTES.length) % MENU_ROUTES.length
-                            }
+
+                            const nextIndex = action === 'navigate:next'
+                                ? (currentIndex + 1) % MENU_ROUTES.length
+                                : (currentIndex - 1 + MENU_ROUTES.length) % MENU_ROUTES.length
                             navigate(MENU_ROUTES[nextIndex])
                             return
                         }
-                        
-                        const routes: Record<string, string> = {
-                            'navigate:main': '/advanced',
-                            'navigate:scenes': '/scenes',
-                            'navigate:tools': '/tools',
-                            'navigate:web': '/web',
-                            'navigate:library': '/library',
-                            'navigate:settings': '/settings',
+
+                        const targetRoute = DIRECT_NAVIGATION_ROUTES[action]
+                        if (targetRoute) {
+                            navigate(targetRoute)
                         }
-                        navigate(routes[action])
                         return
                     }
 
-                    // 다이얼로그 열기
+                    if (action === 'open:commandPalette') {
+                        e.preventDefault()
+                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_COMMAND_PALETTE))
+                        return
+                    }
+
                     if (action === 'open:promptGenerator') {
                         e.preventDefault()
                         window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR))
@@ -139,7 +131,6 @@ export function useShortcuts() {
                         return
                     }
 
-                    // 이미지 생성 (메인 모드에서만)
                     if (action === 'action:generate') {
                         if (location.pathname === '/advanced') {
                             e.preventDefault()
@@ -148,9 +139,11 @@ export function useShortcuts() {
                             void executePromptGenerationCommand('main')
                             return
                         }
+                        e.preventDefault()
+                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.GENERATE))
+                        return
                     }
 
-                    // 순차 카운터 리셋
                     if (action === 'action:resetFragmentCounters') {
                         e.preventDefault()
                         // A running job may own a sequential-fragment lease; the

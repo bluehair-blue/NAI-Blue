@@ -43,7 +43,7 @@ import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme-store'
 import { useSettingsStore } from '@/stores/settings-store'
-import { useShortcutStore, SHORTCUT_ACTIONS, formatKeyBinding, type ShortcutAction, type KeyBinding } from '@/stores/shortcut-store'
+import { useShortcutStore, SHORTCUT_ACTIONS, formatKeyBinding, getShortcutActionDescription, type ShortcutAction, type KeyBinding } from '@/stores/shortcut-store'
 import { toast } from '@/components/ui/use-toast'
 import GeminiIcon from '@/assets/gemini-color.svg'
 import { openNativeFileDialog, saveNativeFileDialog } from '@/platform/native-file-dialog'
@@ -1672,8 +1672,8 @@ export default function Settings({ guidedSection }: SettingsProps = {}) {
 // 단축키 행 컴포넌트
 interface ShortcutRowProps {
     action: ShortcutAction
-    binding: KeyBinding
-    allBindings: Record<ShortcutAction, KeyBinding>
+    binding: KeyBinding | null
+    allBindings: Record<ShortcutAction, KeyBinding | null>
     isEditing: boolean
     recordedBinding: KeyBinding | null
     onStartEdit: () => void
@@ -1690,7 +1690,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
     // 충돌 체크 함수
     const checkConflict = (newBinding: KeyBinding): ShortcutAction | null => {
         for (const [otherAction, otherBinding] of Object.entries(allBindings)) {
-            if (otherAction === action) continue // 자기 자신은 제외
+            if (otherAction === action || !otherBinding) continue // 자기 자신 및 미지정은 제외
 
             // 키 조합이 정확히 같은지 확인
             if (
@@ -1747,7 +1747,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
                 shift: e.shiftKey,
                 alt: e.altKey,
                 label: '',
-                description: binding.description,
+                description: getShortcutActionDescription(action),
             }
             newBinding.label = formatKeyBinding(newBinding)
             onKeyRecord(newBinding)
@@ -1755,14 +1755,14 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
 
         window.addEventListener('keydown', handleKeyDown, true)
         return () => window.removeEventListener('keydown', handleKeyDown, true)
-    }, [isEditing, binding.description, onCancel, onKeyRecord])
+    }, [isEditing, action, onCancel, onKeyRecord])
 
     const displayBinding = recordedBinding || binding
 
     return (
         <div className="space-y-2">
             <div className="flex flex-col gap-2 rounded-control px-3 py-2 hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-sm">{t(binding.description, binding.description)}</span>
+                <span className="text-sm">{t(getShortcutActionDescription(action), getShortcutActionDescription(action))}</span>
                 <div className="flex items-center gap-2">
                     {isEditing ? (
                         <>
@@ -1788,7 +1788,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
                                 onClick={onStartEdit}
                                 className="min-h-11 min-w-[100px] rounded-control bg-muted px-3 text-center font-mono text-sm hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
-                                {displayBinding.label}
+                                {displayBinding ? displayBinding.label : t('settingsPage.shortcuts.unassigned', '지정 없음')}
                             </button>
                             <Tip content={t('settingsPage.shortcuts.reset', '초기화')}>
                                 <Button size="sm" variant="ghost" className="h-11 w-11 px-0" onClick={onReset} aria-label={t('settingsPage.shortcuts.reset', '초기화')}>
@@ -1806,7 +1806,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
                     <div className="flex items-center gap-2 text-sm text-destructive">
                         <Info className="h-4 w-4" />
                         <span>
-                            {t('settingsPage.shortcuts.conflict', '이미 사용 중:')} {t(allBindings[conflictAction].description, allBindings[conflictAction].description)}
+                            {t('settingsPage.shortcuts.conflict', '이미 사용 중:')} {t(getShortcutActionDescription(conflictAction), getShortcutActionDescription(conflictAction))}
                         </span>
                     </div>
                     <div className="flex items-center gap-2">

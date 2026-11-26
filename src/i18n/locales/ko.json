@@ -3255,6 +3255,7 @@
             "dialogs": "다이얼로그",
             "actions": "액션",
             "pressKey": "키 입력...",
+            "unassigned": "지정 없음",
             "reset": "초기화",
             "conflict": "이미 사용 중:",
             "override": "덮어쓰기"
@@ -3317,14 +3318,17 @@
     },
     "shortcuts": {
         "actions": {
-            "navigateMain": "메인 모드",
-            "navigateScenes": "씬 모드",
+            "navigateFolders": "이미지 만들기",
+            "navigateMain": "단건 생성",
+            "navigateScenes": "씬",
+            "navigateQueue": "작업 기록",
             "navigateTools": "스마트 툴",
             "navigateWeb": "웹",
             "navigateLibrary": "라이브러리",
             "navigateSettings": "설정",
             "navigateNext": "다음 메뉴",
             "navigatePrev": "이전 메뉴",
+            "commandPalette": "명령 찾기",
             "promptGenerator": "프롬프트 생성",
             "fragmentDialog": "조각 프롬프트",
             "parameterSettings": "파라미터 설정",

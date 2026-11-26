@@ -133,7 +133,20 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
     }
 
     return (
-        <section className="@container shrink-0 border-y border-border/70 bg-transparent py-3" data-testid="scene-prompt-editor">
+        <section
+            className="@container shrink-0 border-y border-border/70 bg-transparent py-3"
+            data-testid="scene-prompt-editor"
+            onKeyDown={event => {
+                if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+                const match = /^Digit([1-3])$/.exec(event.code)
+                if (!match) return
+                const slot = promptSlots[Number(match[1]) - 1]
+                if (!slot) return
+                event.preventDefault()
+                event.stopPropagation()
+                setActiveSlot(slot.id)
+            }}
+        >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-2">
                 <div>
                     <h2 className="text-sm font-semibold">{t('scene.promptComposition', '씬 프롬프트 구성')}</h2>
@@ -146,11 +159,12 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
             </div>
 
             <PromptSlotTabs
-                tabs={promptSlots.map(slot => ({
+                tabs={promptSlots.map((slot, index) => ({
                     id: slot.id,
                     label: slot.label,
                     filled: prompts[slot.id].trim().length > 0,
                     negative: slot.negative,
+                    shortcut: `Alt+${index + 1}`,
                 }))}
                 activeId={active.id}
                 panelId={panelId}

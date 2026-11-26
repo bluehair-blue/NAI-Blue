@@ -3171,6 +3171,7 @@
             "dialogs": "ダイアログ",
             "actions": "アクション",
             "pressKey": "キーを入力...",
+            "unassigned": "未割り当て",
             "reset": "リセット",
             "conflict": "既に使用中:",
             "override": "上書き"
@@ -3233,14 +3234,17 @@
     },
     "shortcuts": {
         "actions": {
-            "navigateMain": "メインモード",
-            "navigateScenes": "シーンモード",
+            "navigateFolders": "画像を作る",
+            "navigateMain": "単発生成",
+            "navigateScenes": "シーン",
+            "navigateQueue": "作業の記録",
             "navigateTools": "スマートツール",
             "navigateWeb": "ウェブ",
             "navigateLibrary": "ライブラリ",
             "navigateSettings": "設定",
             "navigateNext": "次のメニュー",
             "navigatePrev": "前のメニュー",
+            "commandPalette": "コマンド検索",
             "promptGenerator": "プロンプト生成",
             "fragmentDialog": "フラグメントプロンプト",
             "parameterSettings": "パラメータ設定",

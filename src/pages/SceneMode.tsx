@@ -109,6 +109,8 @@ import {
 } from '@/components/ui/dialog'
 import { ResolutionSelector, Resolution } from '@/components/ui/ResolutionSelector'
 import { useRotationStore } from '@/stores/character-rotation-store'
+import { useShortcutStore } from '@/stores/shortcut-store'
+import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import {
     decodeSceneRecipeSelection,
     SCENE_DIRECT_SELECTION_ID,
@@ -597,6 +599,20 @@ export default function SceneMode() {
         })
     }
 
+    const generateShortcutLabel = useShortcutStore(state => state.bindings['action:generate']?.label || '')
+    const handleSceneGenerateRef = useRef(handleSceneGenerate)
+    handleSceneGenerateRef.current = handleSceneGenerate
+    const sceneGenerateShortcutDisabled = isCancelling || (!isGenerating && !rotationActive && (totalQueue === 0 || generationConflict))
+    const sceneGenerateShortcutDisabledRef = useRef(sceneGenerateShortcutDisabled)
+    sceneGenerateShortcutDisabledRef.current = sceneGenerateShortcutDisabled
+    useEffect(() => {
+        const onShortcutGenerate = () => {
+            if (!sceneGenerateShortcutDisabledRef.current) handleSceneGenerateRef.current()
+        }
+        window.addEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
+        return () => window.removeEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
+    }, [])
+
     const approveSceneQueueReview = async (submission: SceneQueueSubmission): Promise<boolean> => {
         try {
             const result = await enqueueReviewedSceneQueue(submission)
@@ -965,6 +981,7 @@ export default function SceneMode() {
                         : undefined,
                 generateLabel: t('scene.generateAll', 'Generate scenes'),
                 cancelLabel: t('generate.cancel', 'Cancel'),
+                shortcutLabel: generateShortcutLabel,
                 actionTestId: 'scene-generate-action',
                 cancelTestId: 'scene-cancel-action',
                 onGenerate: handleSceneGenerate,
