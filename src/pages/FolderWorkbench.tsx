@@ -11,6 +11,7 @@ import { FolderTreePanel } from '@/components/folders/FolderTreePanel'
 import { SavedOutputGallery } from '@/components/folders/SavedOutputGallery'
 import { useSavedOutputCatalog } from '@/presentation/folders/useSavedOutputCatalog'
 import { FolderAssetDetailDialog } from '@/components/folders/FolderAssetDetailDialog'
+import { FolderAssetInlineEditor } from '@/components/folders/FolderAssetInlineEditor'
 import { FolderProductionRequests } from '@/components/folders/FolderProductionRequests'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { GenerationFolderManagerDialog } from '@/components/generation-folders/GenerationFolderManagerDialog'
@@ -60,6 +61,7 @@ export default function FolderWorkbench() {
     const [folderSheetOpen, setFolderSheetOpen] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [detailKey, setDetailKey] = useState<string | null>(null)
+    const [editingKey, setEditingKey] = useState<string | null>(null)
     const [managerOpen, setManagerOpen] = useState(false)
     const [composerOpen, setComposerOpen] = useState(false)
     const [batchCount, setBatchCount] = useState('1')
@@ -106,6 +108,7 @@ export default function FolderWorkbench() {
         setQueued(false)
         setFolderSheetOpen(false)
         setDetailKey(null)
+        setEditingKey(null)
         setComposerOpen(false)
     }
     const concreteFolder = folders.find(folder => folder.id === folderId)
@@ -176,6 +179,7 @@ export default function FolderWorkbench() {
 
     const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : t('folderWorkbench.actionFailed', '작업을 완료하지 못했습니다.'))
     const lock = () => { busyRef.current = true; setBusy(true); setError(null) }
+    const tryLock = () => { if (busyRef.current) return false; lock(); return true }
     const unlock = () => { busyRef.current = false; setBusy(false) }
     const reviewSelection = async (): Promise<boolean> => {
         if (busyRef.current || !sceneAuthorityReady || selected.length === 0 || invalidCount || overImageLimit || executionUnavailable) return false
@@ -349,21 +353,41 @@ export default function FolderWorkbench() {
                                             skipped: t('folderWorkbench.design.jobSkipped', '건너뜀'),
                                         })[activity.state] : null
                                         const imageUrl = !lastImage || lastImage.url.startsWith('data:') ? lastImage?.url : toNativeAssetUrl(lastImage.url)
+                                        const isEditing = editingKey === row.key
                                         return <li key={row.key} data-preset-id={row.presetId} data-scene-id={row.scene.id} className={`fb-asset-card ${selectedKeys.has(row.key) ? 'is-selected' : ''}`}>
                                             <div className="fb-card-media">
                                                 <label className="fb-card-select"><input className="choice-checkbox" type="checkbox" checked={selectedKeys.has(row.key)} disabled={busy}
                                                     aria-label={t('folderWorkbench.selectAsset', '{{name}} 선택', { name: row.scene.name })}
                                                     onChange={event => updateView({ selected: event.target.checked ? [...view.selected, row.key] : view.selected.filter(key => key !== row.key) })} /><span className="sr-only">{row.scene.name}</span></label>
-                                                <button type="button" className="fb-open-preview" onClick={() => setDetailKey(row.key)} aria-label={t('folderWorkbench.design.openImage', '{{name}} 이미지와 설명 보기', { name: row.scene.name })}>
+                                                <button type="button" className="fb-open-preview" onClick={() => {
+                                                    if (imageUrl) { setEditingKey(null); setDetailKey(row.key) }
+                                                    else setEditingKey(row.key)
+                                                }} aria-label={imageUrl
+                                                    ? t('folderWorkbench.design.openImage', '{{name}} 이미지와 설명 보기', { name: row.scene.name })
+                                                    : t('folderWorkbench.design.editDescriptionOf', '{{name}} 설명 편집', { name: row.scene.name })}>
                                                     {imageUrl ? <img src={imageUrl} alt={row.scene.name} loading="lazy" decoding="async" /> : <span className="fb-prompt-preview"><ImageIcon aria-hidden="true" /><span>{prompt || t('folderWorkbench.design.addDescription', '그림 설명을 적어 주세요.')}</span><small>{t('folderWorkbench.design.withoutImages', '만들기 전')}</small></span>}
                                                 </button>
                                             </div>
                                             <div className="fb-card-info"><h3 title={row.scene.name}>{row.scene.name}</h3><p className="fb-card-status">{activity ? <>{queueActivityUnavailable && <>{t('folderWorkbench.design.lastKnownStatus', '마지막 확인')} · </>}{activityLabel}{activity.unfinished > 0 && <> · {t('folderWorkbench.design.jobRemaining', '남은 {{count}}장', { count: activity.unfinished })}</>}</> : imageUrl ? <><Check aria-hidden="true" />{t('folderWorkbench.design.imageAvailable', '이미지 {{count}}장 있음', { count: row.scene.images.length })}</> : t('folderWorkbench.design.readyDescription', '설명 준비됨')}</p>
-                                                {view.view === 'list' && <p className="fb-list-description">{prompt}</p>}
+                                                {isEditing ? <FolderAssetInlineEditor
+                                                    presetId={row.presetId}
+                                                    sceneId={row.scene.id}
+                                                    assetName={row.scene.name}
+                                                    initialDescription={prompt}
+                                                    ready={sceneAuthorityReady}
+                                                    onAcquireLock={tryLock}
+                                                    onReleaseLock={unlock}
+                                                    onSaved={() => setEditingKey(null)}
+                                                    onCancel={() => setEditingKey(null)}
+                                                /> : (view.view === 'list' && <button type="button" className="fb-list-description text-left hover:text-foreground" onClick={() => setEditingKey(row.key)}>{prompt || t('folderWorkbench.design.addDescription', '그림 설명을 적어 주세요.')}</button>)}
                                                 <div className="fb-card-actions"><label>{t('folderWorkbench.design.quantity', '장수')}<Input type="number" min={1} max={999} value={folderAssetProductionCount(row.scene)} disabled={busy}
                                                     aria-label={t('folderWorkbench.assetCount', '{{name}} 생성 수량', { name: row.scene.name })}
                                                     onChange={event => { const count = Number(event.target.value); if (Number.isInteger(count) && count >= 1 && count <= 999) setSceneProductionCounts([{ presetId: row.presetId, sceneId: row.scene.id }], count) }} /></label>
-                                                    <button type="button" onClick={() => setDetailKey(row.key)} aria-label={t('folderWorkbench.design.editDescriptionOf', '{{name}} 설명 편집', { name: row.scene.name })}>{t('folderWorkbench.design.editDescription', '설명 편집')}</button></div>
+                                                    <div className="fb-card-action-links">
+                                                        {!isEditing && <button type="button" disabled={busy} onClick={() => setEditingKey(row.key)} aria-label={t('folderWorkbench.design.editDescriptionOf', '{{name}} 설명 편집', { name: row.scene.name })}>{t('folderWorkbench.design.editDescription', '설명 편집')}</button>}
+                                                        <Link to={`/scenes/${row.scene.id}`} className="fb-card-link" onClick={() => useSceneStore.getState().setActivePreset(row.presetId)}>{t('folderWorkbench.design.advancedEdit', '자세히 편집')}</Link>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </li>
                                     })}

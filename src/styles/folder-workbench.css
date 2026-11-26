@@ -96,11 +96,14 @@
 .fb-card-info h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 600; }
 .fb-card-status { display: flex; align-items: center; gap: 4px; margin-top: 4px; color: oklch(var(--muted-foreground)); font-size: 14px; }
 .fb-card-status svg { width: 14px; height: 14px; }
-.fb-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; border-top: 1px solid oklch(var(--border) / .45); padding-top: 8px; }
+.fb-card-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 12px; border-top: 1px solid oklch(var(--border) / .45); padding-top: 8px; }
 .fb-card-actions label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: oklch(var(--muted-foreground)); }
 .fb-card-actions input { width: 68px; min-height: 44px; padding: 8px; border: 1px solid oklch(var(--border)); background: transparent; box-shadow: none; border-radius: 4px; color: oklch(var(--foreground)); }
-.fb-card-actions button { min-height: 44px; padding: 8px; font-size: 14px; color: oklch(var(--muted-foreground)); }
-.fb-card-actions button:hover { color: oklch(var(--foreground)); text-decoration: underline; text-underline-offset: 4px; }
+.fb-card-action-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.fb-card-actions button, .fb-card-link { display: inline-flex; align-items: center; min-height: 44px; padding: 8px; font-size: 14px; color: oklch(var(--muted-foreground)); }
+.fb-card-actions button:hover, .fb-card-link:hover { color: oklch(var(--foreground)); text-decoration: underline; text-underline-offset: 4px; }
+.fb-inline-editor { grid-column: 1; display: grid; gap: 8px; margin-top: 10px; }
+.fb-inline-editor-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .fb-gallery.is-list { grid-template-columns: 1fr; gap: 8px; }
 .fb-gallery.is-list .fb-asset-card { display: grid; grid-template-columns: 112px minmax(0, 1fr); }
 .fb-gallery.is-list .fb-card-media { aspect-ratio: auto; min-height: 160px; }
