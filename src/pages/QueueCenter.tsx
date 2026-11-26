@@ -152,6 +152,9 @@ export default function QueueCenter() {
     const [destructiveIssue, setDestructiveIssue] = useState<FulfillmentIssue | null>(null)
 
     const selectedBatch = batches.find(batch => batch.id === selectedBatchId) ?? null
+    const hasQueuedWork = batches.length > 0 || legacyQueueCount > 0
+    // Scene selection is how an empty queue gets work, so it outlives the batch controls.
+    const hasScenes = scenePresets.some(preset => preset.scenes.length > 0)
     const summary = projectionMeta?.batchId === selectedBatchId ? projectionMeta.summary : null
     const autoRefreshFulfillment = summary !== null && summary.total <= 100
     // The durable batch aggregate is independent from the visible state filter,
@@ -604,16 +607,19 @@ export default function QueueCenter() {
                             </Link>
                         </Button>
                     </div>
-                    {(batches.length > 0 || legacyQueueCount > 0 || scenePresets.some(preset => preset.scenes.length > 0)) && (
+                    {(hasQueuedWork || hasScenes) && (
                     <div className="workspace-toolbar">
+                        {hasScenes && (
                         <Button
                             variant="outline"
-                            disabled={busy || scenePresets.every(preset => preset.scenes.length === 0)}
+                            disabled={busy}
                             onClick={() => setSceneSelectionOpen(true)}
                         >
                             <ListPlus className="mr-2 h-4 w-4" />
                             {t('queue.selectScenes', 'Select scenes from folders')}
                         </Button>
+                        )}
+                        {hasQueuedWork && <>
                         <select
                             value={selectedBatchId ?? ''}
                             onChange={event => setSelectedBatchId(event.target.value || null)}
@@ -650,10 +656,11 @@ export default function QueueCenter() {
                         >
                             <XCircle className="mr-2 h-4 w-4" />{t('queue.cancelAll', 'Cancel all')}
                         </Button>
+                        </>}
                     </div>
                     )}
                 </div>
-                {(batches.length > 0 || legacyQueueCount > 0) && (
+                {hasQueuedWork && (
                 <details className="workspace-disclosure">
                     <summary>{t('workspace.queueOptions', '실행 방식 · 오류 처리')}</summary>
                     <div className="workspace-toolbar">
