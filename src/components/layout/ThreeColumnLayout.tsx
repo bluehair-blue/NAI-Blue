@@ -482,6 +482,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             >
                 <SheetContent
                     id="nai-blue-prompt-sheet"
+                    data-shortcut-scope="workspace"
                     onCloseAutoFocus={restoreSupportFocus}
                     side="left"
                     showOverlay={false}

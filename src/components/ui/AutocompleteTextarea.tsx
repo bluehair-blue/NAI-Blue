@@ -382,6 +382,15 @@ export function AutocompleteTextarea({
             textareaRef.current = e.target
         }
 
+        // Flush pending debounced edits before Ctrl/Cmd+Enter reaches global generation.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter') {
+            flushPendingChange()
+            if (isVisible) {
+                setIsVisible(false)
+            }
+            return
+        }
+
         if (isVisible) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault()
@@ -391,7 +400,13 @@ export function AutocompleteTextarea({
                 e.preventDefault()
                 setSelectedIndex(prev => (prev - 1 + suggestions.length) % suggestions.length)
                 return
-            } else if (e.key === 'Enter' || e.key === 'Tab') {
+            } else if (
+                (e.key === 'Enter' || e.key === 'Tab') &&
+                !e.ctrlKey &&
+                !e.metaKey &&
+                !e.altKey &&
+                !e.shiftKey
+            ) {
                 e.preventDefault()
                 e.stopPropagation() // Prevent default newline
                 if (suggestions[selectedIndex]) {
@@ -399,6 +414,8 @@ export function AutocompleteTextarea({
                 }
                 return
             } else if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
                 setIsVisible(false)
                 return
             }

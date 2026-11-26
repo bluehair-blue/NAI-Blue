@@ -130,15 +130,15 @@ export function PromptPanel() {
 
     // 전역 단축키 이벤트 수신
     useEffect(() => {
-        const handleOpenPromptGen = () => setPromptGenOpen(prev => !prev)
+        const handleOpenPromptGen = () => setPromptGenOpen(true)
         // Sequential proposals hold a runtime lease while the provider runs;
         // keep the editor closed so UI mutations cannot invalidate paid work.
         const handleOpenFragment = () => {
-            if (!isGenerating) setFragmentDialogOpen(prev => !prev)
+            if (!isGenerating) setFragmentDialogOpen(true)
         }
-        const handleOpenParameters = () => setParameterDialogOpen(prev => !prev)
+        const handleOpenParameters = () => setParameterDialogOpen(true)
         const handleOpenCharacterPrompt = () => setCharacterPanelOpen(prev => !prev)
-        const handleOpenImageReference = () => setImageRefDialogOpen(prev => !prev)
+        const handleOpenImageReference = () => setImageRefDialogOpen(true)
 
         window.addEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
         window.addEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, handleOpenFragment)

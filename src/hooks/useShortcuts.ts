@@ -5,6 +5,7 @@ import { useFragmentStore } from '@/stores/fragment-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { supportsKeyboardShortcuts } from '@/platform/runtime'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
+import { hasBlockingLayer, shouldSkipGlobalShortcut } from '@/lib/keyboard/shortcut-scope'
 
 // 커스텀 이벤트 (다이얼로그 열기용)
 export const SHORTCUT_EVENTS = {
@@ -68,6 +69,7 @@ export function useShortcuts() {
                 if (!binding) continue
 
                 if (matchesBinding(e, binding)) {
+                    if (shouldSkipGlobalShortcut(e, hasBlockingLayer(document))) return
                     // Modifier-based navigation remains available in inputs;
                     // unmodified Tab was already reserved above for focus traversal.
                     if (action.startsWith('navigate:')) {

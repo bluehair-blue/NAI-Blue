@@ -67,6 +67,7 @@ import { getRuntimeCompositionDocument } from '@/lib/composition-authority'
 import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
 import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
+import { hasBlockingLayer, isEditableTarget } from '@/lib/keyboard/shortcut-scope'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useQueueStore } from '@/stores/queue-store'
 import {
@@ -258,14 +259,17 @@ export default function SceneDetail() {
     // ESC key handler for closing viewer or navigating back
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                if (viewerImageSrc) {
-                    closeImageViewer()
-                } else {
-                    // Navigate back to scene list
-                    nav('/scenes')
-                }
+            if (e.key !== 'Escape' || e.defaultPrevented) return
+            if (viewerImageSrc) {
+                e.preventDefault()
+                closeImageViewer()
+                return
             }
+            if (isEditableTarget(e.target) || hasBlockingLayer(document)) {
+                return
+            }
+            // Navigate back to scene list
+            nav('/scenes')
         }
         window.addEventListener('keydown', handleEsc)
         return () => window.removeEventListener('keydown', handleEsc)
@@ -857,7 +861,11 @@ export default function SceneDetail() {
                                 autoFocus
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') handleSaveName()
-                                    if (e.key === 'Escape') handleCancelNameEdit()
+                                    if (e.key === 'Escape') {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        handleCancelNameEdit()
+                                    }
                                 }}
                             />
                             <Button

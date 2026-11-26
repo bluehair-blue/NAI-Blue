@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Check, AlertCircle, ChevronDown, Copy, ShieldCheck } from 'lucide-react'
 import GeminiIcon from '@/assets/gemini-color.svg'
@@ -52,6 +52,7 @@ export function PromptGeneratorDialog({ open, onOpenChange, onApply }: PromptGen
     const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null)
     const [isDanbooruOpen, setIsDanbooruOpen] = useState(false)
     const [verifiedPrompt, setVerifiedPrompt] = useState<string | null>(null)
+    const generatingRef = useRef(false)
 
     // Reset when dialog opens
     useEffect(() => {
@@ -66,6 +67,7 @@ export function PromptGeneratorDialog({ open, onOpenChange, onApply }: PromptGen
     }, [open])
 
     const handleGenerate = async () => {
+        if (generatingRef.current) return
         if (!geminiApiKey) {
             toast({
                 title: t('promptGenerator.apiKeyRequired', 'Gemini API 키가 필요합니다'),
@@ -77,6 +79,7 @@ export function PromptGeneratorDialog({ open, onOpenChange, onApply }: PromptGen
 
         if (!userInput.trim()) return
 
+        generatingRef.current = true
         setIsLoading(true)
         setResults([])
         setVerifiedPrompt(null)
@@ -124,6 +127,7 @@ export function PromptGeneratorDialog({ open, onOpenChange, onApply }: PromptGen
                 variant: 'destructive',
             })
         } finally {
+            generatingRef.current = false
             setIsLoading(false)
         }
     }
@@ -231,8 +235,10 @@ export function PromptGeneratorDialog({ open, onOpenChange, onApply }: PromptGen
                             onChange={(e) => setUserInput(e.target.value)}
                             className="min-h-[80px] resize-none focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && e.ctrlKey) {
-                                    handleGenerate()
+                                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    void handleGenerate()
                                 }
                             }}
                         />

@@ -179,7 +179,8 @@ export default function Library({ onOpenTools }: { onOpenTools?: () => void } = 
     // ESC key handler for closing viewer
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && viewerImageSrc) {
+            if (e.key === 'Escape' && viewerImageSrc && !e.defaultPrevented) {
+                e.preventDefault()
                 setViewerImageSrc(null)
             }
         }
