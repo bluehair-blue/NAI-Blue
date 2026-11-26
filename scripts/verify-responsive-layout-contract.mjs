@@ -341,6 +341,11 @@ async function collectCompositionShellReport(page, route) {
             const style = getComputedStyle(element)
             return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1
         }).length
+        const visiblePrimaryActions = Array.from(document.querySelectorAll(actionSelector)).filter(element => {
+            const rect = element.getBoundingClientRect()
+            const style = getComputedStyle(element)
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1
+        }).length
 
         return {
             layout: visibleRect('[data-testid="composition-workspace-layout"]'),
@@ -357,6 +362,7 @@ async function collectCompositionShellReport(page, route) {
             commandBarRadius: commandBarElement ? getComputedStyle(commandBarElement).borderRadius : null,
             commandLabels,
             visiblePromptGenerateActions,
+            visiblePrimaryActions,
             dockGroupCount: document.querySelectorAll([
                 '[data-testid="main-command-dock"] [data-testid="composition-mobile-settings"]',
                 '[data-testid="main-command-dock"] [data-testid="composition-mobile-count"]',
@@ -376,6 +382,7 @@ function assertCompositionShell(report, route, viewport) {
     )
     assert.deepEqual(report.shortActions, [], `${context} has Composition actions below 44px: ${JSON.stringify(report.shortActions)}`)
     assert.equal(report.visiblePromptGenerateActions, route === '/advanced' ? 0 : report.visiblePromptGenerateActions, `${context} duplicates the Advanced generation CTA inside Prompt`)
+    assert.equal(report.visiblePrimaryActions, 1, `${context} must expose exactly one visible Generate/Cancel button, found ${report.visiblePrimaryActions}`)
 
     if (viewport.mobile) {
         assert.ok(report.dock, `${context} must show the mobile command dock`)
@@ -1129,6 +1136,50 @@ async function main() {
                         // exposes their triggers; direct mode may correctly show Generate only.
                         if (viewport.width === 390 && route === '/advanced') {
                             await assertCompositionSheetFocusReturn(page, route, viewport)
+                        }
+                        if (viewport.width === 1199 && route === '/advanced') {
+                            const promptToggle = page.locator('[aria-controls="nai-blue-prompt-sheet"]').first()
+                            await promptToggle.click()
+                            const sheet = page.locator('#nai-blue-prompt-sheet')
+                            await sheet.waitFor({ state: 'visible' })
+                            const sheetCtaCount = await page.evaluate(() => Array.from(document.querySelectorAll('[data-testid="main-generate-action"]')).filter(el => {
+                                const r = el.getBoundingClientRect()
+                                const s = getComputedStyle(el)
+                                return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 1 && r.height > 1
+                            }).length)
+                            assert.equal(sheetCtaCount, 1, '/advanced @ 1199px with sheet open must keep exactly one Generate CTA')
+                            await page.keyboard.press('Escape')
+                            await sheet.waitFor({ state: 'hidden' })
+                        }
+                        if (viewport.width === 1280 && route === '/advanced') {
+                            // Verify Generate lives in the docked rail, and collapsing the rail moves it cleanly to the bottom bar without duplication.
+                            assert.equal(await page.locator('#nai-blue-rail-actions [data-testid="main-generate-action"]').count(), 1, '/advanced @ 1280px must render Generate inside #nai-blue-rail-actions')
+                            const railToggle = page.locator('button[aria-controls="nai-blue-prompt-dock"]').first()
+                            await railToggle.click()
+                            await page.locator('#nai-blue-rail-actions').waitFor({ state: 'detached' })
+                            const collapsedCtaCount = await page.evaluate(() => Array.from(document.querySelectorAll('[data-testid="main-generate-action"]')).filter(el => {
+                                const r = el.getBoundingClientRect()
+                                const s = getComputedStyle(el)
+                                return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 1 && r.height > 1
+                            }).length)
+                            assert.equal(collapsedCtaCount, 1, '/advanced @ 1280px collapsed rail must fall back to one bottom Generate CTA')
+                            await railToggle.click()
+                            await page.locator('#nai-blue-rail-actions [data-testid="main-generate-action"]').waitFor({ state: 'visible' })
+
+                            // 1280x720 short-height check: prompt textarea >= 160px and rail Generate button within viewport.
+                            await page.setViewportSize({ width: 1280, height: 720 })
+                            const shortViewportCheck = await page.evaluate(() => {
+                                const textarea = document.querySelector('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] textarea')
+                                const action = document.querySelector('#nai-blue-rail-actions [data-testid="main-generate-action"]')
+                                return {
+                                    textareaHeight: textarea?.getBoundingClientRect().height ?? 0,
+                                    actionBottom: action?.getBoundingClientRect().bottom ?? Infinity,
+                                    viewportHeight: window.innerHeight,
+                                }
+                            })
+                            assert.ok(shortViewportCheck.textareaHeight >= 160, `/advanced @ 1280x720 prompt textarea shrank below 160px (${shortViewportCheck.textareaHeight}px)`)
+                            assert.ok(shortViewportCheck.actionBottom <= shortViewportCheck.viewportHeight + 1, `/advanced @ 1280x720 rail Generate button clipped below viewport (${shortViewportCheck.actionBottom} > ${shortViewportCheck.viewportHeight})`)
+                            await page.setViewportSize({ width: 1280, height: 800 })
                         }
                         if (viewport.width === 1536) {
                             if (route === '/advanced') await assertWideCompositionCoreLoop(page, route, viewport)

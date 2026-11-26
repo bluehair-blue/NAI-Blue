@@ -195,6 +195,22 @@ describe('composition workspace contextual commands', () => {
         expect(bar).toContain('WEBP')
     })
 
+    it('omits cost, count, and Generate columns when the docked Main rail owns execution controls', () => {
+        const bar = renderToStaticMarkup(createElement(CompositionCommandBar, {
+            generation: { ...generation, actionTestId: 'main-generate-action' },
+            simplified: true,
+            omitExecutionControls: true,
+            summary: 'V5 · 832×1216 · 28 Steps',
+            cost: { value: '29 Anlas' },
+            count: createElement('span', null, '1'),
+        }))
+
+        expect(bar).toContain('grid-cols-1')
+        expect(bar).toContain('V5 · 832×1216 · 28 Steps')
+        expect(bar).not.toContain('29 Anlas')
+        expect(bar).not.toContain('data-testid="main-generate-action"')
+    })
+
     it('renders the simplified Main-style dock as exactly three command groups', () => {
         const dock = renderToStaticMarkup(createElement(MobileCommandDock, {
             generation: { ...generation, generateLabel: 'Generate 3 images' },

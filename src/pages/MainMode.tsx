@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { ImageIcon, ImagePlus, Download, Copy, RotateCcw, Save, Users, FolderOpen, Paintbrush, SlidersHorizontal } from 'lucide-react'
+import { ImageIcon, ImagePlus, Download, Copy, RotateCcw, Save, Users, FolderOpen, Paintbrush, Play, SlidersHorizontal, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Counter from '@/components/ui/counter'
 import { useGenerationStore } from '@/stores/generation-store'
+import { useShortcutStore } from '@/stores/shortcut-store'
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useCharacterStore } from '@/stores/character-store'
@@ -803,6 +805,8 @@ export default function MainMode() {
     }
 
     const requestPromptFocus = useLayoutStore(state => state.requestPromptFocus)
+    const railActionsHost = useLayoutStore(state => state.railActionsHost)
+    const generateShortcut = useShortcutStore(state => state.bindings['action:generate']?.label ?? '')
     const promptSurface = usePromptSurface()
     // layout-store + prompt-surface are the single authority shared by shell and compact command dock.
     const handleOpenPromptSheet = () => promptSurface.ensureVisible()
@@ -951,6 +955,7 @@ export default function MainMode() {
                 : t('composition.plan.reviewIssues', '문제 확인')
             : t('generate.button', '생성'),
         cancelLabel: t('generate.cancel', '취소'),
+        shortcutLabel: generateShortcut || undefined,
         onGenerate: reviewingBlockedPlan ? handleOpenResolvedPlan : handlePrimaryGeneration,
         onCancel: () => void cancelMainGenerationCommand(),
         actionTestId: 'main-generate-action',
@@ -1106,6 +1111,7 @@ export default function MainMode() {
             onRepairIssue={handleRepairIssue}
         />
     )
+    const renderActionsInRail = Boolean(railActionsHost && !isMobileWorkspace)
     const commandBar = (
         <div data-testid="main-command-dock">
             <CompositionCommandBar
@@ -1130,6 +1136,7 @@ export default function MainMode() {
                     onOpen: handleOpenResolvedPlan,
                 } : undefined}
                 generation={generationControl}
+                omitExecutionControls={renderActionsInRail}
                 labels={{
                     modules: t('composition.workspace.modules', '프롬프트 묶음'),
                     inspector: t('composition.workspace.inspector', '적용 내용'),
@@ -1141,6 +1148,43 @@ export default function MainMode() {
             />
         </div>
     )
+    const railActionsPortal = renderActionsInRail && railActionsHost ? createPortal(
+        <div className="space-y-2 pt-1" data-testid="main-rail-actions">
+            <div className="flex min-h-11 items-center justify-between gap-2">
+                <span
+                    className="min-w-0 truncate font-mono text-xs tabular-nums text-muted-foreground"
+                    aria-label={estimatedCost !== null ? `${t('composition.cost.estimated', 'Estimated cost')}: ${estimatedCost} Anlas` : undefined}
+                >
+                    {estimatedCost !== null ? `${estimatedCost} Anlas` : ''}
+                </span>
+                <div className="shrink-0">{batchCounter}</div>
+            </div>
+            <Button
+                type="button"
+                variant={generationControl.generating ? 'destructive' : 'generate'}
+                className="h-12 w-full min-w-0 justify-center gap-2 whitespace-nowrap px-4"
+                disabled={generationControl.disabled}
+                onClick={generationControl.generating ? generationControl.onCancel : generationControl.onGenerate}
+                data-testid={generationControl.generating ? generationControl.cancelTestId : generationControl.actionTestId}
+            >
+                {generationControl.generating
+                    ? <Square className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    : <Play className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                <span className="truncate">
+                    {generationControl.progressLabel
+                        ?? (generationControl.generating
+                            ? generationControl.cancelLabel
+                            : generationControl.generateLabel)}
+                </span>
+                {!generationControl.generating && generationControl.shortcutLabel && (
+                    <kbd className="ml-1 shrink-0 rounded bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[11px] font-medium">
+                        {generationControl.shortcutLabel}
+                    </kbd>
+                )}
+            </Button>
+        </div>,
+        railActionsHost,
+    ) : null
     const mobileDock = isMobileWorkspace ? (
         <MobileCommandDock
             generation={{
@@ -1432,6 +1476,7 @@ export default function MainMode() {
                 onOpenChange={setInpaintDialogOpen}
                 sourceImage={previewImage}
             />
+            {railActionsPortal}
         </div>
     )
 }

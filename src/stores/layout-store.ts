@@ -21,6 +21,8 @@ interface LayoutState {
     pendingPromptDialog: PromptDialogRequest | null
     /** Transient focus handoff from MainMode summary or low-steps feedback. */
     pendingPromptFocus: PromptFocusTarget | null
+    /** Transient portal target mounted at the bottom of the docked Main prompt rail. */
+    railActionsHost: HTMLDivElement | null
     toggleLeftSidebar: () => void
     toggleRightSidebar: () => void
     setLeftSidebarVisible: (visible: boolean) => void
@@ -32,6 +34,7 @@ interface LayoutState {
     clearPendingPromptDialog: () => void
     requestPromptFocus: (target: PromptFocusTarget) => void
     clearPendingPromptFocus: () => void
+    setRailActionsHost: (host: HTMLDivElement | null) => void
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -43,6 +46,7 @@ export const useLayoutStore = create<LayoutState>()(
             supportSheet: null,
             pendingPromptDialog: null,
             pendingPromptFocus: null,
+            railActionsHost: null,
             toggleLeftSidebar: () => set((state) => ({ leftSidebarVisible: !state.leftSidebarVisible })),
             toggleRightSidebar: () => set((state) => ({ rightSidebarVisible: !state.rightSidebarVisible })),
             setLeftSidebarVisible: (visible) => set({ leftSidebarVisible: visible }),
@@ -54,6 +58,7 @@ export const useLayoutStore = create<LayoutState>()(
             clearPendingPromptDialog: () => set({ pendingPromptDialog: null }),
             requestPromptFocus: (pendingPromptFocus) => set({ pendingPromptFocus }),
             clearPendingPromptFocus: () => set({ pendingPromptFocus: null }),
+            setRailActionsHost: (railActionsHost) => set({ railActionsHost }),
         }),
         {
             name: 'nai-blue-layout',

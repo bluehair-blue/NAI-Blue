@@ -95,6 +95,8 @@ export interface CompositionCommandBarProps {
     onOpenSummary?: () => void
     storage?: CompositionStorageControl
     count?: ReactNode
+    /** Omit cost, count, and Generate when the docked Main rail owns them. */
+    omitExecutionControls?: boolean
     /** Scene UX: keep internal composition authority out of the user-facing command strip. */
     simplified?: boolean
 }
@@ -149,6 +151,7 @@ export function CompositionCommandBar({
     onOpenSummary,
     storage,
     count,
+    omitExecutionControls = false,
     simplified = false,
 }: CompositionCommandBarProps) {
     const labels = { ...DEFAULT_LABELS, ...labelsOverride }
@@ -198,7 +201,11 @@ export function CompositionCommandBar({
     if (simplified) {
         return (
             <header
-                className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_minmax(10rem,12rem)] items-center gap-2 border-y border-border/60 bg-card/80 p-2', className)}
+                className={cn(
+                    'grid min-w-0 items-center gap-2 border-y border-border/60 bg-card/80 p-2',
+                    omitExecutionControls ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_auto_auto_minmax(10rem,12rem)]',
+                    className,
+                )}
                 aria-label={labels.commands}
                 data-testid="composition-command-bar"
             >
@@ -254,30 +261,39 @@ export function CompositionCommandBar({
                     {inspectorAction}
                     {resolvedAction}
                 </div>
-                <span
-                    className={cn(
-                        'min-w-16 whitespace-nowrap text-right font-mono text-xs tabular-nums',
-                        cost?.severity === 'warning' && 'text-warning',
-                        cost?.severity === 'error' && 'text-destructive',
-                        (!cost?.severity || cost.severity === 'normal') && 'text-muted-foreground',
-                    )}
-                    aria-label={cost ? `${cost.label ?? labels.cost}: ${cost.value}` : undefined}
-                    data-command-label
-                >
-                    {cost?.value ?? ''}
-                </span>
-                <div className="shrink-0">{count}</div>
-                <Button
-                    type="button"
-                    variant={generation.generating ? 'destructive' : 'generate'}
-                    className="min-w-0 whitespace-nowrap"
-                    disabled={actionDisabled}
-                    onClick={generation.generating ? generation.onCancel : generation.onGenerate}
-                    data-testid={generation.generating ? generation.cancelTestId ?? generation.actionTestId : generation.actionTestId}
-                >
-                    {generation.generating ? <Square className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                    <span className="truncate whitespace-nowrap">{generation.progressLabel ?? (generation.generating ? generation.cancelLabel ?? labels.cancel : generation.generateLabel ?? labels.generate)}</span>
-                </Button>
+                {!omitExecutionControls && (
+                    <>
+                        <span
+                            className={cn(
+                                'min-w-16 whitespace-nowrap text-right font-mono text-xs tabular-nums',
+                                cost?.severity === 'warning' && 'text-warning',
+                                cost?.severity === 'error' && 'text-destructive',
+                                (!cost?.severity || cost.severity === 'normal') && 'text-muted-foreground',
+                            )}
+                            aria-label={cost ? `${cost.label ?? labels.cost}: ${cost.value}` : undefined}
+                            data-command-label
+                        >
+                            {cost?.value ?? ''}
+                        </span>
+                        <div className="shrink-0">{count}</div>
+                        <Button
+                            type="button"
+                            variant={generation.generating ? 'destructive' : 'generate'}
+                            className="min-w-0 whitespace-nowrap"
+                            disabled={actionDisabled}
+                            onClick={generation.generating ? generation.onCancel : generation.onGenerate}
+                            data-testid={generation.generating ? generation.cancelTestId ?? generation.actionTestId : generation.actionTestId}
+                        >
+                            {generation.generating ? <Square className="mr-2 h-4 w-4 shrink-0" /> : <Play className="mr-2 h-4 w-4 shrink-0" />}
+                            <span className="truncate whitespace-nowrap">{generation.progressLabel ?? (generation.generating ? generation.cancelLabel ?? labels.cancel : generation.generateLabel ?? labels.generate)}</span>
+                            {!generation.generating && generation.shortcutLabel && (
+                                <kbd className="ml-2 hidden shrink-0 rounded bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[11px] font-medium xl:inline">
+                                    {generation.shortcutLabel}
+                                </kbd>
+                            )}
+                        </Button>
+                    </>
+                )}
             </header>
         )
     }

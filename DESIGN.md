@@ -163,8 +163,11 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   `400px` for History above it. Close target is 44px, title/header reserves its
   space, and content respects top/bottom safe areas.
 - **MainMode:** current result/canvas owns the view. Prompt, model, resolution,
-  seed, and token state stay in the authoring surface. One bottom action rail owns
-  generate/cancel at every width; the Prompt surface never duplicates that CTA.
+  steps, seed, and token state stay in the authoring surface. When the desktop
+  Prompt rail is docked and visible (`1200px+`), cost, image count, and
+  generate/cancel sit at the bottom of that rail; when the rail is collapsed or
+  unavailable (`<1200px`), the bottom action rail or mobile dock owns them.
+  Exactly one generate/cancel action is visible at every width and state.
 - **SceneMode:** title and critical create/edit controls stay visible. Import,
   rotation, queue, export, and sharing remain reachable in grouped overflow
   menus on compact widths. The preset/view row wraps without horizontal scroll.
@@ -197,11 +200,14 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
 ### Composition workspace contract
 
 - **Composition action rail:** Generate/cancel is the only unconditional filled
-  action and Main places it below the canvas. Settings summary, estimated cost,
-  image count, and the CTA stay in a single non-wrapping grid; narrower widths
-  collapse settings to one button instead of creating a second row. Module Stack
-  and actual generation values appear only when backing data exists.
-  Generate/cancel is never placed in an overflow menu.
+  action. Main places cost, image count, and generate/cancel at the bottom of the
+  docked Prompt rail (`1200px+`) and falls back to the bottom action rail when
+  the rail is collapsed or undocked; the bottom rail omits those columns while
+  the docked rail owns them so no empty grid tracks remain. Settings summary,
+  storage, estimated cost, image count, and the CTA stay in a single non-wrapping
+  grid; narrower widths collapse settings to one button instead of creating a
+  second row. Module Stack and actual generation values appear only when backing
+  data exists. Generate/cancel is never placed in an overflow menu.
 - **Module Stack row anatomy:** Each fixed-height row has enable state, an
   unabridged accessible module name, visible kind/summary, validation state,
   edit entry, and ordering affordances. The visual name may truncate to protect

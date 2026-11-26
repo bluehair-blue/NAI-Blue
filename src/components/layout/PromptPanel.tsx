@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router'
+import { isMobileRuntime } from '@/platform/runtime'
 import { Button } from '@/components/ui/button'
 import { FragmentPromptDialog } from '@/components/fragments/FragmentPromptDialog'
 import { SourceImagePanel } from '@/components/layout/SourceImagePanel'
@@ -57,11 +58,15 @@ const SAMPLERS = [
 
 const SCHEDULERS = ['native', 'karras', 'exponential', 'polyexponential']
 
-export function PromptPanel() {
+export function PromptPanel({ docked = false }: { docked?: boolean } = {}) {
     const { t } = useTranslation()
     const location = useLocation()
     const isAdvancedMode = location.pathname === '/advanced'
     const isSceneMode = location.pathname.startsWith('/scenes')
+    const setRailActionsHost = useLayoutStore(state => state.setRailActionsHost)
+    const railHostCallback = useCallback((node: HTMLDivElement | null) => {
+        setRailActionsHost(node)
+    }, [setRailActionsHost])
 
     const additionalPrompt = useGenerationDraftStore(state => state.additionalPrompt)
     const isGenerating = useGenerationSessionStore(state => state.isGenerating)
@@ -179,7 +184,7 @@ export function PromptPanel() {
             </div>
 
             {/* Prompt helpers share a quiet tonal rail; dialogs carry their own hierarchy once opened. */}
-            <div className="mb-4 grid grid-cols-3 border-y border-border/60 py-1">
+            <div className="mb-3 grid grid-cols-3 border-y border-border/60 py-1">
                 {/* Character Prompt Toggle Button */}
                 <Tip content={t('prompt.character', '캐릭터')}>
                     <Button
@@ -402,6 +407,11 @@ export function PromptPanel() {
                     setAdditionalPrompt(newValue)
                 }}
             />
+
+            {/* Docked Main rail owns the primary Generate action slot; sheets never mount it. */}
+            {docked && isAdvancedMode && !isMobileRuntime && (
+                <div id="nai-blue-rail-actions" ref={railHostCallback} className="shrink-0" />
+            )}
 
             {/* MainMode owns the only Advanced generation CTA. Scene and Style Lab
                 keep this route-aware control because their cancel/queue semantics differ. */}

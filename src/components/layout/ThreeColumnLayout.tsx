@@ -316,7 +316,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         openSupportSheet('history')
     }
 
-    const promptPanelContent = (
+    const renderPromptPanelContent = (docked: boolean) => (
         <>
             <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-5">
                 <div className="flex min-w-0 items-center gap-2">
@@ -387,7 +387,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                 )}
             </div>
 
-            <PromptPanel />
+            <PromptPanel docked={docked} />
         </>
     )
 
@@ -512,7 +512,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                         (!leftSidebarVisible || !promptPanelIsDocked) && "min-[1200px]:hidden"
                     )}
                 >
-                    {promptPanelIsDocked && leftSidebarVisible && promptPanelContent}
+                    {promptPanelIsDocked && leftSidebarVisible && renderPromptPanelContent(true)}
                 </aside>
 
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -561,7 +561,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     </SheetHeader>
                     {/* PromptPanel owns its header, so this reserve keeps that header clear of Sheet's close target. */}
                     <div className="flex min-h-0 flex-1 flex-col overflow-hidden [&>div:first-child]:pr-16">
-                        {promptPanelContent}
+                        {renderPromptPanelContent(false)}
                     </div>
                 </SheetContent>
             </Sheet>

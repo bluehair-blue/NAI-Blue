@@ -93,6 +93,7 @@ export interface CompositionGenerationControl {
     progressLabel?: string
     generateLabel?: string
     cancelLabel?: string
+    shortcutLabel?: string
     actionTestId?: string
     cancelTestId?: string
     onGenerate: () => void
