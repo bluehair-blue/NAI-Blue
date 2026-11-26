@@ -19,14 +19,11 @@ export function PresetDraftControls() {
     const revertActivePreset = usePresetStore(state => state.revertActivePreset)
     const saveWorkingCopyAs = usePresetStore(state => state.saveWorkingCopyAs)
     const activePreset = presets.find(preset => preset.id === activePresetId)
+    const saveLabel = t('preset.save', 'Save preset')
+    const unsavedLabel = t('preset.unsaved', 'Unsaved')
 
     return (
         <div className="flex items-center gap-1" data-testid="preset-draft-controls">
-            {dirty && (
-                <span className="hidden rounded-control bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning sm:inline">
-                    {t('preset.unsaved', 'Unsaved')}
-                </span>
-            )}
             <Tip content={t('preset.revert', 'Revert unsaved changes')}>
                 <Button
                     type="button"
@@ -40,17 +37,27 @@ export function PresetDraftControls() {
                     <Undo2 className="h-4 w-4" />
                 </Button>
             </Tip>
-            <Tip content={t('preset.save', 'Save preset')}>
+            <Tip content={dirty ? `${saveLabel} · ${unsavedLabel}` : saveLabel}>
                 <Button
                     type="button"
                     variant={dirty ? 'default' : 'ghost'}
                     size="icon"
-                    className="h-11 w-11"
+                    className="relative h-11 w-11"
                     disabled={!dirty}
                     onClick={saveActivePreset}
-                    aria-label={t('preset.save', 'Save preset')}
+                    aria-label={dirty ? `${saveLabel} (${unsavedLabel})` : saveLabel}
                 >
                     <Save className="h-4 w-4" />
+                    {dirty && (
+                        <>
+                            <span
+                                className="absolute right-2 top-2 h-2 w-2 rounded-full bg-warning"
+                                aria-hidden="true"
+                                data-testid="preset-unsaved-dot"
+                            />
+                            <span className="sr-only">{unsavedLabel}</span>
+                        </>
+                    )}
                 </Button>
             </Tip>
             <Tip content={t('preset.saveCopy', 'Save as copy')}>

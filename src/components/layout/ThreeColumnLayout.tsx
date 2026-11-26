@@ -342,8 +342,11 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const renderPromptPanelContent = (docked: boolean) => (
         <>
             <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-5">
-                <div className="flex min-w-0 items-center gap-2">
-                    <h2 className="min-w-0 max-w-40 truncate text-base font-semibold">
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <h2
+                        className="min-w-0 max-w-56 truncate text-base font-semibold 2xl:max-w-72"
+                        title={activePreset?.name || t('preset.default', '기본')}
+                    >
                         {activePreset?.name || t('preset.default', '기본')}
                     </h2>
                     <PresetDropdown open={presetDialogOpen} onOpenChange={setPresetDialogOpen} />
