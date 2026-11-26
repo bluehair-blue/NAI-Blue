@@ -1,9 +1,10 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { Copy, Dice5, Lock, Unlock } from 'lucide-react'
+import { Copy, Dice5, Lock, Puzzle, Unlock } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AutocompleteTextarea } from '@/components/ui/AutocompleteTextarea'
 import { PromptSlotTabs } from '@/components/prompt/PromptSlotTabs'
+import { useNumericDraft, type NumericDraftRange } from '@/components/prompt/numeric-draft'
 import {
     appendPromptModuleLine,
     PromptModulePicker,
@@ -44,12 +45,20 @@ const SAMPLERS = [
 
 const SCHEDULERS = ['native', 'karras', 'exponential', 'polyexponential']
 
+const SEED_RANGE: NumericDraftRange = { min: 0, max: 4294967295, integer: true }
+const STEPS_RANGE: NumericDraftRange = { min: 1, max: 50, integer: true }
+const CFG_SCALE_RANGE: NumericDraftRange = { min: 1, max: 10 }
+const CFG_RESCALE_RANGE: NumericDraftRange = { min: 0, max: 1 }
+const UC_PRESET_RANGE: NumericDraftRange = { min: 0, max: 4, integer: true }
+
 type PromptSlot = Exclude<keyof ScenePromptConfig, 'character' | 'characterNegative'>
 
 interface ScenePromptEditorProps {
     scene: SceneCard
     presetId: string
     disabled?: boolean
+    /** SceneDetail owns the fragment dialog; the trigger lives here because this toolbar is always visible. */
+    onOpenFragmentPreview?: () => void
 }
 
 /**
@@ -57,7 +66,7 @@ interface ScenePromptEditorProps {
  * reads Main stores only when the explicit copy button is pressed. This one-way
  * boundary keeps Scene edits from mutating the Main prompt panel.
  */
-export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePromptEditorProps) {
+export function ScenePromptEditor({ scene, presetId, disabled = false, onOpenFragmentPreview }: ScenePromptEditorProps) {
     const { t } = useTranslation()
     const [activeSlot, setActiveSlot] = useState<PromptSlot>('base')
     const sectionRef = useRef<HTMLElement>(null)
@@ -128,16 +137,11 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
         toast({ description: t('scene.mainPromptsCopied', '메인 프롬프트를 이 씬에 복사했습니다.') })
     }
 
-    const setNumeric = <K extends keyof SceneGenerationConfig>(
-        key: K,
-        value: string,
-        minimum: number,
-        maximum: number,
-    ) => {
-        const parsed = Number(value)
-        if (!Number.isFinite(parsed)) return
-        patchGeneration(key, Math.min(maximum, Math.max(minimum, parsed)) as SceneGenerationConfig[K])
-    }
+    const seedInput = useNumericDraft(generation.seed, SEED_RANGE, value => patchGeneration('seed', value), disabled || !generation.seedLocked)
+    const stepsInput = useNumericDraft(generation.steps, STEPS_RANGE, value => patchGeneration('steps', value), disabled)
+    const cfgScaleInput = useNumericDraft(generation.cfgScale, CFG_SCALE_RANGE, value => patchGeneration('cfgScale', value), disabled)
+    const cfgRescaleInput = useNumericDraft(generation.cfgRescale, CFG_RESCALE_RANGE, value => patchGeneration('cfgRescale', value), disabled)
+    const ucPresetInput = useNumericDraft(generation.ucPreset, UC_PRESET_RANGE, value => patchGeneration('ucPreset', value), disabled)
 
     return (
         <section
@@ -162,7 +166,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                     <h2 className="text-sm font-semibold">{t('scene.promptComposition', '씬 프롬프트 구성')}</h2>
                     <p className="text-xs text-muted-foreground">{t('scene.promptCompositionHelp', '이 씬에서만 사용할 프롬프트와 생성 설정입니다.')}</p>
                 </div>
-                <Button type="button" variant="ghost" size="sm" className="rounded-control px-2" onClick={copyMainPrompts} disabled={disabled}>
+                <Button type="button" variant="ghost" size="sm" className="h-11 rounded-control px-2" onClick={copyMainPrompts} disabled={disabled}>
                     <Copy className="h-4 w-4" />
                     {t('scene.copyMainPrompts', '메인 프롬프트 가져오기')}
                 </Button>
@@ -182,16 +186,32 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 onChange={id => setActiveSlot(id as PromptSlot)}
             />
             <div id={panelId} role="tabpanel" aria-labelledby={`${panelId}-${active.id}-tab`}>
-                <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border/45 px-2">
+                <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 border-b border-border/45 px-2">
                     <span className="min-w-0 truncate text-sm font-medium text-muted-foreground">{active.label}</span>
-                    <PromptModulePicker
-                        disabled={disabled}
-                        triggerLabel={t('guided.promptModules.triggerShort', '모듈 불러오기')}
-                        triggerClassName="shrink-0"
-                        onSelectLine={line => updatePrompts(presetId, scene.id, {
-                            [active.id]: appendPromptModuleLine(prompts[active.id], line),
-                        })}
-                    />
+                    <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+                        {onOpenFragmentPreview && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-11 shrink-0 gap-2 rounded-control px-2 text-sm text-muted-foreground hover:text-foreground"
+                                disabled={disabled}
+                                onClick={onOpenFragmentPreview}
+                                data-testid="scene-fragment-preview-action"
+                            >
+                                <Puzzle className="h-4 w-4" aria-hidden="true" />
+                                {t('scene.wildcardPreview', '와일드카드 미리보기')}
+                            </Button>
+                        )}
+                        <PromptModulePicker
+                            disabled={disabled}
+                            triggerLabel={t('guided.promptModules.triggerShort', '모듈 불러오기')}
+                            triggerClassName="h-11 shrink-0"
+                            onSelectLine={line => updatePrompts(presetId, scene.id, {
+                                [active.id]: appendPromptModuleLine(prompts[active.id], line),
+                            })}
+                        />
+                    </div>
                 </div>
                 <AutocompleteTextarea
                     key={active.id}
@@ -236,7 +256,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 <label className="space-y-1">
                     <span className="text-xs font-medium text-muted-foreground">{t('settings.seed', '시드')}</span>
                     <div className="flex gap-1">
-                        <Input type="number" value={generation.seed} onChange={event => setNumeric('seed', event.target.value, 0, 4294967295)} disabled={disabled || !generation.seedLocked} className="h-11 rounded-control font-mono" />
+                        <Input type="number" {...seedInput} disabled={disabled || !generation.seedLocked} className="h-11 rounded-control font-mono" />
                         <Button type="button" variant={generation.seedLocked ? 'secondary' : 'ghost'} size="icon" className={cn('h-11 w-11 shrink-0', !generation.seedLocked && 'bg-canvas hover:bg-accent')} onClick={() => patchGeneration('seedLocked', !generation.seedLocked)} disabled={disabled} aria-label={generation.seedLocked ? t('settings.unlockSeed', '시드 잠금 해제') : t('settings.lockSeed', '시드 잠금')}>
                             {generation.seedLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                         </Button>
@@ -247,11 +267,11 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 </label>
                 <label className="space-y-1">
                     <span className="text-xs font-medium text-muted-foreground">{t('parameters.steps', 'Steps')}</span>
-                    <Input type="number" value={generation.steps} min={1} max={50} onChange={event => setNumeric('steps', event.target.value, 1, 50)} disabled={disabled} className="h-10 rounded-control" />
+                    <Input type="number" {...stepsInput} min={1} max={50} disabled={disabled} className="h-10 rounded-control" />
                 </label>
                 <label className="space-y-1">
                     <span className="text-xs font-medium text-muted-foreground">{t('parameters.cfgScale', 'CFG Scale')}</span>
-                    <Input type="number" value={generation.cfgScale} min={1} max={10} step={0.1} onChange={event => setNumeric('cfgScale', event.target.value, 1, 10)} disabled={disabled} className="h-10 rounded-control" />
+                    <Input type="number" {...cfgScaleInput} min={1} max={10} step={0.1} disabled={disabled} className="h-10 rounded-control" />
                 </label>
             </div>
 
@@ -260,7 +280,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                 <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <label className="space-y-1">
                         <span className="text-xs text-muted-foreground">{t('parameters.cfgRescale', 'CFG Rescale')}</span>
-                        <Input type="number" value={generation.cfgRescale} min={0} max={1} step={0.01} onChange={event => setNumeric('cfgRescale', event.target.value, 0, 1)} disabled={disabled} />
+                        <Input type="number" {...cfgRescaleInput} min={0} max={1} step={0.01} disabled={disabled} />
                     </label>
                     <label className="space-y-1">
                         <span className="text-xs text-muted-foreground">{t('parameters.sampler', '샘플러')}</span>
@@ -287,7 +307,7 @@ export function ScenePromptEditor({ scene, presetId, disabled = false }: ScenePr
                     </label>
                     <label className="space-y-1">
                         <span className="text-xs text-muted-foreground">{t('parameters.ucPreset', 'UC Preset')}</span>
-                        <Input type="number" value={generation.ucPreset} min={0} max={4} onChange={event => setNumeric('ucPreset', event.target.value, 0, 4)} disabled={disabled} />
+                        <Input type="number" {...ucPresetInput} min={0} max={4} disabled={disabled} />
                     </label>
                     {!isV5 && (
                         <div className="flex min-h-10 items-center justify-between rounded-control bg-canvas px-3">

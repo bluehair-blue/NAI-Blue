@@ -30,6 +30,8 @@ export interface SceneCompositionWorkspaceProps {
     activeModuleId?: string | null
     recipeName?: string
     cost?: CompositionCostSummary
+    /** Batch counter shown beside Generate in the command bar and the mobile dock. */
+    count?: ReactNode
     seed?: CompositionSeedControl
     resolvedPlan?: ReadonlyCompositionPlan | null
     resolvedIssues?: readonly ReadonlyCompositionIssue[]
@@ -65,6 +67,7 @@ export function SceneCompositionWorkspace({
     activeModuleId,
     recipeName,
     cost,
+    count,
     seed,
     resolvedPlan,
     resolvedIssues = [],
@@ -180,6 +183,7 @@ export function SceneCompositionWorkspace({
             recipe={simplified ? undefined : recipe}
             validation={simplified ? undefined : validation}
             cost={cost}
+            count={count}
             seed={seed}
             resolved={simplified ? undefined : {
                 available: resolvedAvailable,
@@ -219,6 +223,7 @@ export function SceneCompositionWorkspace({
                 mobileDock={hideCommandBar ? null : (
                     <MobileCommandDock
                         generation={generation}
+                        count={count}
                         disabled={disabled}
                         resolvedAvailable={resolvedAvailable}
                         labels={{

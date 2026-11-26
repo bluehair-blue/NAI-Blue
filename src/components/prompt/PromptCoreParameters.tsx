@@ -21,6 +21,10 @@ import {
 import { NAI_IMAGE_MODELS } from '@/services/nai/model-catalog'
 import { useGenerationDraftStore } from '@/stores/generation-draft-store'
 import { useGenerationSessionStore } from '@/stores/generation-session-store'
+import { useNumericDraft, type NumericDraftRange } from './numeric-draft'
+
+const STEPS_RANGE: NumericDraftRange = { min: 1, max: 50, integer: true }
+const SEED_RANGE: NumericDraftRange = { min: 0, max: 4294967295, integer: true }
 
 /**
  * Core Main authoring controls (Model, Resolution, Steps, Seed) mounted directly
@@ -42,17 +46,13 @@ export function PromptCoreParameters() {
     const isGenerating = useGenerationSessionStore(state => state.isGenerating)
 
     const stepQuality = assessGenerationStepQuality(steps)
+    const stepsInput = useNumericDraft(steps, STEPS_RANGE, setSteps, isGenerating)
+    const seedInput = useNumericDraft(seed, SEED_RANGE, setSeed, seedLocked || isGenerating)
 
     const handleRandomSeed = () => {
         if (!seedLocked) {
             setSeed(generateRandomSeed())
         }
-    }
-
-    const handleStepsChange = (raw: string) => {
-        const parsed = Number.parseInt(raw, 10)
-        if (Number.isNaN(parsed)) return
-        setSteps(Math.min(50, Math.max(1, parsed)))
     }
 
     return (
@@ -119,9 +119,8 @@ export function PromptCoreParameters() {
                         min={1}
                         max={50}
                         step={1}
-                        value={steps}
+                        {...stepsInput}
                         disabled={isGenerating}
-                        onChange={event => handleStepsChange(event.target.value)}
                         data-prompt-focus="steps"
                         className={cn(
                             'h-11 min-w-0 rounded-control px-2.5 font-mono text-xs tabular-nums',
@@ -143,8 +142,7 @@ export function PromptCoreParameters() {
                             id="prompt-core-seed"
                             type="number"
                             inputMode="numeric"
-                            value={seed}
-                            onChange={event => setSeed(Number(event.target.value))}
+                            {...seedInput}
                             disabled={seedLocked || isGenerating}
                             className="h-11 min-w-0 flex-1 rounded-control px-2 font-mono text-xs tabular-nums"
                         />

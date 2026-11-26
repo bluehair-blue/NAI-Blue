@@ -89,6 +89,7 @@ import {
 } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useGenerationStore } from '@/stores/generation-store'
+import Counter from '@/components/ui/counter'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { toast } from '@/components/ui/use-toast'
 import { toNativeAssetUrl } from '@/platform/asset-url'
@@ -297,7 +298,9 @@ export default function SceneMode() {
     const addAllToQueue = useSceneStore(s => s.addAllToQueue)
     const clearAllQueue = useSceneStore(s => s.clearAllQueue)
     const getTotalQueueCount = useSceneStore(s => s.getTotalQueueCount)
+    // Shared with Main's batch count: it is the step for card "+" and "add all to queue".
     const batchCount = useGenerationStore(s => s.batchCount)
+    const setBatchCount = useGenerationStore(s => s.setBatchCount)
 
     const totalQueue = activePresetId ? getTotalQueueCount(activePresetId) : 0
 
@@ -951,6 +954,13 @@ export default function SceneMode() {
     }
 
     const activeItem = activeId ? scenes.find(s => s.id === activeId) : null
+    const batchCountLabel = t('scene.queueStepCount', '한 번에 추가할 장수')
+    const batchCounter = (
+        <div className="flex min-w-0 items-center gap-2 pl-3" role="group" aria-label={batchCountLabel} data-testid="scene-batch-counter">
+            <span className="max-w-[5.5rem] text-xs font-medium leading-tight text-muted-foreground">{batchCountLabel}</span>
+            <Counter value={batchCount} onChange={setBatchCount} min={1} max={9999} fontSize={16} className="shrink-0" />
+        </div>
+    )
 
     return (
         <SceneCompositionWorkspace
@@ -972,6 +982,7 @@ export default function SceneMode() {
             }}
             validation={validation}
             cost={{ value: `${estimatedCost}`, label: 'Anlas', severity: estimatedCost > 0 ? 'warning' : 'normal' }}
+            count={batchCounter}
             generation={{
                 generating: isGenerating || isCancelling || rotationActive,
                 disabled: isCancelling || (!isGenerating && !rotationActive && (totalQueue === 0 || generationConflict)),
@@ -1190,6 +1201,7 @@ export default function SceneMode() {
                     </Button>
                     {scenes.length > 0 && (
                         <Button
+                            variant="secondary"
                             size="icon"
                             className="h-11 w-11 shrink-0 sm:w-auto sm:px-3"
                             aria-label={t('scene.addScene')}

@@ -273,7 +273,7 @@ function SortableCaptionCard({
                         {caption.prompt || caption.negative || t('scene.emptyCharacterPrompt', '빈 프롬프트')}
                     </div>
                 </div>
-                <Button type="button" variant="secondary" size="sm" onClick={() => onEnabledChange(true)} disabled={disabled}>
+                <Button type="button" variant="secondary" size="sm" className="h-11" onClick={() => onEnabledChange(true)} disabled={disabled}>
                     <UserPlus className="h-3.5 w-3.5" />
                     {t('scene.includeCharacter', '포함')}
                 </Button>
@@ -322,7 +322,7 @@ function SortableCaptionCard({
                     disabled={disabled}
                     className="h-10 min-w-40 flex-1"
                 />
-                <Button type="button" variant="secondary" size="sm" onClick={() => onEnabledChange(false)} disabled={disabled}>
+                <Button type="button" variant="secondary" size="sm" className="h-11" onClick={() => onEnabledChange(false)} disabled={disabled}>
                     <UserMinus className="h-3.5 w-3.5" />
                     {t('scene.excludeCharacter', '제외')}
                 </Button>
@@ -520,7 +520,7 @@ export function SceneCharacterCaptionsEditor({
                         onChange={event => commit(captions, event.target.checked)}
                         disabled={disabled}
                     />
-                    <Button type="button" variant="secondary" size="sm" onClick={addCaption} disabled={disabled}>
+                    <Button type="button" variant="secondary" size="sm" className="h-11" onClick={addCaption} disabled={disabled}>
                         <Plus className="h-4 w-4" />
                         {t('scene.addCharacterCaption', '직접 추가')}
                     </Button>

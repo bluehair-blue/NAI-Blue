@@ -103,23 +103,77 @@ describe('Scene composition workspace information architecture', () => {
         expect(generationHook).toContain("executionAuthority !== 'legacy' && !rotationActive")
     })
 
-    it('moves raw prompts to compatibility UI and exposes typed override diff and character layout', async () => {
+    it('keeps typed override diff and the scrollable Scene detail workspace', async () => {
         const detail = await source('src/pages/SceneDetail.tsx')
 
         expect(detail).toContain('<SceneCompositionWorkspace')
-        expect(detail).toContain('<CharacterLayoutEditor')
-        expect(detail).toContain("advancedCompatibility', 'Advanced / compatibility prompt'")
         expect(detail).toContain("id: 'prompt'")
         expect(detail).toContain("id: 'resolution'")
         expect(detail).toContain("id: 'characters'")
         expect(detail).toContain("id: 'params'")
         expect(detail).toContain("id: 'output'")
-        expect(detail).toContain('handleCharacterPositionChange')
         expect(detail).toContain('data-testid="scene-detail-workspace"')
         expect(detail).toContain('overflow-y-auto overscroll-contain')
         expect(detail).toContain('min-h-[20rem]')
-        expect(detail).toContain('data-testid="scene-resolved-action"')
         expect(detail).toContain('<FragmentPromptDialog')
+    })
+
+    it('opens the fragment dialog from a visible Scene control, never from the hidden inspector', async () => {
+        const [detail, workspace, editor] = await Promise.all([
+            source('src/pages/SceneDetail.tsx'),
+            source('src/components/scene/SceneCompositionWorkspace.tsx'),
+            source('src/components/scene/ScenePromptEditor.tsx'),
+        ])
+
+        // Simplified Scene surfaces never show the inspector: no desktop rail and no inspector sheet.
+        expect(workspace).toContain('desktopRails={false}')
+        expect(workspace).toContain('{!simplified && <>')
+        expect(detail).toMatch(/<SceneCompositionWorkspace\s+simplified/)
+        const inspectorStart = detail.indexOf('inspectorChildren={')
+        const inspectorBlock = inspectorStart === -1
+            ? ''
+            : detail.slice(inspectorStart, detail.indexOf('onSelectModule=', inspectorStart))
+        expect(inspectorBlock).not.toContain('setFragmentDialogOpen')
+        expect(inspectorBlock).not.toMatch(/<Button|onClick=/)
+
+        expect(detail).toContain('onOpenFragmentPreview={() => setFragmentDialogOpen(true)}')
+        expect(detail).toContain('window.addEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, onShortcutFragment)')
+        expect(editor).toContain('data-testid="scene-fragment-preview-action"')
+        expect(editor).toContain('onClick={onOpenFragmentPreview}')
+        expect(editor).toContain("t('scene.wildcardPreview'")
+        // The trigger sits in the always-visible slot toolbar beside the module picker.
+        const toolbar = editor.slice(editor.indexOf('role="tabpanel"'), editor.indexOf('<AutocompleteTextarea'))
+        expect(toolbar).toContain('scene-fragment-preview-action')
+        expect(toolbar).toContain('<PromptModulePicker')
+    })
+
+    it('shows the batch step counter on the Scene list command bar and mobile dock', async () => {
+        const [sceneMode, workspace] = await Promise.all([
+            source('src/pages/SceneMode.tsx'),
+            source('src/components/scene/SceneCompositionWorkspace.tsx'),
+        ])
+
+        expect(sceneMode).toContain('count={batchCounter}')
+        expect(sceneMode).toContain('<Counter value={batchCount} onChange={setBatchCount}')
+        expect(sceneMode).toContain("t('scene.queueStepCount'")
+        expect(sceneMode).toContain('incrementQueue(activePresetId, scene.id, useGenerationStore.getState().batchCount)')
+        expect(workspace.match(/count=\{count\}/g)).toHaveLength(2)
+    })
+
+    it('blocks preset-wide queued generation while rotation drains the same queue', async () => {
+        const detail = await source('src/pages/SceneDetail.tsx')
+        const item = detail.slice(detail.lastIndexOf('<DropdownMenuItem', detail.indexOf('scene-detail-generate-all-queued')), detail.indexOf('scene-detail-generate-all-queued'))
+
+        expect(item).toContain('disabled={rotationActive ||')
+    })
+
+    it('neutralises window shortcut handlers when the Scene disappears', async () => {
+        const detail = await source('src/pages/SceneDetail.tsx')
+        const notFound = detail.slice(detail.indexOf('if (!scene || !activePresetId) {'), detail.indexOf("t('scene.notFound'"))
+
+        expect(notFound).toContain('handleGenerateRef.current = () => {}')
+        expect(notFound).toContain('generateShortcutDisabledRef.current = true')
+        expect(notFound).toContain('fragmentShortcutDisabledRef.current = true')
     })
 
     it('routes Scene detail durable generation through explicit review and keeps legacy cancellation', async () => {

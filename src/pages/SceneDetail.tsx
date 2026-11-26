@@ -16,7 +16,6 @@ import {
     Trash2,
     CheckSquare,
     Square,
-    ScanEye,
     MoreVertical,
     Layers,
 } from 'lucide-react'
@@ -28,10 +27,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { CHARACTER_SCENES_DIRECTORY_NAME } from '@/domain/generation-folders'
-import { AutocompleteTextarea } from "@/components/ui/AutocompleteTextarea";
 import { Tip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { getScenePresetPathSegments, hasSceneCompositionOverrides, resolveSceneGeneration, useSceneStore, SceneImage } from '@/stores/scene-store'
+import { getScenePresetPathSegments, resolveSceneGeneration, useSceneStore, SceneImage } from '@/stores/scene-store'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useSceneGeneration } from '@/hooks/useSceneGeneration'
@@ -64,10 +62,8 @@ import { SceneCompositionWorkspace } from '@/components/scene/SceneCompositionWo
 import { SceneInheritedSettings } from '@/components/scene/SceneInheritedSettings'
 import { ScenePromptEditor } from '@/components/scene/ScenePromptEditor'
 import { FragmentPromptDialog } from '@/components/fragments/FragmentPromptDialog'
-import { CharacterLayoutEditor } from '@/components/composition-workspace'
 import { portableIssuesForResolvedPlan } from '@/components/composition-workspace'
 import type {
-    CharacterLayoutItem,
     CompositionConflictSummary,
     CompositionOverrideDiffItem,
     CompositionValidationSummary,
@@ -91,7 +87,6 @@ import {
 } from '@/services/queue/scene-queue-adapter'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
 import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
-import type { CharacterPosition, CharacterSlotPatch } from '@/domain/composition'
 import { runtimeCapabilities } from '@/platform/capabilities'
 import { assessPortableCompositionPlan } from '@/platform/portable-resources'
 import { ensureActiveGenerationCredential } from '@/services/generation/credential-guard'
@@ -180,7 +175,6 @@ export default function SceneDetail() {
     const { isGenerating: sceneIsGenerating } = useSceneGeneration()
     const sceneIsCancelling = useSceneStore(state => state.isCancelling)
     const sceneCompositionRecord = useSceneStore(state => sceneId ? state.sceneCompositionResults[sceneId] : undefined)
-    const { promptFontSize } = useSettingsStore(useShallow(state => ({ promptFontSize: state.promptFontSize })))
     const activeCredentialsAreOpus = useAuthStore(selectActiveCredentialsAreOpus)
     const assetProfile = useAssetModuleStore(state => state.profile)
     const assetHasConflict = useAssetModuleStore(state => state.hasConflict)
@@ -193,12 +187,22 @@ export default function SceneDetail() {
     const generateShortcutLabel = useShortcutStore(state => state.bindings['action:generate']?.label || '')
     const handleGenerateRef = useRef<() => void>(() => {})
     const generateShortcutDisabledRef = useRef(true)
+    const fragmentShortcutDisabledRef = useRef(true)
+    const [fragmentDialogOpen, setFragmentDialogOpen] = useState(false)
     useEffect(() => {
         const onShortcutGenerate = () => {
             if (!generateShortcutDisabledRef.current) handleGenerateRef.current()
         }
+        // useShortcuts emits this on /scenes/:id; the dialog itself lives in this page.
+        const onShortcutFragment = () => {
+            if (!fragmentShortcutDisabledRef.current) setFragmentDialogOpen(true)
+        }
         window.addEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
-        return () => window.removeEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
+        window.addEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, onShortcutFragment)
+        return () => {
+            window.removeEventListener(SHORTCUT_EVENTS.GENERATE, onShortcutGenerate)
+            window.removeEventListener(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG, onShortcutFragment)
+        }
     }, [])
 
     // Scene dimensions are shared by the request builder and gallery frames so
@@ -237,11 +241,6 @@ export default function SceneDetail() {
         scope: 'scene' | 'preset-queued'
         prepared: PreparedSceneQueueReview
     } | null>(null)
-    const [fragmentDialogOpen, setFragmentDialogOpen] = useState(false)
-
-    // Auto-save prompt logic - hooks must be before conditional return
-    const updateScenePrompt = useSceneStore(state => state.updateScenePrompt)
-    const [localPrompt, setLocalPrompt] = useState(scene?.scenePrompt || '')
 
     const nav = useNavigate()
 
@@ -332,13 +331,10 @@ export default function SceneDetail() {
         }
     }, [scene?.name])
 
-    // Compatibility editor mirrors the canonical Scene prompt module and must
-    // never write a stale value over the prompt tabs.
+    const sceneExists = Boolean(scene)
     useEffect(() => {
-        if (scene) {
-            setLocalPrompt(scene.scenePrompt)
-        }
-    }, [scene?.id, scene?.scenePrompt])
+        if (!sceneExists) setFragmentDialogOpen(false)
+    }, [sceneExists])
 
     // Auto-validate images on mount - MUST be before conditional return to maintain hook order
     useEffect(() => {
@@ -383,6 +379,11 @@ export default function SceneDetail() {
     }
 
     if (!scene || !activePresetId) {
+        // A scene can disappear while this route stays mounted; window shortcuts
+        // must not run the previous scene's handlers on the not-found screen.
+        handleGenerateRef.current = () => {}
+        generateShortcutDisabledRef.current = true
+        fragmentShortcutDisabledRef.current = true
         return (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
                 <p>{t('scene.notFound', '씬을 찾을 수 없습니다')}</p>
@@ -427,19 +428,9 @@ export default function SceneDetail() {
     }
 
     const handleResetSceneToRecipe = () => {
-        // Update the visible editor before the store change can trigger the
-        // prompt autosave cleanup with the previous text.
-        setLocalPrompt('')
         setCompositionPreview(null)
         setCompositionPreviewError(null)
         resetSceneToRecipe(activePresetId, scene.id)
-    }
-
-    const handleLocalPromptChange = (value: string) => {
-        setLocalPrompt(value)
-        updateScenePrompt(activePresetId, scene.id, value)
-        setCompositionPreview(null)
-        setCompositionPreviewError(null)
     }
 
     const handlePreviewSceneComposition = async () => {
@@ -447,7 +438,7 @@ export default function SceneDetail() {
         setCompositionPreview(null)
         setCompositionPreviewError(null)
         try {
-            const resolution = await previewSceneComposition(scene, { scenePrompt: localPrompt })
+            const resolution = await previewSceneComposition(scene, { scenePrompt: scene.scenePrompt })
             setCompositionPreview(resolution)
         } catch (error) {
             setCompositionPreviewError(error instanceof Error ? error.message : String(error))
@@ -607,7 +598,6 @@ export default function SceneDetail() {
                 : SCENE_DIRECT_SELECTION_ID
     const displayedRecipeExists = displayedRecipeId === SCENE_DIRECT_SELECTION_ID
         || assetProfile.recipes.some(recipe => sceneAssetRecipeSelectionId(recipe.id) === displayedRecipeId)
-    const hasCompositionOverrides = hasSceneCompositionOverrides(scene)
     const selectedRecipe = decodeSceneRecipeSelection(displayedRecipeId)
     const runtimeDocument = getRuntimeCompositionDocument()
     const runtimeRecipe = selectedRecipe.selectionKind === 'asset'
@@ -652,16 +642,6 @@ export default function SceneDetail() {
     const effectiveActiveModuleId = activeModuleId && workspaceModules.some(module => module.id === activeModuleId)
         ? activeModuleId
         : workspaceModules[0]?.id ?? null
-    const characterLayoutItems: CharacterLayoutItem[] = (runtimeDocument?.characters ?? []).map((character, order) => {
-        const patch = scene.compositionRef?.characterOverrides?.find(candidate => candidate.characterId === character.id)
-        return {
-            id: character.id,
-            name: character.name,
-            enabled: patch?.enabled ?? character.enabled,
-            order,
-            position: patch?.position ?? character.position,
-        }
-    })
     const validationErrorCount = sceneCompositionRecord?.errors.length ?? 0
     const validationWarningCount = sceneCompositionRecord?.warnings.length ?? 0
     const validation: CompositionValidationSummary = assetHasConflict
@@ -698,8 +678,8 @@ export default function SceneDetail() {
             id: 'prompt',
             label: t('scene.scenePrompt', 'Scene prompt'),
             inheritedValue: t('scene.composition.inherited', 'Recipe'),
-            overrideValue: localPrompt || '—',
-            changed: localPrompt.trim().length > 0,
+            overrideValue: scene.scenePrompt || '—',
+            changed: (scene.scenePrompt || '').trim().length > 0,
         },
         {
             id: 'resolution',
@@ -752,24 +732,8 @@ export default function SceneDetail() {
         pricingBasis,
     }) * Math.max(1, scene.queueCount)
 
-    const handleCharacterPositionChange = (characterId: string, position: CharacterPosition) => {
-        setCompositionPreview(null)
-        setCompositionPreviewError(null)
-        const existing = scene.compositionRef?.characterOverrides ?? []
-        const found = existing.some(patch => patch.characterId === characterId)
-        const characterOverrides: CharacterSlotPatch[] = found
-            ? existing.map(patch => patch.characterId === characterId ? { ...patch, position } : patch)
-            : [...existing, { characterId, position }]
-        setSceneCompositionRef(activePresetId, scene.id, {
-            ...scene.compositionRef,
-            recipeId: selectedRecipe.recipeId,
-            selectionKind: selectedRecipe.selectionKind,
-            recipeRevision: assetProfile.revision,
-            characterOverrides,
-        })
-    }
-
     generateShortcutDisabledRef.current = (effectiveSceneCancelling && !rotationActive) || (!effectiveSceneGenerating && !rotationActive && generationConflict)
+    fragmentShortcutDisabledRef.current = effectiveSceneGenerating || effectiveSceneCancelling
 
     return (
         <SceneCompositionWorkspace
@@ -818,57 +782,6 @@ export default function SceneDetail() {
             resolvedError={compositionPreviewError}
             conflict={conflict}
             overrideDiff={overrideDiff}
-            inspectorChildren={(
-                <>
-                    {characterLayoutItems.length > 0 && (
-                        <CharacterLayoutEditor
-                            characters={characterLayoutItems}
-                            title={t('scene.characterLayout', 'Character layout')}
-                            disabled={effectiveSceneGenerating}
-                            className="rounded-none border-x-0 border-b-0 shadow-none"
-                            onChangePosition={handleCharacterPositionChange}
-                        />
-                    )}
-                    <details className="border-t border-border" open={hasCompositionOverrides}>
-                        <summary className="flex min-h-11 cursor-pointer items-center px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-                            {t('scene.composition.advancedCompatibility', 'Advanced / compatibility prompt')}
-                        </summary>
-                        <div className="min-w-0 space-y-3 border-t border-border p-3">
-                            <label className="block min-w-0 text-xs font-medium text-muted-foreground">
-                                <span className="mb-1 block">{t('scene.scenePrompt')}</span>
-                                <AutocompleteTextarea
-                                    placeholder=""
-                                    className="min-h-32 min-w-0 resize-y rounded-control"
-                                    style={{ fontSize: `${promptFontSize}px` }}
-                                    value={localPrompt}
-                                    onChange={(event: any) => handleLocalPromptChange(event.target.value)}
-                                />
-                            </label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="min-w-0"
-                                    onClick={() => setFragmentDialogOpen(true)}
-                                >
-                                    <span className="truncate">{t('scene.wildcardPreview', 'Wildcard preview')}</span>
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    className="min-w-0"
-                                    onClick={handlePreviewSceneComposition}
-                                    disabled={compositionPreviewLoading}
-                                    data-testid="scene-resolved-action"
-                                >
-                                    <ScanEye className="h-4 w-4 shrink-0" />
-                                    <span className="truncate">{t('scene.composition.resolved', 'Resolved')}</span>
-                                </Button>
-                            </div>
-                        </div>
-                    </details>
-                </>
-            )}
             onSelectModule={setActiveModuleId}
             onOpenResolved={handlePreviewSceneComposition}
             onResetOverride={handleResetSceneToRecipe}
@@ -1013,7 +926,8 @@ export default function SceneDetail() {
                             <DropdownMenuContent align="end" className="w-64">
                                 <DropdownMenuItem
                                     className="min-h-11"
-                                    disabled={effectiveSceneGenerating || effectiveSceneCancelling || generationConflict}
+                                    // Rotation drains these same queue counts; a durable enqueue would consume them mid-pass.
+                                    disabled={rotationActive || effectiveSceneGenerating || effectiveSceneCancelling || generationConflict}
                                     onSelect={() => {
                                         void startDurableSceneGeneration('preset-queued')
                                     }}
@@ -1034,6 +948,7 @@ export default function SceneDetail() {
                 scene={scene}
                 presetId={activePresetId}
                 disabled={effectiveSceneGenerating || effectiveSceneCancelling}
+                onOpenFragmentPreview={() => setFragmentDialogOpen(true)}
             />
 
             <SceneInheritedSettings disabled={effectiveSceneGenerating || effectiveSceneCancelling} />
