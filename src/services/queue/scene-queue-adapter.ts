@@ -339,6 +339,28 @@ function normalizeSceneQueueTargets(targets: readonly SceneQueueTarget[]): Scene
     return [...normalized.values()]
 }
 
+export function prepareSceneQueueReviewForScene(
+    presetId: string,
+    sceneId: string,
+): Promise<PreparedSceneQueueReview | null> {
+    const sceneState = useSceneStore.getState()
+    const preset = sceneState.presets.find(candidate => candidate.id === presetId)
+    const scene = preset?.scenes.find(candidate => candidate.id === sceneId)
+    if (!scene || scene.queueCount <= 0) return Promise.resolve(null)
+    const targets: SceneQueueTarget[] = [{
+        presetId,
+        sceneId: scene.id,
+        count: scene.queueCount,
+        ...(scene.queuedFileNames === undefined
+            ? {}
+            : { fileNames: scene.queuedFileNames.slice(0, scene.queueCount) }),
+    }]
+    return prepareSceneQueueReview(targets, {
+        origin: 'legacy-conversion',
+        consumePendingEntries: true,
+    })
+}
+
 export function prepareCurrentSceneQueueReview(): Promise<PreparedSceneQueueReview | null> {
     const sceneState = useSceneStore.getState()
     const presetId = sceneState.activePresetId

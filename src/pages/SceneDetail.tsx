@@ -17,7 +17,15 @@ import {
     CheckSquare,
     Square,
     ScanEye,
+    MoreVertical,
+    Layers,
 } from 'lucide-react'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { CHARACTER_SCENES_DIRECTORY_NAME } from '@/domain/generation-folders'
 import { AutocompleteTextarea } from "@/components/ui/AutocompleteTextarea";
@@ -75,6 +83,7 @@ import { useQueueStore } from '@/stores/queue-store'
 import {
     enqueueReviewedSceneQueue,
     prepareCurrentSceneQueueReview,
+    prepareSceneQueueReviewForScene,
     type PreparedSceneQueueReview,
     type SceneQueueSubmission,
 } from '@/services/queue/scene-queue-adapter'
@@ -145,6 +154,13 @@ export default function SceneDetail() {
         const preset = state.presets.find(p => p.id === state.activePresetId)
         return preset?.scenes.find(s => s.id === sceneId)
     })
+    const otherQueuedCount = useSceneStore(state => {
+        const preset = state.presets.find(p => p.id === state.activePresetId)
+        if (!preset) return 0
+        return preset.scenes
+            .filter(candidate => candidate.id !== sceneId)
+            .reduce((sum, candidate) => sum + candidate.queueCount, 0)
+    })
 
     const {
         renameScene,
@@ -205,7 +221,10 @@ export default function SceneDetail() {
     const [compositionPreview, setCompositionPreview] = useState<SceneCompositionResolution | null>(null)
     const [compositionPreviewError, setCompositionPreviewError] = useState<string | null>(null)
     const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
-    const [sceneQueueReview, setSceneQueueReview] = useState<PreparedSceneQueueReview | null>(null)
+    const [sceneQueueReview, setSceneQueueReview] = useState<{
+        scope: 'scene' | 'preset-queued'
+        prepared: PreparedSceneQueueReview
+    } | null>(null)
     const [fragmentDialogOpen, setFragmentDialogOpen] = useState(false)
 
     // Auto-save prompt logic - hooks must be before conditional return
@@ -425,7 +444,8 @@ export default function SceneDetail() {
         }
     }
 
-    const startDurableSceneGeneration = async () => {
+    const startDurableSceneGeneration = async (scope: 'scene' | 'preset-queued') => {
+        if (!activePresetId || !scene) return
         if (!ensureActiveGenerationCredential()) {
             toast({
                 title: t('credentialVault.unlockRequired', 'API 토큰 잠금 해제 필요'),
@@ -434,7 +454,10 @@ export default function SceneDetail() {
             return
         }
         try {
-            setSceneQueueReview(await prepareCurrentSceneQueueReview())
+            const prepared = scope === 'scene'
+                ? await prepareSceneQueueReviewForScene(activePresetId, scene.id)
+                : await prepareCurrentSceneQueueReview()
+            setSceneQueueReview(prepared ? { scope, prepared } : null)
         } catch (error) {
             toast({
                 title: t('common.error', 'Error'),
@@ -445,9 +468,13 @@ export default function SceneDetail() {
     }
 
     const replanSceneQueueReview = async (): Promise<boolean> => {
+        if (!activePresetId || !scene) return false
+        const scope = sceneQueueReview?.scope ?? 'scene'
         try {
-            const next = await prepareCurrentSceneQueueReview()
-            setSceneQueueReview(next)
+            const next = scope === 'scene'
+                ? await prepareSceneQueueReviewForScene(activePresetId, scene.id)
+                : await prepareCurrentSceneQueueReview()
+            setSceneQueueReview(next ? { scope, prepared: next } : null)
             return next !== null
         } catch (error) {
             toast({
@@ -508,7 +535,7 @@ export default function SceneDetail() {
             return
         }
 
-        void startDurableSceneGeneration()
+        void startDurableSceneGeneration('scene')
     }
 
     const handleOpenFolder = async () => {
@@ -922,7 +949,7 @@ export default function SceneDetail() {
                     )}
                 </div>
 
-                <div className="flex min-w-0 items-center">
+                <div className="flex min-w-0 items-center gap-2">
                     <div className="flex min-w-0 items-center justify-between rounded-control border border-border bg-card px-1 lg:gap-1">
                         <span className="px-2 text-xs font-medium text-muted-foreground lg:sr-only">
                             {t('scene.queue', '대기열')}
@@ -952,6 +979,37 @@ export default function SceneDetail() {
                             </Button>
                         </div>
                     </div>
+                    {queueExecutionAuthority !== 'legacy' && otherQueuedCount > 0 && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-11 w-11 shrink-0 rounded-control"
+                                    aria-label={t('common.moreActions', '더보기 메뉴')}
+                                    data-testid="scene-detail-more-actions"
+                                >
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-64">
+                                <DropdownMenuItem
+                                    className="min-h-11"
+                                    disabled={effectiveSceneGenerating || effectiveSceneCancelling || generationConflict}
+                                    onSelect={() => {
+                                        void startDurableSceneGeneration('preset-queued')
+                                    }}
+                                    data-testid="scene-detail-generate-all-queued"
+                                >
+                                    <Layers className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                                    {t('scene.generateAllQueued', '대기 중인 씬 모두 생성 ({{count}})', {
+                                        count: otherQueuedCount + scene.queueCount,
+                                    })}
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
                 </div>
             </header>
 
@@ -1235,7 +1293,7 @@ export default function SceneDetail() {
                 <SceneQueueReviewDialog
                     open
                     onOpenChange={open => { if (!open) setSceneQueueReview(null) }}
-                    prepared={sceneQueueReview}
+                    prepared={sceneQueueReview.prepared}
                     onApprove={approveSceneQueueReview}
                     onReplan={replanSceneQueueReview}
                 />

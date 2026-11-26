@@ -1503,6 +1503,7 @@
     },
     "scene": {
         "title": "シーンモード",
+        "generateAllQueued": "待機中のシーンをすべて生成 ({{count}})",
         "inherited": {
             "title": "共通参照・元画像",
             "summary": "参照 {{count}}件 · {{source}}",

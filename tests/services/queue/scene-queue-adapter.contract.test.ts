@@ -144,4 +144,18 @@ describe('Scene Queue boundaries', () => {
         expect(sources[4]).toContain('isSceneQueueReviewConflict)')
         expect(sources[4]).toContain('if (rethrow(error)) throw error')
     })
+
+    it('scopes SceneDetail primary generation to the current scene while keeping preset-wide queued generation explicit', async () => {
+        const [adapter, sceneDetail] = await Promise.all([
+            readFile(resolve(process.cwd(), 'src/services/queue/scene-queue-adapter.ts'), 'utf8'),
+            readFile(resolve(process.cwd(), 'src/pages/SceneDetail.tsx'), 'utf8'),
+        ])
+
+        expect(adapter).toContain('export function prepareSceneQueueReviewForScene(')
+        expect(adapter).toContain("origin: 'legacy-conversion'")
+        expect(sceneDetail).toContain('prepareSceneQueueReviewForScene(activePresetId, scene.id)')
+        expect(sceneDetail).toContain("void startDurableSceneGeneration('scene')")
+        expect(sceneDetail).toContain("void startDurableSceneGeneration('preset-queued')")
+        expect(sceneDetail).toContain("queueExecutionAuthority !== 'legacy' && otherQueuedCount > 0")
+    })
 })

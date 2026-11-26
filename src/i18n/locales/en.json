@@ -1504,6 +1504,7 @@
     },
     "scene": {
         "title": "Scene Mode",
+        "generateAllQueued": "Generate all queued scenes ({{count}})",
         "inherited": {
             "title": "Shared references & source image",
             "summary": "{{count}} references · {{source}}",
