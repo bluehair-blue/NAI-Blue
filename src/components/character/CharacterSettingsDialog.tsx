@@ -68,7 +68,17 @@ const SafeSlider = ({
     )
 }
 
-export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean, onOpenChange?: (open: boolean) => void } = {}) {
+export function CharacterSettingsDialog({
+    open,
+    onOpenChange,
+    hideTrigger = false,
+    triggerLabel,
+}: {
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
+    hideTrigger?: boolean
+    triggerLabel?: string
+} = {}) {
     const { t } = useTranslation()
     const model = useGenerationDraftStore(state => state.model)
     const capabilities = getNovelAiModelProfile(model)?.capabilities
@@ -439,17 +449,19 @@ export function CharacterSettingsDialog({ open, onOpenChange }: { open?: boolean
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="group relative h-11 w-full min-w-0 rounded-none border-b-2 border-transparent px-0 hover:border-primary" aria-label={t('prompt.imageReference')} title={t('prompt.imageReference')}>
-                    <ImageIcon className="h-4 w-4 shrink-0" />
-                    <span className="sr-only">{t('prompt.imageReference')}</span>
-                    {totalCount > 0 && (
-                        <div className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-control bg-destructive px-1 py-0.5 text-[11px] font-bold leading-none text-destructive-foreground">
-                            {totalCount}
-                        </div>
-                    )}
-                </Button>
-            </DialogTrigger>
+            {!hideTrigger && (
+                <DialogTrigger asChild>
+                    <Button variant="ghost" size={triggerLabel ? 'sm' : 'icon'} className={cn('group relative h-11 w-full min-w-0 rounded-none border-b-2 border-transparent hover:border-primary', triggerLabel ? 'gap-1.5 px-2 text-xs' : 'px-0')} aria-label={t('prompt.imageReference')} title={t('prompt.imageReference')}>
+                        <ImageIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        {triggerLabel ? <span className="truncate">{triggerLabel}</span> : <span className="sr-only">{t('prompt.imageReference')}</span>}
+                        {totalCount > 0 && (
+                            <div className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-control bg-destructive px-1 py-0.5 text-[11px] font-bold leading-none text-destructive-foreground">
+                                {totalCount}
+                            </div>
+                        )}
+                    </Button>
+                </DialogTrigger>
+            )}
             <DialogContent className="max-w-xl max-h-[85vh] flex flex-col overflow-hidden">
                 <DialogHeader>
                     <DialogTitle>{t('characterDialog.title')}</DialogTitle>

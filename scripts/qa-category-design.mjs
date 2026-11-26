@@ -60,7 +60,7 @@ try {
                 assert.equal(geometry.palette, theme === 'light' ? '0.945 0.014 265' : '0.225 0.037 265')
                 assert.equal(geometry.header.length, 4)
                 for (const box of geometry.header) assert.ok(box.x >= 0 && box.right <= width + 1 && box.width >= 44 && box.height >= 44)
-                if (!['advanced', 'scenes'].includes(route)) assert.equal(await page.locator('#nai-blue-prompt-dock').isVisible(), false)
+                if (route !== 'advanced') assert.equal(await page.locator('#nai-blue-prompt-dock').isVisible(), false)
                 await page.locator('.fb-app-tools').click()
                 for (const destination of routes.filter(value => !['folders', 'queue'].includes(value))) {
                     assert.equal(await page.locator(`[role="menuitem"][href="/${destination}"]`).count(), 1)

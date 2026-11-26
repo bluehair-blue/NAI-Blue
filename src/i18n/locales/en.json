@@ -1504,6 +1504,14 @@
     },
     "scene": {
         "title": "Scene Mode",
+        "inherited": {
+            "title": "Shared references & source image",
+            "summary": "{{count}} references · {{source}}",
+            "openReferences": "Reference settings",
+            "inpaintActive": "Inpaint source active",
+            "i2iActive": "Source image (I2I) active",
+            "sourceNone": "No source image"
+        },
         "folderManager": {
             "title": "Manage Scene Folders",
             "root": "Root path",

@@ -417,15 +417,15 @@ function assertCompositionShell(report, route, viewport) {
             return
         }
         if (route === '/scenes') {
-            // The public Scene workflow deliberately hides internal composition
-            // panels while preserving the prompt, canvas, and generation loop.
-            assert.ok(report.promptDock, `${context} must keep the Prompt rail visible`)
+            // Scene owns its own prompt editor and inherited settings; the Main
+            // Prompt rail and sheet never mount on /scenes*.
+            assert.equal(report.promptDock, null, `${context} must not mount the Main Prompt rail on /scenes`)
             assert.equal(report.moduleStack, null, `${context} must hide the internal Module Stack`)
             assert.equal(report.inspector, null, `${context} must hide the internal Context Inspector`)
             assert.equal(report.moduleTrigger, null, `${context} must hide the internal Module Stack action`)
             assert.equal(report.inspectorTrigger, null, `${context} must hide the internal Context Inspector action`)
             assert.ok(report.canvas, `${context} must show the center scene grid`)
-            assert.ok(report.promptDock.right <= report.canvas.left + 24, `${context} must preserve Prompt rail → scene grid ordering`)
+            assert.equal(report.promptDock, null, `${context} must not mount the Main Prompt rail on /scenes`)
             return
         }
         assert.ok(report.moduleStack, `${context} must show the Module Stack rail`)
@@ -1122,7 +1122,7 @@ async function main() {
                             await assertCompositionSheetFocusReturn(page, route, viewport)
                         }
                         if (viewport.width === 1536) {
-                            await assertWideCompositionCoreLoop(page, route, viewport)
+                            if (route === '/advanced') await assertWideCompositionCoreLoop(page, route, viewport)
                             if (route === '/advanced') {
                                 await assertWideCompositionPanelAccess(page, route, viewport)
                                 const promptSurfaceGeometry = await page.locator('[data-testid="prompt-editor-surface"]').first().evaluate((surface) => {

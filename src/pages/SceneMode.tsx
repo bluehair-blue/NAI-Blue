@@ -97,6 +97,8 @@ import { saveNativeFileDialog } from '@/platform/native-file-dialog'
 import { ExportDialog } from '@/components/scene/ExportDialog'
 import { CharacterRotationDialog } from '@/components/scene/CharacterRotationDialog'
 import { RotationStatusBar } from '@/components/scene/RotationStatusBar'
+import { CharacterSettingsDialog } from '@/components/character/CharacterSettingsDialog'
+import { SourceImagePanel } from '@/components/layout/SourceImagePanel'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
     Dialog,
@@ -329,6 +331,8 @@ export default function SceneMode() {
     const [compositionPreviewLoading, setCompositionPreviewLoading] = useState(false)
     const [compositionPreview, setCompositionPreview] = useState<SceneCompositionResolution | null>(null)
     const [compositionPreviewError, setCompositionPreviewError] = useState<string | null>(null)
+    const [referenceDialogOpen, setReferenceDialogOpen] = useState(false)
+    const hasInheritedSourceImage = useGenerationStore(state => Boolean(state.sourceImage && state.i2iMode))
 
     useEffect(() => {
         const viewport = scrollContainerRef.current
@@ -954,7 +958,11 @@ export default function SceneMode() {
             generation={{
                 generating: isGenerating || isCancelling || rotationActive,
                 disabled: isCancelling || (!isGenerating && !rotationActive && (totalQueue === 0 || generationConflict)),
-                progressLabel: isCancelling ? t('generate.cancelling', 'Cancelling…') : undefined,
+                progressLabel: isCancelling
+                    ? t('generate.cancelling', 'Cancelling…')
+                    : rotationActive
+                        ? t('rotation.stopAndResume', '중단하고 나중에 이어서')
+                        : undefined,
                 generateLabel: t('scene.generateAll', 'Generate scenes'),
                 cancelLabel: t('generate.cancel', 'Cancel'),
                 actionTestId: 'scene-generate-action',
@@ -1208,6 +1216,14 @@ export default function SceneMode() {
                                 <Drama className="mr-3 h-4 w-4" />
                                 {rotationActive ? '캐릭터 로테이션 상태 보기' : '캐릭터 로테이션 시작'}
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                                className="min-h-11"
+                                onClick={() => setReferenceDialogOpen(true)}
+                                disabled={isGenerating}
+                            >
+                                <ImageIcon className="mr-3 h-4 w-4" />
+                                {t('scene.inherited.openReferences', '참조 설정')}
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                                 className="min-h-11"
@@ -1238,6 +1254,16 @@ export default function SceneMode() {
                     </DropdownMenu>
                 </div>
             )}
+            {hasInheritedSourceImage && (
+                <div className="[&>div]:mb-0">
+                    <SourceImagePanel />
+                </div>
+            )}
+            <CharacterSettingsDialog
+                open={referenceDialogOpen}
+                onOpenChange={setReferenceDialogOpen}
+                hideTrigger
+            />
 
             <div className="min-w-0 [&>div]:min-w-0 [&>div]:flex-wrap [&>div]:!rounded-panel [&>div]:!shadow-none [&>div>div:last-child]:flex-wrap">
                 <RotationStatusBar />

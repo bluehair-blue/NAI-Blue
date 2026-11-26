@@ -1503,6 +1503,14 @@
     },
     "scene": {
         "title": "シーンモード",
+        "inherited": {
+            "title": "共通参照・元画像",
+            "summary": "参照 {{count}}件 · {{source}}",
+            "openReferences": "参照設定",
+            "inpaintActive": "インペイント元画像を使用中",
+            "i2iActive": "元画像(I2I)を使用中",
+            "sourceNone": "元画像なし"
+        },
         "folderManager": {
             "title": "シーンフォルダー管理",
             "root": "ルートパス",

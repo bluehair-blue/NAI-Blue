@@ -142,9 +142,11 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         const target = supportReturnFocusRef.current
         ;(target?.isConnected ? target : workbenchToolsRef.current)?.focus()
     }
-    const editorOpen = location.pathname === '/advanced' || location.pathname === '/scenes' || location.pathname.startsWith('/scenes/')
-    const promptPanelIsDocked = isDesktopShell && editorOpen
-    const leftSheetOpen = supportSheet === 'prompt' && !promptPanelIsDocked
+    const isSceneRoute = location.pathname === '/scenes' || location.pathname.startsWith('/scenes/')
+    const promptSurfaceRoute = location.pathname === '/advanced'
+    const historyActionRoute = promptSurfaceRoute || isSceneRoute
+    const promptPanelIsDocked = isDesktopShell && promptSurfaceRoute
+    const leftSheetOpen = supportSheet === 'prompt' && !promptPanelIsDocked && !isSceneRoute
     const rightSheetOpen = supportSheet === 'history'
     const activitySheetOpen = supportSheet === 'activity'
     const mainIsGenerating = useGenerationStore(state => state.isGenerating)
@@ -183,6 +185,12 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             closeSupportSheet()
         }
     }, [closeSupportSheet, promptPanelIsDocked, leftSheetOpen, mainIsGenerating, sceneIsGenerating])
+
+    useEffect(() => {
+        if (isSceneRoute && supportSheet === 'prompt') {
+            closeSupportSheet()
+        }
+    }, [closeSupportSheet, isSceneRoute, supportSheet])
 
     useEffect(() => {
         if (!promptPanelIsDocked || supportSheet !== 'prompt') return
@@ -413,9 +421,11 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                             </DropdownMenuItem>
                         ))}
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'} onSelect={handleLeftPanelToggle}>
-                            {t('prompt.title', '프롬프트')}
-                        </DropdownMenuItem>
+                        {!isSceneRoute && (
+                            <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'} onSelect={handleLeftPanelToggle}>
+                                {t('prompt.title', '프롬프트')}
+                            </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls="nai-blue-history-sheet" onSelect={handleRightPanelToggle}>
                             {t('history.title', '기록')}
                         </DropdownMenuItem>
@@ -430,12 +440,14 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
-                {editorOpen && <div className="workspace-editor-actions">
-                    <button type="button" onClick={handleLeftPanelToggle} aria-label={t('prompt.title', '프롬프트')}
-                        aria-expanded={promptPanelIsDocked ? leftSidebarVisible : leftSheetOpen}
-                        aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'}>
-                        <PanelLeft aria-hidden="true" /><span>{t('prompt.title', '프롬프트')}</span>
-                    </button>
+                {historyActionRoute && <div className="workspace-editor-actions">
+                    {promptSurfaceRoute && (
+                        <button type="button" onClick={handleLeftPanelToggle} aria-label={t('prompt.title', '프롬프트')}
+                            aria-expanded={promptPanelIsDocked ? leftSidebarVisible : leftSheetOpen}
+                            aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'}>
+                            <PanelLeft aria-hidden="true" /><span>{t('prompt.title', '프롬프트')}</span>
+                        </button>
+                    )}
                     <button type="button" onClick={handleRightPanelToggle} aria-label={t('history.title', '기록')}
                         aria-expanded={rightSheetOpen} aria-controls="nai-blue-history-sheet">
                         <PanelRight aria-hidden="true" /><span>{t('history.title', '기록')}</span>

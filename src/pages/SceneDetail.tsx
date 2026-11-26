@@ -53,7 +53,9 @@ import {
     type SceneCompositionResolution,
 } from '@/lib/composition/scene-adapter'
 import { SceneCompositionWorkspace } from '@/components/scene/SceneCompositionWorkspace'
+import { SceneInheritedSettings } from '@/components/scene/SceneInheritedSettings'
 import { ScenePromptEditor } from '@/components/scene/ScenePromptEditor'
+import { FragmentPromptDialog } from '@/components/fragments/FragmentPromptDialog'
 import { CharacterLayoutEditor } from '@/components/composition-workspace'
 import { portableIssuesForResolvedPlan } from '@/components/composition-workspace'
 import type {
@@ -66,8 +68,8 @@ import type {
 import { getRuntimeCompositionDocument } from '@/lib/composition-authority'
 import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
 import { selectActiveCredentialsAreOpus, useAuthStore } from '@/stores/auth-store'
-import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { hasBlockingLayer, isEditableTarget } from '@/lib/keyboard/shortcut-scope'
+import { useRotationStore } from '@/stores/character-rotation-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useQueueStore } from '@/stores/queue-store'
 import {
@@ -166,6 +168,7 @@ export default function SceneDetail() {
     const assetHasConflict = useAssetModuleStore(state => state.hasConflict)
     const assetConflictMessage = useAssetModuleStore(state => state.conflictMessage)
     const generatingMode = useGenerationStore(state => state.generatingMode)
+    const rotationActive = useRotationStore(state => state.active)
     const queueExecutionAuthority = useQueueStore(state => state.executionAuthority)
     const selectDurableBatch = useQueueStore(state => state.setSelectedBatchId)
     const addToTrash = useTrashStore(state => state.add)
@@ -203,6 +206,7 @@ export default function SceneDetail() {
     const [compositionPreviewError, setCompositionPreviewError] = useState<string | null>(null)
     const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
     const [sceneQueueReview, setSceneQueueReview] = useState<PreparedSceneQueueReview | null>(null)
+    const [fragmentDialogOpen, setFragmentDialogOpen] = useState(false)
 
     // Auto-save prompt logic - hooks must be before conditional return
     const updateScenePrompt = useSceneStore(state => state.updateScenePrompt)
@@ -478,6 +482,14 @@ export default function SceneDetail() {
     }
 
     const handleGenerate = () => {
+        if (rotationActive) {
+            useRotationStore.getState().stop({ reason: 'scene detail stop', keepSnapshot: true })
+            toast({
+                title: t('rotation.stopped', '로테이션 중단'),
+                description: t('rotation.resumeLater', '현재 위치를 저장했습니다. 나중에 이어서 생성할 수 있습니다.'),
+            })
+            return
+        }
         if (!activePresetId || !scene) return
 
         if (queueExecutionAuthority === 'legacy' && (sceneIsGenerating || sceneIsCancelling)) {
@@ -739,9 +751,13 @@ export default function SceneDetail() {
             validation={validation}
             cost={{ value: String(estimatedCost), label: 'Anlas', severity: estimatedCost > 0 ? 'warning' : 'normal' }}
             generation={{
-                generating: effectiveSceneGenerating || effectiveSceneCancelling,
-                disabled: effectiveSceneCancelling || (!effectiveSceneGenerating && generationConflict),
-                progressLabel: effectiveSceneCancelling ? t('generate.cancelling', 'Cancelling…') : undefined,
+                generating: effectiveSceneGenerating || effectiveSceneCancelling || rotationActive,
+                disabled: (effectiveSceneCancelling && !rotationActive) || (!effectiveSceneGenerating && !rotationActive && generationConflict),
+                progressLabel: effectiveSceneCancelling
+                    ? t('generate.cancelling', 'Cancelling…')
+                    : rotationActive
+                        ? t('rotation.stopAndResume', '중단하고 나중에 이어서')
+                        : undefined,
                 generateLabel: t('generate.button', 'Generate'),
                 cancelLabel: t('generate.cancel', 'Cancel'),
                 actionTestId: 'scene-detail-generate-action',
@@ -789,7 +805,7 @@ export default function SceneDetail() {
                                     type="button"
                                     variant="outline"
                                     className="min-w-0"
-                                    onClick={() => window.dispatchEvent(new Event(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG))}
+                                    onClick={() => setFragmentDialogOpen(true)}
                                 >
                                     <span className="truncate">{t('scene.wildcardPreview', 'Wildcard preview')}</span>
                                 </Button>
@@ -943,6 +959,13 @@ export default function SceneDetail() {
                 scene={scene}
                 presetId={activePresetId}
                 disabled={effectiveSceneGenerating || effectiveSceneCancelling}
+            />
+
+            <SceneInheritedSettings disabled={effectiveSceneGenerating || effectiveSceneCancelling} />
+
+            <FragmentPromptDialog
+                open={fragmentDialogOpen}
+                onOpenChange={setFragmentDialogOpen}
             />
 
             {/* Two late-stage output decisions stay together and remain compact. */}

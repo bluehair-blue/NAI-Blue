@@ -115,7 +115,7 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   Prompt and History remain named menu actions. No horizontal navigation scroll.
 - `640–1535px`: center workspace remains primary; Prompt opens as a non-modal,
   horizontally resizable panel without a scrim, while History remains a sheet.
-- `1536px+`: Prompt is a persistent left rail on Main and Scene. History opens on demand in a sheet.
+- `1536px+`: Prompt is a persistent left rail on Main (`/advanced`). Scene views own their own prompt editor and inherited reference settings without mounting the Main prompt rail or sheet. History opens on demand in a sheet.
 - Scene grids render one column below `640px`, at most two below `1024px`, and
   honor the stored column preference on desktop.
 - Fixed overlays never cover system bars. Text, toolbars, and pages must not
@@ -127,8 +127,8 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   Job history, Tools and theme. Tools lists named specialist destinations and
   marks the active route. Prompt and History remain directly available on
   desktop authoring screens and in the labelled Tools menu at compact widths.
-  Prompt docks only for Main/Scene at 1536px; utility categories do not mount
-  unrelated authoring/history rails. The header spans the whole viewport.
+  Prompt docks only for Main at desktop widths; Scene and utility categories do not mount
+  unrelated Main authoring rails. The header spans the whole viewport.
 - **Category rhythm:** title, one short next-step description, then the task.
   Use 32px horizontal insets (16px mobile), 24px heading separation, and flat
   canvas/card tones. `workspace.css` owns this shared geometry; page classes
@@ -210,9 +210,9 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   actions; drag may supplement but never replace those controls.
 - **Inspector and sheet behavior:** The Context Inspector shows selection identity,
   recipe context, typed controls, override diff, validation, and conflict status.
-  Pages may use a right rail when width permits; Main and Scene use the explicit
+  Pages may use a right rail when width permits; Main uses the explicit
   Inspector sheet because the persistent Prompt rail owns the desktop authoring
-  space. Main Inspector is a second-level sheet opened by selecting a module;
+  space, and Scene uses the Inspector sheet beside its own scene prompt editor. Main Inspector is a second-level sheet opened by selecting a module;
   another workflow may expose a direct trigger only when it has inspector context.
   Sheets trap focus, close with Escape, restore focus to the launch control, use
   44px close targets, and apply all four `env(safe-area-inset-*)` values.

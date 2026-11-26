@@ -1512,6 +1512,14 @@
     },
     "scene": {
         "title": "씬 모드",
+        "inherited": {
+            "title": "공통 참조 · 원본 이미지",
+            "summary": "참조 {{count}}개 · {{source}}",
+            "openReferences": "참조 설정",
+            "inpaintActive": "인페인팅 원본 사용 중",
+            "i2iActive": "원본 이미지(I2I) 사용 중",
+            "sourceNone": "원본 이미지 없음"
+        },
         "folderManager": {
             "title": "씬 폴더 관리",
             "root": "최상위 경로",
