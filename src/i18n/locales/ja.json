@@ -138,7 +138,15 @@
             "history": "生成履歴",
             "activity": "自分の作業",
             "help": "ヘルプ",
-            "diagnostics": "診断ログ"
+            "diagnostics": "診断ログ",
+            "commandPalette": "コマンド検索",
+            "groups": {
+                "primary": "作成",
+                "authoring": "制作補助",
+                "archive": "保管",
+                "data": "データ",
+                "panels": "パネル"
+            }
         },
         "start": {
             "title": "アセットを作成",
@@ -353,6 +361,8 @@
             "light": "明るく",
             "dark": "暗く",
             "navCreate": "画像を作る",
+            "navSingle": "単発生成",
+            "navScenes": "シーン",
             "navHistory": "作業の記録",
             "navCreateCompact": "作成",
             "navHistoryCompact": "履歴"

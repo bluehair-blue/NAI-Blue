@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { PromptPanel } from './PromptPanel'
 import { HistoryPanel } from './HistoryPanel'
 import { useMediaQuery, usePromptSurface } from './prompt-surface'
+import { isNavigationPathActive, NAVIGATION_ITEMS, type NavigationItem } from './navigation-items'
 import { LiveGenerationMonitor } from '@/components/queue/LiveGenerationMonitor'
 import '@/styles/folder-workbench.css'
 import '@/styles/workspace.css'
@@ -20,11 +21,14 @@ import { useDiagnosticsStore } from '@/stores/diagnostics-store'
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
+    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAuthStore } from '@/stores/auth-store'
+import { useShortcutStore } from '@/stores/shortcut-store'
 import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { Tip } from '@/components/ui/tooltip'
 import { toast } from '@/components/ui/use-toast'
@@ -40,21 +44,9 @@ import {
     MyWorkActivityRefreshOwner,
 } from '@/presentation/activity/MyWorkActivity'
 import {
-    Home,
-    Film,
-    Globe,
     Images,
-    Settings,
-    Wand2,
-    FlaskConical,
-    Zap,
     PanelLeft,
     PanelRight,
-    ListTodo,
-    CloudUpload,
-    Trash2,
-    DatabaseZap,
-    FolderTree,
     History,
     ChevronDown,
     Moon,
@@ -281,21 +273,44 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         if (isVerified2) refreshAnlas(2)
     }, [isVerified, isVerified2, refreshAnlas])
 
-    const navItems = [
-        { path: '/folders', icon: FolderTree, labelKey: 'folderWorkbench.title', fallbackLabel: '에셋 작업대' },
-        { path: '/advanced', icon: Home, labelKey: 'nav.main' },
-        { path: '/guided-preview', icon: Zap, labelKey: 'guided.home.choices', fallbackLabel: '작업 선택' },
-        { path: '/scenes', icon: Film, labelKey: 'nav.scenes' },
-        { path: '/tools', icon: Wand2, labelKey: 'smartTools.title' },
-        { path: '/style-lab', icon: FlaskConical, labelKey: 'nav.styleLab' },
-        { path: '/queue', icon: ListTodo, labelKey: 'nav.queue', fallbackLabel: 'Queue Center' },
-        { path: '/r2', icon: CloudUpload, labelKey: 'nav.r2Upload', fallbackLabel: 'R2 Upload' },
-        { path: '/trash', icon: Trash2, labelKey: 'nav.trash', fallbackLabel: '휴지통' },
-        { path: '/data', icon: DatabaseZap, labelKey: 'nav.dataHub', fallbackLabel: '데이터 허브' },
-        { path: '/web', icon: Globe, labelKey: 'nav.web' },
-        { path: '/library', icon: Images, labelKey: 'nav.library' },
-        { path: '/settings', icon: Settings, labelKey: 'nav.settings' },
+    const isWideHeader = useMediaQuery('(min-width: 640px)')
+    const shortcutBindings = useShortcutStore(state => state.bindings)
+    const primaryNavItems = NAVIGATION_ITEMS.filter(item =>
+        item.group === 'primary' && (isWideHeader || item.primaryOnMobile)
+    )
+    const mobilePrimaryOverflow = isWideHeader
+        ? []
+        : NAVIGATION_ITEMS.filter(item => item.group === 'primary' && !item.primaryOnMobile)
+    const toolsAuthoringItems = NAVIGATION_ITEMS.filter(item => item.group === 'authoring')
+    const toolsArchiveItems = NAVIGATION_ITEMS.filter(item => item.group === 'archive')
+    const toolsDataItems = NAVIGATION_ITEMS.filter(item => item.group === 'data')
+    const toolsSettingsItems = NAVIGATION_ITEMS.filter(item => item.group === 'settings')
+    const allToolsMenuItems = [
+        ...mobilePrimaryOverflow,
+        ...toolsAuthoringItems,
+        ...toolsArchiveItems,
+        ...toolsDataItems,
+        ...toolsSettingsItems,
     ]
+    const activeToolsItem = allToolsMenuItems.find(item => isNavigationPathActive(location.pathname, item.path))
+    const renderToolsNavItem = (item: NavigationItem) => {
+        const shortcutLabel = item.shortcutAction ? shortcutBindings[item.shortcutAction]?.label : ''
+        return (
+            <DropdownMenuItem key={item.path} asChild className="min-h-11 rounded-[4px]">
+                <Link
+                    to={item.path}
+                    aria-current={isNavigationPathActive(location.pathname, item.path) ? 'page' : undefined}
+                    className="flex items-center"
+                >
+                    <item.icon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 truncate">{t(item.labelKey, item.fallbackLabel)}</span>
+                    {shortcutLabel && (
+                        <kbd className="ml-auto pl-4 font-mono text-xs text-muted-foreground">{shortcutLabel}</kbd>
+                    )}
+                </Link>
+            </DropdownMenuItem>
+        )
+    }
 
     // Format Anlas number
     const formatAnlas = (value: number) => {
@@ -414,77 +429,114 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             {!isMac && !isMobileRuntime && <CustomTitleBar />}
 
             <header className="fb-app-header z-10 flex min-w-0 shrink-0 items-center gap-1 border-b border-border/45 bg-card px-2 py-2 sm:px-3 lg:pl-0">
-                <div className="fb-app-brand hidden shrink-0 items-center px-5 text-lg font-semibold tracking-tight sm:flex lg:w-[232px]">
+                <div className="fb-app-brand hidden shrink-0 items-center px-3 text-lg font-semibold tracking-tight md:flex lg:w-[232px] lg:px-5">
                     NAI <span className="ml-1 text-primary">Blue</span>
                 </div>
                 <nav
                     aria-label={t('folderWorkbench.navigation.label', '작업대 탐색')}
                     className="fb-app-navigation flex min-w-0 items-center gap-1"
                 >
-                <Link
-                    to="/folders"
-                    aria-current={folderWorkbenchOpen ? 'page' : undefined}
-                    aria-label={t('folderWorkbench.design.navCreate', '이미지 만들기')}
-                    className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
-                >
-                    <span className="inline-flex items-center gap-2">
-                        <Images className="h-4 w-4 shrink-0 sm:hidden" aria-hidden="true" />
-                        <span className="sm:hidden">{t('folderWorkbench.design.navCreateCompact', 'Create')}</span>
-                        <span className="hidden sm:inline">{t('folderWorkbench.design.navCreate', '이미지 만들기')}</span>
-                    </span>
-                </Link>
-                <Link
-                    to="/queue"
-                    aria-current={location.pathname === '/queue' ? 'page' : undefined}
-                    aria-label={t('folderWorkbench.design.navHistory', '작업 기록')}
-                    className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
-                >
-                    <span className="inline-flex items-center gap-2">
-                        <History className="h-4 w-4 shrink-0 sm:hidden" aria-hidden="true" />
-                        <span className="sm:hidden">{t('folderWorkbench.design.navHistoryCompact', 'History')}</span>
-                        <span className="hidden sm:inline">{t('folderWorkbench.design.navHistory', '작업 기록')}</span>
-                    </span>
-                </Link>
+                    {primaryNavItems.map(item => {
+                        const active = isNavigationPathActive(location.pathname, item.path)
+                        const fullLabel = t(item.labelKey, item.fallbackLabel)
+                        const compactLabel = item.compactLabelKey
+                            ? t(item.compactLabelKey, item.compactFallbackLabel ?? fullLabel)
+                            : fullLabel
+                        const MobileIcon = item.path === '/folders' ? Images : item.path === '/queue' ? History : item.icon
+                        return (
+                            <Link
+                                key={item.path}
+                                to={item.path}
+                                aria-current={active ? 'page' : undefined}
+                                aria-label={fullLabel}
+                                className="fb-app-nav-link inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <MobileIcon className="h-4 w-4 shrink-0 sm:hidden" aria-hidden="true" />
+                                    <span className="sm:hidden">{compactLabel}</span>
+                                    <span className="hidden sm:inline">{fullLabel}</span>
+                                </span>
+                            </Link>
+                        )
+                    })}
                 </nav>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <button
                             ref={workbenchToolsRef}
-                            data-active={!folderWorkbenchOpen && location.pathname !== '/queue' || undefined}
+                            data-active={activeToolsItem ? '' : undefined}
                             type="button"
-                            className="fb-app-tools inline-flex min-h-11 shrink-0 items-center gap-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3"
+                            className="fb-app-tools inline-flex min-h-11 min-w-11 shrink-0 items-center gap-1 rounded-control px-2 text-base font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-1.5 lg:px-3"
                         >
-                            {t('folderWorkbench.navigation.tools', '도구')}
-                            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                            <span className="max-w-[9.5rem] truncate sm:max-w-[11rem]">
+                                {t('folderWorkbench.navigation.tools', '도구')}
+                                {activeToolsItem && (
+                                    <span className="hidden min-[440px]:inline">
+                                        {' · '}
+                                        {t(activeToolsItem.labelKey, activeToolsItem.fallbackLabel)}
+                                    </span>
+                                )}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]">
-                        {navItems.filter(item => item.path !== '/folders' && item.path !== '/queue').map(item => (
-                            <DropdownMenuItem key={item.path} asChild className="min-h-11 rounded-[4px]">
-                                <Link to={item.path} aria-current={location.pathname === item.path || location.pathname.startsWith(item.path + '/') ? 'page' : undefined}>
-                                    <item.icon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
-                                    {t(item.labelKey, item.fallbackLabel ?? item.labelKey)}
-                                </Link>
-                            </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        {!isSceneRoute && (
-                            <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'} onSelect={handleLeftPanelToggle}>
-                                {t('prompt.title', '프롬프트')}
-                            </DropdownMenuItem>
+                    <DropdownMenuContent align="end" className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-64 max-w-[calc(100vw-24px)] overflow-y-auto rounded-[4px]">
+                        {mobilePrimaryOverflow.length > 0 && (
+                            <>
+                                <DropdownMenuGroup>
+                                    <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                                        {t('folderWorkbench.navigation.groups.primary', '생성')}
+                                    </DropdownMenuLabel>
+                                    {mobilePrimaryOverflow.map(renderToolsNavItem)}
+                                </DropdownMenuGroup>
+                                <DropdownMenuSeparator />
+                            </>
                         )}
-                        <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls="nai-blue-history-sheet" onSelect={handleRightPanelToggle}>
-                            {t('history.title', '기록')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="min-h-11 rounded-[4px]" data-testid="open-my-work-activity" onSelect={() => { rememberSupportFocus(); openSupportSheet('activity') }}>
-                            {t('guided.activity.title', '내 작업')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => openProductGuidance()}>
-                            {t('productGuidance.trigger')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => useDiagnosticsStore.getState().openDrawer()}>
-                            {t('diagnosticDrawer.open')}
-                        </DropdownMenuItem>
+                        <DropdownMenuGroup>
+                            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                                {t('folderWorkbench.navigation.groups.authoring', '제작 보조')}
+                            </DropdownMenuLabel>
+                            {toolsAuthoringItems.map(renderToolsNavItem)}
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                                {t('folderWorkbench.navigation.groups.archive', '보관')}
+                            </DropdownMenuLabel>
+                            {toolsArchiveItems.map(renderToolsNavItem)}
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                                {t('folderWorkbench.navigation.groups.data', '데이터')}
+                            </DropdownMenuLabel>
+                            {toolsDataItems.map(renderToolsNavItem)}
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                                {t('folderWorkbench.navigation.groups.panels', '패널')}
+                            </DropdownMenuLabel>
+                            {!isSceneRoute && (
+                                <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls={promptPanelIsDocked ? 'nai-blue-prompt-dock' : 'nai-blue-prompt-sheet'} onSelect={handleLeftPanelToggle}>
+                                    {t('prompt.title', '프롬프트')}
+                                </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem className="min-h-11 rounded-[4px]" aria-controls="nai-blue-history-sheet" onSelect={handleRightPanelToggle}>
+                                {t('history.title', '기록')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="min-h-11 rounded-[4px]" data-testid="open-my-work-activity" onSelect={() => { rememberSupportFocus(); openSupportSheet('activity') }}>
+                                {t('guided.activity.title', '내 작업')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => openProductGuidance()}>
+                                {t('productGuidance.trigger')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="min-h-11 rounded-[4px]" onSelect={() => useDiagnosticsStore.getState().openDrawer()}>
+                                {t('diagnosticDrawer.open')}
+                            </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        {toolsSettingsItems.map(renderToolsNavItem)}
                     </DropdownMenuContent>
                 </DropdownMenu>
                 {historyActionRoute && <div className="workspace-editor-actions">

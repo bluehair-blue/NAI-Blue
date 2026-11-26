@@ -117,9 +117,9 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   padding is reserved for repeated data rows, not shell-level panels.
 - Section rhythm: `32px` between major regions. Related controls may use `8px`
   or `12px` internal gaps.
-- Below `640px`: two primary destinations, labelled Tools menu and theme toggle.
+- Below `640px`: two primary destinations (Create images, Job history), labelled Tools menu (with Single and Scenes in its first group) and theme toggle.
   Prompt and History remain named menu actions. No horizontal navigation scroll.
-- `640–1199px`: center workspace remains primary; Prompt opens as a non-modal,
+- `640–1199px`: four primary destinations in the top header (Create images, Single, Scenes, Job history), grouped Tools menu with active route label and shortcut bindings, and theme toggle. Center workspace remains primary; Prompt opens as a non-modal,
   horizontally resizable panel anchored below the header without a scrim, while History remains a sheet.
 - `1200px+`: Prompt is a persistent left rail on Main (`/advanced`) at `360px` (`1200–1535px`), `420px` (`1536–1799px`), and `500px` (`1800px+`). Scene views own their own prompt editor and inherited reference settings without mounting the Main prompt rail or sheet. History opens on demand in a sheet.
 - Scene grids render one column below `640px`, at most two below `1024px`, and
@@ -130,8 +130,9 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
 ## 5. Components and Information Architecture
 
 - **Workspace shell:** every category shares the workbench header: Create images,
-  Job history, Tools and theme. Tools lists named specialist destinations and
-  marks the active route. Prompt and History remain directly available on
+  Single, Scenes, Job history (`640px+`; Create images and Job history below `640px`),
+  grouped Tools menu (with active route name and keyboard shortcut bindings) and theme.
+  Tools lists named specialist destinations by group and marks the active route. Prompt and History remain directly available on
   desktop authoring screens and in the labelled Tools menu at compact widths.
   Prompt docks only for Main at desktop widths; Scene and utility categories do not mount
   unrelated Main authoring rails. The header spans the whole viewport.

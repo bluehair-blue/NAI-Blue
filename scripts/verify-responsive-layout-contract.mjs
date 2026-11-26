@@ -1042,7 +1042,7 @@ async function main() {
                         const labels = await page.evaluate(async () => {
                             const { default: i18n } = await import('/src/i18n/index.ts')
                             return Object.fromEntries([
-                                'navigation.label', 'navigation.tools', 'design.navCreate', 'design.navHistory',
+                                'navigation.label', 'navigation.tools', 'design.navCreate', 'design.navSingle', 'design.navScenes', 'design.navHistory',
                                 'design.toLight', 'design.toDark', 'design.light', 'design.dark', 'design.folders', 'design.findFolder',
                             ].map(key => [key, i18n.t(`folderWorkbench.${key}`)]))
                         })
@@ -1056,7 +1056,15 @@ async function main() {
                         const tools = header.getByRole('button', { name: labels['navigation.tools'], exact: true })
                         const theme = header.getByRole('button', { name: labels['design.toLight'], exact: true })
                             .or(header.getByRole('button', { name: labels['design.toDark'], exact: true }))
-                        for (const control of [create, history, tools, theme]) {
+                        const headerControls = [create, history, tools, theme]
+                        if (viewport.width >= 640) {
+                            const single = navigation.getByRole('link', { name: labels['design.navSingle'], exact: true })
+                            const scenes = navigation.getByRole('link', { name: labels['design.navScenes'], exact: true })
+                            assert.equal(await single.getAttribute('href'), '/advanced')
+                            assert.equal(await scenes.getAttribute('href'), '/scenes')
+                            headerControls.push(single, scenes)
+                        }
+                        for (const control of headerControls) {
                             assert.equal(await control.isVisible(), true, 'Workbench header controls must always be visible')
                             const box = await control.boundingBox()
                             assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= -1 && box.x + box.width <= viewport.width + 1 && box.y >= -1 && box.y + box.height <= viewport.height + 1, 'Workbench header controls must fit the viewport with 44px targets')
@@ -1077,7 +1085,10 @@ async function main() {
                         await page.keyboard.press('Enter')
                         const menu = page.getByRole('menu')
                         await menu.waitFor({ state: 'visible' })
-                        for (const destination of defaultRoutes.filter(value => !['/folders', '/queue', '/guided-preview'].includes(value))) {
+                        const primaryRoutes = viewport.width >= 640
+                            ? ['/folders', '/advanced', '/scenes', '/queue', '/guided-preview']
+                            : ['/folders', '/queue', '/guided-preview']
+                        for (const destination of defaultRoutes.filter(value => !primaryRoutes.includes(value))) {
                             const link = menu.locator(`a[href="${destination}"]`)
                             assert.equal(await link.count(), 1, `Workbench tools must expose ${destination}`)
                             assert.ok((await link.innerText()).trim(), `Workbench ${destination} link must have an accessible name`)

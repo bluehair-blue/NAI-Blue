@@ -33,14 +33,14 @@ describe('Primary navigation contract', () => {
     })
 
     it('keeps every remaining destination in the top navigation', async () => {
-        const layout = await source('src/components/layout/ThreeColumnLayout.tsx')
+        const navItems = await source('src/components/layout/navigation-items.ts')
 
         for (const route of ['/folders', '/advanced', '/scenes', '/tools', '/style-lab', '/queue', '/r2', '/data', '/web', '/library', '/settings']) {
-            expect(layout).toContain(`path: '${route}'`)
+            expect(navItems).toContain(`path: '${route}'`)
         }
-        expect(layout).not.toContain("path: '/asset-modules'")
-        expect(layout).not.toContain("path: '/organizer'")
-        expect(layout).not.toContain("path: '/prompts'")
+        expect(navItems).not.toContain("path: '/asset-modules'")
+        expect(navItems).not.toContain("path: '/organizer'")
+        expect(navItems).not.toContain("path: '/prompts'")
     })
 
     it('uses the same labelled navigation on all category routes', async () => {
@@ -48,9 +48,10 @@ describe('Primary navigation contract', () => {
         expect(layout).not.toContain('<AnimatedNavBar')
         expect(layout).toContain('workspace-shell')
         expect(layout).toContain('fb-app-navigation')
-        expect(layout).toContain('aria-current={folderWorkbenchOpen')
-        expect(layout).toContain("aria-current={location.pathname === '/queue'")
-        expect(layout).toContain('navItems.filter')
+        expect(layout).toContain('NAVIGATION_ITEMS')
+        expect(layout).toContain('isNavigationPathActive')
+        expect(layout).toContain('primaryNavItems.map')
+        expect(layout).toContain('DropdownMenuLabel')
         expect(layout).toContain('returnFocusRef={workbenchToolsRef}')
     })
 

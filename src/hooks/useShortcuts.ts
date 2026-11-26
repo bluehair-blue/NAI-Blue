@@ -6,6 +6,7 @@ import { useGenerationStore } from '@/stores/generation-store'
 import { supportsKeyboardShortcuts } from '@/platform/runtime'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
 import { hasBlockingLayer, shouldSkipGlobalShortcut } from '@/lib/keyboard/shortcut-scope'
+import { NAVIGATION_ROUTE_ORDER } from '@/components/layout/navigation-items'
 
 // 커스텀 이벤트 (다이얼로그 열기용)
 export const SHORTCUT_EVENTS = {
@@ -18,10 +19,8 @@ export const SHORTCUT_EVENTS = {
     RESET_FRAGMENT_COUNTERS: 'shortcut:resetFragmentCounters',
 }
 
-// 메뉴 순서 정의
-// Keep keyboard navigation aligned with the primary rail so the Data Hub is
-// reachable without pointer input while preserving the existing route order.
-const MENU_ROUTES = ['/advanced', '/scenes', '/tools', '/queue', '/web', '/library', '/data', '/settings']
+// 메뉴 순서 정의는 navigation-items.ts의 단일 원본을 따른다.
+const MENU_ROUTES = NAVIGATION_ROUTE_ORDER
 
 /**
  * Depends on the browser's native focus model and runs before persisted app

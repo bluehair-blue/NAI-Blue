@@ -138,7 +138,15 @@
             "history": "Generation history",
             "activity": "My work",
             "help": "Help",
-            "diagnostics": "Diagnostic logs"
+            "diagnostics": "Diagnostic logs",
+            "commandPalette": "Find command",
+            "groups": {
+                "primary": "Create",
+                "authoring": "Authoring",
+                "archive": "Archive",
+                "data": "Data",
+                "panels": "Panels"
+            }
         },
         "start": {
             "title": "Create assets",
@@ -353,6 +361,8 @@
             "light": "Light",
             "dark": "Dark",
             "navCreate": "Make images",
+            "navSingle": "Single",
+            "navScenes": "Scenes",
             "navHistory": "Work history",
             "navCreateCompact": "Create",
             "navHistoryCompact": "History"

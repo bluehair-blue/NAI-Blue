@@ -138,7 +138,15 @@
             "history": "생성 기록",
             "activity": "내 작업",
             "help": "도움말",
-            "diagnostics": "진단 로그"
+            "diagnostics": "진단 로그",
+            "commandPalette": "명령 찾기",
+            "groups": {
+                "primary": "생성",
+                "authoring": "제작 보조",
+                "archive": "보관",
+                "data": "데이터",
+                "panels": "패널"
+            }
         },
         "start": {
             "title": "에셋 만들기",
@@ -353,6 +361,8 @@
             "light": "밝게",
             "dark": "어둡게",
             "navCreate": "이미지 만들기",
+            "navSingle": "단건 생성",
+            "navScenes": "씬",
             "navHistory": "작업 기록",
             "navCreateCompact": "만들기",
             "navHistoryCompact": "기록"
