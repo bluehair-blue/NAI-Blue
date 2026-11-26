@@ -91,13 +91,29 @@ export default defineConfig({
             },
         },
     },
+    // Limit dependency discovery to the app entry so untracked artifacts and
+    // local docs do not stall Vite's first dev-server response.
+    optimizeDeps: {
+        entries: ['index.html'],
+    },
     // Tauri dev server 설정
     clearScreen: false,
     server: {
         port: 9090,
         strictPort: true,
         watch: {
-            ignored: ['**/src-tauri/**'],
+            ignored: [
+                '**/src-tauri/**',
+                '**/artifacts/**',
+                '**/.artifacts/**',
+                '**/output/**',
+                '**/outputs/**',
+                '**/docs/**',
+                '**/dist/**',
+                '**/tmp/**',
+                '**/.superloopy/**',
+                '**/.triadflow/**',
+            ],
         },
     },
 })
