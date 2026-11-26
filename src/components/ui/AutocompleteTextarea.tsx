@@ -623,6 +623,8 @@ export function AutocompleteTextarea({
                     className="fixed z-[9999] w-64 overflow-hidden rounded-panel border-0 bg-popover text-popover-foreground shadow-overlay motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95"
                     role="listbox"
                     aria-label="Prompt suggestions"
+                    // Typing aid, not a layer: Ctrl/Cmd+Enter must still reach generation (shortcut-scope.ts).
+                    data-shortcut-scope="workspace"
                     style={{
                         top: coords.top,
                         left: coords.left,

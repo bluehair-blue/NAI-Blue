@@ -87,6 +87,35 @@ function sameBinding(
     return bindingSignature(a) === bindingSignature(b)
 }
 
+/** Other actions already bound to the same key chord (case-insensitive key). */
+export function findConflictingActions(
+    bindings: Partial<Record<ShortcutAction, KeyBinding | null>>,
+    action: ShortcutAction,
+    binding: Pick<KeyBinding, 'key' | 'ctrl' | 'shift' | 'alt'> | null | undefined,
+): ShortcutAction[] {
+    if (!binding) return []
+    return (Object.keys(DEFAULT_BINDINGS) as ShortcutAction[]).filter(other =>
+        other !== action && sameBinding(bindings[other], binding),
+    )
+}
+
+/**
+ * Assigns a binding so that no two actions share one chord: the action the
+ * user just chose keeps the key and any other holder becomes unassigned (null),
+ * because the dispatcher would otherwise run only the first registered action.
+ */
+export function assignBindingExclusively(
+    bindings: Record<ShortcutAction, KeyBinding | null>,
+    action: ShortcutAction,
+    binding: KeyBinding | null,
+): Record<ShortcutAction, KeyBinding | null> {
+    const next = { ...bindings, [action]: binding }
+    for (const other of findConflictingActions(bindings, action, binding)) {
+        next[other] = null
+    }
+    return next
+}
+
 interface ShortcutState {
     bindings: Record<ShortcutAction, KeyBinding | null>
     enabled: boolean  // 전역 단축키 활성화/비활성화
@@ -236,19 +265,17 @@ export const useShortcutStore = create<ShortcutState>()(
 
             setBinding: (action, binding) => {
                 set((state) => ({
-                    bindings: {
-                        ...state.bindings,
-                        [action]: binding ? { ...binding, label: formatKeyBinding(binding) } : null,
-                    }
+                    bindings: assignBindingExclusively(
+                        state.bindings,
+                        action,
+                        binding ? { ...binding, label: formatKeyBinding(binding) } : null,
+                    ),
                 }))
             },
 
             resetBinding: (action) => {
                 set((state) => ({
-                    bindings: {
-                        ...state.bindings,
-                        [action]: { ...DEFAULT_BINDINGS[action] },
-                    }
+                    bindings: assignBindingExclusively(state.bindings, action, { ...DEFAULT_BINDINGS[action] }),
                 }))
             },
 

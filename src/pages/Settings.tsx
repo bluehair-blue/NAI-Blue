@@ -43,7 +43,7 @@ import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme-store'
 import { useSettingsStore } from '@/stores/settings-store'
-import { useShortcutStore, SHORTCUT_ACTIONS, formatKeyBinding, getShortcutActionDescription, type ShortcutAction, type KeyBinding } from '@/stores/shortcut-store'
+import { useShortcutStore, SHORTCUT_ACTIONS, findConflictingActions, formatKeyBinding, getShortcutActionDescription, type ShortcutAction, type KeyBinding } from '@/stores/shortcut-store'
 import { toast } from '@/components/ui/use-toast'
 import GeminiIcon from '@/assets/gemini-color.svg'
 import { openNativeFileDialog, saveNativeFileDialog } from '@/platform/native-file-dialog'
@@ -1687,28 +1687,10 @@ interface ShortcutRowProps {
 function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding, onStartEdit, onSave, onCancel, onReset, onKeyRecord, t }: ShortcutRowProps) {
     const [conflictAction, setConflictAction] = useState<ShortcutAction | null>(null)
 
-    // 충돌 체크 함수
-    const checkConflict = (newBinding: KeyBinding): ShortcutAction | null => {
-        for (const [otherAction, otherBinding] of Object.entries(allBindings)) {
-            if (otherAction === action || !otherBinding) continue // 자기 자신 및 미지정은 제외
-
-            // 키 조합이 정확히 같은지 확인
-            if (
-                otherBinding.key === newBinding.key &&
-                !!otherBinding.ctrl === !!newBinding.ctrl &&
-                !!otherBinding.shift === !!newBinding.shift &&
-                !!otherBinding.alt === !!newBinding.alt
-            ) {
-                return otherAction as ShortcutAction
-            }
-        }
-        return null
-    }
-
     const handleSave = () => {
         if (!recordedBinding) return
 
-        const conflict = checkConflict(recordedBinding)
+        const [conflict] = findConflictingActions(allBindings, action, recordedBinding)
         if (conflict) {
             setConflictAction(conflict)
             return
@@ -1718,6 +1700,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
         setConflictAction(null)
     }
 
+    // setBinding unassigns the conflicting action, so the override leaves one owner per chord.
     const handleForceOverride = () => {
         if (!recordedBinding) return
         onSave(recordedBinding)

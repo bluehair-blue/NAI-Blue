@@ -73,8 +73,10 @@ async function resetAuthAndDraft(page) {
             window.__qaAuthUnsub = null
         }
         window.__qaGenerationTrigger = null
+        window.__qaGenerationCount = 0
         window.__qaAuthUnsub = useAuthStore.subscribe((state, prev) => {
             if (!prev.tokenDialogOpen && state.tokenDialogOpen) {
+                window.__qaGenerationCount += 1
                 window.__qaGenerationTrigger = {
                     basePrompt: useGenerationStore.getState().basePrompt,
                     timestamp: Date.now(),
@@ -82,6 +84,14 @@ async function resetAuthAndDraft(page) {
             }
         })
     })
+}
+
+async function closeTokenDialog(page) {
+    await page.evaluate(async () => {
+        const { useAuthStore } = await import('/src/stores/auth-store.ts')
+        useAuthStore.getState().setTokenDialogOpen(false)
+    })
+    await page.waitForFunction(() => document.querySelector('[role="dialog"][data-state="open"]:not([data-shortcut-scope="workspace"])') === null)
 }
 
 async function readGenerationSignal(page) {
@@ -94,13 +104,79 @@ async function readGenerationSignal(page) {
             tokenDialogOpen: useAuthStore.getState().tokenDialogOpen,
             basePrompt: useGenerationStore.getState().basePrompt,
             promptAtTrigger: window.__qaGenerationTrigger?.basePrompt ?? null,
+            triggerCount: window.__qaGenerationCount ?? 0,
         }
     })
 }
 
+/**
+ * Records keydown events (read after dispatch, so defaultPrevented is final) and
+ * shortcut CustomEvents emitted by useShortcuts. Reinstalled after each navigation.
+ */
+async function resetKeyProbe(page) {
+    await page.evaluate(() => {
+        if (!window.__qaKeyProbeInstalled) {
+            window.__qaKeyProbeInstalled = true
+            window.addEventListener('keydown', event => {
+                if (['Control', 'Meta', 'Shift', 'Alt'].includes(event.key)) return
+                window.__qaKeyEvents.push(event)
+            }, true)
+            for (const name of [
+                'shortcut:generate',
+                'shortcut:openFragmentDialog',
+                'shortcut:openParameterSettings',
+                'shortcut:openPromptGenerator',
+                'shortcut:resetFragmentCounters',
+            ]) {
+                window.addEventListener(name, () => {
+                    window.__qaShortcutEvents[name] = (window.__qaShortcutEvents[name] ?? 0) + 1
+                })
+            }
+        }
+        window.__qaKeyEvents = []
+        window.__qaShortcutEvents = {}
+    })
+}
+
+async function readKeyProbe(page) {
+    return page.evaluate(() => ({
+        keys: (window.__qaKeyEvents ?? []).map(event => ({
+            key: event.key,
+            repeat: event.repeat,
+            defaultPrevented: event.defaultPrevented,
+        })),
+        shortcutEvents: { ...(window.__qaShortcutEvents ?? {}) },
+    }))
+}
+
+async function blurActiveElement(page) {
+    await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    })
+}
+
+async function openAdvanced(page) {
+    await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
+    const editor = page.locator('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] textarea')
+    await editor.waitFor({ state: 'visible' })
+    return editor
+}
+
 async function openQaSceneDetail(page) {
     await page.goto(`${baseUrl}/scenes`, { waitUntil: 'domcontentloaded' })
-    const addButton = page.locator('main button:has(svg.lucide-plus)').first()
+    await page.locator('main button:has(svg.lucide-plus)').first().waitFor({ state: 'visible' })
+    // Other "+" buttons (queue and batch counters) share the icon; "add scene" repeats its
+    // aria-label as visible text, and the empty state has its own test id.
+    await page.locator('main button:has(svg.lucide-plus)').evaluateAll(buttons => {
+        for (const button of buttons) {
+            const label = button.getAttribute('aria-label')
+            const text = button.querySelector('span')?.textContent?.trim()
+            if (button.dataset.testid === 'scene-empty-create' || (label && label === text)) {
+                button.setAttribute('data-qa-add-scene', '')
+            }
+        }
+    })
+    const addButton = page.locator('[data-qa-add-scene]').first()
     await addButton.waitFor({ state: 'visible' })
     await addButton.click()
     await page.waitForURL(url => /^\/scenes\/[^/]+$/.test(url.pathname))
@@ -143,34 +219,35 @@ async function main() {
             await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
             await page.locator('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] textarea').waitFor({ state: 'visible' })
 
-            // Case 1: Ctrl+Enter inside AI Prompt Generator dialog must not trigger background generation
-            await runCheck(results, 'Dialog Ctrl+Enter does not trigger background generation', async () => {
-                await resetAuthAndDraft(page)
-                await page.locator('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] button:has(svg.lucide-sparkles)').click()
-                const aiTrigger = page.locator('[data-radix-popper-content-wrapper] button:has(svg.lucide-sparkles)').first()
-                await aiTrigger.waitFor({ state: 'visible' })
-                await aiTrigger.click()
-
-                try {
-                    const dialog = page.locator('[role="dialog"][data-state="open"]').first()
-                    await dialog.waitFor({ state: 'visible' })
-                    const dialogTextarea = dialog.locator('textarea').first()
-                    await dialogTextarea.fill('girl drinking coffee in a sunlit cafe')
-                    await dialogTextarea.press('Control+Enter')
-                    await page.waitForTimeout(250)
-
-                    const signal = await readGenerationSignal(page)
-                    assert.equal(
-                        signal.tokenDialogOpen,
-                        false,
-                        'Ctrl+Enter inside PromptGeneratorDialog leaked to global action:generate (tokenDialogOpen became true)',
-                    )
-                } finally {
+            // Case 1: Ctrl+Enter / Cmd+Enter inside AI Prompt Generator dialog must not trigger background generation
+            for (const [chord, label] of [['Control+Enter', 'Ctrl+Enter'], ['Meta+Enter', 'Meta+Enter']]) {
+                await runCheck(results, `Dialog ${label} does not trigger background generation`, async () => {
                     await resetAuthAndDraft(page)
-                    await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
-                    await page.locator('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] textarea').waitFor({ state: 'visible' })
-                }
-            })
+                    await page.locator('#nai-blue-prompt-dock [data-testid="prompt-editor-surface"] button:has(svg.lucide-sparkles)').click()
+                    const aiTrigger = page.locator('[data-radix-popper-content-wrapper] button:has(svg.lucide-sparkles)').first()
+                    await aiTrigger.waitFor({ state: 'visible' })
+                    await aiTrigger.click()
+
+                    try {
+                        const dialog = page.locator('[role="dialog"][data-state="open"]').first()
+                        await dialog.waitFor({ state: 'visible' })
+                        const dialogTextarea = dialog.locator('textarea').first()
+                        await dialogTextarea.fill('girl drinking coffee in a sunlit cafe')
+                        await dialogTextarea.press(chord)
+                        await page.waitForTimeout(250)
+
+                        const signal = await readGenerationSignal(page)
+                        assert.equal(
+                            signal.tokenDialogOpen,
+                            false,
+                            `${label} inside PromptGeneratorDialog leaked to global action:generate (tokenDialogOpen became true)`,
+                        )
+                    } finally {
+                        await resetAuthAndDraft(page)
+                        await openAdvanced(page)
+                    }
+                })
+            }
 
             // Case 2: Autocomplete popup open + Ctrl+Enter triggers generation and flushes last char
             await runCheck(results, 'Autocomplete open Ctrl+Enter triggers generation with latest input', async () => {
@@ -395,19 +472,220 @@ async function main() {
                 await page.waitForURL(url => url.pathname === '/queue', { timeout: 5000 })
                 await palette.waitFor({ state: 'hidden', timeout: 5000 })
                 assert.equal(await palette.isVisible(), false, 'Command palette should close after executing command')
+
+                const isDark = () => page.evaluate(() => document.documentElement.classList.contains('dark'))
+                const darkBefore = await isDark()
+                const toggleTheme = async () => {
+                    await page.keyboard.press('Control+k')
+                    await palette.waitFor({ state: 'visible' })
+                    await input.fill('theme')
+                    await palette.locator('[role="option"][id$="action:theme"]').waitFor({ state: 'visible' })
+                    await input.press('Enter')
+                    await palette.waitFor({ state: 'hidden', timeout: 5000 })
+                }
+                await toggleTheme()
+                assert.equal(await isDark(), !darkBefore, 'Theme command from the palette did not toggle the dark class')
+                await toggleTheme()
+                assert.equal(await isDark(), darkBefore, 'Second theme command did not restore the original theme')
             })
 
-            // Case 11: Per-route Ctrl+Enter submits Folder composer locally and triggers SceneDetail primary action
-            await runCheck(results, 'Per-route Ctrl+Enter submits Folder composer locally without leaking', async () => {
+            // Case 11: Per-route Ctrl+Enter submits Folder composer locally and runs the SceneDetail primary action
+            await runCheck(results, 'Per-route Ctrl+Enter submits Folder composer locally and runs SceneDetail primary action', async () => {
                 await page.goto(`${baseUrl}/folders`, { waitUntil: 'domcontentloaded' })
                 await page.locator('[data-testid="folder-workbench"]').waitFor({ state: 'visible' })
+                await resetKeyProbe(page)
                 const composerTextarea = page.locator('.fb-composer textarea').first()
-                if (await composerTextarea.isVisible()) {
-                    await composerTextarea.fill('ctrl_enter_folder_asset')
-                    await composerTextarea.press('Control+Enter')
-                    await page.locator('.fb-asset-card').first().waitFor({ state: 'visible', timeout: 5000 })
-                    assert.ok(await page.locator('.fb-asset-card').count() >= 1, 'Ctrl+Enter inside folder composer should add asset card')
+                await composerTextarea.waitFor({ state: 'visible' })
+                const cardsBefore = await page.locator('.fb-asset-card').count()
+                await composerTextarea.fill('ctrl_enter_folder_asset')
+                await composerTextarea.press('Control+Enter')
+                await page.waitForFunction(
+                    before => document.querySelectorAll('.fb-asset-card').length > before,
+                    cardsBefore,
+                    { timeout: 5000 },
+                )
+                const folderProbe = await readKeyProbe(page)
+                assert.equal(
+                    folderProbe.shortcutEvents['shortcut:generate'] ?? 0,
+                    0,
+                    'Ctrl+Enter inside the folder composer leaked to the route primary action',
+                )
+
+                const scenePath = await openQaSceneDetail(page)
+                const sceneId = scenePath.split('/').pop()
+                const readQueueCount = () => page.evaluate(async id => {
+                    const { useSceneStore } = await import('/src/stores/scene-store.ts')
+                    for (const preset of useSceneStore.getState().presets) {
+                        const scene = preset.scenes.find(item => item.id === id)
+                        if (scene) return scene.queueCount
+                    }
+                    return null
+                }, sceneId)
+                assert.equal(await readQueueCount(), 0, 'New QA scene should start with an empty queue')
+                await resetAuthAndDraft(page)
+                await resetKeyProbe(page)
+                await blurActiveElement(page)
+                await page.keyboard.press('Control+Enter')
+                await page.waitForTimeout(300)
+                const sceneProbe = await readKeyProbe(page)
+                assert.equal(sceneProbe.shortcutEvents['shortcut:generate'] ?? 0, 1, 'SceneDetail Ctrl+Enter did not emit the route primary action')
+                assert.ok(
+                    (await readQueueCount()) >= 1,
+                    'SceneDetail primary action did not queue the scene (queueCount stayed 0)',
+                )
+                await closeTokenDialog(page)
+            })
+
+            // Case 12: an open model Select listbox owns Ctrl+Enter; generation must not run underneath it
+            await runCheck(results, 'Model select listbox open: Ctrl+Enter does not trigger generation', async () => {
+                const editor = await openAdvanced(page)
+                await resetAuthAndDraft(page)
+                await editor.fill('listbox_guard_prompt')
+                const modelSelect = page.locator('[data-testid="prompt-core-parameters"] [role="combobox"]').first()
+                await modelSelect.click()
+                const listbox = page.locator('[role="listbox"][data-state="open"]')
+                await listbox.first().waitFor({ state: 'visible' })
+                await resetKeyProbe(page)
+                await page.keyboard.press('Control+Enter')
+                await page.waitForTimeout(250)
+
+                const signal = await readGenerationSignal(page)
+                const probe = await readKeyProbe(page)
+                assert.equal(signal.tokenDialogOpen, false, 'Ctrl+Enter with the model listbox open triggered generation')
+                assert.equal(probe.keys.at(-1)?.defaultPrevented, true, 'Suppressed Ctrl+Enter should still block the browser default')
+                // Radix Select treats Ctrl+Enter on an item as Enter and closes before window
+                // sees the key; a closed listbox proves the capture-time layer sample was exercised.
+                assert.equal(await listbox.count(), 0, 'Expected Ctrl+Enter to select the focused option and close the listbox')
+                await resetAuthAndDraft(page)
+            })
+
+            // Case 13: an open tools DropdownMenu owns Ctrl+Enter, on the menu and on a focused item
+            await runCheck(results, 'Tools menu open: Ctrl+Enter does not trigger generation', async () => {
+                const menu = page.locator('[role="menu"][data-state="open"]')
+                for (const focusItem of [false, true]) {
+                    const editor = await openAdvanced(page)
+                    await resetAuthAndDraft(page)
+                    await editor.fill('menu_guard_prompt')
+                    await page.locator('button.fb-app-tools').click()
+                    await menu.first().waitFor({ state: 'visible' })
+                    if (focusItem) {
+                        await page.keyboard.press('ArrowDown')
+                        await page.locator('[role="menuitem"]:focus').waitFor({ state: 'visible' })
+                    }
+                    await resetKeyProbe(page)
+                    await page.keyboard.press('Control+Enter')
+                    await page.waitForTimeout(250)
+
+                    const signal = await readGenerationSignal(page)
+                    const probe = await readKeyProbe(page)
+                    const where = focusItem ? 'a focused menu item' : 'the tools menu'
+                    assert.equal(signal.tokenDialogOpen, false, `Ctrl+Enter on ${where} triggered generation`)
+                    assert.equal(probe.shortcutEvents['shortcut:generate'] ?? 0, 0, `Ctrl+Enter on ${where} emitted the route action`)
+                    assert.equal(probe.keys.at(-1)?.defaultPrevented, true, `Suppressed Ctrl+Enter on ${where} should block the browser default`)
+                    if (!focusItem) await page.keyboard.press('Escape')
+                    await resetAuthAndDraft(page)
                 }
+            })
+
+            // Case 14: holding Ctrl+Enter (auto-repeat keydown) must not toggle generate/cancel
+            await runCheck(results, 'Held Ctrl+Enter (repeat keydown) triggers generation once', async () => {
+                const editor = await openAdvanced(page)
+                await resetAuthAndDraft(page)
+                await editor.click()
+                await editor.fill('repeat_guard_prompt')
+                await resetKeyProbe(page)
+                await page.keyboard.down('Control')
+                try {
+                    await page.keyboard.down('Enter')
+                    await page.waitForTimeout(200)
+                    for (let i = 0; i < 3; i += 1) {
+                        // Close the token dialog so only the repeat guard can stop a second trigger.
+                        await closeTokenDialog(page)
+                        await page.keyboard.down('Enter')
+                        await page.waitForTimeout(150)
+                    }
+                } finally {
+                    await page.keyboard.up('Enter')
+                    await page.keyboard.up('Control')
+                }
+
+                const signal = await readGenerationSignal(page)
+                const probe = await readKeyProbe(page)
+                const enterEvents = probe.keys.filter(item => item.key === 'Enter')
+                assert.equal(enterEvents.filter(item => item.repeat).length, 3, `Expected 3 repeat keydowns, saw ${JSON.stringify(enterEvents)}`)
+                assert.equal(signal.triggerCount, 1, `Held Ctrl+Enter triggered generation ${signal.triggerCount} times`)
+                assert.ok(enterEvents.every(item => item.defaultPrevented), 'Repeat Ctrl+Enter keydowns must keep the browser default blocked')
+                await closeTokenDialog(page)
+                await resetAuthAndDraft(page)
+            })
+
+            // Case 15: off /advanced, Ctrl+Enter typed inside the prompt sheet runs the sheet's main generation
+            await runCheck(results, 'Prompt sheet on /folders: Ctrl+Enter runs main generation, not the route action', async () => {
+                await page.goto(`${baseUrl}/folders`, { waitUntil: 'domcontentloaded' })
+                await page.locator('[data-testid="folder-workbench"]').waitFor({ state: 'visible' })
+                await resetAuthAndDraft(page)
+                await resetKeyProbe(page)
+
+                await page.keyboard.press('Control+k')
+                const palette = page.locator('[data-testid="command-palette"]')
+                await palette.waitFor({ state: 'visible' })
+                await palette.locator('input[role="combobox"]').fill('prompt')
+                await palette.locator('[role="option"][id$="panel:prompt"]').click()
+                await palette.waitFor({ state: 'hidden' })
+
+                const sheet = page.locator('#nai-blue-prompt-sheet')
+                await sheet.waitFor({ state: 'visible' })
+                const sheetEditor = sheet.locator('[data-testid="prompt-editor-surface"] textarea').first()
+                await sheetEditor.click()
+                await sheetEditor.fill('')
+                await sheetEditor.pressSequentially('folders_sheet_prompt', { delay: 0 })
+                await sheetEditor.press('Control+Enter')
+                await page.waitForTimeout(250)
+
+                const signal = await readGenerationSignal(page)
+                const probe = await readKeyProbe(page)
+                assert.equal(signal.tokenDialogOpen, true, 'Ctrl+Enter inside the prompt sheet did not run main generation')
+                assert.equal(signal.promptAtTrigger, 'folders_sheet_prompt', `Expected sheet prompt at trigger, got "${signal.promptAtTrigger}"`)
+                assert.equal(probe.shortcutEvents['shortcut:generate'] ?? 0, 0, 'Ctrl+Enter inside the prompt sheet also fired the /folders route action')
+                await closeTokenDialog(page)
+                await resetAuthAndDraft(page)
+            })
+
+            // Case 16: app-owned keys keep WebView defaults blocked even when the action does not run here
+            await runCheck(results, 'Unrun app shortcuts still block browser defaults; Ctrl+F opens fragments only on SceneDetail', async () => {
+                await page.goto(`${baseUrl}/folders`, { waitUntil: 'domcontentloaded' })
+                await page.locator('[data-testid="folder-workbench"]').waitFor({ state: 'visible' })
+                await resetKeyProbe(page)
+                await blurActiveElement(page)
+                await page.keyboard.press('Control+f')
+                await page.keyboard.press('Control+p')
+                let probe = await readKeyProbe(page)
+                assert.deepEqual(
+                    probe.keys.map(item => [item.key, item.defaultPrevented]),
+                    [['f', true], ['p', true]],
+                    'Ctrl+F / Ctrl+P on /folders must not fall through to the find bar or print dialog',
+                )
+                assert.deepEqual(probe.shortcutEvents, {}, 'Ctrl+F / Ctrl+P on /folders must not emit authoring dialog events')
+
+                await page.evaluate(async () => {
+                    const { useAuthStore } = await import('/src/stores/auth-store.ts')
+                    useAuthStore.getState().requestTokenEntry()
+                })
+                await page.locator('[role="dialog"][data-state="open"]').first().waitFor({ state: 'visible' })
+                await resetKeyProbe(page)
+                await page.keyboard.press('Control+Shift+R')
+                probe = await readKeyProbe(page)
+                assert.equal(probe.keys.at(-1)?.defaultPrevented, true, 'Ctrl+Shift+R under a dialog must not reload the WebView')
+                assert.deepEqual(probe.shortcutEvents, {}, 'Ctrl+Shift+R under a dialog must not reset fragment counters')
+                await closeTokenDialog(page)
+
+                await openQaSceneDetail(page)
+                await resetKeyProbe(page)
+                await blurActiveElement(page)
+                await page.keyboard.press('Control+f')
+                probe = await readKeyProbe(page)
+                assert.equal(probe.keys.at(-1)?.defaultPrevented, true, 'Ctrl+F on SceneDetail must not open the find bar')
+                assert.equal(probe.shortcutEvents['shortcut:openFragmentDialog'] ?? 0, 1, 'Ctrl+F on SceneDetail must emit the fragment dialog event')
             })
 
             await page.close()

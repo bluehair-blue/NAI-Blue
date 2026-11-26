@@ -139,19 +139,34 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     },
 ]
 
-export const NAVIGATION_ROUTE_ORDER: readonly string[] = [
-    '/folders',
-    '/advanced',
-    '/scenes',
-    '/queue',
-    '/tools',
-    '/library',
-    '/web',
-    '/data',
-    '/settings',
-]
+/** Order in which the header and tools menu present groups (ThreeColumnLayout). */
+export const NAVIGATION_GROUP_ORDER: readonly NavigationGroup[] = ['primary', 'authoring', 'archive', 'data', 'settings']
+
+/** Ctrl+PageDown/PageUp cycle order: every menu destination, in menu order. */
+export const NAVIGATION_ROUTE_ORDER: readonly string[] = NAVIGATION_GROUP_ORDER.flatMap(group =>
+    NAVIGATION_ITEMS.filter(item => item.group === group).map(item => item.path),
+)
+
+/** Direct navigation shortcuts (Ctrl+1..8 by default) mapped to their destinations. */
+export const NAVIGATION_SHORTCUT_ROUTES: Partial<Record<ShortcutAction, string>> = Object.fromEntries(
+    NAVIGATION_ITEMS.flatMap((item): Array<[ShortcutAction, string]> => (
+        item.shortcutAction ? [[item.shortcutAction, item.path]] : []
+    )),
+)
 
 export function isNavigationPathActive(pathname: string, itemPath: string): boolean {
     if (itemPath === '/folders') return pathname === '/folders' || pathname === '/'
     return pathname === itemPath || pathname.startsWith(`${itemPath}/`)
+}
+
+/**
+ * Next/previous menu destination for page cycling. Routes outside the menu
+ * start the cycle from its first (next) or last (previous) entry.
+ */
+export function getAdjacentNavigationRoute(pathname: string, direction: 'next' | 'prev'): string {
+    const order = NAVIGATION_ROUTE_ORDER
+    const currentIndex = order.findIndex(path => isNavigationPathActive(pathname, path))
+    if (currentIndex === -1) return direction === 'next' ? order[0] : order[order.length - 1]
+    const offset = direction === 'next' ? 1 : -1
+    return order[(currentIndex + offset + order.length) % order.length]
 }

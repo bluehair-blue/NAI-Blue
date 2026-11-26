@@ -1,12 +1,12 @@
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router'
-import { useShortcutStore, matchesBinding, SHORTCUT_ACTIONS } from '@/stores/shortcut-store'
+import { useShortcutStore, matchesBinding, SHORTCUT_ACTIONS, type ShortcutAction } from '@/stores/shortcut-store'
 import { useFragmentStore } from '@/stores/fragment-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { supportsKeyboardShortcuts } from '@/platform/runtime'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
-import { hasBlockingLayer, shouldSkipGlobalShortcut } from '@/lib/keyboard/shortcut-scope'
-import { NAVIGATION_ROUTE_ORDER } from '@/components/layout/navigation-items'
+import { hasBlockingLayer, resolveGlobalShortcutDisposition } from '@/lib/keyboard/shortcut-scope'
+import { getAdjacentNavigationRoute, NAVIGATION_SHORTCUT_ROUTES } from '@/components/layout/navigation-items'
 
 // 커스텀 이벤트 (다이얼로그 및 화면별 주 동작용)
 export const SHORTCUT_EVENTS = {
@@ -21,19 +21,17 @@ export const SHORTCUT_EVENTS = {
     RESET_FRAGMENT_COUNTERS: 'shortcut:resetFragmentCounters',
 }
 
-// 메뉴 순서 정의는 navigation-items.ts의 단일 원본을 따른다.
-const MENU_ROUTES = NAVIGATION_ROUTE_ORDER
-
-const DIRECT_NAVIGATION_ROUTES: Record<string, string> = {
-    'navigate:folders': '/folders',
-    'navigate:main': '/advanced',
-    'navigate:scenes': '/scenes',
-    'navigate:queue': '/queue',
-    'navigate:tools': '/tools',
-    'navigate:library': '/library',
-    'navigate:web': '/web',
-    'navigate:settings': '/settings',
+const AUTHORING_DIALOG_EVENTS: Partial<Record<ShortcutAction, string>> = {
+    'open:promptGenerator': SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR,
+    'open:fragmentDialog': SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG,
+    'open:parameterSettings': SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS,
+    'open:imageReference': SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE,
+    'open:characterPrompt': SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT,
+    'open:presetDialog': SHORTCUT_EVENTS.OPEN_PRESET_DIALOG,
 }
+
+const PROMPT_SHEET_SELECTOR = '#nai-blue-prompt-sheet'
+const SCENE_DETAIL_PATH = /^\/scenes\/[^/]+$/
 
 /**
  * Depends on the browser's native focus model and runs before persisted app
@@ -42,6 +40,20 @@ const DIRECT_NAVIGATION_ROUTES: Record<string, string> = {
  */
 export function shouldPreserveNativeTabNavigation(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
     return event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey
+}
+
+/** Authoring dialog event a route listens for, or null when no listener is mounted there. */
+function resolveAuthoringDialogEvent(action: ShortcutAction, pathname: string): string | null {
+    const eventName = AUTHORING_DIALOG_EVENTS[action]
+    if (!eventName) return null
+    // ThreeColumnLayout listens on /advanced only; SceneDetail owns the fragment preview.
+    if (pathname === '/advanced') return eventName
+    if (action === 'open:fragmentDialog' && SCENE_DETAIL_PATH.test(pathname)) return eventName
+    return null
+}
+
+function isInsidePromptSheet(target: EventTarget | null): boolean {
+    return target instanceof Element && target.closest(PROMPT_SHEET_SELECTOR) !== null
 }
 
 export function useShortcuts() {
@@ -53,102 +65,79 @@ export function useShortcuts() {
     useEffect(() => {
         if (!supportsKeyboardShortcuts || !enabled) return
 
+        const findMatchedAction = (e: KeyboardEvent) =>
+            SHORTCUT_ACTIONS.find(({ action }) => matchesBinding(e, bindings[action]))?.action
+
+        // Radix Select/Menu items treat Ctrl+Enter as Enter and close before the event
+        // bubbles to window, so the layer state is sampled at capture time as well.
+        const layerOpenAtKeyDown = new WeakSet<KeyboardEvent>()
+        const recordLayerAtKeyDown = (e: KeyboardEvent) => {
+            if (findMatchedAction(e) && hasBlockingLayer(document)) layerOpenAtKeyDown.add(e)
+        }
+
         const handleKeyDown = (e: KeyboardEvent) => {
             if (shouldPreserveNativeTabNavigation(e)) return
 
-            for (const { action } of SHORTCUT_ACTIONS) {
-                const binding = bindings[action]
-                if (!binding) continue
+            const action = findMatchedAction(e)
+            if (!action) return
 
-                if (matchesBinding(e, binding)) {
-                    if (shouldSkipGlobalShortcut(e, hasBlockingLayer(document))) return
+            const blockingLayerOpen = layerOpenAtKeyDown.has(e) || hasBlockingLayer(document)
+            const disposition = resolveGlobalShortcutDisposition(e, blockingLayerOpen)
+            if (disposition === 'pass-through') return
+            // App-owned keys never fall back to WebView defaults (find bar, print, reload),
+            // even when the action itself does not run here.
+            e.preventDefault()
+            if (disposition === 'suppress') return
 
-                    if (action.startsWith('navigate:')) {
-                        e.preventDefault()
+            if (action === 'navigate:next' || action === 'navigate:prev') {
+                navigate(getAdjacentNavigationRoute(location.pathname, action === 'navigate:next' ? 'next' : 'prev'))
+                return
+            }
 
-                        if (action === 'navigate:next' || action === 'navigate:prev') {
-                            const currentPath = location.pathname.startsWith('/scenes/')
-                                ? '/scenes'
-                                : location.pathname === '/'
-                                    ? '/folders'
-                                    : location.pathname
-                            const currentIndex = MENU_ROUTES.indexOf(currentPath)
-                            if (currentIndex === -1) return
+            const directRoute = NAVIGATION_SHORTCUT_ROUTES[action]
+            if (directRoute) {
+                navigate(directRoute)
+                return
+            }
 
-                            const nextIndex = action === 'navigate:next'
-                                ? (currentIndex + 1) % MENU_ROUTES.length
-                                : (currentIndex - 1 + MENU_ROUTES.length) % MENU_ROUTES.length
-                            navigate(MENU_ROUTES[nextIndex])
-                            return
-                        }
+            if (action === 'open:commandPalette') {
+                window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_COMMAND_PALETTE))
+                return
+            }
 
-                        const targetRoute = DIRECT_NAVIGATION_ROUTES[action]
-                        if (targetRoute) {
-                            navigate(targetRoute)
-                        }
-                        return
-                    }
+            if (action in AUTHORING_DIALOG_EVENTS) {
+                const eventName = resolveAuthoringDialogEvent(action, location.pathname)
+                if (eventName) window.dispatchEvent(new CustomEvent(eventName))
+                return
+            }
 
-                    if (action === 'open:commandPalette') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_COMMAND_PALETTE))
-                        return
-                    }
-
-                    if (
-                        action === 'open:promptGenerator'
-                        || action === 'open:fragmentDialog'
-                        || action === 'open:parameterSettings'
-                        || action === 'open:imageReference'
-                        || action === 'open:characterPrompt'
-                        || action === 'open:presetDialog'
-                    ) {
-                        // Authoring dialog listeners mount only on /advanced; let browser/OS
-                        // defaults (e.g. Ctrl+F, Ctrl+P) work normally on other routes.
-                        if (location.pathname !== '/advanced') return
-                        e.preventDefault()
-                        const eventName = action === 'open:promptGenerator'
-                            ? SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR
-                            : action === 'open:fragmentDialog'
-                                ? SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG
-                                : action === 'open:parameterSettings'
-                                    ? SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS
-                                    : action === 'open:imageReference'
-                                        ? SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE
-                                        : action === 'open:characterPrompt'
-                                            ? SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT
-                                            : SHORTCUT_EVENTS.OPEN_PRESET_DIALOG
-                        window.dispatchEvent(new CustomEvent(eventName))
-                        return
-                    }
-
-                    if (action === 'action:generate') {
-                        if (location.pathname === '/advanced') {
-                            e.preventDefault()
-                            // Keyboard invocation shares the same conflict and
-                            // cancellation policy as the Dock/Sheet action.
-                            void executePromptGenerationCommand('main')
-                            return
-                        }
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.GENERATE))
-                        return
-                    }
-
-                    if (action === 'action:resetFragmentCounters') {
-                        e.preventDefault()
-                        // A running job may own a sequential-fragment lease; the
-                        // shortcut must not invalidate its captured CAS revision.
-                        if (useGenerationStore.getState().isGenerating) return
-                        resetSequentialCounter()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.RESET_FRAGMENT_COUNTERS))
-                        return
-                    }
+            if (action === 'action:generate') {
+                // The prompt sheet carries its own main-generation button off /advanced,
+                // so a key typed inside it runs that command instead of the route action.
+                if (location.pathname === '/advanced' || isInsidePromptSheet(e.target)) {
+                    // Keyboard invocation shares the same conflict and
+                    // cancellation policy as the Dock/Sheet action.
+                    void executePromptGenerationCommand('main')
+                    return
                 }
+                window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.GENERATE))
+                return
+            }
+
+            if (action === 'action:resetFragmentCounters') {
+                // A running job may own a sequential-fragment lease; the
+                // shortcut must not invalidate its captured CAS revision.
+                if (useGenerationStore.getState().isGenerating) return
+                resetSequentialCounter()
+                window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.RESET_FRAGMENT_COUNTERS))
             }
         }
 
+        window.addEventListener('keydown', recordLayerAtKeyDown, true)
         window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
+        return () => {
+            window.removeEventListener('keydown', recordLayerAtKeyDown, true)
+            window.removeEventListener('keydown', handleKeyDown)
+        }
     }, [bindings, enabled, navigate, location.pathname, resetSequentialCounter])
 }
