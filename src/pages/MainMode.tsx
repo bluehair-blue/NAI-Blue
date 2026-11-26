@@ -48,6 +48,7 @@ import { Wand2 } from 'lucide-react'
 import { InpaintingDialog } from '@/components/tools/InpaintingDialog'
 import { useLayoutStore } from '@/stores/layout-store'
 import { usePromptSurface } from '@/components/layout/prompt-surface'
+import { guideMainGenerationOutcome, reportMainGenerationFailure } from '@/components/prompt/main-generation-feedback'
 import { publishGeneratedArtifact } from '@/stores/artifact-lifecycle-store'
 import { useAssetModuleStore } from '@/stores/asset-module-store'
 import { calculateAnlasCost, resolveAnlasPricingBasis } from '@/lib/anlas-calculator'
@@ -822,21 +823,8 @@ export default function MainMode() {
         }
         if (!isGenerating) {
             void startMainGenerationCommand()
-                .then(outcome => {
-                    if (outcome !== 'low-quality-steps') return
-                    promptSurface.ensureVisible()
-                    requestPromptFocus('steps')
-                    toast({
-                        title: t('generate.lowStepsBlockedTitle', 'Steps를 먼저 확인하세요'),
-                        description: t('generate.lowStepsDescription', '{{steps}} steps는 완성 전에 종료되어 흐린 결과가 나올 수 있습니다. 일반 생성은 28 steps를 권장합니다.', { steps }),
-                        variant: 'destructive',
-                    })
-                })
-                .catch(error => toast({
-                    title: t('common.error', 'Error'),
-                    description: error instanceof Error ? error.message : t('queue.enqueueFailed', 'Queue enqueue failed'),
-                    variant: 'destructive',
-                }))
+                .then(outcome => guideMainGenerationOutcome(outcome, promptSurface.ensureVisible))
+                .catch(reportMainGenerationFailure)
         }
     }
 

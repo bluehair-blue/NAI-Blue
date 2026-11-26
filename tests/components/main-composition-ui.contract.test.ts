@@ -41,7 +41,22 @@ describe('Main composition UI contract', () => {
         expect(command).toContain('enqueuePreparedMainGeneration({')
         expect(command).toContain('cancelGeneration({')
         expect(command).not.toContain('enqueueCurrentMainBatch()')
-        expect(mainMode).toContain("outcome !== 'low-quality-steps'")
+        expect(mainMode).toContain('guideMainGenerationOutcome(outcome, promptSurface.ensureVisible)')
+    })
+
+    it('guides a low-Steps block the same way from the button, keyboard and command finder', async () => {
+        const [feedback, shortcuts, palette, controls] = await Promise.all([
+            source('src/components/prompt/main-generation-feedback.ts'),
+            source('src/hooks/useShortcuts.ts'),
+            source('src/components/command/CommandPalette.tsx'),
+            source('src/components/prompt/PromptGenerationControls.tsx'),
+        ])
+
+        expect(feedback).toContain("if (outcome !== 'low-quality-steps') return")
+        expect(feedback).toContain("requestPromptFocus('steps')")
+        expect(shortcuts).toContain("runGuidedMainGeneration(() => executePromptGenerationCommand('main'), location.pathname)")
+        expect(palette).toContain("runGuidedMainGeneration(() => executePromptGenerationCommand('main'), location.pathname)")
+        expect(controls).toContain('guideMainGenerationOutcome(outcome')
     })
 
     it('moves compact module, inspector, and resolved content into focus-managed sheets', async () => {
@@ -160,7 +175,7 @@ describe('Main composition UI contract', () => {
         expect(controls).not.toMatch(/: isSceneGenerating \|\| isStyleLabGenerating/)
         expect(command).toMatch(/if \(generation\.isGenerating\) \{[\s\S]*?cancelMainGenerationCommand\(\)/)
         expect(command).toContain("if (generation.generatingMode === 'scene') return 'blocked-conflict'")
-        expect(shortcuts).toContain("void executePromptGenerationCommand('main')")
+        expect(shortcuts).toContain("executePromptGenerationCommand('main')")
         expect(shortcuts).toContain('if (useGenerationStore.getState().isGenerating) return')
         expect(shortcuts).not.toContain('cancelMainGenerationCommand')
         expect(shortcuts).not.toContain('startMainGenerationCommand')

@@ -16,6 +16,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NAVIGATION_ITEMS } from '@/components/layout/navigation-items'
+import { runGuidedMainGeneration } from '@/components/prompt/main-generation-feedback'
 import { SHORTCUT_EVENTS } from '@/hooks/useShortcuts'
 import { cn } from '@/lib/utils'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
@@ -149,7 +150,7 @@ export function CommandPalette({
                 shortcut: generateShortcut,
                 run: () => {
                     if (location.pathname === '/advanced') {
-                        void executePromptGenerationCommand('main')
+                        runGuidedMainGeneration(() => executePromptGenerationCommand('main'), location.pathname)
                     } else {
                         window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.GENERATE))
                     }

@@ -7,6 +7,7 @@ import Counter from '@/components/ui/counter'
 import { toast } from '@/components/ui/use-toast'
 import { NovelAiV5UsageLimit } from '@/components/credentials/NovelAiV5UsageLimit'
 import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialog'
+import { guideMainGenerationOutcome } from '@/components/prompt/main-generation-feedback'
 import { calculateAnlasCost } from '@/lib/anlas-calculator'
 import { cn } from '@/lib/utils'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
@@ -84,11 +85,8 @@ export function PromptGenerationControls({ isSceneMode }: PromptGenerationContro
                     return
                 }
                 if (outcome === 'low-quality-steps') {
-                    toast({
-                        title: t('generate.lowStepsBlockedTitle', 'Check Steps first'),
-                        description: t('generate.lowStepsDescription', '{{steps}} steps can stop before the image is resolved. Use 28 steps for a normal generation.', { steps }),
-                        variant: 'destructive',
-                    })
+                    // These controls live inside the visible prompt panel; only focus moves.
+                    guideMainGenerationOutcome(outcome, () => {})
                     return
                 }
                 if (outcome === 'review-required') {

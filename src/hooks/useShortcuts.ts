@@ -7,6 +7,7 @@ import { supportsKeyboardShortcuts } from '@/platform/runtime'
 import { executePromptGenerationCommand } from '@/services/generation/prompt-generation-command'
 import { hasBlockingLayer, resolveGlobalShortcutDisposition } from '@/lib/keyboard/shortcut-scope'
 import { getAdjacentNavigationRoute, NAVIGATION_SHORTCUT_ROUTES } from '@/components/layout/navigation-items'
+import { runGuidedMainGeneration } from '@/components/prompt/main-generation-feedback'
 
 // 커스텀 이벤트 (다이얼로그 및 화면별 주 동작용)
 export const SHORTCUT_EVENTS = {
@@ -116,8 +117,8 @@ export function useShortcuts() {
                 // so a key typed inside it runs that command instead of the route action.
                 if (location.pathname === '/advanced' || isInsidePromptSheet(e.target)) {
                     // Keyboard invocation shares the same conflict and
-                    // cancellation policy as the Dock/Sheet action.
-                    void executePromptGenerationCommand('main')
+                    // cancellation policy and the same blocked-start guidance as the buttons.
+                    runGuidedMainGeneration(() => executePromptGenerationCommand('main'), location.pathname)
                     return
                 }
                 window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.GENERATE))
