@@ -13,6 +13,7 @@ interface FolderAssetComposerProps {
     busy: boolean
     disabled: boolean
     error: string | null
+    promptHelp?: string
     templates: Array<{ id: string; name: string; template: SceneFolderTemplate }>
     onSubmit: (rows: FolderAssetInput[], template?: SceneFolderTemplate) => Promise<boolean>
 }
@@ -21,7 +22,7 @@ const emptyRow = () => ({ id: crypto.randomUUID(), name: '', prompt: '', count: 
 const control = 'min-h-11 !rounded-[4px]'
 
 /** Restores folder-scoped inputs; the parent alone commits assets and owns the review step. */
-export function FolderAssetComposer({ folderId, busy, disabled, error, templates, onSubmit }: FolderAssetComposerProps) {
+export function FolderAssetComposer({ folderId, busy, disabled, error, promptHelp, templates, onSubmit }: FolderAssetComposerProps) {
     const { t } = useTranslation()
     const formId = useId()
     const [restored] = useState(() => loadFolderDraft(folderId))
@@ -44,6 +45,8 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, templates
     const parsed = useMemo(() => parseFolderAssetTable(table), [table])
     const locked = busy || submitting || disabled
     const hasInput = mode === 'form' ? draft.some(row => row.prompt.trim()) : parsed.rows.length > 0
+    const hasDraft = hasFolderDraftInput(inputs)
+    const showDraftRow = hasDraft || !draftSaved
     const updateRow = (id: string, patch: Partial<Pick<typeof draft[number], 'name' | 'prompt' | 'count'>>) => {
         setDraft(rows => rows.map(row => row.id === id ? { ...row, ...patch } : row))
         setValidationError(null)
@@ -89,39 +92,44 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, templates
     }
 
     return (
-        <form onSubmit={submit} className="fb-composer min-w-0 space-y-5" aria-busy={busy || submitting}>
+        <form onSubmit={submit} className="fb-composer min-w-0 space-y-4" aria-busy={busy || submitting}>
             <fieldset disabled={locked} className="min-w-0 space-y-4">
                 {mode === 'form' ? <>
-                    {draft.map((row, index) => <div key={row.id} className="min-w-0 space-y-3 rounded-[4px] border border-border/70 bg-card p-3 sm:p-4">
-                        {draft.length > 1 && <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-medium">{t('folderWorkbench.composer.asset', { number: index + 1 })}</span>
-                            {draft.length > 1 && <Button type="button" variant="ghost" size="icon" className={control}
-                                aria-label={t('folderWorkbench.composer.remove', { number: index + 1 })}
-                                onClick={() => setDraft(rows => rows.filter(item => item.id !== row.id))}>
-                                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                            </Button>}
-                        </div>}
-                        <div className="space-y-2">
-                            <label htmlFor={`${formId}-${row.id}-prompt`} className="block text-sm font-medium">{t('folderWorkbench.composer.prompt')}</label>
-                            <Textarea id={`${formId}-${row.id}-prompt`} required maxLength={20_000} rows={3}
-                                className={`${control} resize-y`} value={row.prompt}
-                                placeholder={t('folderWorkbench.composer.promptPlaceholder')}
-                                onChange={event => updateRow(row.id, { prompt: event.target.value })} />
-                        </div>
-                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
-                            <div className="min-w-0 space-y-2">
-                                <label htmlFor={`${formId}-${row.id}-name`} className="block text-sm">{t('folderWorkbench.composer.name')}</label>
-                                <Input id={`${formId}-${row.id}-name`} className={control} maxLength={96} value={row.name}
-                                    placeholder={t('folderWorkbench.composer.namePlaceholder')}
-                                    onChange={event => updateRow(row.id, { name: event.target.value })} />
-                            </div>
+                    {draft.map((row, index) => {
+                        const helpId = index === 0 && promptHelp ? `${formId}-${row.id}-prompt-help` : undefined
+                        return <div key={row.id} className="min-w-0 space-y-3 rounded-[4px] border border-border/70 bg-card p-3 sm:p-4">
+                            {draft.length > 1 && <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium">{t('folderWorkbench.composer.asset', { number: index + 1 })}</span>
+                                {draft.length > 1 && <Button type="button" variant="ghost" size="icon" className={control}
+                                    aria-label={t('folderWorkbench.composer.remove', { number: index + 1 })}
+                                    onClick={() => setDraft(rows => rows.filter(item => item.id !== row.id))}>
+                                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                </Button>}
+                            </div>}
                             <div className="space-y-2">
-                                <label htmlFor={`${formId}-${row.id}-count`} className="block text-sm">{t('folderWorkbench.composer.count')}</label>
-                                <Input id={`${formId}-${row.id}-count`} className={control} type="number" required min={1} max={999} step={1}
-                                    value={row.count} onChange={event => updateRow(row.id, { count: event.target.value })} />
+                                <label htmlFor={`${formId}-${row.id}-prompt`} className="block text-sm font-medium">{t('folderWorkbench.composer.prompt')}</label>
+                                <Textarea id={`${formId}-${row.id}-prompt`} required maxLength={20_000} rows={3}
+                                    aria-describedby={helpId}
+                                    className={`${control} resize-y`} value={row.prompt}
+                                    placeholder={t('folderWorkbench.composer.promptPlaceholder')}
+                                    onChange={event => updateRow(row.id, { prompt: event.target.value })} />
+                                {helpId && <p id={helpId} className="text-sm leading-relaxed text-muted-foreground">{promptHelp}</p>}
+                            </div>
+                            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
+                                <div className="min-w-0 space-y-2">
+                                    <label htmlFor={`${formId}-${row.id}-name`} className="block text-sm">{t('folderWorkbench.composer.name')}</label>
+                                    <Input id={`${formId}-${row.id}-name`} className={control} maxLength={96} value={row.name}
+                                        placeholder={t('folderWorkbench.composer.namePlaceholder')}
+                                        onChange={event => updateRow(row.id, { name: event.target.value })} />
+                                </div>
+                                <div className="space-y-2">
+                                    <label htmlFor={`${formId}-${row.id}-count`} className="block text-sm">{t('folderWorkbench.composer.count')}</label>
+                                    <Input id={`${formId}-${row.id}-count`} className={control} type="number" required min={1} max={999} step={1}
+                                        value={row.count} onChange={event => updateRow(row.id, { count: event.target.value })} />
+                                </div>
                             </div>
                         </div>
-                    </div>)}
+                    })}
                 </> : <div className="min-w-0 space-y-3">
                     <label htmlFor={`${formId}-table`} className="block text-sm font-medium">{t('folderWorkbench.composer.tableLabel')}</label>
                     <p id={`${formId}-table-help`} className="text-sm leading-relaxed text-muted-foreground">{t('folderWorkbench.composer.tableHelp')}</p>
@@ -171,22 +179,22 @@ export function FolderAssetComposer({ folderId, busy, disabled, error, templates
                     </div>
                 </details>}
             </fieldset>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            {showDraftRow && <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <p role="status" className={draftSaved ? 'text-muted-foreground' : 'text-destructive'}>{draftSaved
-                    ? hasFolderDraftInput(inputs) ? t('folderWorkbench.composer.draftSaved', '이 폴더의 초안을 저장했어요. 닫아도 이어서 쓸 수 있어요.') : t('folderWorkbench.composer.draftAutoSave', '작성 중인 내용은 이 기기에 자동으로 저장돼요.')
+                    ? t('folderWorkbench.composer.draftSaved', '이 폴더의 초안을 저장했어요. 닫아도 이어서 쓸 수 있어요.')
                     : t('folderWorkbench.composer.draftFailed', '초안을 저장하지 못했어요. 화면을 닫기 전에 입력을 복사해 주세요.')}</p>
-                <Button type="button" variant="ghost" className={control} disabled={locked || !hasFolderDraftInput(inputs)} onClick={() => {
+                {hasDraft && <Button type="button" variant="ghost" className={control} disabled={locked} onClick={() => {
                     if (!saveFolderDraft(folderId, null)) { setDraftSaved(false); return }
                     const next = emptyComposerDraft()
                     inputRef.current = next
                     setInputs(next)
                     setDraftSaved(true)
                     setValidationError(null)
-                }}>{t('folderWorkbench.composer.discardDraft', '초안 버리기')}</Button>
-            </div>
+                }}>{t('folderWorkbench.composer.discardDraft', '초안 버리기')}</Button>}
+            </div>}
             {(error || validationError) && <p role="alert" className="text-sm text-destructive">{error || validationError}</p>}
-            <div className="space-y-3 border-t border-border/70 pt-4">
-                <p className="text-sm leading-relaxed text-muted-foreground">{t('folderWorkbench.composer.reviewHint')}</p>
+            <div className="space-y-2.5 border-t border-border/70 pt-3">
+                {hasInput && <p className="text-sm leading-relaxed text-muted-foreground">{t('folderWorkbench.composer.reviewHint')}</p>}
                 <Button type="submit" className={`${control} h-auto w-full whitespace-normal py-3 sm:w-auto`} disabled={locked || !hasInput || (mode === 'table' && parsed.errors.length > 0)}>
                     {t(busy || submitting ? 'folderWorkbench.preparing' : 'folderWorkbench.composer.next')}
                     <ArrowRight className="ml-2 h-4 w-4 shrink-0" aria-hidden="true" />

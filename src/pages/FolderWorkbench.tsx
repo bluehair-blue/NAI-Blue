@@ -247,7 +247,7 @@ export default function FolderWorkbench() {
         onSelectDirectory={key => { setSavedDirectory(key); setFolderSheetOpen(false) }}
         onSelect={selectFolder} onManage={() => { setFolderSheetOpen(false); setManagerOpen(true) }} />
     const composer = <FolderAssetComposer key={scopeKey} folderId={scopeKey} busy={busy} disabled={!sceneAuthorityReady || !concreteFolder}
-        error={error} templates={templates} onSubmit={addAssets} />
+        error={error} promptHelp={t('folderWorkbench.design.descriptionHint', '이미지마다 설명을 하나씩 적어 주세요. 이름은 나중에 정해도 돼요.')} templates={templates} onSubmit={addAssets} />
     const canReview = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overImageLimit && !executionUnavailable
     const canSaveProduction = !busy && sceneAuthorityReady && selected.length > 0 && !invalidCount && !overProductionLimit
     // Snapshot the explicit filtered selection at dialog entry, independent of later workbench draft changes.
@@ -269,33 +269,25 @@ export default function FolderWorkbench() {
                 }} className="fb-content-scroll">
                     <header className="fb-workspace-header">
                         {!viewSaved && <p role="status" className="fb-notice">{t('folderWorkbench.design.viewSaveFailed', '현재 보기와 선택을 저장하지 못했어요. 다시 열면 복구되지 않을 수 있어요.')}</p>}
-                        <div className="fb-location-row">
-                            <Button variant="ghost" className="fb-button fb-mobile-folders" onClick={() => setFolderSheetOpen(true)}><Folder aria-hidden="true" />{t('folderWorkbench.design.folders', '폴더')}</Button>
-                            <p className="fb-breadcrumb" title={scopeName}><span className="fb-breadcrumb-label">{t('folderWorkbench.design.currentFolder', '지금 보고 있는 폴더')}</span><ChevronRight aria-hidden="true" /><span className="fb-folder-trail">{scopeName}</span></p>
-                        </div>
-                        <div className="fb-title-row">
-                            <div>
-                                <h1>{folderTitle}</h1>
-                                <p className="fb-folder-summary">{rows.length > 0
-                                    ? t('folderWorkbench.design.folderSummary', '이미지 {{count}}개 · 각 이미지의 설명과 장수를 정해 보세요.', { count: rows.length })
-                                    : t('folderWorkbench.design.emptyIntro', '다른 설명을 가진 이미지도 한 번에 만들 수 있어요.')}</p>
+                        <div className="fb-header-bar">
+                            <div className="fb-title-row">
+                                <Button variant="ghost" className="fb-button fb-mobile-folders" onClick={() => setFolderSheetOpen(true)}><Folder aria-hidden="true" />{t('folderWorkbench.design.folders', '폴더')}</Button>
+                                <h1 title={scopeName}>{folderTitle}</h1>
+                            </div>
+                            <div className={`fb-action-row ${rows.length === 0 ? 'is-empty' : ''}`}>
+                                {rows.length > 0 && <>
+                                    <Button className="fb-button fb-primary" disabled={overImageLimit ? !canSaveProduction : !canReview} onClick={() => { if (overImageLimit) openProduction(); else void reviewSelection() }}>
+                                        {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : overImageLimit ? t('productionRequests.save') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}<ArrowRight aria-hidden="true" />
+                                    </Button>
+                                    {!overImageLimit && selected.length > 0 && <Button variant="outline" className="fb-button fb-secondary" disabled={!canSaveProduction} onClick={openProduction}>{t('productionRequests.save')}</Button>}
+                                    {concreteFolder && <Button variant="outline" className="fb-button fb-secondary" disabled={busy || !sceneAuthorityReady} onClick={() => { setError(null); setComposerOpen(true) }}><Plus aria-hidden="true" />{t('folderWorkbench.design.addImages', '이미지 추가')}</Button>}
+                                </>}
+                                <Button variant="ghost" className="fb-button fb-quiet" onClick={() => setSettingsOpen(true)}><Settings2 aria-hidden="true" />{t('folderWorkbench.design.folderSettings', '폴더 설정')}</Button>
+                                {rows.length > 0 && <p className="fb-action-hint">{selected.length > 0
+                                    ? t('folderWorkbench.design.selectionSummary', '{{count}}개 선택 · 총 {{images}}장', { count: selected.length, images: imageCount })
+                                    : t('folderWorkbench.design.selectToMake', '만들 이미지를 골라 주세요.')}</p>}
                             </div>
                         </div>
-                        {rows.length > 0 ? <div className="fb-action-row">
-                            <Button className="fb-button fb-primary" disabled={overImageLimit ? !canSaveProduction : !canReview} onClick={() => { if (overImageLimit) openProduction(); else void reviewSelection() }}>
-                                {busy ? t('folderWorkbench.design.preparing', '준비하고 있어요…') : overImageLimit ? t('productionRequests.save') : imageCount > 0 ? t('folderWorkbench.design.makeImages', '{{count}}장 만들기', { count: imageCount }) : t('folderWorkbench.design.navCreate', '이미지 만들기')}<ArrowRight aria-hidden="true" />
-                            </Button>
-                            {!overImageLimit && selected.length > 0 && <Button variant="outline" className="fb-button fb-secondary" disabled={!canSaveProduction} onClick={openProduction}>{t('productionRequests.save')}</Button>}
-                            {concreteFolder && <Button variant="outline" className="fb-button fb-secondary" disabled={busy || !sceneAuthorityReady} onClick={() => { setError(null); setComposerOpen(true) }}><Plus aria-hidden="true" />{t('folderWorkbench.design.addImages', '이미지 추가')}</Button>}
-                            <Button variant="ghost" className="fb-button fb-quiet" onClick={() => setSettingsOpen(true)}><Settings2 aria-hidden="true" />{t('folderWorkbench.design.folderSettings', '폴더 설정')}</Button>
-                            <p className="fb-action-hint">{selected.length > 0
-                                ? t('folderWorkbench.design.selectionSummary', '{{count}}개 선택 · 총 {{images}}장', { count: selected.length, images: imageCount })
-                                : t('folderWorkbench.design.selectToMake', '만들 이미지를 골라 주세요.')}</p>
-                        </div> : <ol className="fb-start-steps" aria-label={t('folderWorkbench.design.workflow', '이미지 만드는 순서')}>
-                            <li aria-current="step"><span>1</span>{t('folderWorkbench.design.writeDescription', '설명 쓰기')}</li>
-                            <li><span>2</span>{t('folderWorkbench.design.checkQuantity', '장수 확인')}</li>
-                            <li><span>3</span>{t('folderWorkbench.design.make', '만들기')}</li>
-                        </ol>}
                         {selected.length > 0 && executionUnavailable && <p className="fb-notice">{t('folderWorkbench.design.desktopHint', '이미지를 만들려면 Windows 앱에서 열어 주세요. 여기서는 설명과 장수를 저장할 수 있어요.')}</p>}
                         {overImageLimit && !overProductionLimit && <p className="fb-notice">{t('productionRequests.splitHint', { count: imageLimit })}</p>}
                         {overProductionLimit && <p className="fb-error" role="alert">{t('productionRequests.limit')}</p>}
@@ -306,10 +298,7 @@ export default function FolderWorkbench() {
                     </header>
                     <FolderProductionRequests targets={productionTargets} defaultTitle={scopeName} onClose={() => setProductionTargets(null)} disabled={busy || !sceneAuthorityReady} canExecute={!executionUnavailable} />
                     {rows.length === 0 ? <div className="fb-empty-workspace">
-                        {concreteFolder ? <>
-                            <div className="fb-composer-heading"><h2>{t('folderWorkbench.design.whatToMake', '어떤 이미지를 만들까요?')}</h2><p>{t('folderWorkbench.design.descriptionHint', '이미지마다 설명을 하나씩 적어 주세요. 이름은 나중에 정해도 돼요.')}</p></div>
-                            {composer}
-                        </> : <div className="fb-empty-message"><Folder aria-hidden="true" /><h2>{t('folderWorkbench.design.chooseFolder', '이미지를 담을 폴더를 골라 주세요.')}</h2><Button className="fb-button fb-secondary" onClick={() => setFolderSheetOpen(true)}>{t('folderWorkbench.design.showFolders', '폴더 보기')}</Button></div>}
+                        {concreteFolder ? composer : <div className="fb-empty-message"><Folder aria-hidden="true" /><h2>{t('folderWorkbench.design.chooseFolder', '이미지를 담을 폴더를 골라 주세요.')}</h2><Button className="fb-button fb-secondary" onClick={() => setFolderSheetOpen(true)}>{t('folderWorkbench.design.showFolders', '폴더 보기')}</Button></div>}
                     </div> : <>
                         <div className="fb-gallery-tools">
                             <div className="fb-filter-row">
@@ -383,10 +372,9 @@ export default function FolderWorkbench() {
                     </>}
                     {!sceneAuthorityReady && <p role="status" className="fb-loading">{t('folderWorkbench.design.loading', '저장한 이미지를 불러오고 있어요…')}</p>}
                 </div>
-                {rows.length > 0 && <footer className="fb-workspace-footer" aria-live="polite">
-                    <div><p>{t('folderWorkbench.design.selectionSummary', '{{count}}개 선택 · 총 {{images}}장', { count: selected.length, images: imageCount })}</p>
-                        {view.selected.length > selected.length && <p className="fb-footer-note">{t('folderWorkbench.design.excludedSelection', '다른 검색 결과와 다른 분류의 선택은 제외돼요.')}</p>}
-                        <span className="sr-only">{t('folderWorkbench.scopeSummary', '검색 결과 {{results}}개 중 선택 {{selected}}개 · 총 {{images}}장', { results: filtered.length, selected: selected.length, images: imageCount })}</span></div>
+                {rows.length > 0 && <span className="sr-only" aria-live="polite">{t('folderWorkbench.scopeSummary', '검색 결과 {{results}}개 중 선택 {{selected}}개 · 총 {{images}}장', { results: filtered.length, selected: selected.length, images: imageCount })}</span>}
+                {rows.length > 0 && (pageCount > 1 || view.selected.length > selected.length) && <footer className="fb-workspace-footer" aria-live="polite">
+                    <div>{view.selected.length > selected.length && <p className="fb-footer-note">{t('folderWorkbench.design.excludedSelection', '다른 검색 결과와 다른 분류의 선택은 제외돼요.')}</p>}</div>
                     {pageCount > 1 && <nav className="fb-pagination" aria-label={t('folderWorkbench.pagination', '항목 페이지')}><button type="button" disabled={page === 0} onClick={() => updateView({ page: page - 1 })} aria-label={t('folderWorkbench.previous', '이전')}><ChevronLeft aria-hidden="true" /></button><span>{page + 1} / {pageCount}</span><button type="button" disabled={page + 1 >= pageCount} onClick={() => updateView({ page: page + 1 })} aria-label={t('folderWorkbench.next', '다음')}><ChevronRight aria-hidden="true" /></button></nav>}
                 </footer>}
             </section>}

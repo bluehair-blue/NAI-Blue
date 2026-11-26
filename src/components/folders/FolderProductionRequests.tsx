@@ -104,10 +104,11 @@ export function FolderProductionRequests({ targets, defaultTitle, disabled, canE
             return false
         } finally { unlock() }
     }
+    const showDisclosure = requests.length > 0 || Boolean(error) || Boolean(notice)
     return <>
-        <details className="mx-4 mb-4 rounded-lg border border-border bg-card p-4 text-sm sm:mx-6" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
-            <summary className="cursor-pointer font-medium">{t('productionRequests.heading', { count: requests.length })}</summary>
-            <div className="mt-3 space-y-3">
+        {showDisclosure && <details className="workspace-disclosure mx-4 mb-4 rounded-lg border border-border bg-card px-4 py-1 text-sm sm:mx-8" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+            <summary className="flex min-h-11 cursor-pointer items-center font-medium">{t('productionRequests.heading', { count: requests.length })}</summary>
+            <div className="mt-2 space-y-3 pb-3">
                 <p className="text-muted-foreground">{t('productionRequests.description')}</p>
                 {notice && <p role="status">{notice}</p>}
                 {error && !targets && !review && <p role="alert" className="break-words text-destructive">{error}</p>}
@@ -132,7 +133,7 @@ export function FolderProductionRequests({ targets, defaultTitle, disabled, canE
                     </li>)}
                 </ul>
             </div>
-        </details>
+        </details>}
         <Dialog open={targets !== null} onOpenChange={open => { if (!open && !busyRef.current) onClose() }}>
             <DialogContent closeLabel={t('folderWorkbench.design.close')} className="folder-workbench-surface fb-composer-dialog" onEscapeKeyDown={event => { if (busy) event.preventDefault() }} onPointerDownOutside={event => { if (busy) event.preventDefault() }}>
                 <form onSubmit={event => { event.preventDefault(); void save() }} className="space-y-4">

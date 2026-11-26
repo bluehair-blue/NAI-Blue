@@ -130,9 +130,13 @@ is allowed only for borders. Tailwind equivalents are `1, 2, 3, 4, 5, 6, 8,
   Prompt docks only for Main at desktop widths; Scene and utility categories do not mount
   unrelated Main authoring rails. The header spans the whole viewport.
 - **Category rhythm:** title, one short next-step description, then the task.
-  Use 32px horizontal insets (16px mobile), 24px heading separation, and flat
-  canvas/card tones. `workspace.css` owns this shared geometry; page classes
-  are explicit so image canvases and user-sized prompt editors stay independent.
+  The asset workbench (`/folders`) places the title and primary actions on one
+  compact header row above the input or gallery, omits redundant breadcrumb/step
+  chrome above 1024px where the folder rail already shows location, and hides
+  0-item secondary disclosures across workspace surfaces. Use 32px horizontal
+  insets (16px mobile), 24px heading separation, and flat canvas/card tones.
+  `workspace.css` owns this shared geometry; page classes are explicit so image
+  canvases and user-sized prompt editors stay independent.
 - **Progressive disclosure:** initial views expose the frequent next action;
   labelled disclosures contain execution policies, capability summaries and
   comparison statistics. Active progress, errors, cancellation and consent stay
