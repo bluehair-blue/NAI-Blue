@@ -227,11 +227,21 @@ async function main() {
                 assert.equal(filledPrimary, 1, `Expected one filled primary button on /scenes, saw ${filledPrimary}`)
             })
 
-            await check('/advanced rail Steps: clear and retype keeps 30, empty blur restores the previous value', { width: 1440, height: 1000 }, async page => {
+            await check('/advanced rail Steps: cost follows typing, clear and retype keeps 30, empty blur and route change restore the previous value', { width: 1440, height: 1000 }, async page => {
                 await openAdvanced(page)
                 const steps = page.locator('#nai-blue-prompt-dock [data-prompt-focus="steps"]')
                 await steps.waitFor({ state: 'visible' })
                 assert.equal(await steps.inputValue(), '28', 'Default Steps should be 28')
+                const cost = page.locator('#nai-blue-prompt-dock [aria-label^="예상 비용"]').first()
+                const costBefore = await cost.getAttribute('aria-label')
+                await steps.click()
+                await page.keyboard.press('Control+a')
+                await page.keyboard.type('40')
+                assert.equal(await steps.evaluate(node => document.activeElement === node), true, 'Steps should still be focused')
+                assert.notEqual(await cost.getAttribute('aria-label'), costBefore, 'Cost should follow a valid Steps value before focus leaves')
+                await page.keyboard.press('Escape')
+                assert.equal(await steps.inputValue(), '28', 'Esc should return Steps to its value on focus')
+                assert.equal(await cost.getAttribute('aria-label'), costBefore, 'Esc should return the cost too')
                 await steps.click()
                 await page.keyboard.press('End')
                 await page.keyboard.press('Backspace')
@@ -245,6 +255,33 @@ async function main() {
                 assert.equal(await steps.inputValue(), '', 'Steps should be clearable while focused')
                 await page.keyboard.press('Tab')
                 assert.equal(await steps.inputValue(), '30', 'Leaving Steps empty should restore the previous value')
+
+                // Backspacing "30" stores "3" on the way; leaving the route with the field empty must not keep it.
+                await steps.click()
+                await page.keyboard.press('End')
+                await page.keyboard.press('Backspace')
+                await page.keyboard.press('Backspace')
+                assert.equal(await steps.inputValue(), '', 'Steps should be empty before the route change')
+                await page.keyboard.press('Control+3')
+                await page.waitForURL(url => url.pathname === '/scenes')
+                await steps.waitFor({ state: 'detached' })
+                await page.keyboard.press('Control+2')
+                await page.waitForURL(url => url.pathname === '/advanced')
+                await steps.waitFor({ state: 'visible' })
+                assert.equal(await steps.inputValue(), '30', 'Unmounting an emptied Steps field should keep the value it had on focus')
+            })
+
+            await check('Scene detail CFG Scale: a decimal can be typed to the end', { width: 1440, height: 1000 }, async page => {
+                await createSceneDetail(page)
+                const cfgScale = page.locator('[data-testid="scene-detail-workspace"] label', { hasText: /^CFG Scale/ }).locator('input[type="number"]').first()
+                await cfgScale.click()
+                await page.keyboard.press('Control+a')
+                await page.keyboard.type('5.5')
+                assert.equal(await cfgScale.inputValue(), '5.5', `CFG Scale shows "${await cfgScale.inputValue()}" while typing 5.5`)
+                await page.keyboard.type('0')
+                assert.equal(await cfgScale.inputValue(), '5.50', 'A trailing zero should stay while typing')
+                await page.keyboard.press('Tab')
+                assert.equal(await cfgScale.inputValue(), '5.5')
             })
 
             for (const theme of ['light', 'dark']) {
@@ -318,6 +355,39 @@ async function main() {
                 await page.waitForTimeout(300)
                 assert.equal(await page.locator('#nai-blue-prompt-dock').isVisible(), true, 'The prompt command hid the docked rail')
                 assert.equal(await editor.isVisible(), true, 'The rail editor should stay visible')
+            })
+
+            await check('1000px while generating: palette "prompt" opens nothing and returns focus to the opener', { width: 1000, height: 900 }, async page => {
+                await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
+                const opener = page.locator('header .workspace-editor-actions button[aria-controls="nai-blue-history-sheet"]').first()
+                await opener.waitFor({ state: 'visible' })
+                await page.evaluate(async () => {
+                    const { useGenerationStore } = await import('/src/services/generation/generation-runtime-store.ts')
+                    useGenerationStore.setState({ isGenerating: true })
+                })
+                await opener.focus()
+                await page.keyboard.press('Control+k')
+                const palette = page.locator('[data-testid="command-palette"]')
+                await palette.waitFor({ state: 'visible' })
+                await palette.locator('input[role="combobox"]').fill('프롬프트')
+                await palette.locator('[role="option"][id$="panel:prompt"]').click()
+                await palette.waitFor({ state: 'hidden' })
+                await page.waitForTimeout(300)
+                assert.equal(await opener.evaluate(node => document.activeElement === node), true, 'Focus should return to the opener when the prompt sheet cannot open')
+                assert.equal(await page.locator('[role="dialog"][data-state="open"]').count(), 0, 'No sheet should stay open while generating')
+            })
+
+            await check('Palette: choosing the current screen returns focus to the opener', { width: 1440, height: 1000 }, async page => {
+                const editor = await openAdvanced(page)
+                await editor.click()
+                await page.keyboard.press('Control+k')
+                const palette = page.locator('[data-testid="command-palette"]')
+                await palette.waitFor({ state: 'visible' })
+                await palette.locator('input[role="combobox"]').fill('/advanced')
+                await palette.locator('[role="option"][id$="nav:/advanced"]').click()
+                await palette.waitFor({ state: 'hidden' })
+                await page.waitForTimeout(300)
+                assert.equal(await editor.evaluate(node => document.activeElement === node), true, 'Focus fell off the editor after navigating to the current screen')
             })
 
             await check('/folders inline editor: Esc on Cancel closes, Ctrl+Enter on Save saves without the route action', { width: 1440, height: 1000 }, async page => {
