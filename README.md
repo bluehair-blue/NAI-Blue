@@ -92,7 +92,7 @@ Never attach a NovelAI token, Cloudflare secret, signing key, raw credential bac
 
 ## Build and debug from source
 
-Requirements: Node.js 24 LTS, npm, Rust 1.88 or newer, and the native build tools required by Tauri. Python 3.11 is required when rebuilding the tagger sidecar.
+Requirements: Node.js 24 LTS, npm, Rust 1.93 or newer, and the native build tools required by Tauri. Python 3.11 is required when rebuilding the tagger sidecar.
 
 ```bash
 git clone https://github.com/bluehair-blue/NAI-Blue.git

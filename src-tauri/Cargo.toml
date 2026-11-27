@@ -6,9 +6,10 @@ authors = ["NAI Blue contributors"]
 license = "GPL-3.0"
 repository = "https://github.com/bluehair-blue/NAI-Blue"
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.93.0"
 # Resolver 3 connects the declared MSRV to transitive selection, preventing
-# compatible version ranges from silently locking Rust 1.91+ AWS crates.
+# compatible version ranges from silently locking crates that need a newer
+# Rust than this one (the AWS SDK line raises its MSRV the fastest).
 resolver = "3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -28,7 +29,7 @@ tauri = { version = "2", features = ["protocol-asset", "unstable"] }
 tauri-plugin-log = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-persisted-scope = { version = "2.3.7", features = ["protocol-asset"] }
-tauri-plugin-http = "=2.5.9"
+tauri-plugin-http = "=2.9.0"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
@@ -60,8 +61,9 @@ zeroize = { version = "=1.9.0", features = ["derive"] }
 # background transfer capability or add a provider SDK to desktop/mobile.
 tauri-plugin-nai-blue-android-transfer = { path = "plugins/nai-blue-android-transfer" }
 
-# Phase 09 native R2 transport. Pin to the newest AWS S3 SDK line whose
-# declared MSRV matches this crate's Rust 1.88 contract. SigV4, conditional
+# Phase 09 native R2 transport. The AWS S3 SDK is pinned exactly; move it on
+# purpose, and only to a line whose declared MSRV fits rust-version above.
+# Its smithy crates float within their ranges under resolver 3. SigV4, conditional
 # writes, streaming bodies, and multipart operations stay SDK-owned. The
 # default HTTPS client already selects modern rustls; enabling the legacy
 # `rustls` feature as well would retain the vulnerable rustls 0.21 graph.
@@ -93,7 +95,7 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Secu
 opt-level = 3
 
 [patch.crates-io]
-# Tauri 2.11 still pulls plist 1.9.0, whose published crate depends on
+# Tauri 2.12 still pulls plist 1.9.0, whose published crate depends on
 # vulnerable quick-xml 0.39.x. The local plist copy is source-identical except
 # for the quick-xml 0.41.x floor documented in vendor/plist/NAI_BLUE_PATCH.md.
 plist = { path = "vendor/plist" }

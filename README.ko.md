@@ -76,7 +76,7 @@ NovelAI 토큰, Cloudflare secret, 서명 키, 원본 credential backup, 검토�
 
 ## 소스 빌드와 디버깅
 
-Node.js 24 LTS, npm, Rust 1.88 이상, Tauri용 네이티브 빌드 도구가 필요합니다. 태거 sidecar를 다시 빌드할 때는 Python 3.11도 필요합니다.
+Node.js 24 LTS, npm, Rust 1.93 이상, Tauri용 네이티브 빌드 도구가 필요합니다. 태거 sidecar를 다시 빌드할 때는 Python 3.11도 필요합니다.
 
 ```bash
 git clone https://github.com/bluehair-blue/NAI-Blue.git

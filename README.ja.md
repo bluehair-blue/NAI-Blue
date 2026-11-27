@@ -76,7 +76,7 @@ NovelAIトークン、Cloudflare secret、署名鍵、生のcredential backup、
 
 ## ソースからのビルドとデバッグ
 
-Node.js 24 LTS、npm、Rust 1.88以降、Tauriに必要なネイティブビルドツールを用意してください。Tagger sidecarを再ビルドする場合はPython 3.11も必要です。
+Node.js 24 LTS、npm、Rust 1.93以降、Tauriに必要なネイティブビルドツールを用意してください。Tagger sidecarを再ビルドする場合はPython 3.11も必要です。
 
 ```bash
 git clone https://github.com/bluehair-blue/NAI-Blue.git
