@@ -36,7 +36,7 @@ tauri-plugin-opener = "2.5.2"
 tauri-plugin-process = "2"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tokio = { version = "1", features = ["full"] }
-zip = "2.2"
+zip = "9.0.5"
 base64 = "0.22"
 sha2 = "0.10"
 hmac = "=0.12.1"
@@ -50,7 +50,7 @@ axum = { version = "=0.8.9", default-features = false, features = ["http1", "jso
 axum-server = { version = "=0.8.0", default-features = false, features = ["tls-rustls-no-provider"] }
 ipnet = "=2.12.0"
 rcgen = { version = "=0.14.8", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser", "zeroize"] }
-rustls = { version = "=0.23.41", default-features = false, features = ["aws_lc_rs", "std"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 subtle = "=2.6.1"
 tower = { version = "=0.5.3", default-features = false, features = ["limit"] }
 zeroize = { version = "=1.9.0", features = ["derive"] }
