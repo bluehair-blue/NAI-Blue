@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -36,10 +36,10 @@ if (!projectNode) {
     process.exit(1)
 }
 
-const dependencyCruiserCli = fileURLToPath(new URL(
-    '../node_modules/dependency-cruiser/bin/dependency-cruise.mjs',
-    import.meta.url,
-))
+// The CLI file was renamed within 18.x, so follow the package's own bin entry.
+const dependencyCruiserRoot = new URL('../node_modules/dependency-cruiser/', import.meta.url)
+const { bin } = JSON.parse(readFileSync(new URL('package.json', dependencyCruiserRoot), 'utf8'))
+const dependencyCruiserCli = fileURLToPath(new URL(bin.depcruise, dependencyCruiserRoot))
 const result = spawnSync(projectNode, [dependencyCruiserCli, ...process.argv.slice(2)], {
     stdio: 'inherit',
     windowsHide: true,

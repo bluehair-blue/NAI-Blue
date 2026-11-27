@@ -62,7 +62,7 @@ export function SavedOutputGallery({ directoryKey, images, onFolders, onAddAsset
     assetTargetName?: string | null
 }) {
     const { t } = useTranslation()
-    const translate = (key: string, fallback: string, options?: Record<string, unknown>) => t(key, fallback, options)
+    const translate = (key: string, fallback: string, options?: Record<string, unknown>) => options ? t(key, fallback, options) : t(key, fallback)
     const navigate = useNavigate()
     const [page, setPage] = useState(0)
     const [selected, setSelected] = useState<SavedOutputImage | null>(null)

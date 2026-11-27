@@ -718,7 +718,7 @@ export async function cleanupLargeData(key: string, maxSizeKB: number = 100): Pr
 }
 
 export interface StoreMigrationReader {
-    getItem: (key: string) => string | null | Promise<string | null>
+    getItem: (key: string) => string | null | PromiseLike<string | null>
     /** Presence checks must not clone large rollback archives into the UI. */
     hasItem?: (key: string) => boolean | Promise<boolean>
 }
@@ -1120,7 +1120,7 @@ export async function migrateFromLocalStorage(keys: string[]): Promise<RetainedS
 }
 
 export interface BackupStoragePort {
-    getItem: (key: string) => string | null | Promise<string | null>
+    getItem: (key: string) => string | null | PromiseLike<string | null>
     setItem: (key: string, value: string) => unknown | Promise<unknown>
     removeItem?: (key: string) => unknown | Promise<unknown>
 }
