@@ -20,6 +20,7 @@ import { SceneQueueReviewDialog } from '@/components/queue/SceneQueueReviewDialo
 import { isSceneQueueReviewConflict } from '@/application/scene/scene-queue-review'
 import { flushSceneAuthorityRuntime } from '@/lib/scene-authority-runtime'
 import { getRuntimeSceneRepository } from '@/lib/scene-migration-startup'
+import { generationFolderDisplayName } from '@/presentation/folders/default-names'
 import { collectFolderAssets, createFolderAssetPreset, folderAssetLatestImage, folderAssetProductionCount, type FolderAssetInput, UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
 import { useFolderQueueActivity } from '@/presentation/folders/folder-queue-activity'
 import { emptyFolderView, loadFolderWorkbenchView, saveFolderWorkbenchView, type FolderView } from '@/presentation/folders/folder-workbench-draft'
@@ -112,17 +113,17 @@ export default function FolderWorkbench() {
     const folderRows = useMemo(() => {
         const byId = new Map(folders.map(folder => [folder.id, folder]))
         return folders.map(folder => {
-            const names = [folder.name]
+            const names = [generationFolderDisplayName(folder, t)]
             const visited = new Set([folder.id])
             let parent = folder.parentId === null ? undefined : byId.get(folder.parentId)
             while (parent && !visited.has(parent.id)) {
                 visited.add(parent.id)
-                names.unshift(parent.name)
+                names.unshift(generationFolderDisplayName(parent, t))
                 parent = parent.parentId === null ? undefined : byId.get(parent.parentId)
             }
             return { folder, path: names.join(' / '), depth: names.length - 1 }
         }).sort((a, b) => a.path.localeCompare(b.path))
-    }, [folders])
+    }, [folders, t])
     const scopeName = folderId === null ? t('folderWorkbench.allFolders', '모든 폴더')
         : folderId === UNASSIGNED_FOLDER_ID ? t('folderWorkbench.unassigned', '폴더 미지정')
             : folderRows.find(row => row.folder.id === folderId)?.path ?? t('folderWorkbench.missingFolder', '폴더를 선택하세요')
@@ -250,7 +251,7 @@ export default function FolderWorkbench() {
     }
     const savedOutputTarget = concreteFolder ?? folders[0]
     const savedOutputTargetName = savedOutputTarget
-        ? folderRows.find(row => row.folder.id === savedOutputTarget.id)?.path ?? savedOutputTarget.name
+        ? folderRows.find(row => row.folder.id === savedOutputTarget.id)?.path ?? generationFolderDisplayName(savedOutputTarget, t)
         : null
     const addAssetFromSavedOutput = async (input: { name: string; prompt: string }): Promise<boolean> => {
         const targetFolder = savedOutputTarget
@@ -258,7 +259,7 @@ export default function FolderWorkbench() {
         return addAssetsToFolder(targetFolder, [{ name: input.name, prompt: input.prompt, count: 1 }])
     }
 
-    const folderTitle = concreteFolder?.name ?? (folderId === null
+    const folderTitle = concreteFolder ? generationFolderDisplayName(concreteFolder, t) : (folderId === null
         ? t('folderWorkbench.design.allImages', '모든 이미지')
         : t('folderWorkbench.design.unfiled', '폴더 없는 이미지'))
     const pageSelected = pageRows.length > 0 && pageRows.every(row => selectedKeys.has(row.key))

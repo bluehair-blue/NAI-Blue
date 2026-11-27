@@ -87,6 +87,7 @@ import {
     type MainGenerationPreflight,
 } from '@/services/generation/main-generation-preflight'
 import { DEFAULT_GENERATION_FOLDER_ID } from '@/domain/generation-folders'
+import { generationFolderDisplayPath } from '@/presentation/folders/default-names'
 import { resolveGenerationFolderAuthority } from '@/lib/generation-folder-authority-runtime'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -1059,7 +1060,7 @@ export default function MainMode() {
             title={t('composition.plan.title', '실제 생성에 쓰일 값')}
             showHeader={false}
             saveContext={activeGenerationFolder && outputDirectory ? {
-                generationFolderPath: activeGenerationFolder.path,
+                generationFolderPath: generationFolderDisplayPath(activeGenerationFolder.path, t),
                 outputDirectory,
                 r2AutoUpload: activeGenerationFolder.r2.autoUpload,
             } : undefined}
@@ -1106,7 +1107,7 @@ export default function MainMode() {
                 summary={generationSummary}
                 onOpenSummary={handleOpenSummaryFocus}
                 storage={{
-                    folder: generationFolderPath,
+                    folder: generationFolderPath ? generationFolderDisplayPath(generationFolderPath, t) : generationFolderPath,
                     format: outputFormat,
                     r2Status,
                     label: t('composition.plan.openStorage', '저장 설정 열기'),

@@ -9,7 +9,7 @@ describe('native R2 security and guided-setup contract', () => {
         for (let step = 1; step <= 10; step += 1) expect(source).toContain(`${step}. `)
         expect(source).toContain('const [setupPage, setSetupPage] = useState(0)')
         expect(source.match(/setupPage === [0-4]/g)).toHaveLength(7)
-        expect(source).toContain('단계 {setupPage * 2 + 1}–')
+        expect(source).toContain("'단계 {{start}}–{{end}}', { start: setupPage * 2 + 1")
         expect(source).toContain("mode === 'current-session'")
         expect(source).toContain('artifact set')
         expect(source).toContain('previewConflicts')

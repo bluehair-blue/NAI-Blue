@@ -10,6 +10,7 @@ import { toast } from '@/components/ui/use-toast'
 import { planGenerationFolderChanges } from '@/application/folder/plan-folder-changes'
 import {
     DEFAULT_GENERATION_FOLDER_ID,
+    DEFAULT_GENERATION_FOLDER_NAME,
     generationFolderDescendantIds,
     type GenerationFolder,
 } from '@/domain/generation-folders'
@@ -104,7 +105,7 @@ export function GenerationFolderForm({
     }, [open, selected.id, selected.name, selected.parentId, selected.rootDirectory, selected.useAbsolutePath, selected.commonPrompt, selected.r2.autoUpload, selected.r2.bucket, selected.r2.prefix])
 
     const defaultFolder = selected.id === DEFAULT_GENERATION_FOLDER_ID
-    const usesSystemDefaultName = defaultFolder && selected.name === '기본 출력'
+    const usesSystemDefaultName = defaultFolder && selected.name === DEFAULT_GENERATION_FOLDER_NAME
     const descendants = new Set(generationFolderDescendantIds(folders, selected.id))
     const parentOptions = rows.filter(row => row.folder.id !== selected.id && !descendants.has(row.folder.id))
     const transferOptions = rows.filter(row => descendants.has(row.folder.id))
@@ -207,7 +208,7 @@ export function GenerationFolderForm({
             </div>
             <label className="grid gap-1 text-xs font-medium">
                 <span>{t('generationFolders.manager.name', '폴더 이름')}</span>
-                <Input value={usesSystemDefaultName ? t('generationFolders.defaultName', '기본 출력') : name} disabled={usesSystemDefaultName} onChange={event => setName(event.target.value)} maxLength={96} />
+                <Input value={usesSystemDefaultName ? t('generationFolders.defaultName', DEFAULT_GENERATION_FOLDER_NAME) : name} disabled={usesSystemDefaultName} onChange={event => setName(event.target.value)} maxLength={96} />
             </label>
             <label className="grid gap-1 text-xs font-medium">
                 <span>{t('generationFolders.manager.parent', '어느 폴더 안에 둘까요?')}</span>

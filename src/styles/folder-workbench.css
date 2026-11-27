@@ -34,9 +34,10 @@
 /* The rail is a nested list of named native buttons, so pointer and agent users
    share the same actions without an additional keyboard navigation model. */
 .fb-folder-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 16px 12px; }
-.fb-folder-heading { display: flex; align-items: center; justify-content: space-between; padding-inline: 8px; margin-bottom: 16px; }
-.fb-folder-heading h2 { font-size: 18px; font-weight: 600; }
-.fb-folder-add { display: inline-flex; align-items: center; gap: 4px; padding-inline: 8px; color: oklch(var(--muted-foreground)); border-radius: 4px; }
+/* Japanese labels are wider than the rail: the add button drops to its own row instead of breaking words mid-label. */
+.fb-folder-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; padding-inline: 8px; margin-bottom: 16px; }
+.fb-folder-heading h2 { font-size: 18px; font-weight: 600; white-space: nowrap; }
+.fb-folder-add { display: inline-flex; align-items: center; gap: 4px; padding-inline: 8px; color: oklch(var(--muted-foreground)); border-radius: 4px; white-space: nowrap; }
 .fb-folder-search-label { font-size: 14px; color: oklch(var(--muted-foreground)); margin: 0 8px 8px; }
 .fb-folder-search { position: relative; margin-inline: 8px; }
 .fb-folder-search > svg { position: absolute; top: 13px; left: 12px; color: oklch(var(--muted-foreground)); pointer-events: none; }

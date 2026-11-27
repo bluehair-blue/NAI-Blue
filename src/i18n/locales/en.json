@@ -358,12 +358,24 @@
             "navCreateCompact": "Create",
             "navHistoryCompact": "History",
             "addFailed": "Couldn't add the asset. Check the target folder and save status.",
-            "editBlocked": "Try again after the other save finishes."
-        }
+            "editBlocked": "Try again after the other save finishes.",
+            "jobBlocked": "Needs attention",
+            "jobCancelled": "Cancelled",
+            "jobFailed": "Could not make it",
+            "jobQueued": "Waiting",
+            "jobRecovering": "Checking",
+            "jobRemaining": "{{count}} left",
+            "jobRunning": "Making",
+            "jobSkipped": "Skipped",
+            "jobSucceeded": "Done",
+            "lastKnownStatus": "Last checked",
+            "statusUnavailable": "Could not check the job status."
+        },
+        "viewMode": "View mode"
     },
     "app": {
         "name": "NAI Blue",
-        "description": "NovelAI Integrated Studio"
+        "description": "A workspace for planning, generating, and organizing NovelAI images"
     },
     "savedOutputs": {
         "title": "Saved image folders",
@@ -1431,7 +1443,8 @@
         "readyToInstall": "Ready to Install",
         "readyToInstallDesc": "We recommend backing up your data before installing. Save your work first.",
         "installNow": "Install Now",
-        "restart": "Restart"
+        "restart": "Restart",
+        "installing": "Installing..."
     },
     "common": {
         "save": "Save",
@@ -1456,7 +1469,24 @@
         "moreActions": "More actions",
         "close": "Close",
         "back": "Back",
-        "next": "Next"
+        "next": "Next",
+        "apply": "Apply",
+        "cancelling": "Cancelling...",
+        "clear": "Clear",
+        "clearSelection": "Clear selection",
+        "copied": "Copied",
+        "create": "Create",
+        "error": "Error",
+        "loading": "Loading...",
+        "noSearchResults": "No results found.",
+        "previous": "Previous",
+        "processing": "Processing",
+        "remove": "Remove image",
+        "replace": "Replace",
+        "saveFailed": "Save failed",
+        "search": "Search...",
+        "undo": "Undo",
+        "confirm": "Confirm"
     },
     "credentialVault": {
         "title": "Credential Vault",
@@ -1511,7 +1541,9 @@
             "not-found": "A referenced credential is missing. Register a replacement.",
             "readback-failed": "The encrypted credential could not be verified after writing.",
             "operation-failed": "The credential vault operation failed without changing to plaintext storage."
-        }
+        },
+        "unlockRequired": "API token unlock required",
+        "unlockRequiredForGeneration": "Unlock the NovelAI API token vault to generate images."
     },
     "toast": {
         "generationCancelled": {
@@ -1539,7 +1571,9 @@
         "seedApplied": "Seed applied",
         "regenerated": "Regeneration complete",
         "noMetadata": "No Metadata",
-        "noMetadataDesc": "No metadata found in this image"
+        "noMetadataDesc": "No metadata found in this image",
+        "generateFailed": "Generation failed",
+        "generating": "Generating..."
     },
     "scene": {
         "title": "Scene Mode",
@@ -1721,9 +1755,89 @@
             "applyBulkRecipe": "Apply recipe",
             "bulkApplied": "Recipe applied to {{count}} scenes",
             "inherited": "Default",
-            "override": "Override"
+            "override": "Override",
+            "issues": "Issues",
+            "negative": "Negative",
+            "noIssues": "No issues",
+            "params": "Parameters",
+            "planHash": "Plan hash",
+            "positive": "Positive",
+            "resolvedTitle": "Resolved composition"
         },
-        "queueStepCount": "Images per add"
+        "queueStepCount": "Images per add",
+        "addCharacterCaption": "Add manually",
+        "addNamedCharacter": "Include {{name}}",
+        "addPreset": "Add preset",
+        "allMainCharactersAssigned": "Every main character is placed in this scene.",
+        "availableMainCharacters": "Main characters",
+        "availableMainCharactersHelp": "Drag them to the included area on the right.",
+        "characterCaptions": "Character captions",
+        "characterCaptionsHelp": "Drag main characters in to include them, or move them to the excluded area to leave them out for now while keeping their prompts.",
+        "characterName": "Character name",
+        "characterNegativePrompt": "Character negative",
+        "characterNegativePromptPlaceholder": "Character negative prompt",
+        "characterPosition": "Set position",
+        "characterPromptPlaceholder": "Character prompt",
+        "configured": "Scene settings",
+        "copyMainPrompts": "Import main prompts",
+        "decreaseQueue": "Decrease queue for {{name}}",
+        "decrementQueue": "Decrease queue",
+        "dragCharacterToScene": "Drag {{name}} to add to the scene",
+        "dropCharactersHere": "Drop main characters here.",
+        "dropExcludedCharactersHere": "Drop characters to leave out for now here.",
+        "editSceneSettingsIndividually": "Open each scene to edit its prompt and generation settings.",
+        "emptyCharacterPrompt": "Empty prompt",
+        "excludeCharacter": "Exclude",
+        "excludedCharacters": "Excluded",
+        "excludedCharactersHelp": "Prompts are kept and left out of the generation request.",
+        "exportZipDesc": "Choose the image format and quality.",
+        "filenameTemplate": "Default file name for the scene",
+        "filenameTemplateHint": "The extension is added automatically. You can use {timestamp}, {seed}, {scene.name}, and {preset.name}.",
+        "format": "Image format",
+        "fullImageView": "View full image",
+        "generatedImage": "Generated scene image",
+        "gridColumnsValue": "{{count}} columns, change column count",
+        "imageViewer": "Image viewer",
+        "includeCharacter": "Include",
+        "includedCharacters": "Included in this scene",
+        "includedCharactersHelp": "Sent to NovelAI in order from top to bottom.",
+        "increaseQueue": "Increase queue for {{name}}",
+        "incrementQueue": "Increase queue",
+        "mainPromptsCopied": "Copied the main prompts into this scene.",
+        "moreGenerationSettings": "Detailed generation settings",
+        "movePreset": "Move preset",
+        "noImage": "No image",
+        "noImagesToExport": "No images to export",
+        "noMainCharacters": "No characters are registered in Main mode.",
+        "notFound": "Scene not found",
+        "openImage": "Open image",
+        "promptComposition": "Scene prompt setup",
+        "promptCompositionHelp": "The prompt and generation settings used only in this scene.",
+        "promptCount": "{{count}} prompts",
+        "quality": "Quality",
+        "queue": "Queue",
+        "queueCountLabel": "Queue {{count}}",
+        "queueFileNames": "Names for queued images {{custom}}/{{total}}",
+        "queueFileNamesCount": "{{count}} images waiting now",
+        "queueFileNamesDescription": "One line is one queued image. A blank line uses the scene's default file name, and lines apply from the top in generation order.",
+        "queueFileNamesTitle": "File names for queued images",
+        "queueNamesAfterAdding": "Set individual names after adding to the queue",
+        "queueStatus": "Queue status",
+        "removeCharacterCaption": "Remove character caption",
+        "reorderCharacter": "Reorder {{name}}",
+        "reorderPresets": "Edit preset order",
+        "sceneActions": "Actions for {{name}}",
+        "sceneCount": "Scenes",
+        "sceneName": "Scene name",
+        "toggleImageSelection": "Toggle image selection",
+        "unnamedCharacter": "Unnamed character",
+        "rotationViewStatus": "View character rotation status",
+        "rotationStart": "Start character rotation",
+        "pinnedExcludedBadge": "Pinned excluded",
+        "includePinnedCharacters": "Include pinned characters",
+        "excludePinnedCharacters": "Exclude pinned characters",
+        "presetName": "Preset name",
+        "savePresetName": "Save preset name"
     },
     "composition": {
         "commandBar": "Generation controls",
@@ -1751,7 +1865,8 @@
             "direct": "Direct prompts",
             "noneSelected": "No creation setup selected",
             "disabled": "Unused creation setup",
-            "unavailable": "{{id}} (unavailable)"
+            "unavailable": "{{id}} (unavailable)",
+            "select": "Select recipe"
         },
         "module": {
             "noneSelected": "No prompt group selected",
@@ -1887,7 +2002,10 @@
         "outputCapabilityFallbackTitle": "Output destination changed for this platform",
         "outputCapabilityFallbackDescription": "{{reason}} Alternative: {{alternative}}",
         "resourceRepairRequired": "Repair output destination before generation",
-        "compatibility": { "rawPrompt": "Edit prompt directly" }
+        "compatibility": { "rawPrompt": "Edit prompt directly" },
+        "invalidPlan": "Composition plan is invalid",
+        "sequenceConflict": "Fragment sequence changed",
+        "sequenceConflictDesc": "The generated result was discarded because the fragment counter changed."
     },
     "preset": {
         "default": "Default",
@@ -1903,7 +2021,10 @@
         "unsaved": "Unsaved",
         "revert": "Revert unsaved changes",
         "saveCopy": "Save as copy",
-        "copyName": "{{name}} copy"
+        "copyName": "{{name}} copy",
+        "confirmDelete": "Delete this preset?",
+        "deleteTitle": "Delete preset",
+        "duplicate": "Duplicate"
     },
     "metadata": {
         "title": "Load Metadata",
@@ -1942,7 +2063,12 @@
         "extractDesc": "Extract prompts and settings from PNG file",
         "optVibeVersion": "Vibe Transfer (Data Only)",
         "vibeDesc": "Original image missing; restoring encoded Vibe data.",
-        "charRefWarning": "Character Reference detected. Extraction supported via Director Tools."
+        "charRefWarning": "Character Reference detected. Extraction supported via Director Tools.",
+        "applyFailed": "Could not apply metadata",
+        "applying": "Applying...",
+        "changePreview": "Change preview",
+        "chooseImage": "Choose an image to read metadata from",
+        "chooseOrDrop": "Tap to choose an image or drop it here"
     },
     "nav": {
         "web": "Web",
@@ -2023,7 +2149,8 @@
             "revision": "Current revision",
             "lastSnapshot": "Last data refresh",
             "lastRequest": "Last request ID",
-            "lastResult": "Last result"
+            "lastResult": "Last result",
+            "status": "Bridge status"
         },
         "sync": {
             "title": "Mobile · desktop connection",
@@ -2216,7 +2343,11 @@
             "r2Failed": "Saved on this device · R2 delivery needs attention",
             "sceneLinkPending": "Saved on this device · Scene link needs retry",
             "outputReservationConflict": "Output reservation conflict · Replan required",
-            "directoryAuthorizationRequired": "Output folder access is required"
+            "directoryAuthorizationRequired": "Output folder access is required",
+            "providerUnknown": "Provider outcome is uncertain · No automatic retry",
+            "reservationHeld": "Inactive output reservation is still held",
+            "spooledResult": "Received result retained · Output reservation is still held",
+            "storagePending": "Provider result retained · Storage commit needs retry"
         },
         "action": {
             "replan": "Replan",
@@ -2244,6 +2375,11 @@
             "partial": "Partial",
             "needsAttention": "Needs attention",
             "delivered": "Delivered"
+        },
+        "confirm": {
+          "abandon": "The output reservation will be released. This cannot be undone.",
+          "discard": "The received result will be permanently discarded before its output reservation is released.",
+          "title": "Confirm recovery action"
         }
     },
     "workflow": {
@@ -2270,7 +2406,8 @@
         "skipped": "Skipped",
         "blocked": "Required file not found",
         "recovering": "Recovering"
-    }
+    },
+        "reviewOneByOne": "Review one at a time, then generate"
     },
     "organizer": {
         "title": "Organize and export results",
@@ -2637,7 +2774,10 @@
             "bottomLeft": "Bottom\nLeft",
             "bottom": "Bottom",
             "bottomRight": "Bottom\nRight"
-        }
+        },
+        "confirmClear": "Remove all active characters?",
+        "confirmDelete": "Delete this item?",
+        "confirmDeleteDescription": "This cannot be undone."
     },
     "fragmentDialog": {
         "title": "Fragment Prompts",
@@ -2688,7 +2828,9 @@
         "clickToEnable": "Click to enable",
         "preciseUnsupported": "This model doesn't support Precise Reference.",
         "preciseUnsupportedAlternative": "Keep this reference image and switch to V5 Full, V5 Curated, or V4.5.",
-        "v5VibePending": "Vibe Transfer isn't available for V5 yet. Your images stay saved and can be reused with V4.5."
+        "v5VibePending": "Vibe Transfer isn't available for V5 yet. Your images stay saved and can be reused with V4.5.",
+        "dropHere": "Drop here",
+        "infoExtracted": "Information Extracted"
     },
     "imageRef": {
         "title": "Add Image Reference",
@@ -2781,7 +2923,9 @@
         "runDeclutter": "Start Decluttering",
         "emotionType": "Expression",
         "defry": "Preserve Original",
-        "dropToLoad": "Drop to Load"
+        "dropToLoad": "Drop to Load",
+        "mosaicEditorTouchDesc": "Drag over the image to apply the mosaic.",
+        "styleComplete": "Style analysis complete"
     },
     "generate": {
         "button": "Generate Image",
@@ -2811,7 +2955,16 @@
         "lowStepsDescription": "{{steps}} steps can stop before the image is resolved and produce a blurred result. Use 28 steps for normal generation.",
         "lowStepsCautionRange": "Values below {{threshold}} are intended for experiments.",
         "restoreRecommendedSteps": "Restore 28 steps",
-        "cancelling": "Cancelling…"
+        "cancelling": "Cancelling…",
+        "allComplete": "All scheduled jobs are complete.",
+        "complete": "Generation complete",
+        "conflictDescription": "Wait for the active generation workflow to finish or cancel it there.",
+        "conflictMain": "Generation is running in Main mode.",
+        "conflictScene": "Generation is running in Scene mode.",
+        "conflictStyleLab": "Generation is running in Style Lab.",
+        "conflictTitle": "Another workflow is generating",
+        "progress": "Generation progress",
+        "estimatedSeconds": "Estimated: ~{{seconds}}s"
     },
     "diagnosticDrawer": {
         "open": "Open diagnostics",
@@ -2841,7 +2994,8 @@
         "lockSeed": "Lock seed",
         "unlockSeed": "Unlock seed",
         "randomSeed": "Random seed",
-        "random": "Random"
+        "random": "Random",
+        "parameters": "Parameters"
     },
     "parameters": {
         "title": "Advanced Settings",
@@ -2887,7 +3041,11 @@
         "addToLibrary": "Add to library",
         "sendToOrganizer": "Send to Organizer",
         "alreadyInLibrary": "Already in library",
-        "addedToLibrary": "Added to library"
+        "addedToLibrary": "Added to library",
+        "guidedActions": "You can check the metadata, keep it in the Library, or save it under another name.",
+        "preview": "Preview of the selected image",
+        "refresh": "Refresh history",
+        "selected": "Selected image"
     },
     "actions": {
         "regenerate": "Regenerate",
@@ -2902,7 +3060,8 @@
         "copied": "Copied to clipboard",
         "copyFailed": "Copy failed",
         "deleted": "Deleted successfully",
-        "back": "Back to scene list"
+        "back": "Back to scene list",
+        "cancel": "Cancel"
     },
     "layout": {
         "toggleLeftSidebar": "Toggle Left Sidebar",
@@ -3148,7 +3307,19 @@
             },
             "geminiKey": "Gemini API Key",
             "geminiKeyPlaceholder": "AIza...",
-            "geminiKeyHelp": "Get your API key from Google AI Studio"
+            "geminiKeyHelp": "Get your API key from Google AI Studio",
+            "addTokenToContinue": "Waiting generations start automatically once you register or enable a NovelAI API token.",
+            "deleteConfirmation": "Delete this API token?",
+            "deleted": "API token deleted.",
+            "deleteDescription": "Generation jobs that use this token can no longer start.",
+            "manage": "Manage tokens",
+            "notRegistered": "Not registered",
+            "reverify": "Verify again",
+            "saved": "API token saved.",
+            "slot": "Token {{slot}}",
+            "slotEnabled": "Use token {{slot}}",
+            "slotTokenInput": "Enter token {{slot}}",
+            "verificationFailed": "Could not verify the API token."
         },
         "theme": {
             "title": "Theme Settings",
@@ -3380,7 +3551,8 @@
         "linkName": "Name",
         "linkUrl": "URL",
         "linkNamePlaceholder": "e.g. Pixiv",
-        "linkUrlPlaceholder": "e.g. https://pixiv.net"
+        "linkUrlPlaceholder": "e.g. https://pixiv.net",
+        "home": "Home URL"
     },
     "promptGenerator": {
         "title": "AI Prompt Generator",
@@ -3399,7 +3571,11 @@
         "apiKeyRequired": "Gemini API key is required",
         "goToSettings": "Please enter your API key in Settings",
         "error": "Error Occurred",
-        "tokenUsage": "Tokens Used"
+        "tokenUsage": "Tokens Used",
+        "copiedToClipboard": "Copied to the clipboard",
+        "danbooruApplied": "Danbooru check applied",
+        "verifyDanbooru": "Check with Danbooru",
+        "original": "Original: {{value}}"
     },
     "fragment": {
         "manager": "Fragment Prompt Manager",
@@ -3447,7 +3623,10 @@
         "exportedAllDesc": "{{count}} file(s) exported.",
         "importedAll": "Import All Complete",
         "importedAllDesc": "{{count}} file(s) imported.",
-        "importAllError": "An error occurred while importing the JSON file."
+        "importAllError": "An error occurred while importing the JSON file.",
+        "confirmDeleteDescription": "This prompt content will be permanently removed.",
+        "confirmDeleteFile": "Delete this file?",
+        "confirmDeleteFolder": "Delete this folder and its files?"
     },
     "characterPanel": {
         "title": "Character Prompts",
@@ -3486,7 +3665,11 @@
         "moveToFolder": "Move to Folder",
         "removeFromFolder": "Remove from Folder",
         "addFolder": "Add Folder",
-        "newFolderName": "New Folder"
+        "newFolderName": "New Folder",
+        "confirmDeleteFolder": "Delete this character folder?",
+        "confirmDeleteFolderDescription": "Characters in the folder are kept as uncategorized.",
+        "deleteFolder": "Delete folder",
+        "renameFolder": "Rename folder"
     },
     "styleLab": {
         "title": "Personal Style Lab",
@@ -4004,11 +4187,231 @@
         "reason_AGENT_R2_DENIED": "R2 destination is not permitted",
         "reason_AGENT_OBSERVE_ONLY": "Current mode permits reads only",
         "reason_AUTHENTICATION_FAILED": "Client access is no longer valid",
-        "authoringChanges": "Changes"
+        "authoringChanges": "Changes",
+        "allowR2Upload": "Allow R2 upload",
+        "authoringChangeCount": "{{count}} items",
+        "authoringCreatesFolders": "Creates folders under the configured save location.",
+        "authoringPermissions": "Permission to edit saved data",
+        "authoringRenamesFolders": "Changes the save path of empty folders.",
+        "folderAuthoringAction": "Edit generation folder settings",
+        "r2Permissions": "Online storage permissions",
+        "r2ProfileMissing": "Previously selected connection {{count}} (not in the current list)",
+        "r2ProfilesFailed": "Could not load the storage connections. Your previous selection is kept.",
+        "r2ProfilesLoading": "Loading storage connections.",
+        "r2ProfilesRetry": "Reload",
+        "sceneAuthoringAction": "Edit asset settings"
     },
     "rotation": {
         "stopped": "Rotation stopped",
         "resumeLater": "Your position was saved. You can continue generating later.",
         "stopAndResume": "Stop and continue later"
+    },
+  "character": {
+    "title": "Characters"
+  },
+  "danbooruVerify": {
+    "apply": "Apply changes",
+    "complete": "Verification complete",
+    "description": "The local Python sidecar checks Danbooru post counts and suggests replacements for tags with no posts.",
+    "empty": "No tags to verify.",
+    "loading": "Waiting for Danbooru",
+    "preview": "Resulting prompt",
+    "previewPlaceholder": "Prompt to verify",
+    "results": "Verification results",
+    "retry": "Verify again",
+    "title": "Live Danbooru tag check",
+    "verifying": "Verifying",
+    "waiting": "Waiting"
+  },
+  "display": {
+    "exportFailed": "Export failed"
+  },
+  "r2Setup": {
+    "ready": "Ready",
+    "guideAriaLabel": "Help for {{title}}",
+    "header": {
+      "title": "Set up and upload step by step",
+      "description": "Only two steps are shown at a time. If you get stuck on a value, check the help next to it.",
+      "requiredReady": "Required {{ready}}/4",
+      "nativeAvailable": "Uploads available on this device",
+      "nativeUnavailable": "Uploads unavailable in this environment"
+    },
+    "unsupported": {
+      "title": "Direct upload isn't available in this environment.",
+      "description": "Reopen this screen in the installed NAI Blue desktop app. In a browser you can review the settings, but files won't be uploaded."
+    },
+    "scheduler": {
+      "ariaLabel": "R2 automatic delivery status",
+      "retrying": "Couldn't read the delivery job list, so automatic resume is on hold. It will check again while the app is open.",
+      "stopped": "Automatic delivery is stopped. Reopen the app to continue from the saved jobs.",
+      "running": "Saved delivery jobs continue automatically while the app is open.",
+      "blocked": "Jobs waiting for settings or a security key: {{jobs}}. They resume automatically once the settings they use are ready.",
+      "faulted": "Jobs waiting for a recheck after an error: {{jobs}}. Other ready jobs keep running."
+    },
+    "progress": {
+      "ariaLabel": "R2 setup progress",
+      "range": "Steps {{start}}–{{end}}"
+    },
+    "nav": {
+      "ariaLabel": "R2 setup step navigation",
+      "previous": "Previous two steps",
+      "next": "Next two steps"
+    },
+    "steps": {
+      "folder": {
+        "label": "1. Choose the folder to upload",
+        "description": "Pick the folder on your computer that holds the images to send to R2.",
+        "guideTitle": "What should I enter?",
+        "guideBody": "Enter the name or full path of the folder where NAI Blue saves generated images.",
+        "guideExample": "<strong>Example:</strong> <mono>NAI_Blue_Output</mono> or <path>D:\\Images\\NAI_Blue_Output</path>",
+        "fieldLabel": "Image folder",
+        "fieldHint": "Uploadable output files in this folder are found automatically."
+      },
+      "account": {
+        "label": "2. Connect your Cloudflare account",
+        "description": "Tell us which Cloudflare account your R2 storage belongs to.",
+        "guideTitle": "Where do I find the Account ID?",
+        "guideBody": "Find the <strong>Account ID</strong> on the R2 page of the Cloudflare dashboard and copy it as is. It is not your email address or account name.",
+        "openDashboard": "Open Cloudflare dashboard",
+        "fieldHint": "Paste the full Account ID without leading or trailing spaces.",
+        "placeholder": "e.g. 023e105f4ecef8ad9ca31a8372d0c353"
+      },
+      "advanced": {
+        "summary": "Advanced connection settings",
+        "summaryNote": "(usually left unchanged)",
+        "transportLabel": "Connection method",
+        "transportAriaLabel": "R2 connection method",
+        "transportNative": "Upload directly from the app (recommended)",
+        "transportWrangler": "Use Wrangler",
+        "transportRelay": "Relay (coming soon)",
+        "jurisdictionLabel": "Data jurisdiction code",
+        "jurisdictionHint": "Only for accounts that use a specific jurisdiction.",
+        "jurisdictionPlaceholder": "e.g. eu",
+        "endpointLabel": "Custom endpoint",
+        "endpointHint": "Only needed if you use a proxy or a separate S3 endpoint.",
+        "endpointPlaceholder": "Leave empty to build it from the Account ID"
+      },
+      "location": {
+        "label": "3. Check the default upload location",
+        "description": "This only sets the defaults used for the connection check. Each generation folder can use its own bucket and prefix.",
+        "guideTitle": "Folder settings take priority",
+        "guideBucket": "For <strong>bucket name</strong>, enter exactly the bucket to use for the connection check.",
+        "guideOverride": "If the folder you choose when generating images has its own bucket or prefix, it takes priority over these defaults. Only empty fields fall back to these values.",
+        "bucketLabel": "Default R2 bucket",
+        "bucketPlaceholder": "e.g. nai-blue-images",
+        "prefixLabel": "Default prefix (optional)",
+        "prefixPlaceholder": "e.g. generated/2026",
+        "pathPreview": "Example path"
+      },
+      "credential": {
+        "label": "4. Save your R2 API key",
+        "description": "Enter the two values you were issued so NAI Blue can upload files to your bucket.",
+        "guideTitle": "Where do I get these two values?",
+        "guideToken": "Create a token under <strong>R2 API Tokens</strong> in Cloudflare R2 and give it <strong>Object Read & Write</strong> permission for the target bucket.",
+        "guideKeys": "Copy the <strong>Access Key ID</strong> and the <strong>Secret Access Key</strong> shown right after the token is created. The secret may not be shown again.",
+        "accessKeyPlaceholder": "Paste Access Key ID",
+        "secretKeyPlaceholder": "Paste Secret Access Key",
+        "saveButton": "Save API key on this device",
+        "stored": "An API key is saved.",
+        "vaultOnly": "API keys are kept only in the operating system's secure storage."
+      },
+      "connection": {
+        "label": "5. Check the connection",
+        "description": "Checks that the account, bucket and API key you entered work together.",
+        "guideTitle": "No files are uploaded",
+        "guideBody": "This only checks that the bucket can be found and accessed. If it fails, double-check the Account ID, bucket name and API key.",
+        "button": "Check R2 connection"
+      },
+      "permission": {
+        "label": "6. Check upload permission",
+        "description": "Uploads a small test file and deletes it right away to confirm you can actually upload.",
+        "guideTitle": "Your files are not affected",
+        "guideBody": "NAI Blue creates one temporary file, then uploads, checks and deletes it. Run this after the connection check succeeds.",
+        "button": "Upload and delete a test file"
+      },
+      "conflict": {
+        "label": "7. Handle files with the same name",
+        "description": "Choose what happens when a file already exists at the same path in R2.",
+        "guideTitle": "To start safely",
+        "guideStop": "<strong>Stop upload</strong> is the safest choice to begin with. It leaves existing files untouched and only reports the conflict.",
+        "guideSkip": "If you upload the same files often, choose <strong>Skip identical files</strong>.",
+        "fieldLabel": "When a file with the same name exists",
+        "ariaLabel": "How to handle files with the same name",
+        "fail": "Stop upload — protect existing files",
+        "skipSame": "Skip identical files",
+        "overwrite": "Replace existing files with new ones",
+        "suffix": "Keep both under a new name"
+      },
+      "public": {
+        "label": "8. Set up public links",
+        "description": "Choose whether uploaded images can be opened from a web address.",
+        "guideTitle": "Upload permission and public access are separate",
+        "guidePrivate": "For personal storage, choose <strong>Private</strong>.",
+        "guideNote": "Entering a public URL doesn't turn on Cloudflare public access by itself. Connect r2.dev or a custom domain in the R2 dashboard first.",
+        "modeLabel": "Public access",
+        "modeAriaLabel": "R2 public access mode",
+        "private": "Private — no links created",
+        "r2Dev": "r2.dev public URL",
+        "custom": "Use my own domain",
+        "baseUrlLabel": "Public base URL",
+        "baseUrlHint": "The trailing / is optional."
+      },
+      "save": {
+        "label": "9. Save settings",
+        "description": "Saves the R2 settings you entered so you can use them next time.",
+        "guideTitle": "API keys are stored separately",
+        "guideBody": "Only the account ID, bucket, folder and upload rules are saved here. The Secret Access Key from step 4 is not included in the settings file.",
+        "button": "Save these settings",
+        "summary": "Save location: {{bucket}} / {{prefix}}",
+        "bucketMissing": "No bucket entered",
+        "rootFolder": "Top-level folder"
+      },
+      "upload": {
+        "label": "10. Upload images",
+        "description": "Checks the prepared folder and starts the R2 upload. If it's interrupted, you can resume it later.",
+        "guideTitle": "First time? You can preview first",
+        "guideDelta": "<strong>New and changed files only</strong> is the usual choice.",
+        "guideDryRun": "To see the result before anything is uploaded, choose <strong>Preview before upload</strong>.",
+        "modeLabel": "Upload scope",
+        "modeAriaLabel": "R2 upload scope",
+        "delta": "New and changed files only",
+        "fullSync": "Check the whole folder, then upload",
+        "dryRun": "Preview before upload",
+        "currentSession": "Current session results only (coming soon)",
+        "targetFolder": "Target folder",
+        "previewButton": "Preview upload",
+        "startButton": "Start / resume upload"
+      }
+    },
+    "status": {
+      "initial": "Save your settings, then check the connection."
+    },
+    "feedback": {
+      "saved": "Settings saved. The same R2 settings will be used the next time you start the app.",
+      "saveFailed": "Couldn't save settings. {{reason}}",
+      "retryLater": "Please try again in a moment.",
+      "credentialSaved": "The API key was saved securely in this device's secure storage.",
+      "credentialFailed": "Couldn't save the API key. {{reason}}",
+      "checkInput": "Please check what you entered.",
+      "connectionOk": "Connected. The account and bucket were verified.",
+      "connectionFailed": "Couldn't verify the connection. {{reason}}",
+      "checkConnectionInputs": "Please check the account, bucket and API key.",
+      "writeOk": "Upload permission confirmed. The test file was deleted as well.",
+      "cleanupIncomplete": "The test file wasn't fully cleaned up. Please check your R2 bucket.",
+      "writeFailed": "Couldn't verify upload permission. {{reason}}",
+      "checkKeyPermission": "Please check the API key's permissions.",
+      "currentSessionUnsupported": "current-session needs an explicit artifact set from the generation output. Use directory scan only with delta, full-sync or dry-run.",
+      "planSummary": "Files found: {{total}} · Already done: {{completed}} · This run: {{jobs}}",
+      "uploadSummary": "Uploaded: {{succeeded}} · Failed: {{failed}} · Queued: {{queued}}",
+      "previewSummary": "Preview — new: {{missing}} · identical: {{same}} · name conflicts: {{conflicts}} · to be replaced: {{overwrites}} · can use a new name: {{suffix}}. No files were actually changed.",
+      "uploadFailed": "Couldn't finish the upload. {{reason}}",
+      "checkSettingsRetry": "Please check your settings and try again."
+    },
+    "overwriteConfirm": {
+      "title": "Replace existing files in R2?",
+      "description": "Remote files at the same path will be replaced with the new files. This can't be restored from the NAI Blue trash.",
+      "confirm": "Confirm and upload",
+      "cancel": "Cancel"
     }
+  }
 }

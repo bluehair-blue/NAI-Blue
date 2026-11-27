@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { scenePresetDisplayPath } from '@/presentation/folders/default-names'
 import type { TFunction } from 'i18next'
 import {
     Archive,
@@ -343,14 +344,14 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
         [deletableSelectedIds, presets],
     )
     const sourceScenes = useMemo<SourceSceneRow[]>(() => workingPresets.flatMap(preset => {
-        const folderPath = getScenePresetPathSegments(presets, preset.id).join(' / ')
+        const folderPath = scenePresetDisplayPath(presets, preset.id, t)
         return preset.scenes.map(scene => ({
             key: `${preset.id}\u001f${scene.id}`,
             preset,
             scene,
             path: `${folderPath} / ${scene.name}`,
         }))
-    }), [presets, workingPresets])
+    }), [presets, workingPresets, t])
 
     useEffect(() => {
         setRenameValue(selectedPreset?.name ?? '')
@@ -686,7 +687,7 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
                                     {t('scene.folderManager.selectVisible', '보이는 폴더 선택')}
                                 </Button>
                                 <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set())} disabled={selectedIds.length === 0}>
-                                    {t('common.clear', '선택 해제')}
+                                    {t('common.clearSelection', '선택 해제')}
                                 </Button>
                             </div>
                         </div>
@@ -788,12 +789,12 @@ export function SceneFolderManagerDialog({ open, onOpenChange }: SceneFolderMana
                                             </h2>
                                             {selectedPreset && (
                                                 <p className="mt-1 break-all text-xs leading-relaxed text-muted-foreground">
-                                                    {getScenePresetPathSegments(presets, selectedPreset.id).join(' / ')}
+                                                    {scenePresetDisplayPath(presets, selectedPreset.id, t)}
                                                 </p>
                                             )}
                                         </div>
                                         <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-                                            {t('common.clear', '선택 해제')}
+                                            {t('common.clearSelection', '선택 해제')}
                                         </Button>
                                     </div>
                                 </div>

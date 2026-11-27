@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import {
     CheckCircle2,
     ChevronLeft,
@@ -40,6 +41,12 @@ import { useR2ForegroundState } from '@/services/r2/foreground-scheduler'
 import { getRuntimeR2UploadCoordinator, getRuntimeR2UploadRepository } from '@/services/r2/runtime'
 import type { AssetProfile } from '@/types/asset-profile'
 
+const guideMarkup = {
+    strong: <span className="font-medium text-foreground" />,
+    mono: <span className="font-mono" />,
+    path: <span className="break-all font-mono" />,
+}
+
 function Field({
     label,
     htmlFor,
@@ -79,6 +86,7 @@ function SetupStep({
     ready?: boolean
     children: React.ReactNode
 }) {
+    const { t } = useTranslation()
     const separator = label.indexOf('. ')
     const number = separator >= 0 ? label.slice(0, separator) : label
     const title = separator >= 0 ? label.slice(separator + 2) : label
@@ -99,7 +107,7 @@ function SetupStep({
                             {ready && (
                                 <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
                                     <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                                    준비됨
+                                    {t('r2Setup.ready', '준비됨')}
                                 </span>
                             )}
                         </div>
@@ -109,7 +117,7 @@ function SetupStep({
                 </div>
             </div>
 
-            <aside className="min-w-0 border-l border-border/70 py-2 pl-4" aria-label={`${title} 입력 도움말`}>
+            <aside className="min-w-0 border-l border-border/70 py-2 pl-4" aria-label={t('r2Setup.guideAriaLabel', '{{title}} 입력 도움말', { title })}>
                 <div className="flex items-start gap-2">
                     <CircleHelp className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                     <div className="min-w-0">
@@ -159,13 +167,14 @@ export function NativeR2SetupPanel({
     onLocalRootChange: (value: string) => void
     onPersistAssetProfile: (profile: AssetProfile) => void
 }) {
+    const { t } = useTranslation()
     const [profile, setProfile] = useState(() => initialProfile(assetProfile))
     const [observedProfileHash, setObservedProfileHash] = useState<R2ProfileHash | null>(null)
     const [accessKeyId, setAccessKeyId] = useState('')
     const [secretAccessKey, setSecretAccessKey] = useState('')
     const [mode, setMode] = useState<R2UploadMode>('delta')
     const [busy, setBusy] = useState<string | null>(null)
-    const [status, setStatus] = useState('설정을 저장한 뒤 연결을 확인하세요.')
+    const [status, setStatus] = useState(() => t('r2Setup.status.initial', '설정을 저장한 뒤 연결을 확인하세요.'))
     const [statusTone, setStatusTone] = useState<'neutral' | 'success' | 'error'>('neutral')
     const [planSummary, setPlanSummary] = useState<string | null>(null)
     const [credentialAvailable, setCredentialAvailable] = useState(false)
@@ -239,9 +248,11 @@ export function NativeR2SetupPanel({
                     publicBaseUrl: submittedProfile.publicBaseUrl || undefined,
                 },
             })
-            setFeedback('설정을 저장했습니다. 다음 실행에서도 같은 R2 설정을 사용할 수 있습니다.', 'success')
+            setFeedback(t('r2Setup.feedback.saved', '설정을 저장했습니다. 다음 실행에서도 같은 R2 설정을 사용할 수 있습니다.'), 'success')
         } catch (error) {
-            setFeedback(`설정을 저장하지 못했습니다. ${error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요.'}`, 'error')
+            setFeedback(t('r2Setup.feedback.saveFailed', '설정을 저장하지 못했습니다. {{reason}}', {
+                reason: error instanceof Error ? error.message : t('r2Setup.feedback.retryLater', '잠시 후 다시 시도해 주세요.'),
+            }), 'error')
         } finally {
             setBusy(null)
         }
@@ -256,9 +267,11 @@ export function NativeR2SetupPanel({
             setCredentialAvailable(true)
             setConnectionVerified(false)
             setWriteVerified(false)
-            setFeedback('API 키를 이 기기의 보안 저장소에 안전하게 저장했습니다.', 'success')
+            setFeedback(t('r2Setup.feedback.credentialSaved', 'API 키를 이 기기의 보안 저장소에 안전하게 저장했습니다.'), 'success')
         } catch (error) {
-            setFeedback(`API 키를 저장하지 못했습니다. ${error instanceof Error ? error.message : '입력값을 확인해 주세요.'}`, 'error')
+            setFeedback(t('r2Setup.feedback.credentialFailed', 'API 키를 저장하지 못했습니다. {{reason}}', {
+                reason: error instanceof Error ? error.message : t('r2Setup.feedback.checkInput', '입력값을 확인해 주세요.'),
+            }), 'error')
         } finally {
             setBusy(null)
         }
@@ -269,10 +282,12 @@ export function NativeR2SetupPanel({
         try {
             await testNativeR2Connection(profile)
             setConnectionVerified(true)
-            setFeedback('연결에 성공했습니다. 계정과 버킷 정보를 정상적으로 확인했습니다.', 'success')
+            setFeedback(t('r2Setup.feedback.connectionOk', '연결에 성공했습니다. 계정과 버킷 정보를 정상적으로 확인했습니다.'), 'success')
         } catch (error) {
             setConnectionVerified(false)
-            setFeedback(`연결을 확인하지 못했습니다. ${error instanceof Error ? error.message : '계정, 버킷, API 키를 확인해 주세요.'}`, 'error')
+            setFeedback(t('r2Setup.feedback.connectionFailed', '연결을 확인하지 못했습니다. {{reason}}', {
+                reason: error instanceof Error ? error.message : t('r2Setup.feedback.checkConnectionInputs', '계정, 버킷, API 키를 확인해 주세요.'),
+            }), 'error')
         } finally {
             setBusy(null)
         }
@@ -286,13 +301,15 @@ export function NativeR2SetupPanel({
             setWriteVerified(passed)
             setFeedback(
                 passed
-                    ? '업로드 권한 확인에 성공했습니다. 테스트 파일도 정상적으로 삭제했습니다.'
-                    : '테스트 파일 정리가 완료되지 않았습니다. R2 버킷을 확인해 주세요.',
+                    ? t('r2Setup.feedback.writeOk', '업로드 권한 확인에 성공했습니다. 테스트 파일도 정상적으로 삭제했습니다.')
+                    : t('r2Setup.feedback.cleanupIncomplete', '테스트 파일 정리가 완료되지 않았습니다. R2 버킷을 확인해 주세요.'),
                 passed ? 'success' : 'error',
             )
         } catch (error) {
             setWriteVerified(false)
-            setFeedback(`업로드 권한을 확인하지 못했습니다. ${error instanceof Error ? error.message : 'API 키 권한을 확인해 주세요.'}`, 'error')
+            setFeedback(t('r2Setup.feedback.writeFailed', '업로드 권한을 확인하지 못했습니다. {{reason}}', {
+                reason: error instanceof Error ? error.message : t('r2Setup.feedback.checkKeyPermission', 'API 키 권한을 확인해 주세요.'),
+            }), 'error')
         } finally {
             setBusy(null)
         }
@@ -302,7 +319,7 @@ export function NativeR2SetupPanel({
         setBusy('upload')
         try {
             if (mode === 'current-session') {
-                throw new Error('current-session은 generation output의 명시적 artifact set이 필요합니다. Directory scan은 delta/full-sync/dry-run에서만 사용하세요.')
+                throw new Error(t('r2Setup.feedback.currentSessionUnsupported', 'current-session은 generation output의 명시적 artifact set이 필요합니다. Directory scan은 delta/full-sync/dry-run에서만 사용하세요.'))
             }
             const coordinator = getRuntimeR2UploadCoordinator()
             const artifacts = filterNativeR2ArtifactsForProfile(
@@ -310,20 +327,36 @@ export function NativeR2SetupPanel({
                 await scanNativeR2Artifacts(localRoot, profile.prefix),
             )
             const plan = await coordinator.plan(profile, artifacts, mode)
-            setPlanSummary(`찾은 파일 ${plan.total}개 · 완료된 파일 ${plan.alreadyCompleted}개 · 이번 작업 ${plan.jobs.length}개`)
+            setPlanSummary(t('r2Setup.feedback.planSummary', '찾은 파일 {{total}}개 · 완료된 파일 {{completed}}개 · 이번 작업 {{jobs}}개', {
+                total: plan.total,
+                completed: plan.alreadyCompleted,
+                jobs: plan.jobs.length,
+            }))
             if (mode !== 'dry-run') {
                 await coordinator.enqueuePlan(plan)
                 const summary = await coordinator.runUntilIdle(profile)
                 setFeedback(
-                    `업로드 완료 ${summary.succeeded}개 · 실패 ${summary.failed}개 · 대기 ${summary.queued}개`,
+                    t('r2Setup.feedback.uploadSummary', '업로드 완료 {{succeeded}}개 · 실패 {{failed}}개 · 대기 {{queued}}개', {
+                        succeeded: summary.succeeded,
+                        failed: summary.failed,
+                        queued: summary.queued,
+                    }),
                     summary.failed > 0 ? 'error' : 'success',
                 )
             } else {
                 const preview = await coordinator.previewConflicts(profile, plan)
-                setFeedback(`미리보기: 새 파일 ${preview.missing}개 · 같은 파일 ${preview.alreadySame}개 · 이름 충돌 ${preview.conflicts}개 · 교체 예정 ${preview.overwrites}개 · 새 이름 사용 가능 ${preview.suffixAvailable}개. 실제 파일은 변경하지 않았습니다.`, 'success')
+                setFeedback(t('r2Setup.feedback.previewSummary', '미리보기: 새 파일 {{missing}}개 · 같은 파일 {{same}}개 · 이름 충돌 {{conflicts}}개 · 교체 예정 {{overwrites}}개 · 새 이름 사용 가능 {{suffix}}개. 실제 파일은 변경하지 않았습니다.', {
+                    missing: preview.missing,
+                    same: preview.alreadySame,
+                    conflicts: preview.conflicts,
+                    overwrites: preview.overwrites,
+                    suffix: preview.suffixAvailable,
+                }), 'success')
             }
         } catch (error) {
-            setFeedback(`업로드를 완료하지 못했습니다. ${error instanceof Error ? error.message : '설정을 확인한 뒤 다시 시도해 주세요.'}`, 'error')
+            setFeedback(t('r2Setup.feedback.uploadFailed', '업로드를 완료하지 못했습니다. {{reason}}', {
+                reason: error instanceof Error ? error.message : t('r2Setup.feedback.checkSettingsRetry', '설정을 확인한 뒤 다시 시도해 주세요.'),
+            }), 'error')
         } finally {
             setBusy(null)
         }
@@ -362,40 +395,40 @@ export function NativeR2SetupPanel({
         >
             <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 pb-5">
                 <div className="min-w-0">
-                    <h2 className="text-base font-semibold">순서대로 설정하고 업로드하세요</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">한 화면에는 두 단계만 보여드려요. 값을 입력하고 막히면 같은 줄의 설명을 확인하세요.</p>
+                    <h2 className="text-base font-semibold">{t('r2Setup.header.title', '순서대로 설정하고 업로드하세요')}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">{t('r2Setup.header.description', '한 화면에는 두 단계만 보여드려요. 값을 입력하고 막히면 같은 줄의 설명을 확인하세요.')}</p>
                 </div>
                 <div className="flex min-h-11 flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span className="font-medium">필수 준비 {requiredReadyCount}/4</span>
+                    <span className="font-medium">{t('r2Setup.header.requiredReady', '필수 준비 {{ready}}/4', { ready: requiredReadyCount })}</span>
                     <span className="inline-flex items-center gap-1.5">
                     {nativeEnabled ? <ShieldCheck className="h-4 w-4 text-success" /> : <PauseCircle className="h-4 w-4" />}
-                        {nativeEnabled ? '이 기기에서 업로드 가능' : '현재 환경에서 업로드 불가'}
+                        {nativeEnabled ? t('r2Setup.header.nativeAvailable', '이 기기에서 업로드 가능') : t('r2Setup.header.nativeUnavailable', '현재 환경에서 업로드 불가')}
                     </span>
                 </div>
             </div>
 
             {!foreground.supported && (
                 <div className="border-y border-warning/35 py-4 text-sm" role="status">
-                    <div className="font-medium">현재 실행 환경에서는 직접 업로드할 수 없습니다.</div>
-                    <div className="mt-1 text-muted-foreground">설치형 NAI Blue 데스크톱 앱에서 이 화면을 다시 열어 주세요. 브라우저에서는 설정을 확인할 수 있지만 파일 업로드는 실행되지 않습니다.</div>
+                    <div className="font-medium">{t('r2Setup.unsupported.title', '현재 실행 환경에서는 직접 업로드할 수 없습니다.')}</div>
+                    <div className="mt-1 text-muted-foreground">{t('r2Setup.unsupported.description', '설치형 NAI Blue 데스크톱 앱에서 이 화면을 다시 열어 주세요. 브라우저에서는 설정을 확인할 수 있지만 파일 업로드는 실행되지 않습니다.')}</div>
                 </div>
             )}
 
             {foreground.supported && (
-                <div className="border-y border-border/70 py-3 text-sm text-muted-foreground" role="status" aria-label="R2 자동 전달 상태">
+                <div className="border-y border-border/70 py-3 text-sm text-muted-foreground" role="status" aria-label={t('r2Setup.scheduler.ariaLabel', 'R2 자동 전달 상태')}>
                     {scheduler.status === 'retrying'
-                        ? '전달 작업 목록을 읽지 못해 자동 재개를 기다리고 있습니다. 앱이 열려 있는 동안 다시 확인합니다.'
+                        ? t('r2Setup.scheduler.retrying', '전달 작업 목록을 읽지 못해 자동 재개를 기다리고 있습니다. 앱이 열려 있는 동안 다시 확인합니다.')
                         : scheduler.status === 'stopped'
-                            ? '자동 전달이 중지되어 있습니다. 앱을 다시 열면 저장된 작업에서 이어집니다.'
-                            : '앱이 열려 있는 동안 저장된 전달 작업을 자동으로 이어갑니다.'}
-                    {scheduler.blockedJobIds.length > 0 && <p className="mt-1">설정 또는 보안 키 준비를 기다리는 작업 {scheduler.blockedJobIds.length}개. 기존 작업에 연결된 설정이 준비되면 자동 재개합니다.</p>}
-                    {scheduler.faultedJobIds.length > 0 && <p className="mt-1">오류로 재확인을 기다리는 작업 {scheduler.faultedJobIds.length}개. 다른 준비된 작업은 계속 진행합니다.</p>}
+                            ? t('r2Setup.scheduler.stopped', '자동 전달이 중지되어 있습니다. 앱을 다시 열면 저장된 작업에서 이어집니다.')
+                            : t('r2Setup.scheduler.running', '앱이 열려 있는 동안 저장된 전달 작업을 자동으로 이어갑니다.')}
+                    {scheduler.blockedJobIds.length > 0 && <p className="mt-1">{t('r2Setup.scheduler.blocked', '설정 또는 보안 키 준비를 기다리는 작업 {{jobs}}개. 기존 작업에 연결된 설정이 준비되면 자동 재개합니다.', { jobs: scheduler.blockedJobIds.length })}</p>}
+                    {scheduler.faultedJobIds.length > 0 && <p className="mt-1">{t('r2Setup.scheduler.faulted', '오류로 재확인을 기다리는 작업 {{jobs}}개. 다른 준비된 작업은 계속 진행합니다.', { jobs: scheduler.faultedJobIds.length })}</p>}
                 </div>
             )}
 
-            <div className="border-y border-border/70 py-4" aria-label="R2 설정 진행률">
+            <div className="border-y border-border/70 py-4" aria-label={t('r2Setup.progress.ariaLabel', 'R2 설정 진행률')}>
                 <div className="flex items-center justify-between gap-4 text-sm font-semibold">
-                    <span className="text-primary">단계 {setupPage * 2 + 1}–{Math.min(setupPage * 2 + 2, 10)}</span>
+                    <span className="text-primary">{t('r2Setup.progress.range', '단계 {{start}}–{{end}}', { start: setupPage * 2 + 1, end: Math.min(setupPage * 2 + 2, 10) })}</span>
                     <span className="font-mono text-muted-foreground">{setupPage + 1} / 5</span>
                 </div>
                 <div className="mt-3 h-px bg-border">
@@ -406,16 +439,16 @@ export function NativeR2SetupPanel({
             <ol className="min-w-0">
                 {setupPage === 0 && <>
                 <SetupStep
-                    label="1. 업로드할 폴더 선택"
-                    description="내 컴퓨터에서 R2로 보낼 이미지가 들어 있는 폴더를 지정합니다."
-                    guideTitle="어떤 값을 넣나요?"
+                    label={t('r2Setup.steps.folder.label', '1. 업로드할 폴더 선택')}
+                    description={t('r2Setup.steps.folder.description', '내 컴퓨터에서 R2로 보낼 이미지가 들어 있는 폴더를 지정합니다.')}
+                    guideTitle={t('r2Setup.steps.folder.guideTitle', '어떤 값을 넣나요?')}
                     ready={Boolean(localRoot.trim())}
                     guide={<>
-                        <p>NAI Blue가 결과 이미지를 저장하는 폴더 이름 또는 전체 경로를 입력하세요.</p>
-                        <p><span className="font-medium text-foreground">예:</span> <span className="font-mono">NAI_Blue_Output</span> 또는 <span className="break-all font-mono">D:\Images\NAI_Blue_Output</span></p>
+                        <p>{t('r2Setup.steps.folder.guideBody', 'NAI Blue가 결과 이미지를 저장하는 폴더 이름 또는 전체 경로를 입력하세요.')}</p>
+                        <p><Trans i18nKey="r2Setup.steps.folder.guideExample" defaults="<strong>예:</strong> <mono>NAI_Blue_Output</mono> 또는 <path>D:\Images\NAI_Blue_Output</path>" components={guideMarkup} /></p>
                     </>}
                 >
-                    <Field label="이미지 폴더" htmlFor="r2-local-root" hint="폴더 안의 업로드 가능한 결과 파일을 자동으로 찾습니다.">
+                    <Field label={t('r2Setup.steps.folder.fieldLabel', '이미지 폴더')} htmlFor="r2-local-root" hint={t('r2Setup.steps.folder.fieldHint', '폴더 안의 업로드 가능한 결과 파일을 자동으로 찾습니다.')}>
                         <div className="relative">
                             <FolderOpen className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                             <Input id="r2-local-root" className="pl-10" value={localRoot} onChange={event => onLocalRootChange(event.target.value)} placeholder="NAI_Blue_Output" />
@@ -424,41 +457,41 @@ export function NativeR2SetupPanel({
                 </SetupStep>
 
                 <SetupStep
-                    label="2. Cloudflare 계정 연결"
-                    description="내 R2 저장소가 속한 Cloudflare 계정을 알려 주세요."
-                    guideTitle="Account ID는 어디에 있나요?"
+                    label={t('r2Setup.steps.account.label', '2. Cloudflare 계정 연결')}
+                    description={t('r2Setup.steps.account.description', '내 R2 저장소가 속한 Cloudflare 계정을 알려 주세요.')}
+                    guideTitle={t('r2Setup.steps.account.guideTitle', 'Account ID는 어디에 있나요?')}
                     ready={Boolean(profile.accountId.trim())}
                     guide={<>
-                        <p>Cloudflare 대시보드의 R2 화면에서 <span className="font-medium text-foreground">Account ID</span>를 찾아 그대로 복사하세요. 이메일이나 계정 이름이 아닙니다.</p>
-                        <ExternalUrlLink className="focus-ring inline-flex max-w-full flex-wrap items-center gap-1 rounded-control break-words text-left font-medium text-primary hover:underline" href="https://dash.cloudflare.com/">Cloudflare 대시보드 열기 <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /></ExternalUrlLink>
+                        <p><Trans i18nKey="r2Setup.steps.account.guideBody" defaults="Cloudflare 대시보드의 R2 화면에서 <strong>Account ID</strong>를 찾아 그대로 복사하세요. 이메일이나 계정 이름이 아닙니다." components={guideMarkup} /></p>
+                        <ExternalUrlLink className="focus-ring inline-flex max-w-full flex-wrap items-center gap-1 rounded-control break-words text-left font-medium text-primary hover:underline" href="https://dash.cloudflare.com/">{t('r2Setup.steps.account.openDashboard', 'Cloudflare 대시보드 열기')} <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /></ExternalUrlLink>
                     </>}
                 >
-                    <Field label="Cloudflare Account ID" htmlFor="r2-account-id" hint="앞뒤 공백 없이 Account ID 전체를 붙여 넣으세요.">
-                        <Input id="r2-account-id" value={profile.accountId} onChange={event => update('accountId', event.target.value)} placeholder="예: 023e105f4ecef8ad9ca31a8372d0c353" autoComplete="off" />
+                    <Field label="Cloudflare Account ID" htmlFor="r2-account-id" hint={t('r2Setup.steps.account.fieldHint', '앞뒤 공백 없이 Account ID 전체를 붙여 넣으세요.')}>
+                        <Input id="r2-account-id" value={profile.accountId} onChange={event => update('accountId', event.target.value)} placeholder={t('r2Setup.steps.account.placeholder', '예: 023e105f4ecef8ad9ca31a8372d0c353')} autoComplete="off" />
                     </Field>
 
                     <details className="border-y border-border/60 py-3">
                         <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 text-sm font-medium">
                             <Settings2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                            고급 연결 설정 <span className="text-xs font-normal text-muted-foreground">(대부분 변경하지 않음)</span>
+                            {t('r2Setup.steps.advanced.summary', '고급 연결 설정')} <span className="text-xs font-normal text-muted-foreground">{t('r2Setup.steps.advanced.summaryNote', '(대부분 변경하지 않음)')}</span>
                         </summary>
                         <div className="grid gap-3 pt-3 sm:grid-cols-2">
-                            <Field label="연결 방식">
+                            <Field label={t('r2Setup.steps.advanced.transportLabel', '연결 방식')}>
                                 <Select value={profile.transport} onValueChange={value => update('transport', value as R2Transport)}>
-                                    <SelectTrigger aria-label="R2 연결 방식"><SelectValue /></SelectTrigger>
+                                    <SelectTrigger aria-label={t('r2Setup.steps.advanced.transportAriaLabel', 'R2 연결 방식')}><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="native-s3">앱에서 직접 업로드 (권장)</SelectItem>
-                                        <SelectItem value="wrangler">Wrangler 사용</SelectItem>
-                                        <SelectItem value="relay" disabled>Relay (지원 예정)</SelectItem>
+                                        <SelectItem value="native-s3">{t('r2Setup.steps.advanced.transportNative', '앱에서 직접 업로드 (권장)')}</SelectItem>
+                                        <SelectItem value="wrangler">{t('r2Setup.steps.advanced.transportWrangler', 'Wrangler 사용')}</SelectItem>
+                                        <SelectItem value="relay" disabled>{t('r2Setup.steps.advanced.transportRelay', 'Relay (지원 예정)')}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </Field>
-                            <Field label="데이터 관할 지역 코드" htmlFor="r2-jurisdiction" hint="관할 지역을 별도로 지정한 계정만 입력합니다.">
-                                <Input id="r2-jurisdiction" value={profile.jurisdiction ?? ''} placeholder="예: eu" onChange={event => update('jurisdiction', event.target.value || null)} />
+                            <Field label={t('r2Setup.steps.advanced.jurisdictionLabel', '데이터 관할 지역 코드')} htmlFor="r2-jurisdiction" hint={t('r2Setup.steps.advanced.jurisdictionHint', '관할 지역을 별도로 지정한 계정만 입력합니다.')}>
+                                <Input id="r2-jurisdiction" value={profile.jurisdiction ?? ''} placeholder={t('r2Setup.steps.advanced.jurisdictionPlaceholder', '예: eu')} onChange={event => update('jurisdiction', event.target.value || null)} />
                             </Field>
                             <div className="sm:col-span-2">
-                                <Field label="직접 지정할 연결 주소" htmlFor="r2-endpoint" hint="프록시나 별도 S3 연결 주소가 있을 때만 입력합니다.">
-                                    <Input id="r2-endpoint" value={profile.endpoint ?? ''} placeholder="비워 두면 Account ID로 자동 구성" onChange={event => update('endpoint', event.target.value || null)} />
+                                <Field label={t('r2Setup.steps.advanced.endpointLabel', '직접 지정할 연결 주소')} htmlFor="r2-endpoint" hint={t('r2Setup.steps.advanced.endpointHint', '프록시나 별도 S3 연결 주소가 있을 때만 입력합니다.')}>
+                                    <Input id="r2-endpoint" value={profile.endpoint ?? ''} placeholder={t('r2Setup.steps.advanced.endpointPlaceholder', '비워 두면 Account ID로 자동 구성')} onChange={event => update('endpoint', event.target.value || null)} />
                                 </Field>
                             </div>
                         </div>
@@ -468,54 +501,54 @@ export function NativeR2SetupPanel({
 
                 {setupPage === 1 && <>
                 <SetupStep
-                    label="3. 기본 업로드 위치 확인"
-                    description="여기서는 연결 확인에 사용할 기본값만 정합니다. 생성 폴더마다 다른 버킷과 프리픽스를 지정할 수 있습니다."
-                    guideTitle="폴더별 설정이 우선합니다"
+                    label={t('r2Setup.steps.location.label', '3. 기본 업로드 위치 확인')}
+                    description={t('r2Setup.steps.location.description', '여기서는 연결 확인에 사용할 기본값만 정합니다. 생성 폴더마다 다른 버킷과 프리픽스를 지정할 수 있습니다.')}
+                    guideTitle={t('r2Setup.steps.location.guideTitle', '폴더별 설정이 우선합니다')}
                     ready={Boolean(profile.bucket.trim())}
                     guide={<>
-                        <p><span className="font-medium text-foreground">버킷 이름</span>에는 연결 확인에 사용할 버킷을 정확히 입력하세요.</p>
-                        <p>이미지 생성 시 선택한 폴더의 버킷·프리픽스가 있으면 이 기본값보다 우선합니다. 비워 둔 항목만 이 값을 사용합니다.</p>
+                        <p><Trans i18nKey="r2Setup.steps.location.guideBucket" defaults="<strong>버킷 이름</strong>에는 연결 확인에 사용할 버킷을 정확히 입력하세요." components={guideMarkup} /></p>
+                        <p>{t('r2Setup.steps.location.guideOverride', '이미지 생성 시 선택한 폴더의 버킷·프리픽스가 있으면 이 기본값보다 우선합니다. 비워 둔 항목만 이 값을 사용합니다.')}</p>
                     </>}
                 >
                     <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="기본 R2 버킷" htmlFor="r2-bucket">
-                            <Input id="r2-bucket" value={profile.bucket} onChange={event => update('bucket', event.target.value)} placeholder="예: nai-blue-images" autoComplete="off" />
+                        <Field label={t('r2Setup.steps.location.bucketLabel', '기본 R2 버킷')} htmlFor="r2-bucket">
+                            <Input id="r2-bucket" value={profile.bucket} onChange={event => update('bucket', event.target.value)} placeholder={t('r2Setup.steps.location.bucketPlaceholder', '예: nai-blue-images')} autoComplete="off" />
                         </Field>
-                        <Field label="기본 프리픽스 (선택)" htmlFor="r2-prefix">
-                            <Input id="r2-prefix" value={profile.prefix} onChange={event => update('prefix', event.target.value)} placeholder="예: generated/2026" />
+                        <Field label={t('r2Setup.steps.location.prefixLabel', '기본 프리픽스 (선택)')} htmlFor="r2-prefix">
+                            <Input id="r2-prefix" value={profile.prefix} onChange={event => update('prefix', event.target.value)} placeholder={t('r2Setup.steps.location.prefixPlaceholder', '예: generated/2026')} />
                         </Field>
                     </div>
                     <div className="border-y border-border/55 py-2 text-xs text-muted-foreground">
-                        저장 경로 예시 <span className="ml-1 break-words font-mono text-foreground">{pathPreview || 'example.png'}</span>
+                        {t('r2Setup.steps.location.pathPreview', '저장 경로 예시')} <span className="ml-1 break-words font-mono text-foreground">{pathPreview || 'example.png'}</span>
                     </div>
                 </SetupStep>
 
                 <SetupStep
-                    label="4. R2 API 키 저장"
-                    description="NAI Blue가 내 버킷에 파일을 올릴 수 있도록 발급받은 두 값을 입력합니다."
-                    guideTitle="두 값은 어디서 발급하나요?"
+                    label={t('r2Setup.steps.credential.label', '4. R2 API 키 저장')}
+                    description={t('r2Setup.steps.credential.description', 'NAI Blue가 내 버킷에 파일을 올릴 수 있도록 발급받은 두 값을 입력합니다.')}
+                    guideTitle={t('r2Setup.steps.credential.guideTitle', '두 값은 어디서 발급하나요?')}
                     ready={credentialAvailable}
                     guide={<>
-                        <p>Cloudflare R2의 <span className="font-medium text-foreground">R2 API Tokens</span>에서 토큰을 만들고, 권한은 대상 버킷의 <span className="font-medium text-foreground">Object Read & Write</span>로 선택하세요.</p>
-                        <p>발급 직후 표시되는 <span className="font-medium text-foreground">Access Key ID</span>와 <span className="font-medium text-foreground">Secret Access Key</span>를 각각 복사합니다. Secret 값은 다시 표시되지 않을 수 있습니다.</p>
+                        <p><Trans i18nKey="r2Setup.steps.credential.guideToken" defaults="Cloudflare R2의 <strong>R2 API Tokens</strong>에서 토큰을 만들고, 권한은 대상 버킷의 <strong>Object Read & Write</strong>로 선택하세요." components={guideMarkup} /></p>
+                        <p><Trans i18nKey="r2Setup.steps.credential.guideKeys" defaults="발급 직후 표시되는 <strong>Access Key ID</strong>와 <strong>Secret Access Key</strong>를 각각 복사합니다. Secret 값은 다시 표시되지 않을 수 있습니다." components={guideMarkup} /></p>
                     </>}
                 >
                     <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Access Key ID" htmlFor="r2-access-key">
-                            <Input id="r2-access-key" type="password" autoComplete="off" value={accessKeyId} onChange={event => setAccessKeyId(event.target.value)} placeholder="Access Key ID 붙여넣기" />
+                            <Input id="r2-access-key" type="password" autoComplete="off" value={accessKeyId} onChange={event => setAccessKeyId(event.target.value)} placeholder={t('r2Setup.steps.credential.accessKeyPlaceholder', 'Access Key ID 붙여넣기')} />
                         </Field>
                         <Field label="Secret Access Key" htmlFor="r2-secret-key">
-                            <Input id="r2-secret-key" type="password" autoComplete="off" value={secretAccessKey} onChange={event => setSecretAccessKey(event.target.value)} placeholder="Secret Access Key 붙여넣기" />
+                            <Input id="r2-secret-key" type="password" autoComplete="off" value={secretAccessKey} onChange={event => setSecretAccessKey(event.target.value)} placeholder={t('r2Setup.steps.credential.secretKeyPlaceholder', 'Secret Access Key 붙여넣기')} />
                         </Field>
                     </div>
                     <div className="flex min-w-0 flex-wrap items-center gap-3">
                         <Button className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" type="button" variant="outline" onClick={saveCredential} disabled={!nativeEnabled || !accessKeyId || !secretAccessKey || busy !== null}>
                             {busy === 'credential' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
-                            API 키를 이 기기에 저장
+                            {t('r2Setup.steps.credential.saveButton', 'API 키를 이 기기에 저장')}
                         </Button>
                         <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                             <LockKeyhole className="h-4 w-4 shrink-0" aria-hidden="true" />
-                            {credentialAvailable ? '저장된 API 키가 있습니다.' : 'API 키는 운영체제 보안 저장소에만 보관됩니다.'}
+                            {credentialAvailable ? t('r2Setup.steps.credential.stored', '저장된 API 키가 있습니다.') : t('r2Setup.steps.credential.vaultOnly', 'API 키는 운영체제 보안 저장소에만 보관됩니다.')}
                         </span>
                     </div>
                 </SetupStep>
@@ -523,77 +556,77 @@ export function NativeR2SetupPanel({
 
                 {setupPage === 2 && <>
                 <SetupStep
-                    label="5. 연결 확인"
-                    description="입력한 계정, 버킷, API 키가 서로 맞는지 확인합니다."
-                    guideTitle="파일은 업로드하지 않습니다"
+                    label={t('r2Setup.steps.connection.label', '5. 연결 확인')}
+                    description={t('r2Setup.steps.connection.description', '입력한 계정, 버킷, API 키가 서로 맞는지 확인합니다.')}
+                    guideTitle={t('r2Setup.steps.connection.guideTitle', '파일은 업로드하지 않습니다')}
                     ready={connectionVerified}
-                    guide={<p>이 확인은 버킷을 찾고 접근할 수 있는지만 검사합니다. 실패하면 Account ID, 버킷 이름, API 키를 다시 확인하세요.</p>}
+                    guide={<p>{t('r2Setup.steps.connection.guideBody', '이 확인은 버킷을 찾고 접근할 수 있는지만 검사합니다. 실패하면 Account ID, 버킷 이름, API 키를 다시 확인하세요.')}</p>}
                 >
                     <Button type="button" variant="outline" onClick={runConnectionTest} disabled={!connectionReady || busy !== null}>
                         {busy === 'connection' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wifi className="mr-2 h-4 w-4" />}
-                        R2 연결 확인
+                        {t('r2Setup.steps.connection.button', 'R2 연결 확인')}
                     </Button>
                 </SetupStep>
 
                 <SetupStep
-                    label="6. 업로드 권한 확인"
-                    description="작은 테스트 파일을 올렸다가 바로 지워서 실제 업로드 권한을 확인합니다."
-                    guideTitle="내 파일에는 영향을 주지 않습니다"
+                    label={t('r2Setup.steps.permission.label', '6. 업로드 권한 확인')}
+                    description={t('r2Setup.steps.permission.description', '작은 테스트 파일을 올렸다가 바로 지워서 실제 업로드 권한을 확인합니다.')}
+                    guideTitle={t('r2Setup.steps.permission.guideTitle', '내 파일에는 영향을 주지 않습니다')}
                     ready={writeVerified}
-                    guide={<p>NAI Blue가 임시 파일 하나를 생성해 업로드·조회·삭제합니다. 연결 확인이 성공한 뒤 실행하세요.</p>}
+                    guide={<p>{t('r2Setup.steps.permission.guideBody', 'NAI Blue가 임시 파일 하나를 생성해 업로드·조회·삭제합니다. 연결 확인이 성공한 뒤 실행하세요.')}</p>}
                 >
                     <Button className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" type="button" variant="outline" onClick={runTemporaryObjectTest} disabled={!nativeEnabled || !connectionVerified || busy !== null}>
                         {busy === 'temporary' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                        테스트 파일 업로드 후 삭제
+                        {t('r2Setup.steps.permission.button', '테스트 파일 업로드 후 삭제')}
                     </Button>
                 </SetupStep>
                 </>}
 
                 {setupPage === 3 && <>
                 <SetupStep
-                    label="7. 같은 이름의 파일 처리"
-                    description="R2에 같은 경로의 파일이 이미 있을 때 어떻게 할지 선택합니다."
-                    guideTitle="안전하게 시작하려면"
+                    label={t('r2Setup.steps.conflict.label', '7. 같은 이름의 파일 처리')}
+                    description={t('r2Setup.steps.conflict.description', 'R2에 같은 경로의 파일이 이미 있을 때 어떻게 할지 선택합니다.')}
+                    guideTitle={t('r2Setup.steps.conflict.guideTitle', '안전하게 시작하려면')}
                     guide={<>
-                        <p>처음에는 <span className="font-medium text-foreground">업로드 중단</span>이 가장 안전합니다. 기존 파일을 바꾸지 않고 충돌 사실만 알려 줍니다.</p>
-                        <p>반복 업로드가 많다면 <span className="font-medium text-foreground">같은 파일은 건너뛰기</span>를 선택하세요.</p>
+                        <p><Trans i18nKey="r2Setup.steps.conflict.guideStop" defaults="처음에는 <strong>업로드 중단</strong>이 가장 안전합니다. 기존 파일을 바꾸지 않고 충돌 사실만 알려 줍니다." components={guideMarkup} /></p>
+                        <p><Trans i18nKey="r2Setup.steps.conflict.guideSkip" defaults="반복 업로드가 많다면 <strong>같은 파일은 건너뛰기</strong>를 선택하세요." components={guideMarkup} /></p>
                     </>}
                 >
-                    <Field label="같은 이름의 파일이 있을 때">
+                    <Field label={t('r2Setup.steps.conflict.fieldLabel', '같은 이름의 파일이 있을 때')}>
                         <Select value={profile.conflictPolicy} onValueChange={value => update('conflictPolicy', value as R2ConflictPolicy)}>
-                            <SelectTrigger aria-label="같은 이름의 파일 처리 방식"><SelectValue /></SelectTrigger>
+                            <SelectTrigger aria-label={t('r2Setup.steps.conflict.ariaLabel', '같은 이름의 파일 처리 방식')}><SelectValue /></SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="fail">업로드 중단 — 기존 파일 보호</SelectItem>
-                                <SelectItem value="skip-same">내용이 같으면 건너뛰기</SelectItem>
-                                <SelectItem value="overwrite">기존 파일을 새 파일로 교체</SelectItem>
-                                <SelectItem value="suffix">새 이름을 만들어 둘 다 보관</SelectItem>
+                                <SelectItem value="fail">{t('r2Setup.steps.conflict.fail', '업로드 중단 — 기존 파일 보호')}</SelectItem>
+                                <SelectItem value="skip-same">{t('r2Setup.steps.conflict.skipSame', '내용이 같으면 건너뛰기')}</SelectItem>
+                                <SelectItem value="overwrite">{t('r2Setup.steps.conflict.overwrite', '기존 파일을 새 파일로 교체')}</SelectItem>
+                                <SelectItem value="suffix">{t('r2Setup.steps.conflict.suffix', '새 이름을 만들어 둘 다 보관')}</SelectItem>
                             </SelectContent>
                         </Select>
                     </Field>
                 </SetupStep>
 
                 <SetupStep
-                    label="8. 공개 링크 설정"
-                    description="업로드한 이미지를 웹 주소로 열 수 있게 할지 선택합니다."
-                    guideTitle="업로드 권한과 공개 여부는 다릅니다"
+                    label={t('r2Setup.steps.public.label', '8. 공개 링크 설정')}
+                    description={t('r2Setup.steps.public.description', '업로드한 이미지를 웹 주소로 열 수 있게 할지 선택합니다.')}
+                    guideTitle={t('r2Setup.steps.public.guideTitle', '업로드 권한과 공개 여부는 다릅니다')}
                     guide={<>
-                        <p>개인 보관용이면 <span className="font-medium text-foreground">비공개</span>를 선택하세요.</p>
-                        <p>공개 주소를 입력해도 Cloudflare의 공개 액세스가 자동으로 켜지지는 않습니다. R2 대시보드에서 r2.dev 또는 사용자 도메인을 먼저 연결해야 합니다.</p>
+                        <p><Trans i18nKey="r2Setup.steps.public.guidePrivate" defaults="개인 보관용이면 <strong>비공개</strong>를 선택하세요." components={guideMarkup} /></p>
+                        <p>{t('r2Setup.steps.public.guideNote', '공개 주소를 입력해도 Cloudflare의 공개 액세스가 자동으로 켜지지는 않습니다. R2 대시보드에서 r2.dev 또는 사용자 도메인을 먼저 연결해야 합니다.')}</p>
                     </>}
                 >
                     <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="공개 방식">
+                        <Field label={t('r2Setup.steps.public.modeLabel', '공개 방식')}>
                             <Select value={profile.publicMode} onValueChange={value => update('publicMode', value as R2PublicMode)}>
-                                <SelectTrigger aria-label="R2 공개 방식"><SelectValue /></SelectTrigger>
+                                <SelectTrigger aria-label={t('r2Setup.steps.public.modeAriaLabel', 'R2 공개 방식')}><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="private">비공개 — 링크 만들지 않음</SelectItem>
-                                    <SelectItem value="r2-dev">r2.dev 공개 주소</SelectItem>
-                                    <SelectItem value="custom">내 도메인 사용</SelectItem>
+                                    <SelectItem value="private">{t('r2Setup.steps.public.private', '비공개 — 링크 만들지 않음')}</SelectItem>
+                                    <SelectItem value="r2-dev">{t('r2Setup.steps.public.r2Dev', 'r2.dev 공개 주소')}</SelectItem>
+                                    <SelectItem value="custom">{t('r2Setup.steps.public.custom', '내 도메인 사용')}</SelectItem>
                                 </SelectContent>
                             </Select>
                         </Field>
                         {profile.publicMode !== 'private' && (
-                            <Field label="공개 기본 주소" htmlFor="r2-public-url" hint="마지막 /는 생략해도 됩니다.">
+                            <Field label={t('r2Setup.steps.public.baseUrlLabel', '공개 기본 주소')} htmlFor="r2-public-url" hint={t('r2Setup.steps.public.baseUrlHint', '마지막 /는 생략해도 됩니다.')}>
                                 <div className="relative">
                                     <Globe2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                                     <Input id="r2-public-url" className="pl-10" value={profile.publicBaseUrl ?? ''} onChange={event => update('publicBaseUrl', event.target.value || null)} placeholder="https://assets.example.com" inputMode="url" />
@@ -606,29 +639,32 @@ export function NativeR2SetupPanel({
 
                 {setupPage === 4 && <>
                 <SetupStep
-                    label="9. 설정 저장"
-                    description="지금 입력한 R2 설정을 다음에도 사용할 수 있도록 저장합니다."
-                    guideTitle="API 키는 따로 보관됩니다"
-                    guide={<p>여기에는 계정 ID, 버킷, 폴더, 업로드 규칙만 저장됩니다. 4번의 Secret Access Key는 설정 파일에 포함되지 않습니다.</p>}
+                    label={t('r2Setup.steps.save.label', '9. 설정 저장')}
+                    description={t('r2Setup.steps.save.description', '지금 입력한 R2 설정을 다음에도 사용할 수 있도록 저장합니다.')}
+                    guideTitle={t('r2Setup.steps.save.guideTitle', 'API 키는 따로 보관됩니다')}
+                    guide={<p>{t('r2Setup.steps.save.guideBody', '여기에는 계정 ID, 버킷, 폴더, 업로드 규칙만 저장됩니다. 4번의 Secret Access Key는 설정 파일에 포함되지 않습니다.')}</p>}
                 >
                     <div className="min-w-0 space-y-3">
                         <Button className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" type="button" onClick={save} disabled={busy !== null}>
                             {busy === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            이 설정 저장
+                            {t('r2Setup.steps.save.button', '이 설정 저장')}
                         </Button>
                         <div className="min-w-0 break-words text-xs text-muted-foreground" data-r2-readable-text data-testid="r2-save-summary">
-                            저장 위치: {profile.bucket || '버킷 미입력'} / {profile.prefix || '최상위 폴더'}
+                            {t('r2Setup.steps.save.summary', '저장 위치: {{bucket}} / {{prefix}}', {
+                                bucket: profile.bucket || t('r2Setup.steps.save.bucketMissing', '버킷 미입력'),
+                                prefix: profile.prefix || t('r2Setup.steps.save.rootFolder', '최상위 폴더'),
+                            })}
                         </div>
                     </div>
                 </SetupStep>
 
                 <SetupStep
-                    label="10. 이미지 업로드"
-                    description="준비한 폴더를 확인하고 R2 업로드를 시작합니다. 중단되어도 다시 이어서 실행할 수 있습니다."
-                    guideTitle="처음이라면 미리보기도 가능합니다"
+                    label={t('r2Setup.steps.upload.label', '10. 이미지 업로드')}
+                    description={t('r2Setup.steps.upload.description', '준비한 폴더를 확인하고 R2 업로드를 시작합니다. 중단되어도 다시 이어서 실행할 수 있습니다.')}
+                    guideTitle={t('r2Setup.steps.upload.guideTitle', '처음이라면 미리보기도 가능합니다')}
                     guide={<>
-                        <p><span className="font-medium text-foreground">변경된 파일만 업로드</span>가 일반적인 선택입니다.</p>
-                        <p>실제 업로드 전에 결과만 보고 싶다면 <span className="font-medium text-foreground">업로드 전 미리보기</span>를 선택하세요.</p>
+                        <p><Trans i18nKey="r2Setup.steps.upload.guideDelta" defaults="<strong>변경된 파일만 업로드</strong>가 일반적인 선택입니다." components={guideMarkup} /></p>
+                        <p><Trans i18nKey="r2Setup.steps.upload.guideDryRun" defaults="실제 업로드 전에 결과만 보고 싶다면 <strong>업로드 전 미리보기</strong>를 선택하세요." components={guideMarkup} /></p>
                     </>}
                 >
                     <div className="min-w-0 space-y-3">
@@ -636,38 +672,38 @@ export function NativeR2SetupPanel({
                             pair stacked until lg prevents the target path from becoming
                             a one-character-wide column beside the upload-mode selector. */}
                         <div className="grid min-w-0 gap-3 lg:grid-cols-2 lg:items-end">
-                            <Field label="업로드 범위">
+                            <Field label={t('r2Setup.steps.upload.modeLabel', '업로드 범위')}>
                                 <Select value={mode} onValueChange={value => setMode(value as R2UploadMode)}>
-                                    <SelectTrigger aria-label="R2 업로드 범위"><SelectValue /></SelectTrigger>
+                                    <SelectTrigger aria-label={t('r2Setup.steps.upload.modeAriaLabel', 'R2 업로드 범위')}><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="delta">새 파일과 변경된 파일만</SelectItem>
-                                        <SelectItem value="full-sync">폴더 전체 확인 후 업로드</SelectItem>
-                                        <SelectItem value="dry-run">업로드 전 미리보기</SelectItem>
-                                        <SelectItem value="current-session" disabled>현재 작업 결과만 (지원 예정)</SelectItem>
+                                        <SelectItem value="delta">{t('r2Setup.steps.upload.delta', '새 파일과 변경된 파일만')}</SelectItem>
+                                        <SelectItem value="full-sync">{t('r2Setup.steps.upload.fullSync', '폴더 전체 확인 후 업로드')}</SelectItem>
+                                        <SelectItem value="dry-run">{t('r2Setup.steps.upload.dryRun', '업로드 전 미리보기')}</SelectItem>
+                                        <SelectItem value="current-session" disabled>{t('r2Setup.steps.upload.currentSession', '현재 작업 결과만 (지원 예정)')}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </Field>
                             <div className="min-w-0 border-y border-border/55 py-2 text-xs text-muted-foreground" data-r2-readable-text data-testid="r2-upload-target-summary">
-                                <div className="font-medium text-foreground">대상 폴더</div>
+                                <div className="font-medium text-foreground">{t('r2Setup.steps.upload.targetFolder', '대상 폴더')}</div>
                                 <div className="mt-1 break-words font-mono">{localRoot || '-'}</div>
                                 {planSummary && <div className="mt-1">{planSummary}</div>}
                             </div>
                         </div>
                         <Button className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-center" type="button" onClick={requestUpload} disabled={!uploadReady || busy !== null}>
                             {busy === 'upload' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : mode === 'dry-run' ? <Play className="mr-2 h-4 w-4" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                            {mode === 'dry-run' ? '업로드 내용 미리보기' : '업로드 시작 / 이어하기'}
+                            {mode === 'dry-run' ? t('r2Setup.steps.upload.previewButton', '업로드 내용 미리보기') : t('r2Setup.steps.upload.startButton', '업로드 시작 / 이어하기')}
                         </Button>
                     </div>
                 </SetupStep>
                 </>}
             </ol>
 
-            <nav className="flex items-center justify-between gap-3 border-t border-border/70 py-4" aria-label="R2 설정 단계 이동">
+            <nav className="flex items-center justify-between gap-3 border-t border-border/70 py-4" aria-label={t('r2Setup.nav.ariaLabel', 'R2 설정 단계 이동')}>
                 <Button className="h-auto min-h-11 min-w-0 flex-1 whitespace-normal px-2 py-2 text-center leading-snug" type="button" variant="ghost" onClick={() => setSetupPage(page => Math.max(0, page - 1))} disabled={setupPage === 0}>
-                    <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />이전 두 단계
+                    <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />{t('r2Setup.nav.previous', '이전 두 단계')}
                 </Button>
                 <Button className="h-auto min-h-11 min-w-0 flex-1 whitespace-normal px-2 py-2 text-center leading-snug" type="button" onClick={() => setSetupPage(page => Math.min(4, page + 1))} disabled={setupPage === 4}>
-                    다음 두 단계<ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
+                    {t('r2Setup.nav.next', '다음 두 단계')}<ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
                 </Button>
             </nav>
 
@@ -682,10 +718,10 @@ export function NativeR2SetupPanel({
             <ConfirmDialog
                 open={overwriteUploadPending}
                 onOpenChange={setOverwriteUploadPending}
-                title="R2의 기존 파일을 교체할까요?"
-                description="같은 경로의 원격 파일이 새 파일로 바뀝니다. 이 작업은 NAI Blue 휴지통으로 복구할 수 없습니다."
-                confirmText="확인 후 업로드"
-                cancelText="취소"
+                title={t('r2Setup.overwriteConfirm.title', 'R2의 기존 파일을 교체할까요?')}
+                description={t('r2Setup.overwriteConfirm.description', '같은 경로의 원격 파일이 새 파일로 바뀝니다. 이 작업은 NAI Blue 휴지통으로 복구할 수 없습니다.')}
+                confirmText={t('r2Setup.overwriteConfirm.confirm', '확인 후 업로드')}
+                cancelText={t('r2Setup.overwriteConfirm.cancel', '취소')}
                 variant="destructive"
                 onConfirm={async () => {
                     setOverwriteUploadPending(false)

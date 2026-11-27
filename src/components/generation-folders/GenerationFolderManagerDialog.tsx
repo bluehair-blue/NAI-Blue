@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { DEFAULT_GENERATION_FOLDER_ID } from '@/domain/generation-folders'
+import { generationFolderDisplayName } from '@/presentation/folders/default-names'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings-store'
 import { buildGenerationFolderRows, GenerationFolderForm } from './GenerationFolderForm'
@@ -90,9 +91,7 @@ export function GenerationFolderManagerDialog({
                                         onClick={() => setSelectedId(row.folder.id)}
                                     >
                                         <FolderOpen className="h-4 w-4 shrink-0" />
-                                        <span className="truncate">{row.folder.id === DEFAULT_GENERATION_FOLDER_ID && row.folder.name === '기본 출력'
-                                            ? t('generationFolders.defaultName', '기본 출력')
-                                            : row.folder.name}</span>
+                                        <span className="truncate">{generationFolderDisplayName(row.folder, t)}</span>
                                     </button>
                                 ))}
                             </div>

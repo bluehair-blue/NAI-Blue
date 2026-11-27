@@ -358,12 +358,24 @@
             "navCreateCompact": "作成",
             "navHistoryCompact": "履歴",
             "addFailed": "アセットを追加できませんでした。作業フォルダーと保存状態を確認してください。",
-            "editBlocked": "別の保存が終わってからもう一度お試しください。"
-        }
+            "editBlocked": "別の保存が終わってからもう一度お試しください。",
+            "jobBlocked": "確認が必要",
+            "jobCancelled": "キャンセル済み",
+            "jobFailed": "作れませんでした",
+            "jobQueued": "待機中",
+            "jobRecovering": "確認中",
+            "jobRemaining": "残り{{count}}枚",
+            "jobRunning": "作成中",
+            "jobSkipped": "スキップ",
+            "jobSucceeded": "完了",
+            "lastKnownStatus": "最終確認",
+            "statusUnavailable": "作業の状態を確認できませんでした。"
+        },
+        "viewMode": "表示方法"
     },
     "app": {
         "name": "NAI Blue",
-        "description": "NovelAI 統合スタジオ"
+        "description": "NovelAI の画像制作を計画し、生成して整理するワークスペース"
     },
     "savedOutputs": {
         "title": "保存済み画像フォルダー",
@@ -1439,7 +1451,25 @@
         "moreActions": "その他の操作",
         "close": "閉じる",
         "back": "戻る",
-        "next": "次へ"
+        "next": "次へ",
+        "apply": "適用",
+        "cancelling": "キャンセル中...",
+        "clear": "クリア",
+        "clearSelection": "選択を解除",
+        "copied": "コピーしました",
+        "create": "作成",
+        "error": "エラー",
+        "loading": "読み込み中...",
+        "noSearchResults": "検索結果がありません。",
+        "previous": "前へ",
+        "processing": "処理中",
+        "remove": "画像を削除",
+        "replace": "置き換え",
+        "saveFailed": "保存に失敗しました",
+        "search": "検索...",
+        "undo": "元に戻す",
+        "confirm": "確認",
+        "saving": "保存中..."
     },
     "credentialVault": {
         "title": "Credential Vault",
@@ -1494,7 +1524,9 @@
             "not-found": "参照された認証情報がありません。置き換えてください。",
             "readback-failed": "暗号化認証情報の保存後検証に失敗しました。",
             "operation-failed": "Credential vault 操作に失敗し、平文保存には切り替えませんでした。"
-        }
+        },
+        "unlockRequired": "APIトークンのロック解除が必要です",
+        "unlockRequiredForGeneration": "画像を生成するには、NovelAI APIトークンの保管庫のロックを解除してください。"
     },
     "update": {
         "available": "アップデートがあります",
@@ -1510,7 +1542,8 @@
         "readyToInstall": "インストール準備完了",
         "readyToInstallDesc": "インストール前にデータのバックアップを推奨します。作業を保存してから実行してください。",
         "installNow": "今すぐインストール",
-        "restart": "再起動"
+        "restart": "再起動",
+        "installing": "インストール中..."
     },
     "toast": {
         "generationCancelled": {
@@ -1538,7 +1571,9 @@
         "seedApplied": "シードが適用されました",
         "regenerated": "再生成完了",
         "noMetadata": "メタデータなし",
-        "noMetadataDesc": "この画像にはメタデータが見つかりません"
+        "noMetadataDesc": "この画像にはメタデータが見つかりません",
+        "generateFailed": "生成に失敗しました",
+        "generating": "生成中です..."
     },
     "scene": {
         "title": "シーンモード",
@@ -1720,9 +1755,89 @@
             "applyBulkRecipe": "レシピを適用",
             "bulkApplied": "{{count}}シーンにレシピを適用しました",
             "inherited": "デフォルト",
-            "override": "オーバーライド"
+            "override": "オーバーライド",
+            "issues": "問題",
+            "negative": "ネガティブ",
+            "noIssues": "問題なし",
+            "params": "パラメーター",
+            "planHash": "プランハッシュ",
+            "positive": "ポジティブ",
+            "resolvedTitle": "確定したコンポジション"
         },
-        "queueStepCount": "一度に追加する枚数"
+        "queueStepCount": "一度に追加する枚数",
+        "addCharacterCaption": "手動で追加",
+        "addNamedCharacter": "{{name}}を含める",
+        "addPreset": "プリセットを追加",
+        "allMainCharactersAssigned": "すべてのメインキャラクターがこのシーンに配置されています。",
+        "availableMainCharacters": "メインキャラクター",
+        "availableMainCharactersHelp": "右の「含める」エリアにドラッグしてください。",
+        "characterCaptions": "キャラクターキャプション",
+        "characterCaptionsHelp": "メインキャラクターをドラッグして含めます。除外エリアに移すと、プロンプトを残したまま一時的に外せます。",
+        "characterName": "キャラクター名",
+        "characterNegativePrompt": "キャラクターネガティブ",
+        "characterNegativePromptPlaceholder": "キャラクターのネガティブプロンプト",
+        "characterPosition": "位置を指定",
+        "characterPromptPlaceholder": "キャラクタープロンプト",
+        "configured": "シーン設定",
+        "copyMainPrompts": "メインプロンプトを取り込む",
+        "decreaseQueue": "{{name}}のキューを減らす",
+        "decrementQueue": "キューを減らす",
+        "dragCharacterToScene": "{{name}}をドラッグしてシーンに追加",
+        "dropCharactersHere": "メインキャラクターをここにドロップしてください。",
+        "dropExcludedCharactersHere": "一時的に外すキャラクターをここにドロップしてください。",
+        "editSceneSettingsIndividually": "プロンプトと生成設定は各シーンを開いて編集します。",
+        "emptyCharacterPrompt": "空のプロンプト",
+        "excludeCharacter": "除外",
+        "excludedCharacters": "除外",
+        "excludedCharactersHelp": "プロンプトは保持され、生成リクエストには含まれません。",
+        "exportZipDesc": "画像の形式と品質を選んでください。",
+        "filenameTemplate": "シーンの既定ファイル名",
+        "filenameTemplateHint": "拡張子は自動で付きます。{timestamp}、{seed}、{scene.name}、{preset.name} を使えます。",
+        "format": "画像形式",
+        "fullImageView": "画像全体を表示",
+        "generatedImage": "生成されたシーン画像",
+        "gridColumnsValue": "{{count}}列、列数を変更",
+        "imageViewer": "画像ビューアー",
+        "includeCharacter": "含める",
+        "includedCharacters": "このシーンに含める",
+        "includedCharactersHelp": "上から順に NovelAI に送られます。",
+        "increaseQueue": "{{name}}のキューを増やす",
+        "incrementQueue": "キューを増やす",
+        "mainPromptsCopied": "メインプロンプトをこのシーンにコピーしました。",
+        "moreGenerationSettings": "詳細な生成設定",
+        "movePreset": "プリセットの順序を移動",
+        "noImage": "画像なし",
+        "noImagesToExport": "エクスポートする画像がありません",
+        "noMainCharacters": "メインモードに登録されたキャラクターがありません。",
+        "notFound": "シーンが見つかりません",
+        "openImage": "画像を開く",
+        "promptComposition": "シーンのプロンプト構成",
+        "promptCompositionHelp": "このシーンだけで使うプロンプトと生成設定です。",
+        "promptCount": "プロンプト{{count}}件",
+        "quality": "品質",
+        "queue": "キュー",
+        "queueCountLabel": "キュー {{count}}",
+        "queueFileNames": "待機中の画像ごとの名前 {{custom}}/{{total}}",
+        "queueFileNamesCount": "現在の待機画像 {{count}}枚",
+        "queueFileNamesDescription": "1行が待機中の画像1枚です。空行にはシーンの既定ファイル名が使われ、上から生成順に適用されます。",
+        "queueFileNamesTitle": "待機中の画像ごとのファイル名",
+        "queueNamesAfterAdding": "キューに追加した後に個別の名前を設定",
+        "queueStatus": "キューの状態",
+        "removeCharacterCaption": "キャラクターキャプションを削除",
+        "reorderCharacter": "{{name}}の順序を移動",
+        "reorderPresets": "プリセットの順序を編集",
+        "sceneActions": "{{name}}の操作メニュー",
+        "sceneCount": "シーン",
+        "sceneName": "シーン名",
+        "toggleImageSelection": "画像の選択を切り替え",
+        "unnamedCharacter": "名前のないキャラクター",
+        "rotationViewStatus": "キャラクターローテーションの状態を見る",
+        "rotationStart": "キャラクターローテーションを開始",
+        "pinnedExcludedBadge": "固定を除外",
+        "includePinnedCharacters": "固定キャラクターを含める",
+        "excludePinnedCharacters": "固定キャラクターを除外",
+        "presetName": "プリセット名",
+        "savePresetName": "プリセット名を保存"
     },
     "composition": {
         "commandBar": "生成コントロール",
@@ -1750,7 +1865,8 @@
             "direct": "直接プロンプト",
             "noneSelected": "生成構成が未選択",
             "disabled": "使用しない生成構成",
-            "unavailable": "{{id}}（利用不可）"
+            "unavailable": "{{id}}（利用不可）",
+            "select": "レシピを選択"
         },
         "module": {
             "noneSelected": "プロンプトグループが未選択",
@@ -1886,7 +2002,10 @@
         "outputCapabilityFallbackTitle": "このプラットフォーム向けに出力先を変更しました",
         "outputCapabilityFallbackDescription": "{{reason}} 代替手段: {{alternative}}",
         "resourceRepairRequired": "生成前に出力先を修復してください",
-        "compatibility": { "rawPrompt": "プロンプトを直接編集" }
+        "compatibility": { "rawPrompt": "プロンプトを直接編集" },
+        "invalidPlan": "コンポジションプランが無効です",
+        "sequenceConflict": "プロンプトフラグメントの順序が変更されました",
+        "sequenceConflictDesc": "プロンプトフラグメントのカウンターが変更されたため、生成結果を破棄しました。"
     },
     "preset": {
         "default": "デフォルト",
@@ -1902,7 +2021,10 @@
         "unsaved": "未保存",
         "revert": "未保存の変更を元に戻す",
         "saveCopy": "コピーとして保存",
-        "copyName": "{{name}} のコピー"
+        "copyName": "{{name}} のコピー",
+        "confirmDelete": "このプリセットを削除しますか？",
+        "deleteTitle": "プリセットを削除",
+        "duplicate": "複製"
     },
     "metadata": {
         "title": "メタデータ読み込み",
@@ -1941,7 +2063,12 @@
         "extractDesc": "PNGファイルからプロンプトと設定を抽出します",
         "optVibeVersion": "バイブトランスファー (データのみ)",
         "vibeDesc": "元の画像はありませんが、エンコードされたバイブデータは復元されます。",
-        "charRefWarning": "キャラクター参照が検出されました。Director Tools経由で抽出がサポートされています。"
+        "charRefWarning": "キャラクター参照が検出されました。Director Tools経由で抽出がサポートされています。",
+        "applyFailed": "メタデータを適用できませんでした",
+        "applying": "適用中...",
+        "changePreview": "変更のプレビュー",
+        "chooseImage": "メタデータを読み込む画像を選択",
+        "chooseOrDrop": "タップして画像を選ぶか、ここにドロップしてください"
     },
     "nav": {
         "web": "ウェブ",
@@ -2022,7 +2149,8 @@
             "revision": "現在のリビジョン",
             "lastSnapshot": "最終データ更新",
             "lastRequest": "最終リクエストID",
-            "lastResult": "最終結果"
+            "lastResult": "最終結果",
+            "status": "ブリッジの状態"
         },
         "sync": {
             "title": "モバイル · デスクトップ接続",
@@ -2207,7 +2335,11 @@
             "r2Failed": "この端末に保存済み · R2配信の対応が必要",
             "sceneLinkPending": "この端末に保存済み · Sceneの紐付けの再試行が必要",
             "outputReservationConflict": "出力予約の競合 · 再計画が必要",
-            "directoryAuthorizationRequired": "出力フォルダーへのアクセス権限が必要です"
+            "directoryAuthorizationRequired": "出力フォルダーへのアクセス権限が必要です",
+            "providerUnknown": "Providerの結果が不明 · 自動再試行なし",
+            "reservationHeld": "使われていない出力の予約が残っています",
+            "spooledResult": "受信した結果を保持中 · 出力の予約が残っています",
+            "storagePending": "Providerの結果を保持中 · 保存の再試行が必要です"
         },
         "action": {
             "replan": "再計画",
@@ -2218,6 +2350,11 @@
             "abandonReservation": "予約を解除",
             "discardResult": "結果を破棄して予約を解除",
             "reviewProviderUnknown": "Providerの状態を確認"
+        },
+        "confirm": {
+          "abandon": "出力の予約が解放されます。この操作は元に戻せません。",
+          "discard": "受信した結果を完全に破棄してから、出力の予約を解放します。",
+          "title": "復旧操作の確認"
         }
     },
     "workflow": {
@@ -2244,7 +2381,44 @@
         "skipped": "スキップ",
         "blocked": "必要なファイルが見つかりません",
         "recovering": "復旧中"
-    }
+    },
+        "reviewOneByOne": "1枚ずつ確認してから生成",
+        "appOpenProcessing": "作業は NAI Blue を開いている間に実行されます。中断された作業はアプリを開き直すと再開します。",
+        "approveSceneQueue": "承認してキューに追加",
+        "r2DestinationSource": "バケット: {{bucket}} · プレフィックス: {{prefix}}",
+        "r2MoreDestinations": "ほか {{count}} 件の R2 保存先",
+        "r2ReadinessPause": "必要な R2 配信が実行環境または資格情報を待っています。R2 設定でアクセスを復旧してから、この作業グループを再開してください。",
+        "reservationSummary": "作業を始める前に、出力ファイル一式を予約します。既存のファイルは上書きされません。",
+        "reviewAgain": "もう一度確認",
+        "reviewAnlas": "見積もり {{estimated}} Anlas · 最大 {{maximum}}",
+        "reviewClaims": "出力ファイル {{count}} 件を予約",
+        "reviewDestinationCounts": "画像 {{images}} 枚 · ファイル {{claims}} 件",
+        "reviewScenesDescription": "以下の正確なコストと出力予約の計画を承認してください。",
+        "reviewScenesTitle": "シーンのキューを確認",
+        "reviewSelectedImages": "{{count}} 枚を確認",
+        "reviewStaleTitle": "確認内容が古くなっています",
+        "selectionSummary": "シーン {{scenes}} 件 · 画像 {{images}} 枚",
+        "r2Requirement": {
+          "required": "必須の配信",
+          "best-effort": "可能な場合に配信",
+          "disabled": "配信しない"
+        },
+        "r2Source": {
+          "folder": "選択したフォルダー",
+          "ancestor": "親フォルダー",
+          "workspace": "既定のプロファイル",
+          "cleared": "継承を解除",
+          "profile-snapshot": "選択したプロファイル",
+          "legacy-output": "既存の出力設定"
+        },
+        "enqueueSelectedImages": "{{count}} 枚をキューに追加",
+        "replanReason": {
+          "scene-changed": "選択したシーンが変更されました。現在のシーンの値でもう一度確認してください。",
+          "folder-changed": "出力フォルダーが変更されました。現在の保存先をもう一度確認してください。",
+          "pricing-changed": "Anlas の価格基準が変更されました。更新された見積もりをもう一度確認してください。",
+          "runtime-limit-changed": "このデバイスのバッチ上限が変更されました。対応するバッチでもう一度確認してください。",
+          "commit-set-changed": "出力ファイル名または予約内容が変更されました。新しい予約をもう一度確認してください。"
+        }
     },
     "organizer": {
         "title": "結果整理とエクスポート",
@@ -2611,7 +2785,10 @@
             "bottomLeft": "下\n左",
             "bottom": "下",
             "bottomRight": "下\n右"
-        }
+        },
+        "confirmClear": "有効なキャラクターをすべて削除しますか？",
+        "confirmDelete": "この項目を削除しますか？",
+        "confirmDeleteDescription": "この操作は元に戻せません。"
     },
     "fragmentDialog": {
         "title": "フラグメントプロンプト",
@@ -2662,7 +2839,9 @@
         "clickToEnable": "クリックで有効化",
         "preciseUnsupported": "このモデルは Precise Reference に対応していません。",
         "preciseUnsupportedAlternative": "この参照画像を残したまま V5 Full、V5 Curated または V4.5 に切り替えてください。",
-        "v5VibePending": "V5 はまだ Vibe Transfer に対応していません。画像は保存され、V4.5 で再利用できます。"
+        "v5VibePending": "V5 はまだ Vibe Transfer に対応していません。画像は保存され、V4.5 で再利用できます。",
+        "dropHere": "ここにドロップ",
+        "infoExtracted": "情報抽出率"
     },
     "imageRef": {
         "title": "画像参照を追加",
@@ -2755,7 +2934,9 @@
         "runDeclutter": "整理を開始",
         "emotionType": "表情",
         "defry": "元画像の保持度",
-        "dropToLoad": "ドロップして読み込み"
+        "dropToLoad": "ドロップして読み込み",
+        "mosaicEditorTouchDesc": "画像の上をドラッグしてモザイクをかけます。",
+        "styleComplete": "スタイル分析完了"
     },
     "generate": {
         "button": "画像生成",
@@ -2785,7 +2966,16 @@
         "lowStepsDescription": "{{steps}} stepsでは画像が完成する前に終了し、ぼやけることがあります。通常は28 stepsを推奨します。",
         "lowStepsCautionRange": "{{threshold}}未満は実験向けです。",
         "restoreRecommendedSteps": "28 stepsに戻す",
-        "cancelling": "キャンセル中…"
+        "cancelling": "キャンセル中…",
+        "allComplete": "予約したすべての作業が完了しました。",
+        "complete": "生成完了",
+        "conflictDescription": "進行中の生成が終わるのを待つか、その画面でキャンセルしてください。",
+        "conflictMain": "メインモードで生成中です。",
+        "conflictScene": "シーンモードで生成中です。",
+        "conflictStyleLab": "画風研究所で生成中です。",
+        "conflictTitle": "別の画面で生成中です",
+        "progress": "生成の進行状況",
+        "estimatedSeconds": "予想: 約{{seconds}}秒"
     },
     "diagnosticDrawer": {
         "open": "診断ログを開く",
@@ -2815,7 +3005,8 @@
         "lockSeed": "シードを固定",
         "unlockSeed": "シードの固定を解除",
         "randomSeed": "ランダムシード",
-        "random": "ランダム"
+        "random": "ランダム",
+        "parameters": "パラメーター"
     },
     "parameters": {
         "title": "パラメータ設定",
@@ -2860,7 +3051,12 @@
         "addToLibrary": "ライブラリに追加",
         "sendToOrganizer": "結果整理へ送る",
         "alreadyInLibrary": "すでにライブラリにあります",
-        "addedToLibrary": "ライブラリに追加しました"
+        "addedToLibrary": "ライブラリに追加しました",
+        "guidedActions": "メタデータを確認したり、ライブラリに保管したり、別名で保存したりできます。",
+        "preview": "選択した画像のプレビュー",
+        "refresh": "履歴を更新",
+        "selected": "選択した画像",
+        "openImage": "画像 {{index}}"
     },
     "actions": {
         "regenerate": "再生成",
@@ -2875,7 +3071,8 @@
         "copied": "コピーしました",
         "copyFailed": "コピー失敗",
         "deleted": "削除しました",
-        "back": "シーン一覧に戻る"
+        "back": "シーン一覧に戻る",
+        "cancel": "キャンセル"
     },
     "layout": {
         "toggleLeftSidebar": "左サイドバー切替",
@@ -2980,7 +3177,8 @@
             "r2Warning": "ローカル保存は完了しましたが、{{count}} 件の R2 アップロードを確認してください。",
             "failed": "画像処理を完了できませんでした。",
             "partialFailure": "{{count}} 件は完了しました。残りの画像から再試行できます。"
-        }
+        },
+        "r2Queued": "R2 への配信を待機中"
     },
     "promptModuleLibrary": {
         "title": "プロンプト管理フォルダー",
@@ -3091,7 +3289,8 @@
             "appearance": "外観",
             "api": "API",
             "storage": "ストレージ",
-            "shortcuts": "ショートカット"
+            "shortcuts": "ショートカット",
+            "discord": "Discord コミュニティ"
         },
         "api": {
             "title": "API設定",
@@ -3119,7 +3318,19 @@
             },
             "geminiKey": "Gemini API Key",
             "geminiKeyPlaceholder": "AIza...",
-            "geminiKeyHelp": "Google AI StudioからAPIキーを取得してください"
+            "geminiKeyHelp": "Google AI StudioからAPIキーを取得してください",
+            "addTokenToContinue": "NovelAI APIトークンを登録または有効にすると、待機中の生成が自動的に始まります。",
+            "deleteConfirmation": "このAPIトークンを削除しますか？",
+            "deleted": "APIトークンを削除しました。",
+            "deleteDescription": "このトークンを使う生成作業は開始できなくなります。",
+            "manage": "トークンを管理",
+            "notRegistered": "未登録",
+            "reverify": "再確認",
+            "saved": "APIトークンを保存しました。",
+            "slot": "トークン {{slot}}",
+            "slotEnabled": "トークン {{slot}} を使用",
+            "slotTokenInput": "トークン {{slot}} を入力",
+            "verificationFailed": "APIトークンを確認できませんでした。"
         },
         "theme": {
             "title": "テーマ設定",
@@ -3351,7 +3562,8 @@
         "linkName": "名前",
         "linkUrl": "URL",
         "linkNamePlaceholder": "例: Pixiv",
-        "linkUrlPlaceholder": "例: https://pixiv.net"
+        "linkUrlPlaceholder": "例: https://pixiv.net",
+        "home": "ホームURL"
     },
     "promptGenerator": {
         "title": "AIプロンプト生成",
@@ -3370,7 +3582,11 @@
         "apiKeyRequired": "Gemini APIキーが必要です",
         "goToSettings": "設定ページでAPIキーを入力してください",
         "error": "エラーが発生しました",
-        "tokenUsage": "トークン消費"
+        "tokenUsage": "トークン消費",
+        "copiedToClipboard": "クリップボードにコピーしました",
+        "danbooruApplied": "Danbooru の実検証を反映しました",
+        "verifyDanbooru": "Danbooru で実検証",
+        "original": "元: {{value}}"
     },
     "characterPanel": {
         "title": "キャラクタープロンプト",
@@ -3409,7 +3625,11 @@
         "moveToFolder": "フォルダに移動",
         "removeFromFolder": "フォルダから削除",
         "addFolder": "フォルダを追加",
-        "newFolderName": "新規フォルダ"
+        "newFolderName": "新規フォルダ",
+        "confirmDeleteFolder": "このキャラクターフォルダーを削除しますか？",
+        "confirmDeleteFolderDescription": "フォルダー内のキャラクターは未分類として残ります。",
+        "deleteFolder": "フォルダーを削除",
+        "renameFolder": "フォルダー名を変更"
     },
     "fragment": {
         "manager": "フラグメントプロンプト管理",
@@ -3457,7 +3677,10 @@
         "exportedAllDesc": "{{count}}件のファイルをエクスポートしました。",
         "importedAll": "全体インポート完了",
         "importedAllDesc": "{{count}}件のファイルをインポートしました。",
-        "importAllError": "JSONファイルのインポート中にエラーが発生しました。"
+        "importAllError": "JSONファイルのインポート中にエラーが発生しました。",
+        "confirmDeleteDescription": "このプロンプトの内容は完全に削除されます。",
+        "confirmDeleteFile": "このファイルを削除しますか？",
+        "confirmDeleteFolder": "フォルダーと中のファイルを削除しますか？"
     },
     "styleLab": {
         "title": "好みの画風研究所",
@@ -3927,11 +4150,279 @@
         "reason_AGENT_R2_DENIED": "許可されていないR2保存先です",
         "reason_AGENT_OBSERVE_ONLY": "現在のモードでは参照のみ可能です",
         "reason_AUTHENTICATION_FAILED": "接続権限が無効になっています",
-        "authoringChanges": "変更内容"
+        "authoringChanges": "変更内容",
+        "allowR2Upload": "R2アップロードを許可",
+        "authoringChangeCount": "{{count}}件",
+        "authoringCreatesFolders": "設定された保存先の下にフォルダーを作成します。",
+        "authoringPermissions": "保存データの編集権限",
+        "authoringRenamesFolders": "空のフォルダーの保存パスを変更します。",
+        "folderAuthoringAction": "生成フォルダーの設定を編集",
+        "r2Permissions": "オンライン保存の権限",
+        "r2ProfileMissing": "以前選択した接続 {{count}}（現在の一覧にありません）",
+        "r2ProfilesFailed": "保存接続の一覧を読み込めませんでした。以前の選択はそのまま保持されます。",
+        "r2ProfilesLoading": "保存接続を読み込んでいます。",
+        "r2ProfilesRetry": "再読み込み",
+        "sceneAuthoringAction": "アセット設定を編集"
     },
     "rotation": {
         "stopped": "ローテーションを中断しました",
         "resumeLater": "現在の位置を保存しました。あとで続きから生成できます。",
         "stopAndResume": "中断してあとで続ける"
+    },
+  "character": {
+    "title": "キャラクター"
+  },
+  "danbooruVerify": {
+    "apply": "変更を適用",
+    "complete": "検証完了",
+    "description": "ローカルの Python sidecar が Danbooru の投稿数を確認し、投稿のないタグには代替候補を提案します。",
+    "empty": "検証するタグがありません。",
+    "loading": "Danbooru の応答を待っています",
+    "preview": "反映後のプロンプト",
+    "previewPlaceholder": "検証するプロンプト",
+    "results": "検証結果",
+    "retry": "再検証",
+    "title": "Danbooru タグの実検証",
+    "verifying": "検証中",
+    "waiting": "待機中"
+  },
+  "display": {
+    "exportFailed": "エクスポートに失敗しました"
+  },
+  "assessment": {
+    "acceptedCount": "{{accepted}} / {{required}} 枚が合格",
+    "candidate": "判定する画像",
+    "close": "閉じる",
+    "closed": "この実行は不合格として明示的に終了されました。",
+    "closeRejected": "不合格として実行を終了",
+    "criterionWeight": "重み {{weight}}",
+    "description": "各画像を確認し、保存した要件を満たしているかを記録します。",
+    "enable": "生成後にリクエストの充足を判定する",
+    "enableSoft": "採点基準を追加",
+    "explanation": "メモ（任意）",
+    "hardConstraints": "必須条件（1行に1つ）",
+    "hardResults": "必須条件の判定",
+    "imageNumber": "画像 {{number}}",
+    "invalidSetup": "基準を1つ以上追加し、枚数、正の重み、スコア範囲を確認してください。",
+    "latestDecision": "最後に保存した判定: {{decision}}",
+    "loading": "判定を読み込み中…",
+    "loadingPreview": "画像プレビューを読み込み中…",
+    "noCandidates": "判定できる生成画像がまだありません。",
+    "notFound": "この実行の判定要件が見つかりませんでした。",
+    "previewAlt": "判定中の生成画像",
+    "previewFailed": "画像プレビューを表示できませんでした。",
+    "refresh": "更新",
+    "requiredCount": "必要な合格枚数（1〜{{count}}）",
+    "result": {
+      "fail": "不合格",
+      "needs-review": "要確認",
+      "pass": "合格"
+    },
+    "resultingDecision": "保存する判定: {{decision}}",
+    "reviewRequirement": "人による判定: 合格画像が{{count}}枚必要です。",
+    "runSummary": "{{accepted}} / {{required}} 枚合格 · 候補 {{candidates}} 枚",
+    "save": "判定を保存",
+    "saveCorrection": "修正した判定を保存",
+    "setupDescription": "生成された各画像について確認する要件を書いてください。",
+    "softCriterion": "採点基準",
+    "softScore": "基準の総合スコア（0〜100、空欄は要確認）",
+    "threshold": "合格しきい値（0〜100）",
+    "thresholdValue": "合格しきい値: {{threshold}}",
+    "title": "リクエスト充足の判定",
+    "weight": "重み",
+    "state": {
+      "not-evaluated": "未評価",
+      "needs-review": "要確認",
+      "accepted": "合格",
+      "rejected": "不合格"
     }
+  },
+  "r2Setup": {
+    "ready": "準備完了",
+    "guideAriaLabel": "{{title}}の入力ヘルプ",
+    "header": {
+      "title": "順番に設定してアップロードしましょう",
+      "description": "1画面に表示するのは2ステップだけです。入力で迷ったら、同じ行の説明を確認してください。",
+      "requiredReady": "必須項目 {{ready}}/4",
+      "nativeAvailable": "このデバイスでアップロードできます",
+      "nativeUnavailable": "この環境ではアップロードできません"
+    },
+    "unsupported": {
+      "title": "現在の実行環境では直接アップロードできません。",
+      "description": "インストール版の NAI Blue デスクトップアプリでこの画面を開き直してください。ブラウザーでは設定を確認できますが、ファイルはアップロードされません。"
+    },
+    "scheduler": {
+      "ariaLabel": "R2自動転送の状態",
+      "retrying": "転送ジョブの一覧を読み込めなかったため、自動再開を待っています。アプリが開いている間に再確認します。",
+      "stopped": "自動転送は停止しています。アプリを開き直すと、保存されたジョブから再開します。",
+      "running": "アプリが開いている間、保存された転送ジョブを自動で続行します。",
+      "blocked": "設定またはセキュリティキーの準備を待っているジョブ: {{jobs}}件。既存のジョブに紐づく設定が整うと自動で再開します。",
+      "faulted": "エラーで再確認を待っているジョブ: {{jobs}}件。準備できている他のジョブは引き続き進めます。"
+    },
+    "progress": {
+      "ariaLabel": "R2設定の進捗",
+      "range": "ステップ {{start}}–{{end}}"
+    },
+    "nav": {
+      "ariaLabel": "R2設定のステップ移動",
+      "previous": "前の2ステップ",
+      "next": "次の2ステップ"
+    },
+    "steps": {
+      "folder": {
+        "label": "1. アップロードするフォルダーを選択",
+        "description": "R2に送る画像が入っている、このコンピューター上のフォルダーを指定します。",
+        "guideTitle": "何を入力しますか？",
+        "guideBody": "NAI Blue が生成画像を保存するフォルダーの名前、またはフルパスを入力してください。",
+        "guideExample": "<strong>例:</strong> <mono>NAI_Blue_Output</mono> または <path>D:\\Images\\NAI_Blue_Output</path>",
+        "fieldLabel": "画像フォルダー",
+        "fieldHint": "フォルダー内のアップロード可能な生成ファイルを自動で検出します。"
+      },
+      "account": {
+        "label": "2. Cloudflare アカウントを接続",
+        "description": "R2ストレージが属している Cloudflare アカウントを指定してください。",
+        "guideTitle": "Account ID はどこにありますか？",
+        "guideBody": "Cloudflare ダッシュボードの R2 画面で <strong>Account ID</strong> を見つけ、そのままコピーしてください。メールアドレスやアカウント名ではありません。",
+        "openDashboard": "Cloudflare ダッシュボードを開く",
+        "fieldHint": "Account ID 全体を、前後に空白を入れずに貼り付けてください。",
+        "placeholder": "例: 023e105f4ecef8ad9ca31a8372d0c353"
+      },
+      "advanced": {
+        "summary": "詳細な接続設定",
+        "summaryNote": "(通常は変更不要)",
+        "transportLabel": "接続方式",
+        "transportAriaLabel": "R2の接続方式",
+        "transportNative": "アプリから直接アップロード（推奨）",
+        "transportWrangler": "Wrangler を使用",
+        "transportRelay": "Relay（対応予定）",
+        "jurisdictionLabel": "データ管轄地域コード",
+        "jurisdictionHint": "管轄地域を個別に指定しているアカウントのみ入力します。",
+        "jurisdictionPlaceholder": "例: eu",
+        "endpointLabel": "接続先アドレス（直接指定）",
+        "endpointHint": "プロキシや別の S3 接続先がある場合のみ入力します。",
+        "endpointPlaceholder": "空欄にすると Account ID から自動で設定"
+      },
+      "location": {
+        "label": "3. 既定のアップロード先を確認",
+        "description": "ここでは接続確認に使う既定値だけを決めます。生成フォルダーごとに別のバケットとプレフィックスを指定できます。",
+        "guideTitle": "フォルダーごとの設定が優先されます",
+        "guideBucket": "<strong>バケット名</strong>には、接続確認に使うバケットを正確に入力してください。",
+        "guideOverride": "画像生成時に選んだフォルダーにバケット・プレフィックスがある場合は、この既定値より優先されます。空欄の項目だけがこの値を使います。",
+        "bucketLabel": "既定のR2バケット",
+        "bucketPlaceholder": "例: nai-blue-images",
+        "prefixLabel": "既定のプレフィックス（任意）",
+        "prefixPlaceholder": "例: generated/2026",
+        "pathPreview": "保存パスの例"
+      },
+      "credential": {
+        "label": "4. R2 APIキーを保存",
+        "description": "NAI Blue がバケットにファイルをアップロードできるよう、発行された2つの値を入力します。",
+        "guideTitle": "2つの値はどこで発行しますか？",
+        "guideToken": "Cloudflare R2 の <strong>R2 API Tokens</strong> でトークンを作成し、権限は対象バケットの <strong>Object Read & Write</strong> を選んでください。",
+        "guideKeys": "発行直後に表示される <strong>Access Key ID</strong> と <strong>Secret Access Key</strong> をそれぞれコピーします。Secret の値は再表示されない場合があります。",
+        "accessKeyPlaceholder": "Access Key ID を貼り付け",
+        "secretKeyPlaceholder": "Secret Access Key を貼り付け",
+        "saveButton": "APIキーをこのデバイスに保存",
+        "stored": "保存済みのAPIキーがあります。",
+        "vaultOnly": "APIキーはOSのセキュアストレージにのみ保管されます。"
+      },
+      "connection": {
+        "label": "5. 接続を確認",
+        "description": "入力したアカウント、バケット、APIキーの組み合わせが正しいか確認します。",
+        "guideTitle": "ファイルはアップロードされません",
+        "guideBody": "このチェックでは、バケットが見つかりアクセスできるかだけを確認します。失敗した場合は Account ID、バケット名、APIキーを見直してください。",
+        "button": "R2接続を確認"
+      },
+      "permission": {
+        "label": "6. アップロード権限を確認",
+        "description": "小さなテストファイルをアップロードしてすぐに削除し、実際のアップロード権限を確認します。",
+        "guideTitle": "既存のファイルには影響しません",
+        "guideBody": "NAI Blue が一時ファイルを1つ作成し、アップロード・確認・削除を行います。接続確認が成功してから実行してください。",
+        "button": "テストファイルをアップロードして削除"
+      },
+      "conflict": {
+        "label": "7. 同じ名前のファイルの扱い",
+        "description": "R2の同じパスにファイルがすでにある場合の動作を選びます。",
+        "guideTitle": "安全に始めるには",
+        "guideStop": "最初は <strong>アップロードを中止</strong> が最も安全です。既存のファイルは変更せず、競合があったことだけを知らせます。",
+        "guideSkip": "同じファイルを繰り返しアップロードすることが多いなら、<strong>同じファイルはスキップ</strong> を選んでください。",
+        "fieldLabel": "同じ名前のファイルがある場合",
+        "ariaLabel": "同じ名前のファイルの処理方法",
+        "fail": "アップロードを中止 — 既存ファイルを保護",
+        "skipSame": "内容が同じならスキップ",
+        "overwrite": "既存ファイルを新しいファイルで置き換え",
+        "suffix": "新しい名前を付けて両方を保持"
+      },
+      "public": {
+        "label": "8. 公開リンクの設定",
+        "description": "アップロードした画像をWebアドレスで開けるようにするか選びます。",
+        "guideTitle": "アップロード権限と公開設定は別です",
+        "guidePrivate": "個人用の保管なら <strong>非公開</strong> を選んでください。",
+        "guideNote": "公開アドレスを入力しても、Cloudflare の公開アクセスが自動で有効になるわけではありません。先に R2 ダッシュボードで r2.dev またはカスタムドメインを接続してください。",
+        "modeLabel": "公開方式",
+        "modeAriaLabel": "R2の公開方式",
+        "private": "非公開 — リンクを作成しない",
+        "r2Dev": "r2.dev の公開アドレス",
+        "custom": "独自ドメインを使用",
+        "baseUrlLabel": "公開ベースURL",
+        "baseUrlHint": "末尾の / は省略できます。"
+      },
+      "save": {
+        "label": "9. 設定を保存",
+        "description": "入力したR2設定を次回も使えるように保存します。",
+        "guideTitle": "APIキーは別に保管されます",
+        "guideBody": "ここに保存されるのはアカウントID、バケット、フォルダー、アップロードルールだけです。手順4の Secret Access Key は設定ファイルに含まれません。",
+        "button": "この設定を保存",
+        "summary": "保存先: {{bucket}} / {{prefix}}",
+        "bucketMissing": "バケット未入力",
+        "rootFolder": "最上位フォルダー"
+      },
+      "upload": {
+        "label": "10. 画像をアップロード",
+        "description": "準備したフォルダーを確認して R2 へのアップロードを開始します。中断しても続きから再実行できます。",
+        "guideTitle": "初めてならプレビューもできます",
+        "guideDelta": "通常は <strong>新規・変更ファイルのみ</strong> を選びます。",
+        "guideDryRun": "実際にアップロードする前に結果だけ確認したい場合は、<strong>アップロード前にプレビュー</strong> を選んでください。",
+        "modeLabel": "アップロード範囲",
+        "modeAriaLabel": "R2のアップロード範囲",
+        "delta": "新規・変更ファイルのみ",
+        "fullSync": "フォルダー全体を確認してアップロード",
+        "dryRun": "アップロード前にプレビュー",
+        "currentSession": "現在の作業結果のみ（対応予定）",
+        "targetFolder": "対象フォルダー",
+        "previewButton": "アップロード内容をプレビュー",
+        "startButton": "アップロード開始 / 再開"
+      }
+    },
+    "status": {
+      "initial": "設定を保存してから接続を確認してください。"
+    },
+    "feedback": {
+      "saved": "設定を保存しました。次回の起動時も同じR2設定を使えます。",
+      "saveFailed": "設定を保存できませんでした。{{reason}}",
+      "retryLater": "しばらくしてからもう一度お試しください。",
+      "credentialSaved": "APIキーをこのデバイスのセキュアストレージに安全に保存しました。",
+      "credentialFailed": "APIキーを保存できませんでした。{{reason}}",
+      "checkInput": "入力内容を確認してください。",
+      "connectionOk": "接続に成功しました。アカウントとバケットの情報を確認できました。",
+      "connectionFailed": "接続を確認できませんでした。{{reason}}",
+      "checkConnectionInputs": "アカウント、バケット、APIキーを確認してください。",
+      "writeOk": "アップロード権限を確認できました。テストファイルも正常に削除しました。",
+      "cleanupIncomplete": "テストファイルの削除が完了しませんでした。R2バケットを確認してください。",
+      "writeFailed": "アップロード権限を確認できませんでした。{{reason}}",
+      "checkKeyPermission": "APIキーの権限を確認してください。",
+      "currentSessionUnsupported": "current-session には生成出力の明示的な artifact set が必要です。ディレクトリスキャンは delta/full-sync/dry-run でのみ使用してください。",
+      "planSummary": "検出ファイル {{total}}件 · 完了済み {{completed}}件 · 今回の作業 {{jobs}}件",
+      "uploadSummary": "アップロード完了 {{succeeded}}件 · 失敗 {{failed}}件 · 待機 {{queued}}件",
+      "previewSummary": "プレビュー: 新規ファイル {{missing}}件 · 同じファイル {{same}}件 · 名前の競合 {{conflicts}}件 · 置き換え予定 {{overwrites}}件 · 新しい名前を使用可能 {{suffix}}件。実際のファイルは変更していません。",
+      "uploadFailed": "アップロードを完了できませんでした。{{reason}}",
+      "checkSettingsRetry": "設定を確認してから、もう一度お試しください。"
+    },
+    "overwriteConfirm": {
+      "title": "R2の既存ファイルを置き換えますか？",
+      "description": "同じパスのリモートファイルが新しいファイルに置き換えられます。この操作は NAI Blue のゴミ箱から復元できません。",
+      "confirm": "確認してアップロード",
+      "cancel": "キャンセル"
+    }
+  }
 }

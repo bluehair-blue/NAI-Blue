@@ -1,5 +1,6 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { generationFolderDisplayName } from '@/presentation/folders/default-names'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Images, Plus, Search } from 'lucide-react'
 import type { GenerationFolder } from '@/domain/generation-folders'
 import { UNASSIGNED_FOLDER_ID } from '@/presentation/folders/folder-workbench'
@@ -59,14 +60,14 @@ export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onM
                 totals.set(current.id, (totals.get(current.id) ?? 0) + (counts[folder.id] ?? 0))
                 current = current.parentId === null ? undefined : byId.get(current.parentId)
             }
-            const path = chain.map(item => item.name).join('/')
+            const path = chain.map(item => generationFolderDisplayName(item, t)).join('/')
             paths.set(folder.id, path)
             if (!normalizedQuery || path.toLocaleLowerCase().includes(normalizedQuery)) {
                 for (const ancestor of chain) visible.add(ancestor.id)
             }
         }
         return { children, totals, visible, paths }
-    }, [folders, counts, normalizedQuery])
+    }, [folders, counts, normalizedQuery, t])
 
     const toggleFolder = (id: string) => setCollapsed(previous => {
         const next = new Set(previous)
@@ -94,8 +95,8 @@ export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onM
                                         type="button"
                                         className="fb-folder-toggle min-h-11 min-w-11"
                                         aria-label={expanded
-                                            ? t('folderWorkbench.design.collapseFolder', '{{name}} 접기', { name: folder.name })
-                                            : t('folderWorkbench.design.expandFolder', '{{name}} 펼치기', { name: folder.name })}
+                                            ? t('folderWorkbench.design.collapseFolder', '{{name}} 접기', { name: generationFolderDisplayName(folder, t) })
+                                            : t('folderWorkbench.design.expandFolder', '{{name}} 펼치기', { name: generationFolderDisplayName(folder, t) })}
                                         aria-expanded={expanded}
                                         disabled={normalizedQuery.length > 0}
                                         onClick={() => toggleFolder(folder.id)}
@@ -111,7 +112,7 @@ export function FolderTreePanel({ folders, activeFolderId, counts, onSelect, onM
                                     onClick={() => onSelect(folder.id)}
                                 >
                                     {active ? <FolderOpen size={18} aria-hidden="true" /> : <Folder size={18} aria-hidden="true" />}
-                                    <span className="fb-folder-name">{folder.name}</span>
+                                    <span className="fb-folder-name">{generationFolderDisplayName(folder, t)}</span>
                                     <span className="fb-folder-count" aria-label={t('folderWorkbench.design.folderImageCount', '이미지 {{count}}개', { count: totals.get(folder.id) ?? 0 })}>
                                         {totals.get(folder.id) ?? 0}
                                     </span>

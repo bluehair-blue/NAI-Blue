@@ -65,7 +65,7 @@ describe('External review regression fixes', () => {
         ])
 
         expect(main).toContain("navigate('/settings?section=storage')")
-        expect(main).toContain('generationFolderPath: activeGenerationFolder.path')
+        expect(main).toContain('generationFolderPath: generationFolderDisplayPath(activeGenerationFolder.path, t)')
         expect(main).toContain('outputDirectory,')
         expect(main).toContain('r2AutoUpload: activeGenerationFolder.r2.autoUpload')
         expect(resolved).toContain('saveContext?: {')

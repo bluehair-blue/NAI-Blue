@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, useSpring } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 
 interface GenerationTimerProps {
     isRunning: boolean
@@ -7,6 +8,7 @@ interface GenerationTimerProps {
 }
 
 export function GenerationTimer({ isRunning, estimatedTime }: GenerationTimerProps) {
+    const { t } = useTranslation()
     const [elapsedMs, setElapsedMs] = useState(0)
 
     useEffect(() => {
@@ -66,7 +68,7 @@ export function GenerationTimer({ isRunning, estimatedTime }: GenerationTimerPro
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.2 }}
                 >
-                    예상: ~{estimatedSeconds}초
+                    {t('generate.estimatedSeconds', '예상: ~{{seconds}}초', { seconds: estimatedSeconds })}
                 </motion.p>
             )}
         </div>

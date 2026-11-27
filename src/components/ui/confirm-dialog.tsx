@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -20,12 +21,15 @@ export function ConfirmDialog({
     onOpenChange,
     title,
     description,
-    confirmText = '확인',
-    cancelText = '취소',
+    confirmText,
+    cancelText,
     variant = 'default',
     busy = false,
     onConfirm,
 }: ConfirmDialogProps) {
+    const { t } = useTranslation()
+    const confirmLabel = confirmText ?? t('common.confirm', '확인')
+    const cancelLabel = cancelText ?? t('common.cancel', '취소')
     const handleConfirm = async () => {
         if (busy) return
         try {
@@ -50,7 +54,7 @@ export function ConfirmDialog({
                 </DialogHeader>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-                        {cancelText}
+                        {cancelLabel}
                     </Button>
                     <Button
                         variant={variant === 'destructive' ? 'destructive' : 'default'}
@@ -58,7 +62,7 @@ export function ConfirmDialog({
                         disabled={busy}
                     >
                         {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {confirmText}
+                        {confirmLabel}
                     </Button>
                 </DialogFooter>
             </DialogContent>

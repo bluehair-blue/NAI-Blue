@@ -603,7 +603,7 @@ export default function QueueCenter() {
                         <p>{t('workspace.queueHint', '진행 상황을 확인하고, 완료된 이미지와 확인이 필요한 작업을 살펴보세요.')}</p>
                         <Button asChild variant="outline" className="mt-3">
                             <Link to="/review-queue-preview">
-                                <Eye className="mr-2 h-4 w-4" />한 장씩 검토 후 생성
+                                <Eye className="mr-2 h-4 w-4" />{t('queue.reviewOneByOne', '한 장씩 검토 후 생성')}
                             </Link>
                         </Button>
                     </div>

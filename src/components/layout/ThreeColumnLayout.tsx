@@ -159,6 +159,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     // Get active preset for header display
     const { presets, activePresetId } = usePresetStore(useShallow(state => ({ presets: state.presets, activePresetId: state.activePresetId })))
     const activePreset = presets.find(p => p.id === activePresetId)
+    const activePresetName = !activePreset || activePreset.isDefault ? t('preset.default', '기본') : activePreset.name
 
     const handleSlotEnabled = async (slot: 1 | 2, enabled: boolean) => {
         try {
@@ -370,9 +371,9 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                 <div className="flex min-w-0 max-w-full items-center gap-1.5">
                     <h2
                         className="min-w-0 max-w-36 truncate text-base font-semibold 2xl:max-w-52"
-                        title={activePreset?.name || t('preset.default', '기본')}
+                        title={activePresetName}
                     >
-                        {activePreset?.name || t('preset.default', '기본')}
+                        {activePresetName}
                     </h2>
                     <PresetDropdown open={presetDialogOpen} onOpenChange={setPresetDialogOpen} />
                     <PresetDraftControls />

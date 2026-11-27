@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, memo } from 'react'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
+import { scenePresetDisplayPath } from '@/presentation/folders/default-names'
 import {
     DndContext,
     pointerWithin,
@@ -84,7 +85,6 @@ import {
     hasSceneCompositionOverrides,
     resolveSceneGeneration,
     useSceneStore,
-    getScenePresetPathSegments,
     visibleScenePresets,
 } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -1246,7 +1246,7 @@ export default function SceneMode() {
                                 disabled={(scenes.length === 0 && !rotationActive) || (isGenerating && !rotationActive)}
                             >
                                 <Drama className="mr-3 h-4 w-4" />
-                                {rotationActive ? '캐릭터 로테이션 상태 보기' : '캐릭터 로테이션 시작'}
+                                {rotationActive ? t('scene.rotationViewStatus', '캐릭터 로테이션 상태 보기') : t('scene.rotationStart', '캐릭터 로테이션 시작')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                                 className="min-h-11"
@@ -1345,7 +1345,7 @@ export default function SceneMode() {
                                 <SelectContent className="max-h-[60vh]">
                                     {workingPresets.map((preset) => (
                                         <SelectItem key={preset.id} value={preset.id}>
-                                            {getScenePresetPathSegments(presets, preset.id).join(' / ')} ({preset.scenes.length})
+                                            {scenePresetDisplayPath(presets, preset.id, t)} ({preset.scenes.length})
                                         </SelectItem>
                                     ))}
                                     <DropdownMenuSeparator />
@@ -1741,7 +1741,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                             {excludePinned && (
                                 <span className="flex items-center gap-1 rounded-control bg-warning px-2 py-1 text-xs font-semibold text-background">
                                     <UserMinus className="h-3 w-3" />
-                                    고정 제외
+                                    {t('scene.pinnedExcludedBadge', '고정 제외')}
                                 </span>
                             )}
                         </div>
@@ -1787,7 +1787,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                                     </DropdownMenuItem>
                                     <DropdownMenuItem className="min-h-11" onClick={(e) => { e.stopPropagation(); onToggleExcludePinned() }}>
                                         {excludePinned ? <UserCheck className="mr-2 h-4 w-4" /> : <UserMinus className="mr-2 h-4 w-4" />}
-                                        {excludePinned ? '고정 캐릭터 포함' : '고정 캐릭터 제외'}
+                                        {excludePinned ? t('scene.includePinnedCharacters', '고정 캐릭터 포함') : t('scene.excludePinnedCharacters', '고정 캐릭터 제외')}
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem className="min-h-11 text-destructive focus:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete() }}>
@@ -1878,7 +1878,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                 <ContextMenuItem className="min-h-11" onClick={() => onDuplicate()}> <Copy className="mr-2 h-4 w-4" /> {t('scene.duplicate')} </ContextMenuItem>
                 <ContextMenuItem className="min-h-11" onClick={() => onToggleExcludePinned()}>
                     {excludePinned ? <UserCheck className="mr-2 h-4 w-4" /> : <UserMinus className="mr-2 h-4 w-4" />}
-                    {excludePinned ? '고정 캐릭터 포함' : '고정 캐릭터 제외'}
+                    {excludePinned ? t('scene.includePinnedCharacters', '고정 캐릭터 포함') : t('scene.excludePinnedCharacters', '고정 캐릭터 제외')}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem className="min-h-11 text-destructive focus:text-destructive" onClick={() => onDelete()}> <Trash2 className="mr-2 h-4 w-4" /> {t('actions.delete')} </ContextMenuItem>
@@ -1907,6 +1907,7 @@ const PresetRenameInput = memo(({
     onSave: (val: string) => void,
     onCancel: () => void
 }) => {
+    const { t } = useTranslation()
     const [value, setValue] = useState(initialValue)
 
     const handleSave = () => {
@@ -1920,7 +1921,7 @@ const PresetRenameInput = memo(({
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 className="h-11 min-w-0"
-                aria-label="프리셋 이름"
+                aria-label={t('scene.presetName', '프리셋 이름')}
                 autoFocus
                 onBlur={handleSave}
                 onKeyDown={(e) => {
@@ -1928,7 +1929,7 @@ const PresetRenameInput = memo(({
                     if (e.key === 'Escape') onCancel()
                 }}
             />
-            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0" aria-label="프리셋 이름 저장" onClick={handleSave}>
+            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0" aria-label={t('scene.savePresetName', '프리셋 이름 저장')} onClick={handleSave}>
                 <Check className="h-4 w-4" />
             </Button>
         </div>

@@ -346,7 +346,7 @@ export function PromptGeneratorDialog({ open, onOpenChange, onApply }: PromptGen
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="start">
                                                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                                                            원본: {result.original}
+                                                            {t('promptGenerator.original', '원본: {{value}}', { value: result.original })}
                                                         </div>
                                                         {result.alternatives.map((alt, altIndex) => (
                                                             <DropdownMenuItem

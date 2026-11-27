@@ -1,6 +1,8 @@
 import { isR2BucketName, normalizeR2Prefix, type R2DestinationProvenance } from '@/domain/r2/types'
 
 export const DEFAULT_GENERATION_FOLDER_ID = 'generation-folder-default'
+/** Seed name stored for the built-in folder in every profile; screens translate it at display time. */
+export const DEFAULT_GENERATION_FOLDER_NAME = '기본 출력'
 export const MAX_GENERATION_FOLDER_NAME_LENGTH = 96
 /** Rotation output gets one stable parent without changing explicit flat destinations. */
 export const CHARACTER_SCENES_DIRECTORY_NAME = 'Character_Scenes'
@@ -245,7 +247,7 @@ export function createDefaultGenerationFolder(
     return {
         schemaVersion: 1,
         id: DEFAULT_GENERATION_FOLDER_ID,
-        name: '기본 출력',
+        name: DEFAULT_GENERATION_FOLDER_NAME,
         parentId: null,
         rootDirectory: directory.trim() || 'NAI_Blue_Output',
         useAbsolutePath,

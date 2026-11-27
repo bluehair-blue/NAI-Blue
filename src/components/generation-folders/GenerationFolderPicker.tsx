@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderCog, HardDrive, UploadCloud } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { generationFolderDisplayName } from '@/presentation/folders/default-names'
 
 import { Button } from '@/components/ui/button'
 import {
-    DEFAULT_GENERATION_FOLDER_ID,
     type GenerationFolderSelection,
     type GenerationFolder,
 } from '@/domain/generation-folders'
@@ -106,9 +106,7 @@ export function GenerationFolderPicker({
                     {allowManual && <option value="">{t('generationFolders.manualPath', '직접 입력 경로 사용')}</option>}
                     {rows.map(row => (
                         <option key={row.folder.id} value={row.folder.id}>
-                            {'— '.repeat(row.depth)}{row.folder.id === DEFAULT_GENERATION_FOLDER_ID && row.folder.name === '기본 출력'
-                                ? t('generationFolders.defaultName', '기본 출력')
-                                : row.folder.name}
+                            {'— '.repeat(row.depth)}{generationFolderDisplayName(row.folder, t)}
                         </option>
                     ))}
                 </select>
