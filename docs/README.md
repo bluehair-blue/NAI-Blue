@@ -5,7 +5,7 @@
 ## 지금 상태
 
 - 사용본: 등록된 Windows 설치 `E:/AI_Project_Library/projects/nais/NAI Blue/NAI-Blue.exe` 하나만 쓴다. 1.5.1 로컬 빌드(소스 `444b0ad`), 2026-11-27 설치, SHA-256 `6a3174cff08a74217819e976e2054a79eb1535b06b5d51583427a7e66b5dfc99`. `scripts/inspect-agent-runtime.ps1`로 다시 확인한다.
-- 릴리즈: 1.5.0(태그 `v1.5.0`)이 2026-11-27에 게시됐다(Windows·macOS 설치 파일과 Android APK). `main`은 1.5.1로 버전을 올려 두었고 태그는 아직 없다. 절차는 [RELEASING.md](../RELEASING.md).
+- 릴리즈: 1.5.1(태그 `v1.5.1`, 커밋 `1a6cd3a`)이 2026-11-27에 게시됐다(Windows·macOS 설치 파일과 Android APK). 같은 날 1.5.0도 게시됐다. 절차는 [RELEASING.md](../RELEASING.md).
 - MCP 어댑터는 이 체크아웃의 최신 커밋을 쓴다. 소스가 바뀌면 기존 MCP 연결을 다시 연결한다.
 
 | 주제 | 문서 | 상태 |
@@ -16,7 +16,7 @@
 | Scene의 Precise Reference와 프리셋 보관 | [ADR-019](./architecture/ADR-019-scene-precise-references-and-preset-archive.md) | 사용본. 보관함 화면과 레퍼런스를 묶은 실제 생성은 미확인 |
 | V5 Precise Reference | [ADR-020](./architecture/ADR-020-v5-precise-reference.md) | 사용본. NovelAI에 실제로 보낸 생성과 설정 창은 미확인 |
 | 화면 감사 개선 | [의도](./의도/화면%20감사%20개선.md), [구현 계획](./의도/화면%20감사%20개선%20구현%20계획.md) | 사용본. 영어·일본어 헤더 보완은 1.5.0부터 |
-| 의존성 일괄 갱신(Rust 1.93, Tauri 2.12) | 커밋 `f369055`~`18ef534` | 사용본(2026-11-27 설치, 사용자가 이미지 2장 생성 확인, 공개 MCP 읽기 응답 확인). macOS 빌드는 미확인, 1.5.1부터 |
+| 의존성 일괄 갱신(Rust 1.93, Tauri 2.12) | 커밋 `f369055`~`18ef534` | 사용본(2026-11-27 설치, 사용자가 이미지 2장 생성 확인, 공개 MCP 읽기 응답 확인). macOS와 Android는 1.5.1 릴리즈 실행에서 빌드가 성공했고 실행 동작은 미확인, 1.5.1부터 |
 | 영어·일본어 미번역 문구 정리 | `src/i18n/locales/`, `src/presentation/folders/default-names.ts` | 사용본(2026-11-27 설치). 빠져 있던 번역 키와 R2 설정 화면, 기본 폴더·프리셋 이름 표시를 고쳤다. 영어·일본어 화면은 개발 서버에서만 확인했다. 캐릭터 로테이션, 검토 미리보기, 오류 문구 등은 아직 한국어로 박혀 있다. 1.5.1부터 |
 
 진행 중인 큰 작업은 [의도 인덱스](./의도/INDEX.md)에 있다.
