@@ -7,6 +7,7 @@ import {
     patchAndroidBackDispatcher,
     patchAndroidKotlinToolchain,
     patchAndroidSigning,
+    patchAndroidTargetSdk,
 } from './patch-android-signing.mjs'
 import {
     resolveAndroidUpdateBaseline,
@@ -215,6 +216,7 @@ const prepareRelease = read('scripts/prepare-android-release.mjs')
 assert.ok(!prepareRelease.includes("requiredEnvironment('ANDROID_KEY_PASSWORD')"))
 assert.ok(!prepareRelease.includes('writeFileSync'))
 assert.ok(prepareRelease.includes('patchAndroidBackDispatcher'))
+assert.ok(prepareRelease.includes('patchAndroidTargetSdk(gradleFile, policy.targetSdkVersion)'))
 
 const localSignedBuild = read('scripts/build-android-signed-local.ps1')
 assert.ok(localSignedBuild.includes('scripts\\patch-android-signing.mjs'))
@@ -264,6 +266,27 @@ android {
     assert.equal((twice.match(/NAI_BLUE_ANDROID_DEBUG_ID/g) ?? []).length, 1)
     assert.equal((twice.match(/naiBlueUserSigningConfig\?\.let \{ signingConfig = it \}/g) ?? []).length, 2)
     assert.doesNotMatch(twice, /applicationIdSuffix\s*=/)
+
+    // The Tauri CLI 2.12 template ships compileSdk and targetSdk 37; only targetSdk follows the policy.
+    const sdkGradleFile = join(temporaryRoot, 'sdk-build.gradle.kts')
+    writeFileSync(
+        sdkGradleFile,
+        `android {
+    compileSdk = 37
+    defaultConfig {
+        minSdk = 24
+        targetSdk = 37
+    }
+}
+`,
+    )
+    assert.equal(patchAndroidTargetSdk(sdkGradleFile, policy.targetSdkVersion), true)
+    assert.equal(patchAndroidTargetSdk(sdkGradleFile, policy.targetSdkVersion), false)
+    const patchedSdkGradle = readFileSync(sdkGradleFile, 'utf8')
+    assert.match(patchedSdkGradle, new RegExp(`targetSdk = ${policy.targetSdkVersion}\\b`))
+    assert.match(patchedSdkGradle, /compileSdk = 37\b/)
+    assert.match(patchedSdkGradle, /minSdk = 24\b/)
+    assert.throws(() => patchAndroidTargetSdk(gradleFile, policy.targetSdkVersion), /Expected one targetSdk declaration/)
 
     const manifestFile = join(temporaryRoot, 'AndroidManifest.xml')
     writeFileSync(

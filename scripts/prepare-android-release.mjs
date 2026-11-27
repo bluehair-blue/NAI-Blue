@@ -7,6 +7,7 @@ import {
     patchAndroidBackDispatcher,
     patchAndroidKotlinToolchain,
     patchAndroidSigning,
+    patchAndroidTargetSdk,
 } from './patch-android-signing.mjs'
 
 function requiredEnvironment(name) {
@@ -83,6 +84,7 @@ if (!existsSync(gradleFile)) {
 
 patchAndroidKotlinToolchain(join(androidRoot, 'build.gradle.kts'))
 patchAndroidSigning(gradleFile, policy.debugApplicationIdSuffix)
+patchAndroidTargetSdk(gradleFile, policy.targetSdkVersion)
 patchAndroidBackDispatcher(join(androidRoot, 'app', 'src', 'main', 'AndroidManifest.xml'))
 
 const generatedGradle = readFileSync(gradleFile, 'utf8')

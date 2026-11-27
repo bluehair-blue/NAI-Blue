@@ -31,6 +31,30 @@ export function patchAndroidKotlinToolchain(buildFile, version = ANDROID_KOTLIN_
     return content !== original
 }
 
+// Tauri's template targets the newest Android API (37 since CLI 2.12), while
+// android-release-policy.json pins the level this app was tested against and the
+// release scripts refuse any other value. compileSdk stays the template's: it only
+// has to satisfy the bundled AndroidX artifacts, whereas targetSdk switches runtime behavior.
+export function patchAndroidTargetSdk(gradleFile, targetSdkVersion) {
+    if (!Number.isInteger(targetSdkVersion) || targetSdkVersion < 1) {
+        throw new Error(`Invalid Android targetSdkVersion: ${targetSdkVersion}`)
+    }
+    const absolutePath = resolve(gradleFile)
+    const original = readFileSync(absolutePath, 'utf8')
+    const declaration = /\btargetSdk\s*=\s*\d+/g
+    const matches = original.match(declaration) ?? []
+    if (matches.length !== 1) {
+        throw new Error(
+            `Expected one targetSdk declaration in ${absolutePath}, found ${matches.length}`,
+        )
+    }
+    const content = original.replace(declaration, `targetSdk = ${targetSdkVersion}`)
+    if (content !== original) {
+        writeFileSync(absolutePath, content, 'utf8')
+    }
+    return content !== original
+}
+
 function removeManagedSigning(content) {
     return content
         .replace(
@@ -196,10 +220,18 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
         resolve(dirname(gradleFile), '..', 'build.gradle.kts'),
     )
     const debugSuffix = readOption('--debug-suffix', '')
+    // Callers pass absolute Gradle paths from other working directories, so the policy is found beside this script.
+    const policyFile = readOption(
+        '--policy-file',
+        fileURLToPath(new URL('../android-release-policy.json', import.meta.url)),
+    )
+    const { targetSdkVersion } = JSON.parse(readFileSync(policyFile, 'utf8'))
     const toolchainChanged = patchAndroidKotlinToolchain(rootBuildFile)
     const changed = patchAndroidSigning(gradleFile, debugSuffix)
+    const targetSdkChanged = patchAndroidTargetSdk(gradleFile, targetSdkVersion)
     const manifestChanged = patchAndroidBackDispatcher(manifestFile)
     console.log(`Android Kotlin toolchain ${toolchainChanged ? 'updated' : 'already current'}: ${rootBuildFile}`)
     console.log(`Android signing configuration ${changed ? 'updated' : 'already current'}: ${gradleFile}`)
+    console.log(`Android targetSdk ${targetSdkChanged ? `set to ${targetSdkVersion}` : 'already current'}: ${gradleFile}`)
     console.log(`Android Back dispatcher ${manifestChanged ? 'updated' : 'already current'}: ${manifestFile}`)
 }
