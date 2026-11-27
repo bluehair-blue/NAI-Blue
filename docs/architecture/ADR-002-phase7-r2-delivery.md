@@ -4,7 +4,7 @@
 - 코드 상태: Phase 7C 구현 완료 (`b3aa026b6804e050dc73fd556c42a296509506fa`)
 - 운영 검증: 실제 Provider/R2/설치 앱 강제 종료 검증은 미확보
 - 선행 계약: [ADR-001](ADR-001-modular-monolith-boundaries.md)
-- 검증 기록: [Phase 7C validation](../releases/evidence/phase7c-validation-2026-09-05.json)
+- 검증 기록: Phase 7C validation(`git show fd72fc3:docs/releases/evidence/phase7c-validation-2026-09-05.json`)
 
 ## 결정
 

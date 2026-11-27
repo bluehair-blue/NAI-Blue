@@ -3,7 +3,7 @@
 - 결정일: 2026-09-05
 - 구현 상태: 9A application core 구현. Phase 9 전체와 외부 실행 활성화는 미완료.
 - 선행 계약: [ADR-001](ADR-001-modular-monolith-boundaries.md), [ADR-002](ADR-002-phase7-r2-delivery.md), [ADR-003](ADR-003-phase8-human-intent-assessment.md)
-- 검증 기록: [Phase 9A validation](../releases/evidence/phase9a-validation-2026-09-05.json)
+- 검증 기록: Phase 9A validation(`git show fd72fc3:docs/releases/evidence/phase9a-validation-2026-09-05.json`)
 
 이 문서는 9A checkpoint 당시의 범위를 기록한다. 이후 native foreground 조회·계획 연결은 [ADR-005: Phase 9B](ADR-005-phase9-windows-foreground-inbox.md)에 구현 및 검증 범위를 기록했다.
 

@@ -3,7 +3,7 @@
 - 날짜: 2026-09-09
 - 상태: 첫 실행 단위. 저장된 요청에서 묶음별 검토·승인으로 진행한다. 전체 자동 실행은 미완료.
 - 기반: ADR-013, ADR-014와 현재 Scene/Folder/Queue/실행 승인 권한.
-- 검증: [첫 실행 단위 검증 기록](../releases/evidence/production-requests-2026-09-09.json). Node 24 전체 테스트 2,540개 통과, 4개 건너뜀; 브라우저 UI 6개 확인. 실제 호스트·Provider 검증과 구분한다.
+- 검증: 첫 실행 단위 검증 기록(`git show fd72fc3:docs/releases/evidence/production-requests-2026-09-09.json`). Node 24 전체 테스트 2,540개 통과, 4개 건너뜀; 브라우저 UI 6개 확인. 실제 호스트·Provider 검증과 구분한다.
 
 ## 이번 결정
 
@@ -80,7 +80,7 @@ MCP의 instructions와 resources를 모델 컨텍스트에 넣는 주체는 호�
 기존 native QA 스크립트는 초기 안내·가이드 검색/읽기 및 생산 요청 조회도 검사한다. 폐기된 이전
 시험 클라이언트로 안내 읽기와 신규 제출 거절을 검증했고, 새 독립 시험 앱을 빌드했다.
 당시 새 앱의 클라이언트 등록 및 실제 생산 요청 검증은 미완료였다.
-[연결 준비 검증 기록](../releases/evidence/production-native-readiness-2026-09-09.json)을 참조한다.
+연결 준비 검증 기록(`git show fd72fc3:docs/releases/evidence/production-native-readiness-2026-09-09.json`)을 참조한다.
 
 ## 승인된 Windows 연결과 생산 계획 검증 (2026-09-09)
 
@@ -97,13 +97,13 @@ MCP의 instructions와 resources를 모델 컨텍스트에 넣는 주체는 호�
 수정 직후 한 차례의 즉시 응답 검사는 실패했으나 해당 native 영수증은 모두 완료됐다. 당시
 응답 상태를 보존하지 않아 원인은 미확정이며, 백그라운드 장기 안정성의 증거로 확대하지 않는다.
 
-[Windows 생산 계획 검증 기록](../releases/evidence/production-native-validation-2026-09-09.json)을 참조한다.
+Windows 생산 계획 검증 기록(`git show fd72fc3:docs/releases/evidence/production-native-validation-2026-09-09.json`)을 참조한다.
 승인된 시험 클라이언트와 요청은 QA 앱에 유지한다. 이 검증은 Codex/Claude 호스트 설정이나
 모델의 가이드 사용, 실행 승인·NAI 생성·파일 저장·R2 업로드, 설치본 배포를 포함하지 않는다.
 
 ## 추가 QA와 실제 실행 대기 (2026-09-09)
 
-[추가 QA 기록](../releases/evidence/production-lifecycle-qa-2026-09-09.json)에서 관련 자동 검사
+추가 QA 기록(`git show fd72fc3:docs/releases/evidence/production-lifecycle-qa-2026-09-09.json`)에서 관련 자동 검사
 328개, Windows native 검사 24개, 브라우저 UI 6개가 통과했다. 실제 Codex app-server에
 프로세스 범위의 설정을 전달해 도구 16개 발견과 가이드 읽기를 확인했다. 별도 모델 턴과 전역
 호스트 설정 변경은 없으며, 현재 작업은 반환된 가이드 내용을 읽었다.
@@ -142,7 +142,7 @@ MCP 편집 승인으로 프롬프트·1024×1024·28 steps·수량 2장을 반�
 응답과 같으며 최종 파일 checksum을 별도로 기록했다. 메타데이터 처리 후 파일 바이트는 Provider
 응답과 달라질 수 있다. 최종 재시작 후 성공 3장·전송 전 취소 2장·생성 시도 3회·결과 링크 3개가 유지됐다.
 
-[실생성 QA 및 회귀 수정 증거](../releases/evidence/production-live-qa-2026-09-09.json)를 참조한다.
+실생성 QA 및 회귀 수정 증거(`git show fd72fc3:docs/releases/evidence/production-live-qa-2026-09-09.json`)를 참조한다.
 이는 실제 NAI를 사용한 제한된 워크플로우 시험이며 2,400장 실생성, 장시간 안정성, 이미지 내용 품질,
 R2 실제 배포나 설치본 업데이트를 입증하지 않는다. R2 연결은 계속 미설정이다.
 
@@ -176,7 +176,7 @@ MCP 안내도 실제 Scene upsert 계약에 맞춘다. 새 Scene의 ID·이름�
 Queue의 시도·예약·출력 경로가 유지되었다. 추가 Provider 시도는 없었다. 관련 48개 파일의 504개 테스트,
 타입·lint·아키텍처 검사와 frontend/native debug build가 통과했다.
 
-[정책 단순화 및 50장 실생성 증거](../releases/evidence/agent-policy-simplification-qa50-2026-09-09.json)를 참조한다.
+정책 단순화 및 50장 실생성 증거(`git show fd72fc3:docs/releases/evidence/agent-policy-simplification-qa50-2026-09-09.json`)를 참조한다.
 V5에서 지원하지 않는 variety/CFG Delay는 저장값만 보존되고 Provider payload에서는 기존처럼 제외된다.
 예상 1467 Anlas는 계획값이며 실제 계정 과금은 측정하지 않았다. 이 증거는 QA 앱에 한정하며 설치본
 업데이트, R2 업로드, 강제 종료 중 복구나 장시간·다중 계정 운영을 입증하지 않는다.

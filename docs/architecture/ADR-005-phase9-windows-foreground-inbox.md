@@ -4,8 +4,8 @@
 - 구현 상태: Windows foreground의 인증된 조회·계획 수신과 사람의 client 관리 구현. 승인·변경 실행은 Phase 9C로 남긴다.
 - 선행 계약: [ADR-004: 인증·영속 코어](ADR-004-phase9-authenticated-inbox-core.md)
 - 후속 구현: [ADR-006: Phase 9C 생성 승인·정책](ADR-006-phase9c-generation-approval-policy.md). 아래 활성화 설명은 9B 당시 범위이며 현재 enqueue 경로는 후속 ADR을 따른다.
-- 검증 기록: [Phase 9B validation](../releases/evidence/phase9b-validation-2026-09-05.json)
-- 실제 데스크톱 QA: [Phase 9B desktop QA](../releases/evidence/phase9b-desktop-qa-2026-09-05.json) — 독립 실행 Windows Tauri 앱의 등록·제출·계획·재시작 replay 검증 완료
+- 검증 기록: Phase 9B validation(`git show fd72fc3:docs/releases/evidence/phase9b-validation-2026-09-05.json`)
+- 실제 데스크톱 QA: Phase 9B desktop QA(`git show fd72fc3:docs/releases/evidence/phase9b-desktop-qa-2026-09-05.json`) — 독립 실행 Windows Tauri 앱의 등록·제출·계획·재시작 replay 검증 완료
 
 ## 활성화 범위
 
@@ -86,6 +86,6 @@ python scripts/submit-agent-command.py --connection connection.json --command co
 - 수신 중지·재개와 앱 종료 중 제출 후 재시작 소비를 확인했다. 앱이 닫혀 있을 때는 transport 제출만 완료되었다.
 - QA client의 키를 교체한 뒤 폐기했다. 교체 전 키와 폐기된 현재 키를 사용한 Python 제출은 `CREDENTIAL_UNAVAILABLE`로 실패했다. 폐기 뒤 기존 서명 archive를 재투영한 요청은 `AUTHENTICATION_FAILED`로 거부되고 원래 receipt는 보존되었다.
 
-최종 non-live 검증은 311개 파일의 2,205개 테스트, lint, architecture, secret-redaction 17개 검사와 build를 통과했다. QA 앱의 종료와 9329 포트 종료도 확인했다. 상세 관측과 artifact 연결은 [desktop QA evidence](../releases/evidence/phase9b-desktop-qa-2026-09-05.json)에 둔다.
+최종 non-live 검증은 311개 파일의 2,205개 테스트, lint, architecture, secret-redaction 17개 검사와 build를 통과했다. QA 앱의 종료와 9329 포트 종료도 확인했다. 상세 관측과 artifact 연결은 desktop QA evidence(`git show fd72fc3:docs/releases/evidence/phase9b-desktop-qa-2026-09-05.json`)에 둔다.
 
 이 증거는 standalone 실행 파일의 실제 GUI/native 경로에 해당한다. 설치된 MSI의 설치·업데이트 경로와 기존 production 앱 프로필, 강제 process crash, 실제 junction 공격 재현, Provider/R2 호출·실제 이미지 생성은 검증하지 않았다. Phase 9C의 승인·예산·변경 실행, Phase 10 MCP와 Phase 11 background/headless는 남아 있다. Phase 9 전체 완료는 9C 이후 판정한다. 문제 발생 시 foreground startup 연결을 비활성화해도 native identity, receipt와 plan은 보존한다.

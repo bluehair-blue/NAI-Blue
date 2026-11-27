@@ -37,7 +37,7 @@ npm run agent:inspect -- --inbox-dir '<existing-native-inbox>' --request-id '<sa
 npm run test:agent-mcp-prerequisites
 ```
 
-새 검증은 fixture 파일, 실제 Node CLI, shared TypeScript parser, 실제 HMAC 검증 dispatcher와 IndexedDB adapter를 사용한다. IndexedDB 엔진은 `fake-indexeddb`이며 native 앱은 실행하지 않는다. 요청 간 결과 교환, 원본 receipt 동일성, 연결 종료 후 반복 조회, 미공개 archive, 관측 취소, 큰 result/metadata, 소수 result, secret/base64/private path/signed URL 거절을 검증한다. [검증 기록](../releases/evidence/phase10a-validation-2026-09-06.json)에 명령·범위·결과와 해시를 남긴다.
+새 검증은 fixture 파일, 실제 Node CLI, shared TypeScript parser, 실제 HMAC 검증 dispatcher와 IndexedDB adapter를 사용한다. IndexedDB 엔진은 `fake-indexeddb`이며 native 앱은 실행하지 않는다. 요청 간 결과 교환, 원본 receipt 동일성, 연결 종료 후 반복 조회, 미공개 archive, 관측 취소, 큰 result/metadata, 소수 result, secret/base64/private path/signed URL 거절을 검증한다. 검증 기록(`git show fd72fc3:docs/releases/evidence/phase10a-validation-2026-09-06.json`)에 명령·범위·결과와 해시를 남긴다.
 
 ## 실제 stdio spike에 남은 경계
 
@@ -61,4 +61,4 @@ npm install --save-dev --save-exact @modelcontextprotocol/server@2.0.0 @modelcon
 
 ## 2026-09-07 후속 구현
 
-위 설치 대기와 stdio 미검증 기록은 Phase 10A 커밋 당시의 상태다. 사용자의 명시적 설치 승인 후 SDK 2.0.0 pin, 공유 입력 계약, 소수 입력 서명 bridge와 개발용 stdio 실행부를 구현했다. 현재 구현과 검증 범위는 [ADR-011](ADR-011-phase10b-development-stdio-spike.md) 및 [Phase 10B 검증 기록](../releases/evidence/phase10b-validation-2026-09-07.json)을 따른다. 개발용 실제 프로세스 transport 검증은 추가되었으며, 실제 Tauri 앱·등록 client·설치 경로의 전체 spike Go/No-Go는 아직 미판정이다.
+위 설치 대기와 stdio 미검증 기록은 Phase 10A 커밋 당시의 상태다. 사용자의 명시적 설치 승인 후 SDK 2.0.0 pin, 공유 입력 계약, 소수 입력 서명 bridge와 개발용 stdio 실행부를 구현했다. 현재 구현과 검증 범위는 [ADR-011](ADR-011-phase10b-development-stdio-spike.md) 및 Phase 10B 검증 기록(`git show fd72fc3:docs/releases/evidence/phase10b-validation-2026-09-07.json`)을 따른다. 개발용 실제 프로세스 transport 검증은 추가되었으며, 실제 Tauri 앱·등록 client·설치 경로의 전체 spike Go/No-Go는 아직 미판정이다.

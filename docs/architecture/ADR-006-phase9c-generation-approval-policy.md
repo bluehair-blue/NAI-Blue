@@ -3,9 +3,9 @@
 - 결정일: 2026-09-05
 - 구현 범위: Windows foreground의 `generation.enqueue`, 사람의 일회 승인·거절, versioned 실행 정책, 영속 예산 예약과 Queue 사실 기반 복구
 - 선행 계약: [ADR-004](ADR-004-phase9-authenticated-inbox-core.md), [ADR-005](ADR-005-phase9-windows-foreground-inbox.md)
-- 검증 기록: [Phase 9C validation](../releases/evidence/phase9c-validation-2026-09-05.json)
-- 실제 Windows 검증: [Phase 9C desktop QA](../releases/evidence/phase9c-desktop-qa-2026-09-06.json)
-- 후속 취소 계약: [ADR-007 — Phase 9D](ADR-007-phase9d-generation-cancellation.md), [9D 소프트웨어 검증](../releases/evidence/phase9d-validation-2026-09-06.json)
+- 검증 기록: Phase 9C validation(`git show fd72fc3:docs/releases/evidence/phase9c-validation-2026-09-05.json`)
+- 실제 Windows 검증: Phase 9C desktop QA(`git show fd72fc3:docs/releases/evidence/phase9c-desktop-qa-2026-09-06.json`)
+- 후속 취소 계약: [ADR-007 — Phase 9D](ADR-007-phase9d-generation-cancellation.md), 9D 소프트웨어 검증(`git show fd72fc3:docs/releases/evidence/phase9d-validation-2026-09-06.json`)
 - Phase 9 전체 상태: 진행 중. 생성 enqueue의 실제 Windows 승인·거절·정상 재시작 경로를 검증했으며, 다른 mutation과 최종 운영 gate는 남아 있다.
 
 ## 실행 경로와 지원 입력

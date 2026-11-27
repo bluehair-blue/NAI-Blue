@@ -3,7 +3,7 @@
 - 날짜: 2026-09-09
 - 상태: 첫 구현 단위. 전체 생산 작업과 Codex 이벤트 재호출은 미완료.
 - 기준: `e6bf27f`, ADR-013, 사용자 요청과 `NAI_Blue_Agent_Production_Handoff.md`의 요구사항.
-- 검증 기록: `docs/releases/evidence/agent-production-start-2026-09-09.json`.
+- 검증 기록: `git show fd72fc3:docs/releases/evidence/agent-production-start-2026-09-09.json`.
 
 ## 사용자 흐름
 

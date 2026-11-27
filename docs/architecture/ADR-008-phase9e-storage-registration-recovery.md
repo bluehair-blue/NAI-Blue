@@ -3,7 +3,7 @@
 - 결정일: 2026-09-06
 - 선행 계약: [ADR-007](ADR-007-phase9d-generation-cancellation.md), [ADR-006](ADR-006-phase9c-generation-approval-policy.md)
 - 구현 범위: Windows foreground의 `generation.retry_storage`, 저장이 끝난 결과의 Artifact 등록과 Queue 완료
-- 검증 기록: [Phase 9E validation](../releases/evidence/phase9e-validation-2026-09-06.json)
+- 검증 기록: Phase 9E validation(`git show fd72fc3:docs/releases/evidence/phase9e-validation-2026-09-06.json`)
 - 현재 상태: 시작 복구 순서의 P1 수정을 독립 검토로 확인하고 최종 자동 검증을 통과했다. 실제 native 안전 거절 QA와 정리 5개 검사를 통과했으며 정상 파일 등록의 native 성공은 미검증이다. Phase 9 전체 완료, MCP 또는 background/headless 활성화를 뜻하지 않는다.
 
 ## 지원할 입력과 효과

@@ -7,7 +7,7 @@
 
 ## 결정 근거
 
-[9B 실제 Windows QA](../releases/evidence/phase9b-desktop-qa-2026-09-05.json)는 앱 종료 중 ready 파일 제출, result 부재, 재시작 후 처리를 확인했다. [9C QA](../releases/evidence/phase9c-desktop-qa-2026-09-06.json)는 사람 승인과 durable Queue 등록·정상 재시작을 확인했다. [9D](../releases/evidence/phase9d-validation-2026-09-06.json)는 첫 binary의 취소 전이와 수정 binary의 동일 grant 복구·replay·정상 재시작을 구분한다. [9E](../releases/evidence/phase9e-validation-2026-09-06.json)의 native 5개 검사는 안전 거절과 정리이며 정상 파일 등록 복구의 native 성공은 미검증이다.
+9B 실제 Windows QA(`git show fd72fc3:docs/releases/evidence/phase9b-desktop-qa-2026-09-05.json`)는 앱 종료 중 ready 파일 제출, result 부재, 재시작 후 처리를 확인했다. 9C QA(`git show fd72fc3:docs/releases/evidence/phase9c-desktop-qa-2026-09-06.json`)는 사람 승인과 durable Queue 등록·정상 재시작을 확인했다. 9D(`git show fd72fc3:docs/releases/evidence/phase9d-validation-2026-09-06.json`)는 첫 binary의 취소 전이와 수정 binary의 동일 grant 복구·replay·정상 재시작을 구분한다. 9E(`git show fd72fc3:docs/releases/evidence/phase9e-validation-2026-09-06.json`)의 native 5개 검사는 안전 거절과 정리이며 정상 파일 등록 복구의 native 성공은 미검증이다.
 
 이 증거는 반복 app-off 사용량, background 필요성, 실제 Provider·출력·R2, 설치·업데이트·강제 crash와 운영 완료를 증명하지 않는다. Phase 10 spike는 별도 진행 중이며 이 결정에서는 pending이다. Phase 10 Go가 나오더라도 background 실행을 허용하지 않는다.
 

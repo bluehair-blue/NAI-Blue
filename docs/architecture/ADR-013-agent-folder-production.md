@@ -134,7 +134,7 @@ NAI Blue MCP가 없으며, 이번 구현 중 호스트 설정·클라이언트 �
 - 실제 Scene 저장소·Artifact 연결·Zustand 결과 표시·저장된 탐색 구조의 재수화로
   프리뷰와 설정 버전/결과 이력이 유지되는지 검증한다. Artifact/이미지는 테스트 자료다.
 - 모의 테스트 통과를 실제 Codex 호스트 연결, 실제 NAI 생성, 실제 R2 업로드 완료로 보고하지 않는다.
-- 전체 검증 결과와 남은 실제 실행 증거는 `docs/releases/evidence/agent-folder-production-2026-09-08.json`에 기록한다.
+- 전체 검증 결과와 남은 실제 실행 증거는 `git show fd72fc3:docs/releases/evidence/agent-folder-production-2026-09-08.json`에 기록한다.
 
 폴더 전체 삭제/새 드라이브 루트 등록, 무인 앱 기동, 설치형 sidecar 패키징,
 한 요청에서 100장을 넘는 자동 분할 실행은 이번 코드의 지원 범위가 아니다.

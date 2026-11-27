@@ -4,7 +4,7 @@
 - 선행 계약: [ADR-006](ADR-006-phase9c-generation-approval-policy.md)
 - 후속 저장 결과 등록 복구: [ADR-008 — Phase 9E](ADR-008-phase9e-storage-registration-recovery.md)
 - 구현 범위: Windows foreground의 `generation.cancel`, 같은 workspace 승인 원장과 기존 Queue 취소 경로
-- 검증 기록: [Phase 9D 검증](../releases/evidence/phase9d-validation-2026-09-06.json). 실제 Windows 취소 QA의 첫 승인 오류를 수정한 binary에서 동일 grant 복구·replay를 확인했으며 완료 후 정상 재시작·native receipt 동일성·client 폐기·프로세스 정리를 포함한 native 7개 검사를 통과했다. 자동 검증과 실제 native 검증의 범위를 구분하며 Phase 9 전체는 진행 중이다.
+- 검증 기록: Phase 9D 검증(`git show fd72fc3:docs/releases/evidence/phase9d-validation-2026-09-06.json`). 실제 Windows 취소 QA의 첫 승인 오류를 수정한 binary에서 동일 grant 복구·replay를 확인했으며 완료 후 정상 재시작·native receipt 동일성·client 폐기·프로세스 정리를 포함한 native 7개 검사를 통과했다. 자동 검증과 실제 native 검증의 범위를 구분하며 Phase 9 전체는 진행 중이다.
 - Phase 9 전체 상태: 진행 중. 저장 재시도, 추가 명령, 운영 QA, MCP와 background/headless는 별도 범위다.
 
 ## 입력과 사람 승인

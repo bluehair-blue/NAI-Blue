@@ -62,7 +62,7 @@ Native inbox에는 실제 AppData 경로를 읽을 수 있는 **standalone Pytho
 
 ## 검증과 남은 gate
 
-[Phase 10B 검증 기록](../releases/evidence/phase10b-validation-2026-09-07.json)은 소스 해시, 실행 명령, 결과와 검증 환경을 보존한다. 실제 SDK in-memory transport와 별도 child-process stdio 검증은 구분한다. Child-process 검증은 실제 파일과 WebCrypto dispatcher/IndexedDB adapter를 사용하되 서명 키는 fixture이고 IndexedDB 엔진은 `fake-indexeddb`다. Windows publisher의 별도 bridge 테스트도 credential 접근은 fixture로 대체한다.
+Phase 10B 검증 기록(`git show fd72fc3:docs/releases/evidence/phase10b-validation-2026-09-07.json`)은 소스 해시, 실행 명령, 결과와 검증 환경을 보존한다. 실제 SDK in-memory transport와 별도 child-process stdio 검증은 구분한다. Child-process 검증은 실제 파일과 WebCrypto dispatcher/IndexedDB adapter를 사용하되 서명 키는 fixture이고 IndexedDB 엔진은 `fake-indexeddb`다. Windows publisher의 별도 bridge 테스트도 credential 접근은 fixture로 대체한다.
 
 Production CLI 자체는 공식 `StdioClientTransport`와 실제 Python을 연결해 별도로 실행했다. 임의의 미등록 credential을 조회한 상태에서 handshake 성공, 빈 tool 목록, 요청 파일 미생성, stderr/protocol error 없음, client 종료 후 subprocess 종료를 확인했다. 이 검사는 실제 key store의 성공적인 서명이나 Tauri 처리 증거가 아니다. 최종 MCP 6개 파일·46개 테스트와 Agent inbox 17개 파일·198개 테스트가 통과했다. Persistence 199개·Queue 302개·secret redaction 17개, 아키텍처 622 modules/3,440 dependencies, lint, TypeScript, build도 통과했다. Suite 간 중복이 있으므로 테스트 수를 합산하지 않는다.
 
@@ -77,7 +77,7 @@ JSON Schema의 표준 `maxLength`는 Unicode code point를 세고 기존 draft I
 
 ## 2026-09-07 후속: 실제 Windows 읽기 경로 검증
 
-[Phase 10C native 검증 기록](../releases/evidence/phase10c-native-validation-2026-09-07.json)에 실제 앱 경로의 후속 증거를 남긴다. 별도 identifier/WebView profile의 debug Tauri 앱에 현재 frontend를 포함하고, 사용자가 직접 등록한 client와 공식 SDK client → production stdio runner → standalone Python → 실제 Windows credential/inbox → foreground dispatcher/IndexedDB를 연결했다. Fixture signer, native adapter 대체, mock dispatcher는 사용하지 않았다.
+Phase 10C native 검증 기록(`git show fd72fc3:docs/releases/evidence/phase10c-native-validation-2026-09-07.json`)에 실제 앱 경로의 후속 증거를 남긴다. 별도 identifier/WebView profile의 debug Tauri 앱에 현재 frontend를 포함하고, 사용자가 직접 등록한 client와 공식 SDK client → production stdio runner → standalone Python → 실제 Windows credential/inbox → foreground dispatcher/IndexedDB를 연결했다. Fixture signer, native adapter 대체, mock dispatcher는 사용하지 않았다.
 
 현재 capability/schema hash, 병렬 snapshot/run 조회, native receipt/resource 동일성, 동일 ID replay, 실제 앱 종료 중 미수락 제출과 재시작 후 무재제출 처리를 확인했다. 이 검증에서 생성 계정, Queue 등록, Provider 호출은 필요하지 않다. 재실행에는 [`qa-phase10c-mcp-native.mjs`](../../scripts/qa-phase10c-mcp-native.mjs)의 `--help`를 사용하며 `live`, `app-off`, `revoked`는 실제 앱/클라이언트 상태를 먼저 준비해야 한다. Script가 그 상태를 대신 만들지 않는다.
 

@@ -4,7 +4,7 @@
 - 구현 범위: 8A human assessment, Guided Main 및 Scene 선택 생성, Queue 평가 화면
 - 조건부 기능: 8B Agent evaluator와 8C candidate search는 `available: false`
 - 선행 계약: [ADR-001](ADR-001-modular-monolith-boundaries.md), [ADR-002](ADR-002-phase7-r2-delivery.md)
-- 검증 기록: [Phase 8A validation](../releases/evidence/phase8a-validation-2026-09-05.json)
+- 검증 기록: Phase 8A validation(`git show fd72fc3:docs/releases/evidence/phase8a-validation-2026-09-05.json`)
 
 ## 결정
 
