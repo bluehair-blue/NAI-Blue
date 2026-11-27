@@ -5,7 +5,7 @@
 ## 지금 상태
 
 - 사용본: 등록된 Windows 설치 `E:/AI_Project_Library/projects/nais/NAI Blue/NAI-Blue.exe` 하나만 쓴다. 1.4.0 로컬 빌드(소스 `a60e45c`), 2026-11-26 설치, SHA-256 `50317f31a0de77ef36aa40d10a9cbb7aa6158ebc4f53e50d4c5f08edb288cefd`. `scripts/inspect-agent-runtime.ps1`로 다시 확인한다.
-- 릴리즈: 1.5.0(태그 `v1.5.0`)은 2026-11-27 기준 데스크톱 자산까지 올라간 Draft이고 Android 서명 승인 뒤 게시된다. `main`은 1.5.1로 버전을 올려 두었고 태그는 아직 없다. 절차는 [RELEASING.md](../RELEASING.md).
+- 릴리즈: 1.5.0(태그 `v1.5.0`)이 2026-11-27에 게시됐다(Windows·macOS 설치 파일과 Android APK). `main`은 1.5.1로 버전을 올려 두었고 태그는 아직 없다. 절차는 [RELEASING.md](../RELEASING.md).
 - MCP 어댑터는 이 체크아웃의 최신 커밋을 쓴다. 소스가 바뀌면 기존 MCP 연결을 다시 연결한다.
 
 | 주제 | 문서 | 상태 |
