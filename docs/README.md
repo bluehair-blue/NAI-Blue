@@ -32,7 +32,7 @@
 | `releases/evidence/queue-edge-benchmark.json` | 대기열 벤치마크 기준선. 테스트와 벤치마크 스크립트가 이 경로를 참조한다 |
 | `local/`, `_trash/` | Git에 넣지 않는 로컬 자료. 현재 동작의 기준은 소스 코드와 추적된 문서다 |
 
-2026-11-27에 9월의 phase 검증 기록, 1.0.0 인수인계 문서, 지난 릴리즈 기록과 성능 보고서를 저장소에서 내렸다. ADR의 `git show fd72fc3:…` 표기가 그 파일을 Git 이력에서 꺼내는 명령이다. `refs/archive/tasks/startup-responsiveness/initial-worktree`(`9df1790`)는 시작 응답성 작업 전의 미커밋 소스를 보존한 ref다.
+2026-11-27에 9월의 phase 검증 기록, 1.0.0 인수인계 문서, 지난 릴리즈 기록과 성능 보고서를 저장소에서 내렸다. ADR의 `git show fd72fc3:…` 표기가 그 파일을 Git 이력에서 꺼내는 명령이다. `refs/archive/tasks/startup-responsiveness/initial-worktree`(`9df1790`)는 시작 응답성 작업 전의 미커밋 소스를 보존한 ref이고, 이 PC의 체크아웃에만 있다(원격에는 없다).
 
 ## 코드
 

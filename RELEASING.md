@@ -38,10 +38,11 @@ npm run tauri build
 
 The release version must agree in `package.json`, `package-lock.json`,
 `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`.
-The Android version code is bumped by hand in `android-release-policy.json` and
-`src-tauri/tauri.android.conf.json`; it must be strictly newer than the published
-baseline recorded in the policy file. `npm run test:release-version` checks all
-of these.
+The Android version code is bumped by hand in two places, `versionCode` in
+`android-release-policy.json` and `bundle.android.versionCode` in
+`src-tauri/tauri.android.conf.json`; it must be strictly newer than
+`updateBaseline.versionCode` in the policy file. `npm run test:release-version`
+checks all of these.
 
 Review the generated installers, updater metadata, signatures, and hashes. The
 Windows updater uses NSIS so an existing pre-rename installation can accept the
@@ -66,8 +67,9 @@ and belongs to `main`, then builds desktop artifacts as a draft release.
 `.github/workflows/android.yml` builds and verifies the signed universal APK,
 uploads it, and publishes the cross-platform release.
 
-The run pauses at `android / signed-build` until a reviewer approves the
-`android-release` environment. Until then the release stays a draft that holds
+The Android stage starts only after every desktop build has succeeded. It then
+pauses at `android / signed-build` until a reviewer approves the
+`android-release` environment; until then the release stays a draft that holds
 only the desktop assets. macOS is compiled only by this tag build; no earlier
 check covers it.
 
@@ -76,10 +78,8 @@ The protected `android-release` GitHub Environment must provide:
 - `NAI_BLUE_KEYSTORE_BASE64`
 - `NAI_BLUE_KEYSTORE_PASSWORD`
 
-These existing secret names are retained as release-infrastructure
-compatibility. They are not product branding and must never be printed or
-committed. The environment should require a reviewer and permit only immutable
-`v*` tag deployments.
+Never print or commit them. The environment should require a reviewer and
+permit only immutable `v*` tag deployments.
 
 ## Local Android fallback
 

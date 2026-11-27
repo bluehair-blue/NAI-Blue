@@ -9,7 +9,7 @@ import { chromium } from 'playwright'
 // prompt, or generated image from a real workspace can end up in the repository.
 // Starts its own Vite server unless README_SHOTS_URL points at one that is already running.
 const port = Number(process.env.README_SHOTS_PORT || 5183)
-const baseUrl = process.env.README_SHOTS_URL || `http://127.0.0.1:${port}`
+const baseUrl = (process.env.README_SHOTS_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, '')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const outputDir = fileURLToPath(new URL('../docs/images/', import.meta.url))
 const viewport = { width: 1280, height: 800 }
@@ -131,7 +131,8 @@ async function captureLanguage(browser, language) {
         await page.getByRole('button', { name: text('folderWorkbench.composer.next') }).click()
         await page.getByText(demo.items[0][1], { exact: true }).first().waitFor({ state: 'visible' })
         // The browser build asks visitors to open the desktop app; the app itself never shows that line.
-        await page.getByText(text('folderWorkbench.design.desktopHint')).first().evaluate(node => node.remove())
+        const desktopHint = page.getByText(text('folderWorkbench.design.desktopHint'))
+        if (await desktopHint.count()) await desktopHint.first().evaluate(node => node.remove())
         await save(page, `${language}-make-images`)
 
         await page.goto(`${baseUrl}/advanced`, { waitUntil: 'domcontentloaded' })
