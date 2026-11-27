@@ -74,6 +74,9 @@ docs/*
 !docs/releases/**
 !docs/의도/
 !docs/의도/**
+!docs/images/
+!docs/images/**
+!docs/에이전트 자동화 안내.md
 
 # Claude Code
 .claude/

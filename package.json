@@ -16,6 +16,7 @@
     "qa:readable-choices": "node scripts/qa-readable-choices.mjs",
     "qa:keyboard-scope": "node scripts/qa-keyboard-scope.mjs",
     "qa:audit-regressions": "node scripts/qa-audit-regressions.mjs",
+    "docs:screenshots": "node scripts/capture-readme-screenshots.mjs",
     "test:responsive-layout": "node scripts/verify-responsive-layout-contract.mjs",
     "test:remote-runtime-removal": "node scripts/verify-remote-runtime-removal.mjs",
     "test:smart-tools": "node scripts/test-smart-tools-contract.mjs",

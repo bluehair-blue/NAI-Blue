@@ -1,27 +1,11 @@
-# 자동화 에이전트 진입 안내
-
-NAI Blue는 Computer Use로 조작하지 않는다. 막히면 공식 자동화 경로를 진단하고 보고한다.
-공개 MCP tool은 가이드를 읽지 않고 바로 호출한다. 응답은 요약이 기본이고 `detail: "full"`이 전체 영수증을 돌려준다. 생성은 `generation.run` 한 번으로 계획·등록·완료 대기를 하며 `requestId`가 필수다. 끝나지 않은 채 돌아오면 같은 `requestId`와 입력으로 다시 부르면 이어진다([ADR-017](docs/architecture/ADR-017-mcp-call-deadline-and-execution-history.md)). `nai-blue://guides/agent-workflow/v1`과 주제별 문서(`nai-blue://guides/recovery` 등)는 막혔을 때만 읽는다. 설계와 측정은 [ADR-016](docs/architecture/ADR-016-mcp-token-efficiency.md)에 있다.
-
-V5 설계는 `standard`, V4.5 최종 원문은 `verbatim` + UC None(4) + 품질 태그 끄기를 사용한다. 프롬프트와 제목은 실행되지 않는 일반 텍스트로 보존한다. 인증·서명·revision, 실제 경로·자격증명·명시적 이미지/바이너리 보호는 유지한다. 현재 동의는 workspace snapshot에서 확인한다. `get_run`의 기록된 attempt evidence로 known-failure와 unknown을 구분하고, 불확실한 Provider 결과를 재생성하지 않는다.
-CUA, CDP, 브라우저 자동화, 비공개 API, 토큰 추출 및 승인 클릭은 대체 경로가 아니다. 정책과 인간 승인 경계는 유지한다.
-
 # NAI Blue
-
-[작업 폴더 인덱스와 현재 설치본](docs/README.md) · [시작 응답성 개선 기록](docs/releases/시작%20응답성.md)
-
-Windows agent runtime location: run `powershell -NoProfile -File scripts/inspect-agent-runtime.ps1` from this checkout. The read-only report resolves the registered installation and distinguishes it from any temporary local release build by SHA-256. Use the registered installation as the single application runtime; a null local build is normal after deployment cleanup. The development MCP entry point is `scripts/run-agent-mcp-stdio.mjs`; it loads source at connection startup. Updating the desktop app does not update this source adapter or the MCP host's configuration. Reconnect safely after source/configuration changes, preserve pending request IDs, and verify `nai-blue://capabilities` before claiming compatibility.
-
-The Windows MCP entry now resolves that installation again before every new call. Discovery, status and read commands leave a closed app closed (`APP_NOT_RUNNING`). A validated plan or mutation may start the installed app. Its native startup hash, PID and version are verified before work is submitted. Updating or relocating the installed app therefore needs no versioned Pi/Codex executable path. New requests carry a signed target hash; another build rejects them before acceptance. Pending probes and historical receipts are inspected without replaying work. A stale running app is never killed automatically, and changed adapter source explicitly requires reconnecting the MCP host. “Latest” means the current deployed installation; this mechanism does not download new internet releases. Existing MCP connections created before this guard was installed need one initial reconnect.
-
-Run `npm run test:agent-runtime` for installation-change checks. `node scripts/verify-agent-mcp-runtime.mjs` accepts the same `--connection`, `--inbox-dir`, and `--python` arguments as the registered stdio entry and verifies the real app using public read operations only.
 
 <p align="center">
   <img src="public/nai-blue.png" alt="NAI Blue logo" width="128" height="128">
 </p>
 
 <p align="center">
-  A desktop and Android workspace for building, organizing, and running NovelAI image-generation workflows.
+  A desktop and Android workspace for planning, generating, and organizing NovelAI images.
 </p>
 
 <p align="center">
@@ -31,6 +15,24 @@ Run `npm run test:agent-runtime` for installation-change checks. `node scripts/v
 </p>
 
 > NAI Blue is an independent community client and is not affiliated with or endorsed by NovelAI.
+
+![Make images: a folder of image descriptions with copy counts, ready to generate](docs/images/en-make-images.png)
+
+## What you can do
+
+| Screen | What it is for |
+|---|---|
+| **Make images** | Collect image descriptions in folders, set how many copies each one gets, check the quantities and save location, then generate the whole batch. A batch can be saved as a production request and run again later. |
+| **Single** | Write one prompt in four slots (Prompt, Boost, Detail, Exclude), add characters and image references, pick the model and resolution, and generate one image at a time. |
+| **Scenes** | Keep prompts as cards and generate many scenes in one run. |
+| **Work history** | Follow progress, review finished images, and handle jobs that need attention. |
+| **Tools** | Smart Tools (background removal, mosaic, upscale), Style Lab (artist-tag combinations tuned to your taste), Library, Trash, Data Hub, R2 Upload, a tag-search browser, and Settings. |
+
+`Ctrl/Cmd+K` opens **Find command** from any screen, and `Ctrl/Cmd+Enter` runs the main action of the screen you are on.
+
+![Single: the prompt panel with four slots, model settings, and the Generate Image button](docs/images/en-single.png)
+
+![Tools menu: authoring, archive, data, and panel entries with their shortcuts](docs/images/en-tools.png)
 
 ## Install
 
@@ -42,42 +44,39 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 
 ## First run
 
-1. Open NAI Blue and stay in the **Guided** surface for the initial setup.
-2. Connect your NovelAI account in the account/API step and verify the token.
-3. Choose **Single image** or **Batch images**.
-4. Build the positive, negative, and character prompts. Character positions start at the center (`0.5, 0.5`) and can be adjusted per task.
-5. Choose an output folder and metadata policy, then review the settings before adding the job to the queue.
-6. Follow progress in **Queue**. Each queued job shows its destination folder.
+**Tools → Help** opens the built-in getting-started guide and shows which of these steps still need attention.
 
-Credentials are stored through the operating system credential vault on supported desktop platforms. Do not paste a NovelAI token, R2 secret, or private sidecar into an issue.
+1. Open the Credential Vault (from the guide or **Settings → API**), unlock it, and save a verified NovelAI token. The token is encrypted by the operating system's vault.
+2. Choose where images are saved, the image format, and how metadata is handled: **Embed metadata**, **Sidecar only**, or **Strip image metadata and write sidecar**.
+3. In **Make images**, write one description per image, set the copies, choose **Add images to make**, and start the batch with **Make N images**. For a one-off image, use **Single** and **Generate Image**.
+4. Follow the jobs in **Work history**.
 
-## Everyday workflows
+R2 upload is optional. Set it up in **Tools → R2 Upload** only if you want remote storage.
 
-### Prompt modules
+## Importing metadata
 
-Open the prompt module library from Guided or Advanced generation. Modules can be organized in folders and contain base, detail, additional, negative, character, and character-negative parts. Select only the parts you want when inserting a module; character positions remain task-specific.
+Drag an image onto **Single** to load its generation settings, or read up to 500 files at once in **Data Hub → Image info**. NAI Blue reads PNG, WebP, and JPEG images, `.nai-blue.json` sidecars, and supported external sidecar JSON, including images made with NAIS2 and NAIS3.
 
-### Import image metadata
+## Folders, devices, and privacy
 
-Drop a PNG, WebP, JPEG, `.nai-blue.json` sidecar, or supported metadata-extraction JSON into the prompt import surface. NAI Blue maps main and character prompts into the same editor format. For migration from other automation tools, it reads NAIS2 and NAIS3 metadata; those identifiers are recognized only at the import boundary and are never written as NAI Blue data.
+- Each folder has its own save location, shared image description, and optional R2 upload.
+- **Data Hub → Devices** connects the desktop and mobile apps.
+- Background removal and style analysis in **Smart Tools** send the selected image to external Hugging Face Spaces. NovelAI tokens are never sent there.
+- On Android, features that need a desktop stay visible with the reason and an alternative.
 
-### Output folders and R2
+## AI agents
 
-Create generation folders before enqueueing work. Each folder can define its local destination, common prompt, R2 profile, bucket, prefix, and automatic-upload preference. Child folders inherit the parent prefix unless they explicitly override it.
+NAI Blue can take requests from AI agents that you register in **Data Hub → AI editing**. A registered agent reads prompts, generation settings, and save locations, submits validated edits, and requests generation through the MCP adapter in this repository (`scripts/run-agent-mcp-stdio.mjs`). You decide for each client whether editing and generation need your approval every time.
 
-R2 controls remain disabled until a profile passes setup. Use the **Set up R2** action, verify the connection, then enable automatic upload on the folders that need it. Deleting the local original is always an explicit, separate choice.
-
-### Image cleanup and sidecars
-
-The metadata step offers embedded metadata, sidecar-only, clean image plus private sidecar, and strip-only policies. The clean-image workflow re-encodes pixel data, keeps restoration metadata in a separate private sidecar, and can add the configured rights-owner XMP.
+Connection setup is in [ADR-013](docs/architecture/ADR-013-agent-folder-production.md), and the rules for automation agents are in [the agent automation guide](docs/에이전트%20자동화%20안내.md).
 
 ## Troubleshooting and bug reports
 
 Before reporting a problem:
 
 1. Retry once with the same inputs and note the exact step that failed.
-2. Open **Settings → Advanced settings and diagnostics**.
-3. Select the related event and copy or export the **sanitized diagnostic log**.
+2. Open **Tools → Open diagnostics**.
+3. Use **Copy redacted log** or **Export JSON** for the related event.
 4. Check the latest release notes and existing [issues](https://github.com/bluehair-blue/NAI-Blue/issues).
 
 Submit a [bug report](https://github.com/bluehair-blue/NAI-Blue/issues/new?template=bug_report.yml) with:
@@ -85,12 +84,12 @@ Submit a [bug report](https://github.com/bluehair-blue/NAI-Blue/issues/new?templ
 - NAI Blue version, operating system, and installation type;
 - the shortest reproducible sequence;
 - expected and actual behavior;
-- the displayed `DiagnosticCode` and sanitized log;
+- the displayed `DiagnosticCode` and redacted log;
 - a screenshot with tokens, paths, prompts, and private metadata redacted.
 
 Never attach a NovelAI token, Cloudflare secret, signing key, raw credential backup, or unreviewed private sidecar. For a security vulnerability, do not open a public issue; use the repository's private security advisory flow.
 
-## Build and debug from source
+## Build from source
 
 Requirements: Node.js 24 LTS, npm, Rust 1.93 or newer, and the native build tools required by Tauri. Python 3.11 is required when rebuilding the tagger sidecar.
 
@@ -110,10 +109,10 @@ npm run build
 npm run tauri build
 ```
 
-Release process and signing requirements are documented in [RELEASING.md](./RELEASING.md).
+The design contract is in [DESIGN.md](./DESIGN.md), architecture decisions are indexed in [docs/README.md](./docs/README.md), and the release process is in [RELEASING.md](./RELEASING.md). `npm run docs:screenshots` regenerates the screenshots on this page.
 
 ## Credits and license
 
-NAI Blue continues work that began with [NAIS2](https://github.com/sunanakgo/NAIS2). Thanks to its original maintainers and contributors. The wildcard and scene workflows also learned from [NAIA2.0](https://github.com/DNT-LAB/NAIA2.0) and [SDStudio](https://github.com/sunho/SDStudio).
+NAI Blue started from [NAIS2](https://github.com/sunanakgo/NAIS2); its wildcard and scene workflows also drew on [NAIA2.0](https://github.com/DNT-LAB/NAIA2.0) and [SDStudio](https://github.com/sunho/SDStudio).
 
 Licensed under [GPL-3.0](./LICENSE).
