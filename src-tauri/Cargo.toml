@@ -7,9 +7,10 @@ license = "GPL-3.0"
 repository = "https://github.com/bluehair-blue/NAI-Blue"
 edition = "2021"
 rust-version = "1.93.0"
-# Resolver 3 connects the declared MSRV to transitive selection, preventing
-# compatible version ranges from silently locking crates that need a newer
-# Rust than this one (the AWS SDK line raises its MSRV the fastest).
+# Resolver 3 lets the declared MSRV steer transitive selection, so compatible
+# version ranges do not silently lock crates that need a newer Rust than this
+# one (the AWS SDK line raises its MSRV the fastest). It only prefers: it falls
+# back when no compatible version exists, and `cargo update --precise` skips it.
 resolver = "3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
