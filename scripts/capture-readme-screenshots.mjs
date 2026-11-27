@@ -17,7 +17,7 @@ const viewport = { width: 1280, height: 800 }
 // Tag-style prompt for the Single screen; the same text reads naturally in every UI language.
 const SINGLE_PROMPT = '1girl, blue hair, long hair, reading, book, window, morning light, soft lighting'
 
-// A named folder holds the demo because the built-in folder keeps its stored Korean name in every UI language.
+// The demo lives in its own named folder so the shot reads like a real project next to the built-in folder.
 // items are [description, name, copies] rows typed into the Make images composer.
 const DEMO = {
     en: {
